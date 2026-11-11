@@ -36,6 +36,35 @@ describe('transaction handling', () => {
     expect(released).toEqual([false]);
   });
 
+  it('sets a lock timeout as the transaction’s first statement when asked, before the scope’s own opening read, and none otherwise (docs/adr/0092, the amendment)', async () => {
+    const person = fakePool();
+    await withActor(person.pool, ACTOR, () => Promise.resolve('done'), { lockTimeoutMs: 3_000 });
+    expect(person.texts()).toEqual(['BEGIN', "SELECT set_config('lock_timeout', $1, true)", expect.stringContaining("set_config('app.actor_id'"), 'COMMIT']);
+    expect(person.released).toEqual([false]);
+    const practice = fakePool();
+    await withPracticeScope(practice.pool, { actorId: ACTOR, practiceIds: [PRACTICE_A], lockTimeoutMs: 3_000 }, () => Promise.resolve('done'));
+    expect(practice.texts().slice(0, 4)).toEqual([
+      'BEGIN',
+      "SELECT set_config('lock_timeout', $1, true)",
+      expect.stringContaining("set_config('app.actor_id'"),
+      expect.stringContaining('open_practice_scope'),
+    ]);
+    // A job, the gateway and every other caller give none, and their transactions are as they were.
+    const unbounded = fakePool();
+    await withPracticeScope(unbounded.pool, { actorId: ACTOR, practiceIds: [PRACTICE_A] }, () => Promise.resolve('done'));
+    expect(unbounded.texts().some((text) => text.includes('lock_timeout'))).toBe(false);
+  });
+
+  it('refuses a lock timeout that is not a whole number of milliseconds above zero, before any connection is taken', () => {
+    // The last two are whole numbers PostgreSQL's integer setting would refuse inside the transaction.
+    for (const lockTimeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, 2_147_483_648, 1e21]) {
+      const { pool, texts } = fakePool();
+      expect(() => withActor(pool, ACTOR, () => Promise.resolve('done'), { lockTimeoutMs })).toThrow(new ScopeError('lockTimeoutMs must be a whole number of milliseconds above zero'));
+      expect(() => withPracticeScope(pool, { actorId: ACTOR, practiceIds: [PRACTICE_A], lockTimeoutMs }, () => Promise.resolve('done'))).toThrow(ScopeError);
+      expect(texts()).toEqual([]);
+    }
+  });
+
   it('rolls back when the work fails, and rethrows', async () => {
     const { pool, texts, released } = fakePool();
     await expect(withActor(pool, ACTOR, () => Promise.reject(new Error('work failed')))).rejects.toThrow('work failed');

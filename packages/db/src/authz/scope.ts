@@ -92,14 +92,46 @@ export class JobActorIsPersonError extends ScopeError {
 }
 
 /**
+ * A transaction's bound on its lock waits, for a caller that asks for one: PostgreSQL's lock_timeout, set as the
+ * transaction's first statement after BEGIN and for that transaction only (set_config's is_local), so every later
+ * wait in it for a lock, the scope's own opening read included, ends after this many milliseconds, and the pooled
+ * connection never carries the setting to other work. A web request's (docs/adr/0092, the amendment of 2026-11-11);
+ * a job gives none and may wait.
+ */
+export interface LockWaitBound {
+  readonly lockTimeoutMs?: number;
+}
+
+const SET_LOCK_TIMEOUT = "SELECT set_config('lock_timeout', $1, true)";
+
+/** The most PostgreSQL takes for lock_timeout: an integer setting, in milliseconds. */
+const MAX_LOCK_TIMEOUT_MS = 2_147_483_647;
+
+/**
+ * The bound as the setting's text, or none; refused before any connection is taken when it is not a whole number of
+ * milliseconds above zero that PostgreSQL would take.
+ */
+function lockTimeoutText(bound: LockWaitBound): string | undefined {
+  if (bound.lockTimeoutMs === undefined) {
+    return undefined;
+  }
+  if (!Number.isInteger(bound.lockTimeoutMs) || bound.lockTimeoutMs <= 0 || bound.lockTimeoutMs > MAX_LOCK_TIMEOUT_MS) {
+    throw new ScopeError('lockTimeoutMs must be a whole number of milliseconds above zero');
+  }
+  return String(bound.lockTimeoutMs);
+}
+
+/**
  * Runs `open` then `run` in one transaction on one connection. A failure anywhere rolls back; a
- * connection whose rollback fails is destroyed rather than returned to the pool.
+ * connection whose rollback fails is destroyed rather than returned to the pool. With `lockTimeout`, the transaction's
+ * lock waits are bounded from its first statement (LockWaitBound).
  */
 async function transaction<P extends ScopePool<ScopeClient>, S, T>(
   pool: P,
   open: (client: ClientOf<P> & ScopeClient) => Promise<S>,
   run: (scope: S) => Promise<T>,
   begin: 'BEGIN' | 'BEGIN ISOLATION LEVEL REPEATABLE READ' | 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY' = 'BEGIN',
+  lockTimeout?: string,
 ): Promise<T> {
   const client = (await pool.connect()) as ClientOf<P> & ScopeClient;
   try {
@@ -110,6 +142,9 @@ async function transaction<P extends ScopePool<ScopeClient>, S, T>(
   }
   let discard = false;
   try {
+    if (lockTimeout !== undefined) {
+      await client.query(SET_LOCK_TIMEOUT, [lockTimeout]);
+    }
     const result = await run(await open(client));
     await client.query('COMMIT');
     return result;
@@ -209,9 +244,15 @@ export function accessByPractice(rows: readonly AccessRow[]): Map<string, Practi
 
 const SET_ACTOR = "SELECT set_config('app.actor_id', $1, true)";
 
-/** Identity resolution: the actor is set, no practice is in scope. */
-export function withActor<P extends ScopePool<ScopeClient>, T>(pool: P, actorId: string, run: (scope: ActorScope<ClientOf<P>>) => Promise<T>): Promise<T> {
+/** Identity resolution: the actor is set, no practice is in scope. `bound`: the transaction's lock waits, for a web request (LockWaitBound). */
+export function withActor<P extends ScopePool<ScopeClient>, T>(
+  pool: P,
+  actorId: string,
+  run: (scope: ActorScope<ClientOf<P>>) => Promise<T>,
+  bound: LockWaitBound = {},
+): Promise<T> {
   const actor = requireUuid(actorId, 'actorId');
+  const lockTimeout = lockTimeoutText(bound);
   return transaction(
     pool,
     async (client): Promise<ActorScope<ClientOf<P>>> => {
@@ -230,10 +271,12 @@ export function withActor<P extends ScopePool<ScopeClient>, T>(pool: P, actorId:
       };
     },
     run,
+    'BEGIN',
+    lockTimeout,
   );
 }
 
-export interface PracticeScopeRequest {
+export interface PracticeScopeRequest extends LockWaitBound {
   readonly actorId: string;
   /** The practices the request is about; the scope is those the actor may reach right now. */
   readonly practiceIds: readonly string[];
@@ -255,6 +298,7 @@ export function withPracticeScope<P extends ScopePool<ScopeClient>, T>(
 ): Promise<T> {
   const actor = requireUuid(request.actorId, 'actorId');
   const requested = [...new Set(request.practiceIds.map((id) => requireUuid(id, 'every practice ID')))].sort();
+  const lockTimeout = lockTimeoutText(request);
   return transaction(
     pool,
     async (client): Promise<PracticeScope<ClientOf<P>>> => {
@@ -274,6 +318,7 @@ export function withPracticeScope<P extends ScopePool<ScopeClient>, T>(
     },
     (scope) => recorded(scope, run),
     request.oneSnapshot === true ? 'BEGIN ISOLATION LEVEL REPEATABLE READ' : 'BEGIN',
+    lockTimeout,
   );
 }
 

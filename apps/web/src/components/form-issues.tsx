@@ -19,7 +19,8 @@ import {
   useState,
 } from 'react';
 
-import type { Issue } from '../lib/http/route';
+import { busyWords } from '../lib/http/busy-words';
+import type { BusyWhat, Issue } from '../lib/http/route';
 
 /**
  * A refused form, as the person sees it (docs/adr/0077): what was typed stays, each refused field shows "Error:" and
@@ -41,6 +42,8 @@ export interface RefusalState {
   readonly stale?: boolean;
   /** The request key was used before: an earlier post with it saved, and this one did nothing. */
   readonly duplicate?: boolean;
+  /** What the request would write was being written by something else (docs/adr/0092): nothing was saved, and the lead says what stays. */
+  readonly busy?: BusyWhat;
 }
 
 /** The state a form shows: the action's, plus fields only the browser sets, never the server. */
@@ -213,7 +216,7 @@ export interface GuardedSubmit {
  * set; false sends nothing. startTransition is called synchronously in onSubmit, so useFormStatus pends too.
  *
  * The `heldKey` ref pins the request key (D1): once a press's connection drops, or the server answers that its key
- * was used before, every later press sends that key until one is saved, even after a refresh renders a new key in
+ * was used before or is still in use, every later press sends that key until one is saved, even after a refresh renders a new key in
  * the page (the export's status, a page out of date). The server may have saved under it, and only the same key
  * makes another press do nothing. A refusal saves nothing but can come before the key is read, so it says nothing of
  * that press and keeps the pin; a redirect (saved) or a failure lets it go. A form with several actions passes one
@@ -243,7 +246,8 @@ export function useGuardedSubmit(
     const key = data.get('requestKey');
     try {
       const answer = await action(previous, data);
-      if (answer.duplicate === true && typeof key === 'string') {
+      // A key used before, or still in use by a first request that may yet save (docs/adr/0092, the amendment).
+      if ((answer.duplicate === true || answer.busy === 'request') && typeof key === 'string') {
         held.current = key;
       }
       return { ...answer, seq: next() };
@@ -456,16 +460,29 @@ function hiddenName(form: HTMLFormElement, field: string): string | null {
   return null;
 }
 
+/** The secrets a refusal empties: marked by their component, or by their type as the fallback. */
+const SECRETS = 'input[data-secret], input[type="password"], input[autocomplete="one-time-code"]';
+
 /**
  * Empties every secret in the form (docs/adr/0077, D2): marked by its component, or by its type as the fallback.
  * Whether the form holds one, so a lead that says what stays can say what did not.
  */
 function emptySecrets(form: HTMLFormElement): boolean {
-  const secrets = form.querySelectorAll<HTMLInputElement>('input[data-secret], input[type="password"], input[autocomplete="one-time-code"]');
+  const secrets = form.querySelectorAll<HTMLInputElement>(SECRETS);
   for (const control of secrets) {
     control.value = '';
   }
   return secrets.length > 0;
+}
+
+/**
+ * Whether the form holds a field a person fills that a refusal leaves as it was (typed, chosen or attached; never a
+ * password or a code, which are emptied), so a lead that says what stays in the form says it only where something
+ * does: a form that is one button, or one code, keeps nothing typed.
+ */
+function keepsFields(form: HTMLFormElement): boolean {
+  const filled = form.querySelectorAll('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), textarea, select');
+  return [...filled].some((control) => !control.matches(SECRETS));
 }
 
 /**
@@ -530,7 +547,8 @@ export function summaryKind(state: FormState): SummaryKind {
   if (state.locked === true) {
     return 'locked';
   }
-  if (state.unconfirmed === true) {
+  // A form sent again while its first send is still running is not "Not done": that send may yet save (docs/adr/0092).
+  if (state.unconfirmed === true || state.busy === 'request') {
     return 'unconfirmed';
   }
   return state.duplicate === true ? 'duplicate' : 'error';
@@ -573,12 +591,13 @@ function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, ap
   const itemId = useId();
   const summaryRef = useRef<HTMLDivElement>(null);
   // Each issue's target, read from the page for the state it was read for (null before: the server render), the name
-  // a hidden field gives an issue with no target, and whether the form held a secret, which the lead then names.
+  // a hidden field gives an issue with no target, and whether the form held a secret or a field a refusal keeps, which the lead then names.
   const [placement, setPlacement] = useState<{
     readonly state: FormState;
     readonly targets: readonly (Placed | null)[];
     readonly hidden: readonly (string | null)[];
     readonly secrets: boolean;
+    readonly kept: boolean;
   } | null>(null);
   const shown = refused(state);
   useLayoutEffect(() => {
@@ -591,7 +610,7 @@ function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, ap
     const issues = state.issues ?? [];
     const targets = issues.map((issue) => resolveIssue(form, issue.field));
     const undo = targets.map((target, index) => (target === null ? null : markByHand(target.control, `${itemId}-${String(index)}`)));
-    setPlacement({ state, targets, hidden: issues.map((issue, index) => (targets[index] === null ? hiddenName(form, issue.field) : null)), secrets });
+    setPlacement({ state, targets, hidden: issues.map((issue, index) => (targets[index] === null ? hiddenName(form, issue.field) : null)), secrets, kept: keepsFields(form) });
     const only = issues.length === 1 ? targets[0] : null;
     (only?.control ?? summaryRef.current)?.focus();
     return () => {
@@ -616,6 +635,7 @@ function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, ap
           fromBrowser={fromBrowser}
           submit={submit}
           secrets={read?.secrets === true}
+          kept={read?.kept}
           stale={stale}
           appOrigin={appOrigin}
           unconfirmed={unconfirmed}
@@ -651,7 +671,10 @@ function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, ap
 /**
  * The summary's lead: a form cleared for another person, the connection, the out-of-date page, or the action's error
  * as summaryLead chooses it. Exported for a form with a summary of its own (the export form), so its leads read the
- * same. `secrets`: the form held a password or a code, which a dropped connection's lead says it emptied. `stale`
+ * same. `secrets`: the form held a password or a code, which a dropped connection's lead and a busy refusal's say it
+ * emptied. `kept`: whether the form holds a field a refusal keeps, as the browser read it, so a busy refusal's lead may
+ * say what was typed stays; not given (the page not read yet, the server's render, the post without JavaScript, a form
+ * with a summary of its own), the lead is the server's own words, which claim nothing about the form. `stale`
  * "origin": the form's route is public, with no token or request key to renew, so `stale` means only that the page
  * failed the origin check (invoke.ts, publicRoute's csrf_refused when the request is not same-origin), which no refresh
  * repairs: its lead claims no refresh, does not blame the page's age, and names the app's own web address to open.
@@ -662,6 +685,7 @@ export function RefusalLead({
   fromBrowser,
   submit,
   secrets = false,
+  kept,
   stale,
   appOrigin,
   unconfirmed,
@@ -671,6 +695,7 @@ export function RefusalLead({
   readonly fromBrowser: boolean;
   readonly submit: ReactNode;
   readonly secrets?: boolean;
+  readonly kept?: boolean;
   readonly stale?: 'origin';
   readonly appOrigin?: string;
   readonly unconfirmed?: 'mails-again';
@@ -706,6 +731,10 @@ export function RefusalLead({
     ) : (
       <p>This page was out of date, so nothing was saved. Check the form, then send it again if you still mean to.</p>
     );
+  }
+  if (state.busy !== undefined) {
+    // The flag, never the server's words, which cannot say what stays in a form they have not seen (next.ts, busyState).
+    return <p>{busyWords(state.busy, kept === undefined ? null : { kept, secrets })}</p>;
   }
   const lead = summaryLead(state, placed);
   return lead === null ? null : <p>{lead}</p>;

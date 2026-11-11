@@ -130,7 +130,7 @@ const REFUSALS: Readonly<Record<Exclude<Outcome<unknown>['status'], 'ok'>, Exclu
   rate_limited: { status: 'rate_limited', retryAfterSeconds: 125 },
   terms_required: { status: 'terms_required' },
   maintenance: { status: 'maintenance' },
-  busy: { status: 'busy' },
+  busy: { status: 'busy', what: 'records' },
 };
 
 describe('a download route records its page (docs/adr/0079)', () => {
