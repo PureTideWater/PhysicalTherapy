@@ -15,6 +15,7 @@ own status file and `CLAUDE.md`, not the long history files.
   - **W7** session_019i9ifCb8Sa7jHnu6j4af8F (acting Lane B): item 8, draft #141; it merges it, then stands down (its context is past 770k tokens).
   - **W8** session_019i9ifE7teUhX79iAZKaxt5: designed Queues item 28 (two design reviews, version 2), then stood down on 2026-11-11 07:25 UTC. It holds nothing; `approval-summaries/lane-a-step-before-reset-status.md` is the handoff.
   - **W9** session_019i9ifBKxrX229x23BggpZK (Lane A), from 2026-11-11 07:15 UTC, at the default effort: builds Queues item 28 from W8's design, takes item 6's merge step after the founder's commit, then opens item 28's PR.
+  - **W10** (Lane A), from 2026-11-11 09:40 UTC, at medium effort (a merge step and a PR from a finished branch): #140's merge step, then item 28's PR. W9 stood down at 09:37 UTC (context past 300k tokens); it holds nothing.
 - **Lane A** (this account): the weekly allowance reset on 2026-11-10 at about 14:00 UTC; the next reset is Tue 2026-11-17 14:00 UTC. **Its weekly limit showed the warning level at about 00:30 UTC on 2026-11-11**, 11 hours into the week; sessions cannot see the percentage, only the co-founder can.
 - **Usage:** the account ran out of its weekly allowance at 08:11 UTC on 2026-11-11 (every session stopped with its work pushed); the co-founder reset it at about 08:55 UTC and every session resumed. From the sessions' records one allowance is roughly 1,400 API-equivalent dollars, and a merged PR has cost roughly 110 to 130 of them, so one allowance buys about ten PRs at this review depth. Sessions cannot see the percentage. When the limit stops them the orchestrator stops too; the co-founder's next message after a reset restarts them from their RESUME-BLOCKs.
 - **Lane B:** capped until Fri 2026-11-13 19:00 UTC. Until then Lane A runs Lane B's urgent items as acting Lane B, and hands them back at 18:30 UTC that day.
@@ -39,7 +40,7 @@ own status file and `CLAUDE.md`, not the long history files.
 
 ## Base and open PRs (live 2026-11-11 05:40 UTC)
 - `claude/build-platform` is at **2e26a416** (#126, merged 2026-11-11 05:37 UTC with the founder's approval line; before it #137 as 4fe8bcca, #129 as ca504674, #138 as ef3e8d20, #136 as 06cde5eb and #134 as 994ee303). Every open PR merges this base before its last push.
-- **#140**, password-changed-notice (schema; draft): head abdc2192 (W6's last review's fixes, pushed 09:06 UTC). **No approval line is posted yet:** W6 posts it when CI is green on that head, or W9 does from W6's record. **W9** merges after the founder's commit.
+- **#140**, password-changed-notice (schema; draft): head c82d2c99 (one stale test fixed by W9; no schema change). **The suggested approval line is posted (09:36 UTC):** https://github.com/PureTideWater/PhysicalTherapy/pull/140#discussion_r4536232884 . It waits for the founder's "Commit suggestion"; the co-founder was told at 09:40 UTC. **W10** merges after it, then opens item 28's PR from WIP 5222fe59 (case (d)'s fix built and reviewed in it).
 - **#141**, the packets verifier identifier fold (draft): head 995380b7 (a mutation-timing fix on c2c5a07c; the base 2e26a416 merged). CI is running; W7 merges it on green.
 - Dependabot #123, #124, #135 and #139 (#139 replaced #122 on 2026-11-11), untriaged: one replacement PR, never merged as they stand.
 
