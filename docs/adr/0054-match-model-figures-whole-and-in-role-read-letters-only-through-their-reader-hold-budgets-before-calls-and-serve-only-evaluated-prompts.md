@@ -452,7 +452,8 @@ when no identifier label stands right before it (member 031561 written `Seen 03-
 digits written after a currency sign and with cents are sent as an amount (`$555001.00`); digits alone with a slash
 or a period between them (`12/34/5678`, `1234.5678`) are not a number, being how dates and amounts are written, unless
 an identifier label stands right before them (R5-2), and then the candidates join them too (G1); a comma between digits
-(`1234,5678`) joins nothing; and a part written in lower case with a space inside it (`jo ann`) is not a name.
+(`1234,5678`) joins nothing; and a part written in lower case with a space inside it (`jo ann`) is not a name (for the
+letter reader both are closed by the amendment of 2026-11-11, `co-001/redact-item-26`, below: MOD-23).
 Recorded with review findings G2 to G4 (2026-11-02), each the cost of keeping a deadline or a word: a bare `ID`,
 `number`, `no` (lower case, or with no `.`, `:` or `#`), `#` or `reference` before a claim number or member ID written as
 a whole calendar date is no label, so that date is kept as an ordinary letter's would be (`ID 03-14-1962`,
@@ -1633,7 +1634,7 @@ glued after it and a point and two digits after its year, an amount's cents or n
 stands between them: a label's reach is counted in characters on every tree and a CR LF counts two, so the label owns
 the number in the writing with LF and the noun names it in the writing with CR LF (`SSN on file. Statement`, CR LF and
 `No. 900-12-3456150.00`: review K-1; ef3e8d20, cc3dd7f6 and every head of this build but one sent it, and one character
-further it is the label out of reach recorded above); the label right before a number with its parts in another order,
+further it is the label out of reach recorded above; closed by the amendment below, which refuses the letter); the label right before a number with its parts in another order,
 with `is`, or with a word in parentheses (`Phone number is 900 77.3283150.00`, `Phone # : 900 77.3283150.00`, `Phone
 (cell): 900 77.3283150.00`); a noun read from the first letters a slice of 120 characters shows (`Overpayment`, 113
 points and a number: `PAYMENT`); one or two digits
@@ -1655,8 +1656,8 @@ and the amount-shaped splits of review GATEWAY2-1 (`Soc Sec 93798 4 1.46`), each
 fold): a name written with a lower-case piece after a space or a period (`Zephy ra`, `Zephy. ra`) and a name written
 letter by letter (`Z e p h y r a`) are sent in clear in a letter with no held range by cc3dd7f6, ef3e8d20 and this head
 alike, and refused in a held one; the kept script `leaks-scripts/name-forms.mts` in the gate's folder reproduces both on
-any tree (`node --import ../ts-resolve.mjs name-forms.mts <redact.ts>...`), and `src/redact.leaks.test.ts` pins them as
-they are sent today. Of the list that ends the amendment above, this one closes: a label's list number (`Phone 1:
+any tree (`node --import ../ts-resolve.mjs name-forms.mts <redact.ts>...`), and `src/redact.leaks.test.ts` pinned them as
+they were sent (closed by the amendment below). Of the list that ends the amendment above, this one closes: a label's list number (`Phone 1:
 555-0100`, `TTY 1: 7,439.10 942.77 3098`), two phones with nothing between them, the Social Security label glued to a
 word (`PatientSSN 900.12 3456`, `PATIENTSSN 900.12 3456`), a masked SSN glued to a word, a year, a date or an amount's
 cents, an SSN or phone glued digit to digit to a date, an amount or a currency amount (`SSN 900-12-3456150.00`, `SSN
@@ -1665,3 +1666,96 @@ cents, an SSN or phone glued digit to digit to a date, an amount or a currency a
 900.12 3456`, `SSN for Zephyra Vantree: 90012-3456`), and other-script digits in member IDs, claim numbers and dates.
 ADR 0070's Part 3 lists the call's own number in other-script digits as not caught: for the letter reader it is caught
 now.
+
+## Amendment (`co-001/redact-item-26`, 2026-11-11): a name written apart, a number as the records hold it, and a CR LF read as one line ending
+
+The amendment above leaves three things for the letter reader to close before any real PHI is processed (test matrix
+MOD-23; `LANES.md` Queues item 26): the two name forms it pins as sent (`Zephy ra` and `Zephy. ra`, `Z e p h y r a`),
+with `jo ann` of the amendment of 2026-10-27; review K-1, a Social Security number sent in clear where a CR LF stands
+between its label and the noun that names it; and a member ID or claim number written with the separator the records
+themselves hold it with (`ZZ12345/01`; a claim number held `1234.56`, which the amendment of 2026-10-27 reads as an
+amount's or a date's writing). This amendment closes the three by one construction. The base it is measured against is
+f3f5a642, the merge of the amendment above.
+
+**The construction: the first reading stands, and a second reading only adds.** `matchesIn`, `appliedMatches`, `merge`,
+the patterns and the survivor scan are unchanged. The base's `redactLetterForScreen` and `holdsIdentifier` are now
+`screenAsFirstRead` and `holdsAsFirstRead`, their bodies as they were. Around them:
+
+- **Redaction.** `widerMatchesIn` reads the call's own names and numbers a second, wider way (the rules below). Its
+  matches are applied only to a letter the first reading's own check does not refuse. A letter that check refuses is
+  returned exactly as the first reading wrote it, and the check, which reads no less than before, refuses it again: no
+  placeholder of the wider reading can hide what that check read. In a letter the first reading sends, `merge` only
+  joins and widens spans, so every span the first reading replaced is replaced, and every run it offered the
+  one-patient screen is offered (its candidates, and those of the sent text, the call's own numbers never among them).
+- **The check.** `holdsIdentifier` is the first reading's check, or any wider match left in the text; and, where the
+  text holds a CR LF, the same once more on the text with each CR LF written as LF. The letter is refused if either
+  reading refuses it.
+
+So nothing f3f5a642 refuses is sent and nothing it redacts is shown, by how the functions are composed and not case by
+case. The reader already had both ideas: a match the base did not make is applied only where the scan does not refuse
+without it (`appliedMatches`), and a second reading whose worse answer is taken (`chainLeft`). `redactLetter` and
+`redactionSpans`, the reading without the screen, apply every match of both readings.
+
+**The three rules of the wider reading.**
+
+1. *A name's part written apart.* A space or a period joins anywhere inside a part of a name, whatever the pieces it
+   leaves, their case or their length: `Zephy ra`, `Zephy. ra`, `Z e p h y r a`, `jo ann`. The pieces rule of the
+   amendment of 2026-10-27 (two letters or more each, capitalized as written) is not asked here; it stays in the first
+   reading. An initial beside a name read so is taken as beside any name. The plain fold and the look-alike fold are both
+   read, as in the first reading. One blunt rule was chosen over a narrower one (a capitals or length test to spare
+   `in a`): the narrower rule is the one that sent these forms, and each further form would need a case of its own.
+2. *A number as the records hold it.* What the stored value itself writes between two of its characters joins them
+   at that place too, beside what joins a number anywhere: a member ID held `ZZ12345/01`, `ZZ12345.01`, `ZZ12345,01`
+   or `ZZ12345+01` is read as held, and a claim number of digits held `1234.56` with no label before it. The first
+   reading's two exclusions still apply: a claim's digits written as a currency amount with cents (`$1,234.56`), and a
+   whole written calendar date with no label of the number's kind before it.
+3. *A CR LF is one line ending.* Every reach of a label, a noun or a window is counted in characters, and a CR LF
+   counts two. The check reads a text that holds a CR LF a second time with each written as LF and takes the worse
+   answer, for every reach and not for a label's alone. Redaction still reads the text as it is written, so the letter
+   of review K-1 is refused, not redacted.
+
+**What it costs, measured.**
+
+- *The gate* (975,489 synthetic letters, f3f5a642 against this head): no PHI class; the same 462,984 letters refused on
+  both; 975,476 letters identical and 13 changed, each of them `in a` replaced in "Records in a timely manner" for a
+  generated patient named INA. No letter the base sent is refused.
+- *Names whose letters are ordinary words apart.* Redaction only, never a refusal by itself. Over the repository's
+  synthetic prose (503 texts, 212,055 characters: the fixtures' `.txt` and `.md`, the narrative set, the letters quoted
+  in the gateway's tests), with each of 64 names alone as the patient: INA loses `in a` in 32 places, ASA `as a` in 18,
+  ISA `is a` in 10, TOBE `to be` in 4, IDA `I'd a` in 2 (an apostrophe joined a part before this), AN `a n` in 2, THEO
+  and BEA one each; 53 names, NEWMAN, UNDERWOOD and SMITH among them, lose no ordinary word. For such a patient the
+  model reads `[PATIENT_NAME]` where two words stood; the letter is still sent, and the figures, dates and codes in it
+  are as they were. Four tests that asserted the pieces rule now assert this cost, and MOD-13's phrase property uses
+  names no phrase writes.
+- *The narrative's check and the packet verifier are not widened* (`subject.patterns` false; `holdsNameOrNumber`,
+  `nameOrNumberMatches`). There a match fails the text, so `in a` would fail every narrative of a patient INA instead
+  of costing two words.
+- *A stored separator.* No fixture or corpus value holds one, so nothing changes today. For a patient whose stored
+  number does, that exact writing is replaced wherever it stands (`1234.56 units` for a claim held `1234.56`;
+  `$1,234.56` is kept).
+- *CR LF letters.* A CR LF letter is refused wherever its writing with LF is; where the LF writing would have been
+  redacted it is refused, the safer of the two. The check reads such a letter twice: the gate's slowest letter is a
+  digit and a CR LF repeated to 100,000 characters, 994 ms against 707 ms on the base and a budget of 3,000 ms.
+- *Time otherwise.* The wider reading read the letter's dates a second time and rebuilt the call's forms on every
+  call: a letter of dates took about 1.4 times the base's time. The check's stores (the views and dates of a text) are
+  now open around each exported reading and shared by both readings (`inOneReading`), and a subject's forms are built
+  once per reading for each fold and width (`formsOf`); each store is keyed by everything its answer depends on and is
+  dropped when the reading returns. The two letters of dates are back at the base's time (1.04 to 1.19 s against 1.04
+  to 1.16 s on one machine), the gate's whole run takes less time on the head than on the base, and the row that counts
+  regular-expression runs to show a plain letter is read once holds at its unchanged bar (2,106 runs against 2,385).
+  No budget or bar was moved.
+
+**Left, each recorded.** Review N-1 and N-2 (the screen is asked about more than it need be) are as they were: no rule
+here touches what the first reading offers. Still sent in clear, and `LANES.md` Queues item 34, also to land before any
+real PHI is processed: a digits-only member ID or claim number glued to a letter (`XYZ76543210` for 76543210: the
+amendment of 2026-10-27 reads glued digits as another, longer identifier, and refusing them needs a floor on the
+number's length and its own measurement); a name the records hold with a plus sign (`JANE+ZEPHYRA` is one part);
+one piece of a stored number alone (`ZZ12345` of `ZZ12345 01`); and the narrative drafter's own check, which does not
+read stored separators. As recorded before and unchanged: a name glued to other letters, and a part split by `*`, `/`
+or `{`.
+
+**Tests.** `src/redact.leaks.test.ts`, `describe('MOD-23 ...')`: the name forms alone and in a held letter, the initial
+beside them, the recorded cost rows, the stored separators, K-1 and two properties (a CR LF letter is refused wherever
+its writing with LF is; no part of the name written with spaces or full stops inside it is sent, whatever the pieces).
+Against f3f5a642's reader 32 of its 39 tests fail. `src/functions/denial-letter.test.ts` holds five letters of 100,000
+characters that write such a name, once among dates and thousands of times, to the 3-second budget.
