@@ -3,7 +3,30 @@
 Lane A, W15 (https://claude.ai/code/session_019i9if9aX9NMhnMVmJCk4BM), from 2026-11-11 18:12 UTC. It took the chain
 from W11. Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md`.
 
-## RESUME-BLOCK (W15, 2026-11-11 21:45 UTC; W15's context is at its limit, a successor takes B from here)
+## RESUME-BLOCK (W16, https://claude.ai/code/session_019i9ifEMVhfmHMsi6UzykXB, 2026-11-11 19:30 UTC; schema PR 4 only; #143's merge step stays W15's, block below)
+- **State: steps 1 and 2 are done; PR 4 waits only for #143 to merge.** WIP ref 
+  = **f8732bda** (on #143's head a3a32024). Worktree , branch 
+  (a successor: ).
+- **Reviews, both done, no migration or function change after 217e96ce, so no delta review:** tenant isolation
+  (), database (, run by
+  W16: no must-fix; F1 a handler-then-trigger deadlock, the web's to fix, P4; F2 the handlers' lock key on a
+  non-lowercase id, the web's, new P5; both in ADR 0085's amendment).
+- **Records done (654e5169, f8732bda):** the runbook's section before "## Rollback"; CAS-58 in test-matrix.md, matrix.ts,
+  registry.ts and fixtures ( ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or package.json5) was found in "/home/user/ops".); CAS-45 and CAS-48 name the database tests; ADR 0085's amendment (the
+  search path taken, the duplicate residual not closed and why, the crossing); ADR 0093 accepted.
+- **Passed on f8732bda's tree (654e5169 for all but lint:copy):** typecheck, lint, lint:logs, lint:copy,
+  check:fixtures, synth's unit tests, the three database files (57) on PostgreSQL 18.
+- **Next, only when the orchestrator says #143 is in:** (5) in : ; a fresh database on 5433,  ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND  No package.json (or package.yaml, or package.json5) was found in "/home/user/ops".,
+   (the approval line stays blank), ; the fast checks; the one full
+  local suite (; output to files); (6) ; the draft PR into claude/build-platform: the description is the whole output of
+  , then
+   with its four  places filled (the checks table, the two hashes;
+  the review rows are in); (7) on CI green but for the blank line: the suggested approval line by the skill's 
+  route, its link to the orchestrator with the founder's reading (the body's "What the founder should know", point 1
+  first); subscribe; merge after the founder's "Commit suggestion" and green required checks.
+- Kit to change the migration, if ever needed: W15's paragraph below ("To change the migration").
+
+## W15's block (superseded for B by W16's above; A still stands) (W15, 2026-11-11 21:45 UTC; W15's context is at its limit, a successor takes B from here)
 - **A. #143** (schema PR 2): W15 is subscribed. Head a3a32024, waiting for the founder's "Commit suggestion" on
   discussion_r4541570803. The merge step is W11's block in `approval-summaries/lane-a-schema-pr2-status.md`, unchanged.
 - **B. The next schema PR is the plan's PR 4** (#85's database rules, design 7.2 items 1 to 5). PR 3 is skipped (slice
