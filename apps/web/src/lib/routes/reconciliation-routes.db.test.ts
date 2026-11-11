@@ -15,7 +15,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { LineCorrectionWords } from '../../components/reconciliation/display';
+import { LedgerTotals, LineCorrectionWords, ReportedInterest, interestWords } from '../../components/reconciliation/display';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
@@ -26,12 +26,12 @@ import { type Services, createServices } from '../server/services';
 import { WEB_LOCK_TIMEOUT_MS } from '../server/lock-timeout';
 import { lockLedger } from '../../../../worker/src/reconcile/ledger';
 import { LedgerWorld, ledSettings } from '../../../../worker/src/reconcile/test-support/ledger-world';
-import { casePatientBalance, reconciliation } from '../reconciliation/queries';
+import { type MatchView, casePatientBalance, reconciliation } from '../reconciliation/queries';
 import { MemoryQueue } from '../uploads/queue';
 import { practiceHome } from './practice';
 import { matchClaimAction, matchDepositAction, matchPostingAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
 import { generateRoiAction, roiStatementCsv, roiStatementPage, roiStatementPdf, roiStatementsPage } from './roi';
-import { adjustEntryAction, ledgerReviewPage } from './specialist';
+import { ADJUSTMENT_CONSEQUENCE, adjustEntryAction, ledgerReviewPage } from './specialist';
 import { assignCaseAction } from './workbench';
 import { casePage, casesPage, reopenLineAction, writeOffLineAction } from './triage';
 import { csrfTokenFor } from '../http/csrf';
@@ -39,7 +39,7 @@ import { csrfTokenFor } from '../http/csrf';
 /**
  * The Reconciliation screen, the posting-template mapping and the ROI statements through their routes
  * against PostgreSQL (PRD 5, J10 and J12; PRD 7, Reconciliation and Reports; PRD 13; PRD 20; test
- * matrix LED-02, LED-04, LED-05, LED-06, LED-07, LED-11; docs/adr/0042, 0043). A practice's SYNTHETIC
+ * matrix LED-02, LED-04, LED-05, LED-06, LED-07, LED-11, LED-23, LED-24; docs/adr/0042, 0043, 0084). A practice's SYNTHETIC
  * LED-06 original payment is priced under a signed-off 50.00-per-unit 97110 schedule and triaged into a
  * case; its adjusted remittance, posting export, a bank export with a mistyped trace and the recoupment
  * then reach the ledger through the reconcile job's own handler; and the people of the practice work
@@ -581,6 +581,124 @@ describe('billable to the patient beside the ledger (PRD 13; docs/adr/0067; test
     // The route reads without PHI: the share's amount, never its reason.
     expect(review.shortfalls[0]?.correction.billable).toMatchObject({ billableCents: '600', reasons: null });
     expect(review.totals).toMatchObject({ approvedCents: '3000', payerApprovedCents: '3000' });
+  });
+});
+
+describe('interest from the PLB L6 that pays or takes it back, beside the interest the claims report (designs/ledger-interest-once.md 6.3 and 7; test matrix LED-23, LED-24; docs/adr/0084)', () => {
+  /** A practice of its own with LED-23's or LED-24's two case lines open from the fixture's original payment, then each file loaded and reconciled. */
+  async function interestPractice(id: 'LED-23' | 'LED-24', ...files: readonly string[]): Promise<{ readonly practice: Practice; readonly at: { readonly practiceId: string } }> {
+    const target = await ledger.practice(`RECONCILIATION ${id} INTEREST ${randomUUID().slice(0, 8)}`, ledSettings());
+    await ledger.caseFor(target, `${id}/original.835`);
+    for (const file of files) {
+      await ledger.load(target, `${id}/${file}`);
+      await ledger.reconcile(target);
+    }
+    return { practice: target, at: { practiceId: target.practiceId } };
+  }
+
+  /** The words a person reads of a rendered element, tags stripped. */
+  const words = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(element).replace(/<[^>]+>/g, '').replaceAll('&#x27;', '’');
+
+  /** A line's interest entries' amounts, ascending. */
+  const interestAmounts = (line: { readonly entries: readonly { readonly stage: string; readonly amountCents: string }[] } | undefined) =>
+    (line?.entries ?? [])
+      .filter((entry) => entry.stage === 'interest')
+      .map((entry) => entry.amountCents)
+      .sort((a, b) => Number(BigInt(a) - BigInt(b)));
+
+  it('shows the PLB L6’s interest as paid in its check, the claim’s reported AMT I once beside it, and the totals net (LED-23 paired.835)', async () => {
+    const { practice: target, at } = await interestPractice('LED-23', 'paired.835');
+    const page = ok(await call(reconciliationPage, target.manager, at));
+    expect(page.totals.interestCents).toBe('540');
+    expect(page.linkage.items).toHaveLength(2);
+    const remittanceId = page.linkage.items[0]?.interest[0]?.remittanceId;
+    for (const line of page.linkage.items) {
+      expect(line.interest).toEqual([expect.objectContaining({ kind: 'interest', source: 'plb', takesBack: false, trace: 'SYNEFTLED23002', standing: true, allocated: true })]);
+      expect(line.reportedInterest).toEqual([{ remittanceId, trace: 'SYNEFTLED23002', payerName: 'SYNTHETIC PAYER L', paidOn: '2026-06-08', amountCents: '540', takenBack: false }]);
+    }
+    expect(page.linkage.items.flatMap((line) => interestAmounts(line)).sort()).toEqual(['240', '300']);
+    const [line] = page.linkage.items;
+    const match = line?.interest[0] as MatchView;
+    expect(interestWords(match)).toBe(': interest paid in this check (PLB L6)');
+    expect(words(createElement(ReportedInterest, { rows: line?.reportedInterest ?? [] }))).toBe(
+      'Reported on the claim (AMT I), not counted' +
+        'Remittance SYNEFTLED23002, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).' +
+        'Interest is counted only as a check pays it or takes it back (PLB L6), in the Interest list above.',
+    );
+    // The reported rows are a list of their own, named as its label is, apart from the Interest list (WCAG 1.3.1).
+    expect(renderToStaticMarkup(createElement(ReportedInterest, { rows: line?.reportedInterest ?? [] }))).toContain('<ul aria-label="Reported on the claim (AMT I), not counted"');
+    // A paid entry a contract specialist adjusted down still reads as paid: the match's own interest entry is above zero.
+    const entry = line?.entries.find((item) => item.stage === 'interest');
+    ok(await call(adjustEntryAction, w.pricing.specialist, at, { entryId: entry?.id, amount: '-0.01', reason: 'SYNTHETIC specialist review of the interest', confirm: 'on' }));
+    const after = ok(await call(reconciliationPage, target.manager, at));
+    expect(after.totals.interestCents).toBe('539');
+    expect(after.linkage.items.find((item) => item.serviceLineId === line?.serviceLineId)?.interest).toEqual([expect.objectContaining({ id: match.id, takesBack: false })]);
+  });
+
+  it('shows interest a PLB L6 took back as taken back in its check, the claims’ reported take-back beside it, and never lets a line’s interest below zero (LED-24 taken-back.835)', async () => {
+    const { practice: target, at } = await interestPractice('LED-24', 'paired.835', 'taken-back.835');
+    const page = ok(await call(reconciliationPage, target.manager, at));
+    expect(page.totals.interestCents).toBe('0');
+    for (const line of page.linkage.items) {
+      // In the order the ledger made them (ledger_match.seq): paid, then taken back.
+      expect(line.interest).toEqual([
+        expect.objectContaining({ trace: 'SYNEFTLED24002', source: 'plb', takesBack: false }),
+        expect.objectContaining({ trace: 'SYNEFTLED24005', source: 'plb', takesBack: true }),
+      ]);
+      expect(line.reportedInterest).toEqual([
+        expect.objectContaining({ trace: 'SYNEFTLED24002', paidOn: '2026-06-08', amountCents: '540', takenBack: false }),
+        expect.objectContaining({ trace: 'SYNEFTLED24005', paidOn: '2026-08-03', amountCents: '540', takenBack: true }),
+      ]);
+    }
+    expect(page.linkage.items.flatMap((line) => interestAmounts(line)).sort()).toEqual(['-240', '-300', '240', '300']);
+    const [line] = page.linkage.items;
+    expect(interestWords(line?.interest[1] as MatchView)).toBe(': interest taken back in this check (PLB L6)');
+    expect(words(createElement(ReportedInterest, { rows: line?.reportedInterest ?? [] }))).toBe(
+      'Reported on the claim (AMT I), not counted' +
+        'Remittance SYNEFTLED24002, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).' +
+        'Remittance SYNEFTLED24005, SYNTHETIC PAYER L, paid 2026-08-03: the claim reports $5.40 of interest taken back (AMT I).' +
+        'Interest is counted only as a check pays it or takes it back (PLB L6), in the Interest list above.',
+    );
+    // The line holds no interest now: lowering its paid entry would take it below zero, refused on the amount field.
+    const paid = line?.entries.find((item) => item.stage === 'interest' && BigInt(item.amountCents) > 0n);
+    expect(paid?.adjustable).toBe(true);
+    expect(await call(adjustEntryAction, w.pricing.specialist, at, { entryId: paid?.id, amount: '-0.01', reason: 'SYNTHETIC specialist review of the interest', confirm: 'on' })).toMatchObject({
+      status: 'invalid',
+      issues: [{ field: 'amount', message: 'a line\'s interest, net of what the payer took back, never goes below zero' }],
+    });
+  });
+
+  it('nets a chain’s reversal and correction in one remittance, so a restatement adds no reported row and the claim’s 5.40 shows once (LED-23 net-zero.835)', async () => {
+    const { practice: target, at } = await interestPractice('LED-23', 'paired.835', 'net-zero.835');
+    const page = ok(await call(reconciliationPage, target.manager, at));
+    expect(page.totals.interestCents).toBe('540');
+    for (const line of page.linkage.items) {
+      expect(line.reportedInterest).toEqual([expect.objectContaining({ trace: 'SYNEFTLED23002', amountCents: '540', takenBack: false })]);
+      expect(line.interest).toHaveLength(1);
+    }
+  });
+
+  it('shows AMT I with no PLB L6 in its check as reported and counts it nowhere (LED-23 reported-only.835)', async () => {
+    const { practice: target, at } = await interestPractice('LED-23', 'reported-only.835');
+    const page = ok(await call(reconciliationPage, target.manager, at));
+    expect(page.totals.interestCents).toBe('0');
+    for (const line of page.linkage.items) {
+      expect(line.interest).toEqual([]);
+      expect(interestAmounts(line)).toEqual([]);
+      expect(line.reportedInterest).toEqual([expect.objectContaining({ trace: 'SYNEFTLED23006', amountCents: '540', takenBack: false })]);
+    }
+    // A viewer, who reads no PHI, reads the same reported amounts.
+    const reader = await createUser(w.owner);
+    await addMembership(w.owner, target.world.organizationId, reader, 'viewer');
+    expect(ok(await call(reconciliationPage, reader, at)).linkage.items[0]?.reportedInterest).toEqual([expect.objectContaining({ amountCents: '540' })]);
+  });
+
+  it('says the totals’ interest is net of what the payer took back, and the adjustment’s consequence keeps a line’s interest at or above zero (section 7)', () => {
+    const totals = { proofLevel: 'deposited', approvedCents: '0', payerApprovedCents: '0', postedCents: '0', depositedCents: '0', recoupedCents: '0', interestCents: '540', recoveredCents: '0' } as const;
+    expect(words(createElement(LedgerTotals, { totals, title: 'Totals', description: '' }))).toContain('Interest$5.40paid by the payer, net of any it took back, apart from principal');
+    expect(ADJUSTMENT_CONSEQUENCE).toBe(
+      'Adjusting writes a new entry in your name with your reason that changes this entry’s amount by what you enter; the entry itself never changes, and an adjustment is undone only by reversing its match. The ledger keeps it between zero and what the entry’s evidence shows (the row’s amount for a posting or a deposit, the entry’s own amount for an approval, a recoupment or interest), a line’s posted and deposited never above what was approved for it, and a line’s interest, net of what the payer took back, never below zero. The totals and the line’s stage follow the ledger.',
+    );
   });
 });
 

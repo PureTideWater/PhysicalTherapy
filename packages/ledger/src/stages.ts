@@ -41,7 +41,7 @@ export const STAGE_EVIDENCE: Readonly<Record<LedgerStage, readonly EvidenceKind[
   deposited: ['eft_row'],
   // A PLB WO, or the reversing (or lower corrected) claim.
   recouped: ['provider_adjustment', 'claim'],
-  // A PLB L6, or a claim's interest amount (AMT I).
+  // A PLB L6, paid or taken back; a claim (AMT I) only on entries written before docs/adr/0084.
   interest: ['provider_adjustment', 'claim'],
   // The user action on the entry it undoes or corrects.
   reversed: ['ledger_entry'],
@@ -55,7 +55,8 @@ export const STAGE_SIGN: Readonly<Record<LedgerStage, StageSign>> = {
   approved: 'positive',
   posted: 'positive',
   deposited: 'positive',
-  interest: 'positive',
+  // Interest a PLB L6 pays is positive, interest it takes back negative (docs/adr/0084).
+  interest: 'signed',
   recouped: 'negative',
   reversed: 'offsetting',
   adjusted: 'signed',
@@ -127,7 +128,7 @@ export function entryProblems(entry: LedgerEntry, target?: LedgerEntry): string[
     problems.push('a recouped entry is negative');
   }
   if (sign === 'signed' && amount === ZERO_CENTS) {
-    problems.push('an adjustment changes an amount');
+    problems.push(entry.stage === 'interest' ? 'an interest entry moves an amount' : 'an adjustment changes an amount');
   }
   if (entry.allocated && !ALLOCATABLE_STAGES.includes(entry.stage)) {
     problems.push(`a ${entry.stage} entry is never allocated`);

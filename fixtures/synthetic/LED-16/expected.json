@@ -894,10 +894,10 @@
     },
     {
       "path": "two-lines-adjusted.835",
-      "sha256": "7602ec01adf4368b8f01bda8420b0ed277728304ebf94db087402c6e0433d17c",
-      "bytes": 1434,
+      "sha256": "6084735735e32c3bf8a7a412d30279291b8f726a0d366cd5faf7f4478c2daafb",
+      "bytes": 1483,
       "kind": "x12",
-      "description": "Its adjusted remittance: the original reversed (paid -106.00) and the correction, 97110 allowed 100.00, PR-2 coinsurance 20.00, paid 80.00, and 97110-59 allowed 100.00, PR-3 copay 20.00, paid 80.00, with claim interest AMT I 5.40: BPR02 54.00.",
+      "description": "Its adjusted remittance: the original reversed (paid -106.00) and the correction, 97110 allowed 100.00, PR-2 coinsurance 20.00, paid 80.00, and 97110-59 allowed 100.00, PR-3 copay 20.00, paid 80.00, with claim interest AMT I 5.40 and PLB L6 -5.40 naming the correction (SYNCCNLED160004): BPR02 59.40.",
       "x12": {
         "oracle": {
           "valid": true,
@@ -930,12 +930,12 @@
                       {
                         "st01": "835",
                         "st02": "0001",
-                        "se01": "45",
+                        "se01": "46",
                         "se02": "0001",
-                        "segmentCount": 45,
+                        "segmentCount": 46,
                         "bpr": {
                           "handling": "C",
-                          "amountCents": "5400",
+                          "amountCents": "5940",
                           "creditDebit": "C",
                           "method": "ACH",
                           "format": "CCP",
@@ -1093,11 +1093,19 @@
                             }
                           }
                         ],
-                        "plb": [],
+                        "plb": [
+                          {
+                            "provider": "9949356270",
+                            "fiscalPeriodDate": "2026-12-31",
+                            "code": "L6",
+                            "reference": "SYNCCNLED160004",
+                            "amountCents": "-540"
+                          }
+                        ],
                         "balance": {
                           "claimsPaidCents": "5400",
-                          "plbTotalCents": "0",
-                          "paymentCents": "5400",
+                          "plbTotalCents": "-540",
+                          "paymentCents": "5940",
                           "differenceCents": "0",
                           "balanced": true,
                           "claimsBalanced": true
@@ -1128,7 +1136,7 @@
                 "payeeId": "9949356270",
                 "isa13": "060160004",
                 "trn02": "SYNEFTLED16004",
-                "bpr02Cents": "5400"
+                "bpr02Cents": "5940"
               },
               "bprMethod": "ACH",
               "bprHandling": "C",
@@ -1137,12 +1145,12 @@
               "payerIds": [["2U","SYNPAYERL"],["TRN03","1SYN00000L"]],
               "balance": {
                 "claimsPaidCents": "5400",
-                "plbTotalCents": "0",
-                "paymentCents": "5400",
+                "plbTotalCents": "-540",
+                "paymentCents": "5940",
                 "differenceCents": "0",
                 "balanced": true
               },
-              "counts": {"claims":2,"lines":4,"reversals":1,"plbItems":0},
+              "counts": {"claims":2,"lines":4,"reversals":1,"plbItems":1},
               "claims": [
                 {
                   "index": 0,
@@ -1325,7 +1333,18 @@
                   ]
                 }
               ],
-              "plb": [],
+              "plb": [
+                {
+                  "segmentIndex": 47,
+                  "providerId": "9949356270",
+                  "fiscalPeriodDate": "2026-12-31",
+                  "code": "L6",
+                  "reference": "SYNCCNLED160004",
+                  "amountCents": "-540",
+                  "category": "interest",
+                  "counted": true
+                }
+              ],
               "unknownCodes": []
             }
           ],
@@ -1334,7 +1353,7 @@
             "claims": 2,
             "lines": 4,
             "reversals": 1,
-            "plbTotalCents": "0",
+            "plbTotalCents": "-540",
             "held": [],
             "unknownCodes": [],
             "loaded": {"transactions":1,"claims":2,"lines":4}
@@ -1632,6 +1651,7 @@
         {"stage":"recouped","amountCents":"-600"}
       ],
       "interestAllocated": true,
+      "interestEvidence": "two-lines-adjusted.835 PLB L6",
       "note": "interest split and the withholding taken in line order by what the payer pays on each line; by allowed they would be 2.70 and 2.70, and 30.00 and 0"
     }
   },

@@ -14,8 +14,8 @@ import { printRoiStatement } from '@tp/worker/runtime';
  * line yet; a posting export with one row posting the whole of the world's first remittance
  * (SYNEFTROUTE0001, 88.00), unmatched, and one posting the adjusted remittance, matched by the billing
  * manager (a match a person may reverse); a bank export with one row depositing the first remittance,
- * unmatched; 0.50 of interest a claim of the adjusted remittance paid, recorded against the case line by
- * the reconcile job (an entry a person may adjust, which moves no stage); and an ROI statement of 2026 the billing manager generated, printed by the statement job's
+ * unmatched; 0.50 of interest a claim of the adjusted remittance reports and its PLB L6 pays, recorded against
+ * the case line, which has a claim match to that claim, by the reconcile job (an entry a person may adjust, which moves no stage); and an ROI statement of 2026 the billing manager generated, printed by the statement job's
  * code with a stand-in printer.
  */
 
@@ -91,7 +91,7 @@ export async function seedLedger(options: LedgerWorldOptions): Promise<SeededLed
          VALUES ($1, $2, 1, 'HC', '97110', '{GP}', 8000, 1200, 1, '2026-03-16', 3200, 'paid_plus_pr', 2000, $3)`,
         [practiceId, adjustedClaimId, options.planId],
       );
-      // A claim of the same remittance on which the payer paid 0.50 of interest (AMT I), which the reconcile job records against the case line below.
+      // A claim of the same remittance reporting 0.50 of interest (AMT I), which the remittance's PLB L6 pays and the reconcile job credits to the case line below (docs/adr/0084).
       const interestClaimId = await one(
         `INSERT INTO claim (practice_id, remittance_id, claim_no, patient_control_number, payer_claim_control_number, payer_claim_control_number_hash, claim_status_code,
            charge_cents, paid_cents, patient_resp_cents, filing_indicator, frequency_code, patient_ref_id, service_from, service_to, interest_cents)
@@ -105,9 +105,15 @@ export async function seedLedger(options: LedgerWorldOptions): Promise<SeededLed
           patientRefId,
         ],
       );
+      // The PLB L6 that pays that interest, naming its claim (negative: it pays the provider; docs/adr/0021).
+      const interestAdjustmentId = await one(
+        `INSERT INTO provider_adjustment (practice_id, remittance_id, position, provider_id, reason_code, reference, amount_cents, fiscal_period_date, category)
+         VALUES ($1, $2, 1, 'SYNTHETIC', 'L6', 'SYNCCNROUTE0003', -50, '2026-12-31', 'interest') RETURNING id`,
+        [practiceId, adjustedRemittanceId],
+      );
       const postings = await document('posting_export', 'text/csv', 'stored');
       const deposits = await document('eft_export', 'text/csv', 'stored');
-      return { adjustedRemittanceId, adjustedClaimId, interestClaimId, postings, deposits };
+      return { adjustedRemittanceId, adjustedClaimId, interestClaimId, interestAdjustmentId, postings, deposits };
     },
     options.uploaderId,
   );
@@ -130,17 +136,23 @@ export async function seedLedger(options: LedgerWorldOptions): Promise<SeededLed
         [practiceId, seeded.deposits, hex()],
       );
       await owner.query("UPDATE source_document SET status = 'loaded' WHERE id = ANY ($1::uuid[])", [[seeded.postings, seeded.deposits]]);
-      // The claim's interest against the case line, an entry a person may adjust (in no one's name, as the job writes; interest moves no stage).
+      // The claim's interest against the case line, an entry a person may adjust (in no one's name, as the job writes; interest moves no stage):
+      // the case line's claim match to the interest claim (no change), then the PLB L6's interest match carrying both records and its entry
+      // (docs/adr/0084: interest reaches a line only through a claim the line has a standing match to).
       const caseId = (await owner.query<{ case_id: string }>('SELECT case_id FROM case_line WHERE service_line_id = $1', [options.caseServiceLineId])).rows[0]?.case_id;
-      const interestMatchId = await one("INSERT INTO ledger_match (practice_id, kind, claim_id, remittance_id, service_line_id) VALUES ($1, 'interest', $2, $3, $4) RETURNING id", [
+      await one("INSERT INTO ledger_match (practice_id, kind, claim_id, remittance_id, service_line_id, outcome) VALUES ($1, 'claim', $2, $3, $4, 'no_change') RETURNING id", [
         practiceId,
         seeded.interestClaimId,
         seeded.adjustedRemittanceId,
         options.caseServiceLineId,
       ]);
+      const interestMatchId = await one(
+        "INSERT INTO ledger_match (practice_id, kind, claim_id, provider_adjustment_id, remittance_id, service_line_id) VALUES ($1, 'interest', $2, $3, $4, $5) RETURNING id",
+        [practiceId, seeded.interestClaimId, seeded.interestAdjustmentId, seeded.adjustedRemittanceId, options.caseServiceLineId],
+      );
       const adjustableEntryId = await one(
-        "INSERT INTO ledger_entry (practice_id, case_id, service_line_id, stage, amount_cents, evidence_kind, evidence_id, match_id, effective_on) VALUES ($1, $2, $3, 'interest', 50, 'claim', $4, $5, '2026-06-08') RETURNING id",
-        [practiceId, caseId, options.caseServiceLineId, seeded.interestClaimId, interestMatchId],
+        "INSERT INTO ledger_entry (practice_id, case_id, service_line_id, stage, amount_cents, evidence_kind, evidence_id, match_id, effective_on) VALUES ($1, $2, $3, 'interest', 50, 'provider_adjustment', $4, $5, '2026-06-08') RETURNING id",
+        [practiceId, caseId, options.caseServiceLineId, seeded.interestAdjustmentId, interestMatchId],
       );
       return { postingRowId, reversiblePostingRowId, eftRowId, adjustableEntryId };
     },

@@ -115,6 +115,8 @@ export const ledgerMatch = pgTable(
       .generatedAlwaysAs(sql`coalesce(posting_row_id, eft_row_id, provider_adjustment_id, claim_id)`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** The order the ledger made its matches in; every reader orders by it (migration 20261110090000; docs/adr/0084). */
+    seq: bigint('seq', { mode: 'bigint' }).generatedAlwaysAsIdentity(),
   },
   (table) => [
     index('ledger_match_by_remittance').on(table.practiceId, table.remittanceId),
@@ -124,6 +126,7 @@ export const ledgerMatch = pgTable(
     uniqueIndex('ledger_match_standing')
       .on(table.kind, table.evidenceId, table.serviceLineId)
       .where(sql`reversed_at IS NULL`),
+    uniqueIndex('ledger_match_by_seq').on(table.practiceId, table.seq),
   ],
 );
 

@@ -4,9 +4,10 @@
  * hand, its reversal, an adjustment, the ledger settings and the posting template, an ROI statement on
  * demand) and the practice's totals (to date and over a period at once, recoveredPeriods), its approval
  * shortfalls, and the payer's corrections read in payment terms (billable to the patient, shown and never
- * counted; docs/adr/0067). Every write is in the person's own name, needs posting.reconcile (the proof
- * level, the practice administrator), and is audited; the reconcile job does the rest, and the
- * roi_statement job prints the statements.
+ * counted; docs/adr/0067), and the interest each line's chains report in AMT I, grouped by the reconcile's own
+ * chain walk (shown as reported, counted nowhere; docs/adr/0084). Every write is in the person's own name,
+ * needs posting.reconcile (the proof level, the practice administrator), and is audited; the reconcile job
+ * does the rest, and the roi_statement job prints the statements.
  */
 export { type Scope, practiceLedgerSettings, tryLockLedger } from './ledger';
 export { type ManualContext, ReconciliationError, type ReconciliationRefusal, adjustEntry, matchClaimByHand, matchDepositByHand, matchPostingByHand, reverseMatch } from './manual';
@@ -28,4 +29,5 @@ export {
   practiceRecoveredPeriods,
   recoveredPeriods,
 } from './statements';
+export { type ReportedInterest, chainRoots, reportedInterest } from './interest-chains';
 export { type CaseLineCandidate, type RemittanceCandidate, type UnmatchedAdjustedPayment, type UnmatchedDeposit, type UnmatchedItems, type UnmatchedPosting, unmatchedItems } from './unmatched';

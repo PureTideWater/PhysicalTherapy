@@ -311,6 +311,34 @@ trigger a large month's report would take the worker down with a heap out-of-mem
 forward with a fix instead. If the trigger itself had to be undone, a later migration restores the earlier body; the
 head table can stay, unused, since it is derived from `line_status`.
 
+## The ledger's lock for interest credited once (ADR 0084)
+
+**The migration's lock loop.** `20261110090000_ledger_interest_once.sql` takes `ledger_entry`'s and `ledger_match`'s
+ACCESS EXCLUSIVE locks together with `NOWAIT`, once a second, up to 300 tries, before it numbers `ledger_match`
+(`seq`), replaces `ledger_match_rules()`, relaxes two CHECKs and creates `ledger_entry_within_interest`. Unlike the
+stage lock loop above, which only stage writes and 835 loads refuse, any open transaction that has read either table
+refuses a try, a plain read included: a page that reads the ledger (Reconciliation, the ROI statement), a reconcile, a
+statement being built, and a person's ledger action. A refused try holds and queues nothing, so all of them go on.
+Once it holds both locks, those reads and writes wait for the rest of the migration (rewriting `ledger_match` for `seq`
+and validating the two CHECKs: well under a second at launch size, longer as `ledger_match` grows), then proceed. A
+page that reads at one snapshot (REPEATABLE READ: Reconciliation among them) whose snapshot began before the migration
+committed (before the locks were taken or while they were held) then reads `ledger_match` as empty once, since the
+rewrite gives every row the migration's transaction, and shows the ledger's entries with no matches; it writes nothing,
+and a reload reads it whole. If no try finds both tables free in
+five minutes, the deploy fails: cdk reports "the migration task … stopped without migrating (exit code 1, …)", and the
+migration's log group `/tp/<env>/migration` ends with
+
+> db:migrate: 20261110090000_ledger_interest_once.sql failed: ledger_entry or ledger_match stayed in use for five minutes; run the deploy again (docs/adr/0084)
+
+(`lock_not_available`, 55P03). This migration runs in one transaction, so it changed nothing (a migration before it in
+the same deploy stays applied: each commits on its own), and no service moved (step 4). It means no try in the five
+minutes found both tables free: steady page traffic on Reconciliation or the ROI statement, or a reconcile: one
+reconcile running holds both tables from its first read to its commit, and one practice's pass at 2,000 lines took
+603.0 s at the deployed worker's size (CAS-42.5; 333.2 s for 2,084 lines, ADR 0083), past the five minutes by itself.
+Run the deploy again at a quieter hour, outside the practices' working hours, with no reconcile queued or running (the
+daily monitoring schedule queues every practice's reconcile at 05:10 UTC); never take the locks by hand, and never end
+another session's transaction or cancel a reconcile to make room.
+
 ## Rollback
 
 Redeploy the previous image, without migrating:
