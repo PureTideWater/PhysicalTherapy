@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- case_line_rules()
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 8390200e0d5563a1
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 861c192aedb9fbc4
 -- Trigger function of: case_line.case_line_rules
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.case_line_rules()
@@ -34,6 +34,8 @@ BEGIN
       END IF;
     ELSIF NEW.written_off_by IS DISTINCT FROM app_actor_id() OR NOT coalesce(app_actor_permitted(NEW.practice_id, 'case.work'), false) THEN
       RAISE EXCEPTION 'a line is written off by a person who works cases, in their own name' USING ERRCODE = 'insufficient_privilege';
+    ELSIF NEW.written_off_reason = 'window_passed' AND (window_end IS NULL OR window_end >= (now() AT TIME ZONE 'UTC')::date) THEN
+      RAISE EXCEPTION 'a person writes a line off as window passed only once its window has ended' USING ERRCODE = 'check_violation';
     END IF;
     IF (NEW.reopen_reason, NEW.reopened_by, NEW.reopened_at) IS DISTINCT FROM (OLD.reopen_reason, OLD.reopened_by, OLD.reopened_at) THEN
       RAISE EXCEPTION 'a write-off changes nothing of the line''s last reopen' USING ERRCODE = 'check_violation';

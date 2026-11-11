@@ -336,7 +336,8 @@ const DERIVED_VALUES: Readonly<Record<string, (context: DeriveContext) => Promis
   'submission.case_id': async (context) => (await exportedVersion(context)).case_id,
   'submission.export_sha256': async (context) => (await exportedVersion(context)).export_sha256,
   'submission.export_csv_sha256': async (context) => (await exportedVersion(context)).export_csv_sha256,
-  'payer_response.document_id': async (context) => (await context.create('source_document')).id,
+  // The letter a response names is a clean, stored, top-level payer letter (payer_response_belongs(), migration 20261114090000).
+  'payer_response.document_id': (context) => storedExport(context.client, context.world, 'payer_letter'),
   'eval_example.permission_ref': (context) => dataRightsAgreement(context.client, context.world),
   // A proposal of contract terms names the version it was made for and the document it read.
   'model_proposal.contract_version_id': async (context) => (await context.create('contract_version')).id,
@@ -442,15 +443,15 @@ const CHAINED_ROWS: Readonly<Record<string, (chain: Chain) => Promise<Row>>> = {
 };
 
 /** A posting or EFT export of the world as intake leaves one: uploaded by its administrator, scanned clean and stored. */
-async function storedExport(client: OwnerClient, world: TenantWorld, kind: 'posting_export' | 'eft_export'): Promise<string> {
+async function storedExport(client: OwnerClient, world: TenantWorld, kind: 'posting_export' | 'eft_export' | 'payer_letter'): Promise<string> {
   const { rows } = await asOwner(
     client,
     [world.practiceId],
     () =>
       client.query(
         `INSERT INTO source_document (practice_id, kind, size_bytes, content_type, uploaded_by, sha256, scan_status, scan_at, status)
-         VALUES ($1, $2, 100, 'text/csv', $3, $4, 'clean', now(), 'stored') RETURNING id`,
-        [world.practiceId, kind, world.adminUserId, randomUUID().replaceAll('-', '').padEnd(64, '0')],
+         VALUES ($1, $2, 100, $5, $3, $4, 'clean', now(), 'stored') RETURNING id`,
+        [world.practiceId, kind, world.adminUserId, randomUUID().replaceAll('-', '').padEnd(64, '0'), kind === 'payer_letter' ? 'application/pdf' : 'text/csv'],
       ),
     world.adminUserId,
   );

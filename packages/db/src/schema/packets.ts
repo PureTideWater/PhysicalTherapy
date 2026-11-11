@@ -198,7 +198,13 @@ export const payerResponse = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [index('payer_response_by_submission').on(table.practiceId, table.submissionId, table.receivedOn.desc())],
+  (table) => [
+    index('payer_response_by_submission').on(table.practiceId, table.submissionId, table.receivedOn.desc()),
+    // "Does a response name this document?" (migration 20261114090000).
+    index('payer_response_by_document')
+      .on(table.practiceId, table.documentId)
+      .where(sql`document_id IS NOT NULL`),
+  ],
 );
 
 /**
