@@ -852,7 +852,8 @@ interface Found extends Range {
   readonly fresh?: boolean;
   /**
    * A Social Security or phone pattern's match inside a run that holds one of the call's identifiers glued in a look-alike
-   * form: where a check follows, it is left as written so the check reads the run whole and refuses it (appliedMatches);
+   * form and that no match of the call's own covers whole: where a check follows, it is left as written so the check reads
+   * the run whole and refuses it (appliedMatches);
    * where none does (redactLetter, redactionSpans), it is applied, as ef3e8d20 applied it (the review of the fix round's
    * delta, D1's note).
    */
@@ -1106,10 +1107,16 @@ function matchesIn(normal: string, subject: Subject, marked: string = normal): F
     return confusedGluedIn(tokens, subject);
   });
   // Last, so a bare number's label window ends at every settled match (section 3.4); never inside a run that holds one of
-  // the call's identifiers glued in a look-alike form, which the check refuses whole.
+  // the call's identifiers glued in a look-alike form, which the check refuses whole. A run that a match of the call's own
+  // covers whole is not left to the check: that match's placeholder replaces it, so the pattern's match is applied as
+  // ef3e8d20 applied it (where one member ID ends another, "ZZ76543\uA6EF1" holds 7654321 glued and is ZZ7654321 whole: with
+  // the match that begins in its last digit withheld, "ID [MEMBER_ID]" was sent with the date after it as written, which
+  // ef3e8d20's redaction replaced).
   const settled = found.filter((match) => match.fresh !== true);
+  const own = [...found];
+  const leftToTheCheck = glued.filter((range) => !own.some((whole) => whole.start <= range.start && range.end <= whole.end));
   for (const match of patternMatchesIn(marked, settled, subject)) {
-    const inRun = (match.kind === 'ssn' || match.kind === 'phone') && glued.some((range) => match.start < range.end && range.start < match.end);
+    const inRun = (match.kind === 'ssn' || match.kind === 'phone') && leftToTheCheck.some((range) => match.start < range.end && range.start < match.end);
     found.push(inRun ? { ...match, withheld: true } : match);
   }
   return found;

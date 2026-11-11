@@ -1291,6 +1291,24 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     }
   });
 
+  // The review of the last delta, K: no blocking finding. What it recorded is pinned as it is sent today (ADR 0054, the
+  // amendment's residuals; K-1 is queued to be closed before any real PHI is processed). K-1: a label's reach is counted
+  // in characters and a CR LF counts two, so the Social Security label that owns the number 24 characters on is out of
+  // reach at 25: the letter is named by its noun and sent, as ef3e8d20 and cc3dd7f6 send it, where its writing with LF is
+  // refused.
+  it.each([
+    unchanged('SSN on file. Statement\r\nNo. 900-12-3456150.00'),
+    refused('SSN on file. Statement\nNo. 900-12-3456150.00'),
+    // The label out of reach with a noun between, recorded before this round.
+    unchanged('SSN on file.  Statement\nNo. 900-12-3456150.00'),
+    // The lesser forms review K recorded.
+    unchanged('Phone number is 900 77.3283150.00'),
+    unchanged('Phone # : 900 77.3283150.00'),
+    unchanged('900-12-345601Jan 2020.12.31'),
+  ])('K-1 and review K’s lesser forms, recorded: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
   // ef3e8d20's reading stands where the strict reading leaves a group out of its chains (the fuzzers on the round after E1
   // and E2, and the review of its delta, G1-1: letters ef3e8d20 refuses were sent). To ef3e8d20 a label's list number is
   // the chain's first group, and a long run before a decimal point an amount it chains under its label: the scan reads
@@ -1491,6 +1509,52 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
   it.each(['Washington, D.C. 20201-0001', 'Springfield, IL, 62701-1234', 'Tax ID #: 12-3456789', 'CPT code(s) 97110 97140', 'M54.50 97110', '97110 (2) 150.00'])('B2-8: a held letter places %j by its structure', (line) => {
     const letter = `Service 01/01/2020-150.00 Paid\n${line}`;
     expect(outcome(letter), JSON.stringify(letter)).toBe(letter);
+  });
+
+  // The withheld match (the battery on the last round, its fuzzer's seed 5923): a Social Security or phone pattern's match
+  // is left as written inside a run that holds one of the call's identifiers glued in a look-alike form, so the check
+  // reads the run whole and refuses it. Where one member ID ends another, the longer one written with a look-alike digit
+  // is such a run and is the longer one's own match whole: its placeholder replaces the run, nothing is left for the
+  // check, and what the pattern read past the run's end was sent as written ("ID [MEMBER_ID]\n01-02-2020", where ef3e8d20
+  // sends "ID ZZ76543\uA6EF[SSN]"). A match is left as written only where no match of the call's own covers the run whole.
+  const ENDS = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['ZZ7654321', '7654321']);
+  const ENDS_CLAIMS = claimsOf('SYNCLAIM0001', '4455667');
+  it.each([
+    sentAs('ID ZZ76543\uA6EF1\n01-02-2020', 'ID [MEMBER_ID]'),
+    sentAs('Member ID: ZZ76543\uA6EF1 \n01-02-2020', 'Member ID: [MEMBER_ID]'),
+    sentAs('Line 3. ID ZZ76543\uA6EF1\n01-02-2020 Zephyra', 'Line 3. ID [MEMBER_ID] [PATIENT_NAME]'),
+    // The neighbours that stay, the date sent as ef3e8d20 sends it: the ID as it is stored or with the look-alike as its
+    // last digit (no pattern begins inside the ID), and the look-alike with no number right after it.
+    sentAs('ID ZZ7654321\n01-02-2020', 'ID [MEMBER_ID]\n01-02-2020'),
+    sentAs('ID ZZ765432\u0661\n01-02-2020', 'ID [MEMBER_ID]\n01-02-2020'),
+    sentAs('ID ZZ76543\uA6EF1\nPaid 01/02/2020', 'ID [MEMBER_ID]\nPaid 01/02/2020'),
+    // A run that no match of the call's own covers whole stays as written, and the letter is refused for it.
+    refused('ID 9ZZ76543\uA6EF1\n01-02-2020'),
+    refused('ID ZZ76543\uA6EF1X\n01-02-2020'),
+    refused('ID ZZ76543\uA6EF12\n01-02-2020'),
+  ])('the withheld match, where one member ID ends another: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter, ENDS, ENDS_CLAIMS), JSON.stringify(letter)).toBe(sent);
+  });
+  it('the withheld match: with one member ID alone the same letter is sent the same way', () => {
+    expect(outcome('ID ZZ76543\uA6EF1\n01-02-2020', patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['ZZ7654321']), claimsOf('SYNCLAIM0001'))).toBe('ID [MEMBER_ID]');
+  });
+  // The same invariant as the property below, for the patient its generator does not draw: whatever the letter reader
+  // leaves as written that redactLetter replaces, the check refuses.
+  it('refuses every letter in which a match is left as written beside a member ID that ends another, written with look-alikes (property)', () => {
+    const id = fc.constantFrom('ZZ76543\uA6EF1', 'ZZ765\uA6EF321', 'ZZ7654\u09E921', '76543\uA6EF1');
+    const lead = fc.constantFrom('ID ', 'Member ID: ', 'Call ', '', HELD);
+    const gap = fc.constantFrom('\n', ' \n', ' ', '. ', '-', '');
+    const tail = fc.constantFrom('01-02-2020', '202-555-0123', '555 0123', '00-12-3456', '900 12 3456', '2025550123');
+    fc.assert(
+      fc.property(lead, id, gap, tail, fc.constantFrom('', ' Paid', '.', ' Zephyra'), (start, written, between, number, end) => {
+        const letter = `${start}${written}${between}${number}${end}`;
+        const screened = redactLetterForScreen(letter, ENDS, ENDS_CLAIMS).text;
+        if (screened !== redactLetter(letter, ENDS, ENDS_CLAIMS).text) {
+          expect(holdsIdentifier(screened, ENDS, ENDS_CLAIMS), JSON.stringify(letter)).toBe(true);
+        }
+      }),
+      { numRuns: 600 },
+    );
   });
 
   // The invariant behind B1-1 and C1-1: whatever redactLetterForScreen leaves as written that redactLetter replaces, the
