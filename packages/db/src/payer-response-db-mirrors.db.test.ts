@@ -11,7 +11,8 @@ import { type MigratedDatabase, RowFactory, type TenantWorld, addMembership, asO
  * only on a window that has ended (case_line_rules), the contract queue's documents_awaiting leaving out a response's
  * letter and a letter filed for a submission (console_contract_queue), and the upload-time link
  * source_document.filed_for_submission_id with its rules (source_document_rules). The payer_response trigger and
- * the response-letter rule of contract_version_documents_ok are document-use-rules.db.test.ts. Synthetic data only.
+ * the response-letter rule of contract_version_documents_ok are document-use-rules.db.test.ts. Test matrix: CAS-45
+ * (item 1), CAS-48 (item 2) and CAS-58 (item 5). Synthetic data only.
  */
 
 let database: MigratedDatabase;

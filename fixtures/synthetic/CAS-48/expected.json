@@ -8,7 +8,10 @@
   "assertedBy": [
     "apps/web/src/lib/routes/workbench-routes.db.test.ts",
     "apps/web/src/components/packets/response-letter.browser.test.tsx",
-    "apps/web/e2e/packets.spec.ts"
+    "apps/web/e2e/packets.spec.ts",
+    "packages/db/src/document-use-rules.db.test.ts",
+    "packages/db/src/payer-response-db-mirrors.db.test.ts",
+    "packages/db/src/payer-response-document-rules-migration.db.test.ts"
   ],
   "codeListRelease": null,
   "noFileReason": "Documents the test inserts in each intake state, and a response recorded with one: no file.",

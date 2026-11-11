@@ -249,8 +249,25 @@ lock, so no two of these triggers take the same locks in opposite orders.
 that both a response and a version name, in every practice, and stops if there is one: under rule 4 a version holding
 such a document could never be edited or amended again. `docs/runbooks/deploy-and-rollback.md` says what to do then.
 
-**Not taken.** The same window check on a case line's INSERT (it would tie triage's date to the database clock); a
-`search_path` on `source_document_rules()` (it has none today and is not SECURITY DEFINER; a change of its own); a
-different lock order in the web's handlers when a version names several documents (a deadlock there ends as "busy";
-recorded for the handlers' own pull request).
+**A search path for `source_document_rules()`.** The function had no `search_path` of its own, so the
+`source_document` it reads a zip's row from was whatever the session's path found first, a temporary table of that
+name included, and a zip's link read from there could name another practice's submission. It now has
+`SET search_path = pg_catalog, public, pg_temp`, as every later trigger function of this schema has, and stays
+SECURITY INVOKER. On a migrated database the application role can create no temporary table, so this is defence in
+depth, with a test that failed first.
 
+**Not closed: a filed letter whose bytes an earlier upload already holds.** A letter uploaded in the response form
+whose bytes equal an earlier upload that carries no link becomes a `duplicate`, and the earlier copy stays as it was:
+stored, unlinked, still in the contract lists and still able to be a version's source, until a response names it
+(rules 3 and 4 close it from then). Matching by hash ("a document is filed when any document of the practice with the
+same bytes is") was refused: rule 4 checks every document of a version every time, so one person who logs submissions,
+by uploading a copy of a contract's source letter in the response form, would make every version naming that letter
+impossible to edit or amend, for good, since the link never changes. Expected amounts trace to those versions. What
+the duplicate leaves is no worse than before: the earlier copy was already a payer letter in the contract lists. What
+the form says and does when its upload duplicates an unlinked copy belongs to the web half.
+
+**Not taken.** The same window check on a case line's INSERT (it would tie triage's date to the database clock); a
+different lock order in the web's handlers when a version names several documents (a deadlock there ends as "busy";
+recorded for the handlers' own pull request); a composite foreign key from the link to the submission's practice (no
+table of this schema has one: a plain key and the trigger's practice check are the pattern, and with the search path
+set the trigger's lookup is the practice's).

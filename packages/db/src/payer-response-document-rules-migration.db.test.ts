@@ -14,7 +14,7 @@ import { RowFactory, type ScratchDatabase, type TenantWorld, createScratchDataba
  * The payer-response document rules migration (20261114090000; docs/adr/0085, the amendment of 2026-11-11) on the head
  * before it, applied as the runner applies a file (one transaction, as tp_owner): what it changes of the schema's
  * functions and what it leaves, and its preflight, which stops the migration when a document is already both a payer
- * response's letter and a contract version's source. Synthetic data only.
+ * response's letter and a contract version's source. Test matrix: CAS-48. Synthetic data only.
  */
 
 const MIGRATION = '20261114090000_payer_response_document_rules.sql';

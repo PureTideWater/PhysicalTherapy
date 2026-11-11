@@ -12,7 +12,7 @@ import { type MigratedDatabase, type OwnerClient, RowFactory, type TenantWorld, 
  * items 3 and 4 and the races; docs/adr/0085): payer_response_belongs() refuses a response whose document is not a
  * clean, stored, top-level payer letter or other document of its practice that no contract version names, and
  * contract_version_documents_ok() refuses a version whose document a payer response names. Both run at READ COMMITTED
- * only and take the document's advisory lock (`document_use:<id>`). Synthetic data only.
+ * only and take the document's advisory lock (`document_use:<id>`). Test matrix: CAS-48. Synthetic data only.
  */
 
 const LETTER_REFUSED = "a payer response's document is a clean, stored payer letter or other document of its practice that no contract version names";

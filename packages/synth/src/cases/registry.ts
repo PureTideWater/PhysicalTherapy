@@ -343,6 +343,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/cases/write-off.test.ts',
     'apps/web/src/lib/routes/workbench-routes.db.test.ts',
     'apps/web/e2e/triage.spec.ts',
+    'packages/db/src/payer-response-db-mirrors.db.test.ts',
   ]),
   'CAS-46': none(8, 'A response and a submission logged on a synthetic practice the test creates: no file.', ['apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'CAS-47': none(8, 'A SYNTHETIC payer letter the test builds as a PDF and uploads in the browser: no file.', [
@@ -353,6 +354,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/workbench-routes.db.test.ts',
     'apps/web/src/components/packets/response-letter.browser.test.tsx',
     'apps/web/e2e/packets.spec.ts',
+    'packages/db/src/document-use-rules.db.test.ts',
+    'packages/db/src/payer-response-db-mirrors.db.test.ts',
+    'packages/db/src/payer-response-document-rules-migration.db.test.ts',
   ]),
   // Lane B (co-001/suite-cap-3-reconcile, SUITE-CAP-3; docs/adr/0087): a reconcile pass compared with the per-line pass, its reads bounded
   // per pass, and a pass at real size.
@@ -405,6 +409,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/action-form.browser.test.tsx',
     'apps/web/src/components/uploads/uploader.test.tsx',
   ]),
+  // Lane A (co-001/payer-response-db-rules; docs/adr/0085's amendment of 2026-11-11): the upload-time link, in Postgres.
+  'CAS-58': none(8, 'Documents and submissions the test inserts on synthetic practices it creates: no file.', ['packages/db/src/payer-response-db-mirrors.db.test.ts']),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },

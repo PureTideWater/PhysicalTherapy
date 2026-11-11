@@ -1,0 +1,17 @@
+{
+  "case": "CAS-58",
+  "module": "CAS",
+  "title": "The link that says a letter was uploaded for a submission",
+  "assertion": "In Postgres, `source_document.filed_for_submission_id` is written only when the document is inserted: a top-level document carrying it is a payer letter, uploaded in their own name by a person who logs submissions, for the latest submission of a case of its practice, and a job, a person without that permission, another person’s name, another kind, an earlier submission, a made-up submission and another practice’s submission are each refused with nothing written; a zip’s entry takes its zip’s link and one naming another is refused; the link never changes, by the application role (which holds no right to update it) or by the owner; a zip’s row is read from the practice’s documents even when a temporary table of that name comes first in the session; a letter carrying the link is not a document awaiting abstraction and no contract version names it; until the web writes the link it is empty everywhere and nothing a person sees changes",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": ["packages/db/src/payer-response-db-mirrors.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Documents and submissions the test inserts on synthetic practices it creates: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
