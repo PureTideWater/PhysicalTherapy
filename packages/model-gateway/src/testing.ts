@@ -239,7 +239,8 @@ export function memoryPracticeRecords(
               audited.push(...pending);
             }
             pending = [];
-            return result([]);
+            // Answered with its tag, as PostgreSQL answers it: the scope reads COMMIT's answer.
+            return Promise.resolve({ ...NO_RESULT, command: text } as never);
           }
           if (text.startsWith("SELECT set_config('app.actor_id'")) {
             actor = String(values[0]);
