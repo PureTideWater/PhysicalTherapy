@@ -3,10 +3,10 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDAwBuwwvswwPuj4A
 # Queues item 25 (a): the web's transaction scope (W12)
 
 ## RESUME-BLOCK
-- Branch `co-001/web-transaction-scope` from 3bff4fd6; WIP ref `co-001/wip-web-transaction-scope` at 866f4891 (pushed): built, round 1 of both reviews in and fixed.
-- Design: `designs/web-transaction-scope.md`. No migration. ADR 0092 carries a second amendment (no new number).
-- Running at 14:15 UTC: the delta review of `766467cd..866f4891`.
-- Next step: verify the delta review's findings; the full local suite once (to a file); merge the base; draft PR from the template; subscribe; merge on green.
+- Branch `co-001/web-transaction-scope` from 3bff4fd6 (the base is an ancestor); WIP ref `co-001/wip-web-transaction-scope` at 13c9aca2 (pushed).
+- Reviews: round 1 (two) and the delta review done and fixed (see Reviews). No migration.
+- Full local suite on 7d5a9993: typecheck, lint, lint:copy, lint:logs, check:fixtures, verify-content, golden (381) and e2e (87) passed; unit failed in 7 files and the cross-tenant test in 262 cases, all from this change (stand-ins that answered COMMIT with no tag; the cross-tenant helper relied on a refused statement's silent rollback; the watched list). Fixed in 13c9aca2; unit and database suites rerunning on it since 14:35 UTC (output in the session's scratchpad).
+- Next step: when both are green, push the branch, open the draft PR with the description drafted in the session (from the template), subscribe, merge on green required checks, report the merge.
 - No PR, no subscription, no check-in scheduled.
 
 ## For Lane A (needs a migration; not built here)
@@ -17,6 +17,7 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDAwBuwwvswwPuj4A
 - Words of their own for "nothing was saved" and "not confirmed" after a failed or unknown COMMIT (the UX queue).
 - The nine other hand-written COMMITs read their answer with the scope's exported check.
 - `modelPool` narrowed to the gateway's functions.
+- A start-up check that `lc_messages` is English (R4).
 
 ## Reviews (reports in `approval-summaries/web-transaction-scope-reviews/`)
 ### Round 1, on 766467cd (2026-11-11 13:50 to 14:00 UTC; every finding checked against the code by W12)
@@ -45,7 +46,14 @@ No blocker. Fixed in 866f4891 unless said otherwise.
   audit event, shell), the bound, the refusal mapping, the queue's door, held jobs' invisibility until the queue's
   commit, connection release on every throw path, the worker's jobs (a silent rollback now fails and retries).
 
+### Round 2, the delta `766467cd..866f4891` (2026-11-11 14:15 to 14:20 UTC; checked by W12)
+No blocker, no should-fix. R1 and R2 (notes), DONE in 7d5a9993: held sends are ordered by the singleton key, compared
+by code unit, with a same-type test. R3 (note), not done: the remembered refusals share the limiter's tested path.
+R4 (note), a FOLLOW-UP proposed: a start-up check that the database's `lc_messages` is English (another language
+makes a certain rollback at COMMIT read as unknown, the safe side).
+
 ## Log
 - 2026-11-11 12:55 UTC: started; machine ready after one setup rerun; design note written.
 - 2026-11-11 13:50 UTC: built (766467cd). Found in the build: a mutation's audit insert already tripped over a failed transaction (25P02); the false `ok` was reachable in reads of kind `handler` and in jobs. `signIn` also taken out of handlers' services.
 - 2026-11-11 14:15 UTC: round 1 reviews in, fixes at 866f4891; delta review running.
+- 2026-11-11 14:35 UTC: delta review in; full local suite ran on 7d5a9993 and found this change's own test fallout, fixed in 13c9aca2; unit and database suites rerunning.
