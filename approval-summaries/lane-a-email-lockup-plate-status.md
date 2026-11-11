@@ -155,8 +155,17 @@ GITLEAKS RULE: an agent that meets a gitleaks refusal rewrites the flagged text 
   the body); CI green on that head; the fresh-clone verification that reads CI; ready; approval-of-record's re-run; merge
   with method merge and expectedHeadSha. No follow-on item after it (orchestrator, 06:50Z).
 
+- 2026-11-11T03:06Z (W1, acting Lane B, session_019i9if9bThP3wWKpHBiU3m8): **#129 merged as ca504674** on claude/build-platform.
+  After #138 (MOD-16) merged as ef3e8d20: the base merged once into f4fef908 with no conflict (787bed17); typecheck, lint,
+  lint:logs, verify-content, `pnpm test` (13,137 passed, 4 skipped) and `pnpm synth --all` with no diff on it; pushed; CI
+  green on 787bed17, every job, `unit` included; the description's head line brought to 787bed17 (one line, read back byte
+  for byte; no `<img src=`); ready; the base an ancestor of the head, 0 tags; merged with expectedHeadSha. Not repeated:
+  the two adversarial merge checks and the fresh-clone verification the 2026-11-07 entry planned (a clean base merge of an
+  already reviewed head; the orchestrator's 2026-11-11 word was base merge, push, merge on green). The item is closed; W1
+  is unsubscribed.
+
 ## Waiting on someone
-- `co-001/redact-range-glued` to merge (the base's MOD-16 flake reds every unit run of #129).
+- None: #129 merged as ca504674 (2026-11-11).
 
 ## Next step
 The suite on f62265dc, the push and the description, CI, then the merge. Then the follow-on.
