@@ -870,7 +870,19 @@ above stays as it was decided; where it differs, this amendment holds.
     fail-safe refusals, each only for a patient whose name has a part that begins with the number's letters and whose
     rest is another part: a modifier after a code that follows ",", "/" or "CPT", a second modifier ("97110-59CO"), a
     four-digit revenue code ("0420CO"), "9:30:00am", "9,10am", an ordinal after "Jan." or a comma;
-  - F8 and F9, recorded with the round and changing nothing here;
+  - F8, recorded and unchanged: after a date a birth label introduces that is not the date of birth, digits set off only
+    by an invisible character are taken with it ("DOB: 01/02/1970<ZWSP>1234567893 NPI" loses the NPI's digits,
+    "DOB 01/02/1970<SHY>150.00" loses "150"), where cc3dd7f6 kept them: the fail-safe reading of a birth label, a form
+    only a contrived letter writes;
+  - F9, recorded and unchanged: the accepted fail-safe refusal of the date of birth glued digit to digit also fires on
+    numbers that are no date of birth ("97112 12 12 00 270.98" for a patient born 2012-12-12: 4 of 20,000 service-row
+    letters), a person handling the letter;
+  - PHI5-1's cost, recorded: a held letter is refused whenever any word in it holds two of the name's initials together
+    ("Service" for S E, "Paid" for I D or A I), so for a patient with such initials most held letters are refused, as
+    cc3dd7f6 refused every one of them; a patient whose initials stand together in no word of the letter (J Q Z) is
+    served. No boundary inside a run of letters of one case can be read, and reading only a change of case would send
+    "4thzq" and "BEST": the safer reading is kept, and co-001/redact-ssn-phone-leaks, which designs how the call's own
+    identifiers are matched, may narrow it with its own measurement;
   - F10, the residual table: its text named rounds 1 to 3, and 8 of its 60 fail-safe rows tagged must-stay were not
     sent unchanged by cc3dd7f6 (below).
   The property file's properties hold on the round's 4 failing seeds, the five MOD-16 seeds and 304 fresh global seeds,
