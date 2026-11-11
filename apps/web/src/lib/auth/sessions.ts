@@ -1,4 +1,4 @@
-import { type ActorScope, type MfaMethod, type ScopeClient, type ScopePool, recordAuditEvent, withActor } from '@tp/db/runtime';
+import { type ActorScope, type MfaMethod, type ScopeClient, type ScopePool, recordAuditEvent, withActor, withResolvedActor } from '@tp/db/runtime';
 
 import { deviceLabel, newToken, tokenHash } from './tokens';
 
@@ -7,7 +7,8 @@ import { deviceLabel, newToken, tokenHash } from './tokens';
  * from sign-in and ends after 30 minutes without a request; the database holds both limits
  * (user_session's check and resolve_session()), and every request resolves the session again, so
  * an ended session is refused on the very next request. Sign-in, sign-out, session ends and device
- * revocations are audit events (sign-out and revocation recorded by their routes); a sign-in from a
+ * revocations are audit events, each written in the transaction that ends the session (sign-out and
+ * revocation by their routes, a limit's end by resolveSession); a sign-in from a
  * new device, for a user who had devices before, is a security event for the weekly review (PRD 5,
  * J16), written by the database's trigger on user_device so no code path can skip it.
  */
@@ -152,28 +153,31 @@ interface ResolvedRow {
 /**
  * The session a cookie names, resolved by the database on every request: an active session is
  * touched (its idle clock restarts); one past a limit is ended there and then, and its end is an
- * audit event. No cookie, or one the database does not know, is no session.
+ * audit event. The end and its event are one transaction (Queues item 25 (d)): the database ends the
+ * session and the event is written in the session's user's name before the one commit, so a session
+ * never ends without its event, and no event is kept for an end that was not. A failure of either
+ * fails the request with the session as it was; the next request ends it again, with its event. No
+ * cookie, or one the database does not know, is no session.
  */
 export async function resolveSession(pool: ScopePool<ScopeClient>, sessionToken: string | undefined, requestId: string): Promise<SessionState> {
   if (sessionToken === undefined) {
     return { state: 'none' };
   }
-  const client = await pool.connect();
-  let row: ResolvedRow | undefined;
-  try {
-    row = (await client.query<ResolvedRow>('SELECT * FROM resolve_session($1)', [tokenHash(sessionToken)])).rows[0];
-  } finally {
-    client.release();
-  }
+  const row = await withResolvedActor(pool, async (client, actAs) => {
+    const resolved = (await client.query<ResolvedRow>('SELECT * FROM resolve_session($1)', [tokenHash(sessionToken)])).rows[0];
+    if (resolved?.ended_now === true) {
+      if (resolved.user_id === null || resolved.session_id === null || resolved.outcome === 'unknown' || resolved.outcome === 'active') {
+        // An end the database reports without its session, its user or its reason cannot be recorded: nothing commits.
+        throw new Error('the database ended a session without naming it');
+      }
+      await recordAuditEvent(await actAs(resolved.user_id), { action: 'session_ended', objectType: 'user_session', objectId: resolved.session_id, purpose: resolved.outcome, requestId });
+    }
+    return resolved;
+  });
   if (row === undefined || row.outcome === 'unknown' || row.user_id === null || row.session_id === null) {
     return { state: 'none' };
   }
   if (row.outcome !== 'active') {
-    if (row.ended_now) {
-      const sessionId = row.session_id;
-      const reason = row.outcome;
-      await withActor(pool, row.user_id, (scope) => recordAuditEvent(scope, { action: 'session_ended', objectType: 'user_session', objectId: sessionId, purpose: reason, requestId }));
-    }
     return { state: 'ended', reason: row.outcome };
   }
   return {

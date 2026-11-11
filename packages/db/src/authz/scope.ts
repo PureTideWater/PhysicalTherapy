@@ -314,6 +314,23 @@ export function accessByPractice(rows: readonly AccessRow[]): Map<string, Practi
 
 const SET_ACTOR = "SELECT set_config('app.actor_id', $1, true)";
 
+/** The actor's scope on a connection whose transaction is open: the actor set for that transaction only, no practice in scope. */
+async function actorScope<C extends ScopeClient>(client: C, actor: string): Promise<ActorScope<C>> {
+  await client.query(`${SET_ACTOR}, set_config('app.practice_ids', '{}', true)`, [actor]);
+  return {
+    kind: 'actor',
+    client,
+    actorId: actor,
+    actorKind: 'user',
+    practiceIds: [],
+    access: () => undefined,
+    allowedPracticeIds: async () => {
+      const { rows } = await client.query<{ ids: string[] }>('SELECT allowed_practice_ids() AS ids');
+      return rows[0]?.ids ?? [];
+    },
+  };
+}
+
 /** Identity resolution: the actor is set, no practice is in scope. `bound`: the transaction's lock waits, for a web request (LockWaitBound). */
 export function withActor<P extends ScopePool<ScopeClient>, T>(
   pool: P,
@@ -323,26 +340,36 @@ export function withActor<P extends ScopePool<ScopeClient>, T>(
 ): Promise<T> {
   const actor = requireUuid(actorId, 'actorId');
   const lockTimeout = lockTimeoutText(bound);
+  return transaction(pool, (client) => actorScope(client, actor), run, 'BEGIN', lockTimeout);
+}
+
+/**
+ * Identity resolution that begins before the actor is known: a session cookie's, whose user only the database can
+ * name. The work starts on the bare connection, with no actor and no practice set, and may then act as the user the
+ * database named, once, in the same transaction: `actAs` sets the actor (and an empty practice scope) for the rest of
+ * it and answers the actor's scope. So what the database did while naming the user (ending a session past its limit)
+ * and what is recorded in that user's name (the audit event of that end) commit together or not at all, through
+ * `committed` like every scope here (Queues item 25 (d)). No lock timeout: a session's paths are deliberately not
+ * under the web's (docs/adr/0092, the amendment of 2026-11-11).
+ */
+export function withResolvedActor<P extends ScopePool<ScopeClient>, T>(
+  pool: P,
+  run: (client: ClientOf<P> & ScopeClient, actAs: (actorId: string) => Promise<ActorScope<ClientOf<P>>>) => Promise<T>,
+): Promise<T> {
   return transaction(
     pool,
-    async (client): Promise<ActorScope<ClientOf<P>>> => {
-      await client.query(`${SET_ACTOR}, set_config('app.practice_ids', '{}', true)`, [actor]);
-      return {
-        kind: 'actor',
-        client,
-        actorId: actor,
-        actorKind: 'user',
-        practiceIds: [],
-        access: () => undefined,
-        allowedPracticeIds: async () => {
-          const { rows } = await client.query<{ ids: string[] }>('SELECT allowed_practice_ids() AS ids');
-          return rows[0]?.ids ?? [];
-        },
-      };
+    (client) => Promise.resolve(client),
+    (client) => {
+      let acting = false;
+      return run(client, async (actorId) => {
+        const actor = requireUuid(actorId, 'actorId');
+        if (acting) {
+          throw new ScopeError('a resolved transaction acts as one user, once');
+        }
+        acting = true;
+        return actorScope(client, actor);
+      });
     },
-    run,
-    'BEGIN',
-    lockTimeout,
   );
 }
 

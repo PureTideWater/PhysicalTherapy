@@ -19,6 +19,7 @@ import {
   withJobScope,
   withPracticeScope,
   withPublicSnapshot,
+  withResolvedActor,
 } from './scope';
 
 const ACTOR = '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60';
@@ -267,6 +268,54 @@ describe('withPublicSnapshot', () => {
     const lost = fakePool((text) => (text === 'ROLLBACK' ? new Error('connection lost') : undefined));
     await expect(withPublicSnapshot(lost.pool, () => Promise.reject(new Error('not found')))).rejects.toThrow('not found');
     expect(lost.released).toEqual([true]);
+  });
+});
+
+describe('withResolvedActor: one transaction that learns its actor from the database (Queues item 25 (d))', () => {
+  it('runs the first work with no actor set, then sets the actor and an empty practice scope, and commits once on one connection', async () => {
+    const { pool, calls, texts, released } = fakePool();
+    const result = await withResolvedActor(pool, async (client, actAs) => {
+      await client.query('SELECT 1 AS named');
+      const scope = await actAs(ACTOR);
+      expect(scope).toMatchObject({ kind: 'actor', actorId: ACTOR, actorKind: 'user', practiceIds: [], client });
+      expect(scope.access(PRACTICE_A)).toBeUndefined();
+      await scope.client.query('SELECT 2 AS recorded');
+      return 'done';
+    });
+    expect(result).toBe('done');
+    expect(texts()).toEqual(['BEGIN', 'SELECT 1 AS named', "SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', '{}', true)", 'SELECT 2 AS recorded', 'COMMIT']);
+    expect(calls[2]?.values).toEqual([ACTOR]);
+    expect(released).toEqual([false]);
+  });
+
+  it('sets no actor and no lock timeout when the work names none, and still commits', async () => {
+    const { pool, texts } = fakePool();
+    await withResolvedActor(pool, (client) => client.query('SELECT 1 AS named'));
+    expect(texts()).toEqual(['BEGIN', 'SELECT 1 AS named', 'COMMIT']);
+  });
+
+  it('acts as one user, once: a second actor, or one that is not a UUID, is refused and everything rolls back', async () => {
+    const twice = fakePool();
+    await expect(
+      withResolvedActor(twice.pool, async (_client, actAs) => {
+        await actAs(ACTOR);
+        await actAs(ACTOR);
+      }),
+    ).rejects.toThrow('a resolved transaction acts as one user, once');
+    expect(twice.texts().at(-1)).toBe('ROLLBACK');
+    expect(twice.texts().filter((text) => text.includes('app.actor_id'))).toHaveLength(1);
+    const malformed = fakePool();
+    await expect(withResolvedActor(malformed.pool, (_client, actAs) => actAs('not-a-uuid'))).rejects.toThrow(ScopeError);
+    expect(malformed.texts()).toEqual(['BEGIN', 'ROLLBACK']);
+  });
+
+  it('reports nothing as done when the work fails after the actor is set, or when the server answers the commit with ROLLBACK', async () => {
+    const failed = fakePool((text) => (text === 'SELECT 2 AS recorded' ? new Error('synthetic failure') : undefined));
+    await expect(withResolvedActor(failed.pool, async (client, actAs) => (await actAs(ACTOR)).client.query('SELECT 2 AS recorded'))).rejects.toThrow('synthetic failure');
+    expect(failed.texts().at(-1)).toBe('ROLLBACK');
+    expect(failed.texts()).not.toContain('COMMIT');
+    const rolledBack = fakePool((text) => (text === 'COMMIT' ? { command: 'ROLLBACK' } : undefined));
+    await expect(withResolvedActor(rolledBack.pool, async (_client, actAs) => void (await actAs(ACTOR)))).rejects.toBeInstanceOf(TransactionNotCommittedError);
   });
 });
 
