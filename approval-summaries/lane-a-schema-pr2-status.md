@@ -4,11 +4,18 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
 `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 2. Grant: `approval-summaries/founder-asks-2026-10-27.md`,
 "Decided 2026-11-06"; the granted text: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` at 38123394.
 
-## RESUME-BLOCK (current at 2026-11-11 12:40 UTC)
+## RESUME-BLOCK (current at 2026-11-11 13:00 UTC)
 - **State:** building on a WIP ref; **BLOCKED on one step**: the migration file is not in `packages/db/migrations`.
   This session's permission classifier refused the new-migration marker route (the one shell command that sets
   `.claude/.allow-protected-edit`, writes the file and removes the marker in a trap). Per `lanes/acting-lane-a-brief.md`:26
   the part is stopped, the orchestrator was told (11:31 UTC), and nothing routes around it. Everything else proceeds.
+- **13:00 UTC:** #142 merged (base **3bff4fd6**); the base is merged into the WIP ref (98965a74; both bodies still
+  f151e27e… and abbcba68…; nothing under `apps/worker`, `packages/ledger` or `packages/db/src/authz` moved). The
+  container restarted at 12:54 UTC: setup re-run (OK), the private cluster restarted, the checkout had been put back on
+  `claude/build-platform` (check `git status -sb` after any restart and `git checkout co-001/wip-ledger-function-bodies`).
+  **Running: the write-equality run of record** on 98965a74 (output `<scratch>/pr2-record`, queue.log there; draft
+  SHA-256 9f0d5530…, which the placed migration must equal: `sha256sum packages/db/migrations/20261113090000_ledger_lookups.sql`).
+  ADR 0093's status line does not ride in this PR (told to the orchestrator; it rides PR 3).
 - **WIP ref:** `co-001/wip-ledger-function-bodies` (cut from edab4d4d). PR branch, when it opens: `co-001/ledger-function-bodies`.
   It must not open before #142 merges (one schema PR at a time); then merge the base, place the migration, regenerate
   `domain-model.md` and `packages/db/functions`, re-run the dumps on that tree, open the draft PR.
