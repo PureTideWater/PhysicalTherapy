@@ -4,7 +4,7 @@
 # "cmp <seed minus _seed> <tag>".   env: S, TP_REPO, DRAFT
 set -uo pipefail
 export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:/opt/pg18/bin:$PATH
-P=$S/pr2-probe; OUT=$S/pr2-results; LOG=$OUT/queue.log; mkdir -p "$OUT/seeds"
+P=$S/pr2-probe; OUT=${OUT:-$S/pr2-results}; LOG=$OUT/queue.log; mkdir -p "$OUT/seeds"
 say() { echo "$(date -u +%FT%TZ) $*" >> "$LOG"; }
 say "queue start: tree $(git -C "$TP_REPO" rev-parse HEAD) draft sha256 $(sha256sum "$DRAFT" | cut -c1-16)"
 for step in "$@"; do

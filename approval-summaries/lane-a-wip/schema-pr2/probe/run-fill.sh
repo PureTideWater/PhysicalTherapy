@@ -6,7 +6,7 @@
 set -euo pipefail
 export PATH=/opt/node24/bin:/opt/pnpm-bin:/opt/py312-ci/bin:/opt/pg18/bin:$PATH
 seed=$1; state=$2; tag=$3; fill=$4
-P=$S/pr2-probe; OUT=$S/pr2-results; SEEDS=$OUT/seeds
+P=$S/pr2-probe; OUT=${OUT:-$S/pr2-results}; SEEDS=$OUT/seeds
 psqlc() { psql -h localhost -p 5494 -U postgres -v ON_ERROR_STOP=1 -qAt "$@"; }
 db="${seed%_seed}_${state}_fill${fill}_$tag"
 psqlc -d postgres -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" -c "CREATE DATABASE $db TEMPLATE $seed"

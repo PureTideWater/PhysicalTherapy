@@ -47,7 +47,7 @@ cat <<'SQL'
 
 -- Each replaced function's stored body (pg_proc.prosrc, the text between its dollar quotes) is compared whole, by
 -- SHA-256; packages/db/functions prints the first 16 digits of the same hash. The two values are those of a database
--- migrated to 20261111090000, where both bodies are still those of migration 20261027090000. A migration that comes
+-- migrated to 20261112090000, where both bodies are still those of migration 20261027090000. A migration that comes
 -- to sort before this one and changes either body makes this one refuse: the exception covers these two bodies in
 -- place of those two, so a different starting body needs the founder's ruling again, never a silent rebase.
 DO $$
