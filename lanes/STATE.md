@@ -1,6 +1,6 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-11 07:25 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-11 07:30 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
@@ -13,7 +13,7 @@ own status file and `CLAUDE.md`, not the long history files.
   - **W5** session_019i9ifC8ouxG6CLPdZtgAcJ (acting Lane B), from 2026-11-11 02:37 UTC, at the highest effort: item 3, the SSN and phone leaks PR.
   - **W6** session_019i9if9f2m3xyLBavfHUgui (Lane A): item 6 until its approval line is posted, then it stands down (its context is past 600k tokens). The merge step goes to W9.
   - **W7** session_019i9ifCb8Sa7jHnu6j4af8F (acting Lane B), from 2026-11-11 04:31 UTC, at the highest effort: item 8, the packets verifier identifier fold.
-  - **W8** session_019i9ifE7teUhX79iAZKaxt5 (Lane A): designed Queues item 28 (two design reviews, version 2), then stands down on 2026-11-11 07:15 UTC past 450k tokens. Its RESUME-BLOCK and `designs/lane-a-step-before-reset.md` are the handoff.
+  - **W8** session_019i9ifE7teUhX79iAZKaxt5: designed Queues item 28 (two design reviews, version 2), then stood down on 2026-11-11 07:25 UTC. It holds nothing; `approval-summaries/lane-a-step-before-reset-status.md` is the handoff.
   - **W9** session_019i9ifBKxrX229x23BggpZK (Lane A), from 2026-11-11 07:15 UTC, at the default effort: builds Queues item 28 from W8's design, takes item 6's merge step after the founder's commit, then opens item 28's PR.
 - **Lane A** (this account): the weekly allowance reset on 2026-11-10 at about 14:00 UTC; the next reset is Tue 2026-11-17 14:00 UTC. **Its weekly limit showed the warning level at about 00:30 UTC on 2026-11-11**, 11 hours into the week; sessions cannot see the percentage, only the co-founder can.
 - **Usage (the co-founder's reading, 2026-11-11 01:30 UTC):** 34% of the week on all models, 32% on the build's model. From the sessions' records, 1% is about 5 dollars of API-equivalent usage, so three builds use roughly 4 to 7% an hour and the limit would arrive between about 11:00 and 19:00 UTC on 2026-11-11 unless the co-founder resets it. Sessions cannot see the percentage. When the limit stops them the orchestrator stops too; the co-founder's next message after a reset restarts them from their RESUME-BLOCKs.
@@ -52,7 +52,7 @@ own status file and `CLAUDE.md`, not the long history files.
 | 6 | **password-changed-notice** (schema PR 1; ADR 0091, SGN-16): **draft #140** | Head 7da699b1; `approval-summaries/lane-a-auth-emails-status.md` (the merge step's RESUME-BLOCK) | A, W6 then **W9** | W6 posts the suggested line, then stands down. Three reset cases it cannot close are recorded as open residuals, closed by Queues item 28. **Founder's line next,** with that trade-off in the description; W9 merges after it. |
 | 7 | **Queues item 28 first** (a step begun before a password reset is refused, and a reset whose answer is lost is not reported as refused; ADR 0093, SGN-17, SGN-18; required before launch; **W9** builds it from W8's reviewed design, stacked on item 6), then the schema batching plan's PRs 2 to 10 | `LANES.md` Queues item 28; `designs/lane-a-step-before-reset.md`; `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` | A | One schema PR open at a time; the next one is always in build while the current one waits for the founder. |
 | 8 | Packets verifier identifier fold (MOD-19, MOD-20) | `lane-b-packets-verifier-identifier-fold-status.md` | B (acting), **W7** | Design in review. It moves `redact.ts` whole to `packages/redact` (`@tp/redact`); whichever of it and item 3 merges second takes the base merge (git follows the rename; new files beside it move by hand). Never at the same time as the verifier /3 migration. |
-| 9 | The queue: `LANES.md` Queues item 25, seven follow-ups from #137's reviews (first the web's transaction scope, which does not read COMMIT's answer); then Queues item 29 (an operator can remove a member's keys); then Queues item 27, four items #126's reviews left owed; then the Stryker static-mutant timeouts; the Dependabot replacement PR; P2 Trivy version; dark-mode-ship; the UX queue | `LANES.md` Queues; Lane B's handoff §2 | B | **Not assigned:** three builds run (W5, W6, W7). The next free build takes Queues item 25 (a). #136 and #137 (ADR 0092, CAS-56, CAS-57) are merged. |
+| 9 | The queue: `LANES.md` Queues item 25, seven follow-ups from #137's reviews (first the web's transaction scope, which does not read COMMIT's answer); then Queues item 29 (an operator can remove a member's keys); then Queues item 31 (four follow-ups from item 28's design reviews); then Queues item 27, four items #126's reviews left owed; then the Stryker static-mutant timeouts; the Dependabot replacement PR; P2 Trivy version; dark-mode-ship; the UX queue | `LANES.md` Queues; Lane B's handoff §2 | B | **Not assigned:** three builds run (W5, W6, W7). The next free build takes Queues item 25 (a). #136 and #137 (ADR 0092, CAS-56, CAS-57) are merged. |
 
 ## Founder items (bring each with the exact link or text)
 - **Granted 2026-11-07 19:26 UTC** (relayed as "Tyler approves"): the schema batching plan's PR 5 ledger freeze ask. Q1 to Q3 yes, exactly Appendices A and D, for schema PR 5 only (`approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md`).
@@ -62,7 +62,7 @@ own status file and `CLAUDE.md`, not the long history files.
   - F1 to F5 and ruling 16, before Cognito PR 2;
   - #125's smoke checks;
   - Gmail iOS and Outlook.com dark renders.
-- Launch: #42's actions 2 to 7, counsel's reading of the legal text, O9 (#41), runbook 3i, PRD section 19's RDS cost line. **Also before launch: `LANES.md` Queues item 28** (a sign-in step begun before a password reset is refused), and before any real PHI: item 3 and Queues item 26.
+- Launch: #42's actions 2 to 7, counsel's reading of the legal text, O9 (#41), runbook 3i, PRD section 19's RDS cost line. **Also before launch: `LANES.md` Queues item 28** (a sign-in step begun before a password reset is refused), and before any real PHI: item 3 and Queues item 26. Item 28's rule holds for an account only once the Cognito client is confidential (ADR 0088's second release, Cognito PR 2, which waits on F1 to F5 and ruling 16).
 
 ## Never
 - Sign or approve as the founder, or write the approval line or `approvers.json`.
