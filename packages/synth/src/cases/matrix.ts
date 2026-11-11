@@ -622,6 +622,20 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "One request, to the API's own host; no span is started; no `traceparent`, `tracestate` or `baggage` header and no header outside the gateway's set is sent; nothing is written to the console (but the SDK's own deprecation warning, for a model on its lists, which carries the model id and never request content); the request carries API version `2026-10-21` and the key as `Authorization: Bearer`, with no `X-Api-Key`; a client left at the SDK's default does trace and log, and lets `ANTHROPIC_CUSTOM_HEADERS` replace its key (the control)",
   },
   {
+    id: 'MOD-21',
+    title:
+      "A payer letter that writes a Social Security or phone number glued to another number (a currency amount's digits, four digits or more, an amount's cents or a date before its own shape; cents, a second number or a date after it; an amount's cents before a bare nine or ten), behind its label with the call's own identifier or the label's list number between them (on the next line too), masked and glued to a word, after a Social Security label glued to a word, or, in a letter whose digit chain only a range of two kinds holds, in a shape no pattern reads (amount-shaped, a five and four, a local number, beside the range)",
+    assertion:
+      'No digit of it is sent: it is `[SSN]` or `[PHONE]`, or the letter is refused with `identifier_left`. A match ef3e8d20 did not make is applied only where the letter is not refused without it, and whatever is left as written is refused by the check (a property over labels, identifiers, list numbers and joined numbers, an invisible character among the joiners); a twin in its own shape with an amount, a date or a second number glued to it is never sent with four of its digits in a row (a property). References a noun names or no structure marks (`Case No. 123-45-678901`, `Referral # 123-45-67890-01`, `2026-0115-123-4567`), a row of long numbers and dates, masked account numbers, a number in parentheses that is no list number and what a held letter places by its structure (ZIP+4 after a state, a TIN, a code list, a service-line row) are sent unchanged. Every row of ruling A in `redact.residuals.json` (697) is refused or redacted, row by row',
+  },
+  {
+    id: 'MOD-22',
+    title:
+      "A payer letter that writes the call's own name, member ID, claim number or date of birth with another script's look-alike letters or digits, with a digit for a letter or a letter for a digit (O/0, l/1, I/1, S/5, B/8, E/3), in pieces with a joiner between them, with a middle dot or a hyphenation point inside the name, glued inside a longer run of letters and digits, as a name part that is a month's word in a month-and-year phrase, or, in a held letter, the date of birth with a Roman month, the CJK date characters, its year in words, its month's word and day with no year, or run together as four to six digits at the start or end of a run",
+    assertion:
+      "Each is the call's own placeholder, or the letter is refused. What ef3e8d20's reading refused stays refused whatever the look-alike reading finds beside the name (a number character glued to it, a look-alike digit after it in a held letter); a look-alike match is no item of a list and ends no label's window, so a number ef3e8d20 redacted after it stays redacted. An ordinary token is no form of a name of four letters or of a word and a number (`11am`, `CO13`, `JAN31`, `Week-5`), a short word of another script is no Latin name, a name stored in its own script is read as before, and the verb \"may\" after a number is no date of birth. The look-alike table's count and hash are pinned. Every row of rulings A' (406) and B (5) in `redact.residuals.json` is redacted or refused; the two name forms MOD-23 owns (a lower-case piece after a space or a period, letters spaced one by one) are pinned as they are sent today",
+  },
+  {
     id: 'BIL-01',
     title: "Stripe's payment form opens on the bank account",
     assertion:
