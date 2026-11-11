@@ -181,11 +181,28 @@ describe('a COMMIT that fails is reported as not saved', () => {
     expect(lines.filter((line) => line.error_code === 'COMMIT_NOT_APPLIED').map((line) => [line.level, line.request_id])).toEqual([['error', requestId]]);
   });
 
+  /**
+   * Whether a statement on one connection is the COMMIT of the request's own transaction: the session's resolving
+   * transaction commits first on the same pool (auth/sessions.ts, Queues item 25 (d)), and these faults are the
+   * request's, so the transaction that resolved the session commits as it is.
+   */
+  function requestsOwnCommit(): (text: string) => boolean {
+    let resolving = false;
+    return (text) => {
+      if (text.startsWith('BEGIN')) {
+        resolving = false;
+      }
+      resolving ||= text.includes('resolve_session');
+      return text === 'COMMIT' && !resolving;
+    };
+  }
+
   it('keeps the refusal a known code has when the server refuses the COMMIT itself', async () => {
     const refusing: Services['pool'] = {
       connect: async () => {
         const client = await app.connect();
-        const query = (text: string, values?: unknown[]) => (text === 'COMMIT' ? client.query('ROLLBACK').then(() => Promise.reject(Object.assign(new Error('SYNTHETIC lock words'), { code: '55P03', severity: 'ERROR' }))) : client.query(text, values));
+        const mine = requestsOwnCommit();
+        const query = (text: string, values?: unknown[]) => (mine(text) ? client.query('ROLLBACK').then(() => Promise.reject(Object.assign(new Error('SYNTHETIC lock words'), { code: '55P03', severity: 'ERROR' }))) : client.query(text, values));
         return { query: query as ScopeClient['query'], release: (destroy?: boolean | Error) => client.release(destroy) };
       },
     };
@@ -202,7 +219,8 @@ describe('a COMMIT that fails is reported as not saved', () => {
       connect: async () => {
         const client = await app.connect();
         // The commit is made, and its answer is lost on the way back.
-        const query = (text: string, values?: unknown[]) => (text === 'COMMIT' ? client.query('COMMIT').then(() => Promise.reject(Object.assign(new Error('SYNTHETIC socket words'), { code: 'ECONNRESET' }))) : client.query(text, values));
+        const mine = requestsOwnCommit();
+        const query = (text: string, values?: unknown[]) => (mine(text) ? client.query('COMMIT').then(() => Promise.reject(Object.assign(new Error('SYNTHETIC socket words'), { code: 'ECONNRESET' }))) : client.query(text, values));
         return { query: query as ScopeClient['query'], release: (destroy?: boolean | Error) => client.release(destroy) };
       },
     };
