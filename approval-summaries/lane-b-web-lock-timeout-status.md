@@ -6,28 +6,28 @@ orchestrator session_019i9ifDAzQNA3kLHozjBoeS; built by W3, session_019i9ifE6JAC
 Reserved: test-matrix CAS-57; a dated amendment to ADR 0092.
 
 ## Now
-**2026-11-11 02:50 UTC: THE NARROWED MECHANISM IS BUILT; ROUND 3 RUNNING (W4).** The WIP ref
-`co-001/wip-web-lock-timeout` = 74d6db9a (four commits on 59eb9e9d; the PR branch on origin is still 59eb9e9d) holds
-it: the timeout is `SET LOCAL lock_timeout` as each route's transaction starts (`invoke.ts`, `gates`;
-`server/lock-timeout.ts`), plus the queue producer's pool; `packages/db` and `services.ts` are unchanged from the
-base. Checked on 74d6db9a: typecheck, lint, lint:copy, lint:logs, check:fixtures, synth --all, the watched list; unit
-and browser suites around every touched file; db `reconciliation-routes.db.test.ts` (19) and
-`lock-timeout.db.test.ts` (2); each guard seen to fail without its code. Three tightly scoped reviews of the rework
-were launched at 02:45 UTC.
+**2026-11-11 03:25 UTC: ROUND 3 FIXED, BASE MERGED, THE FULL LOCAL SUITE RUNNING (W4).** The WIP ref
+`co-001/wip-web-lock-timeout` = 22eb6c18: round 3's fixes (f7853552) and the base ca504674 (#138, #129) merged, no
+conflict. The PR branch on origin is still 59eb9e9d. Two last reviews (security, database) of the small delta
+`74d6db9a..f7853552` were launched at 03:15 UTC; the full local suite started at 03:22 UTC on 22eb6c18
+(`scratchpad/suite/run.sh`: fast checks, unit, golden, oracle, db in four shards, build, stamp, e2e).
 
 ### RESUME-BLOCK (a fresh session builds from this; nothing else is needed)
 - **Where it is:** branch `co-001/web-lock-timeout` = 59eb9e9d on origin (one commit on the base 06cde5eb), draft PR
   #137 with its description filled from the template (the review table says Pending). Review round 1 is DONE (three
-  reviews of 59eb9e9d, "Reviews" below: do not run them again), and so is round 2 (the delta of the first fix
-  round). The design changed after round 2 (see "Now" and "Reviews, round 2"): the WIP ref
-  `co-001/wip-web-lock-timeout` = 74d6db9a holds the narrowed mechanism (`git fetch origin
-  co-001/wip-web-lock-timeout && git merge --ff-only FETCH_HEAD` in the worktree). Round 3 (security, database and
-  ux-brand, on `06cde5eb..74d6db9a`, the files each brief names) counts only once its findings are under "Reviews,
-  round 3" below; if that heading is missing, run it again, each with a budget of about 14 tool calls and its report
-  asked for by name. Then: verify and fix what it finds (no further review for words alone), the full local suite
-  once, the base merged right before the last push (06cde5eb is still the base's head at 02:45 UTC), the
-  description rewritten (the mechanism, the review table, the checks), push to `co-001/web-lock-timeout`, CI, the
-  up-to-date check, merge with a merge commit, record, tell the orchestrator.
+  reviews of 59eb9e9d, "Reviews" below: do not run them again), and so are rounds 2 and 3. The WIP ref
+  `co-001/wip-web-lock-timeout` = 22eb6c18 holds everything, with the base ca504674 merged (`git fetch origin
+  co-001/wip-web-lock-timeout && git merge --ff-only FETCH_HEAD` in the worktree). What it is now: the routes'
+  wrapper opens every signed-in request's transaction with a bound on its lock waits (`invoke.ts`, `BOUNDED`), which
+  the scope sets right after BEGIN (`packages/db/src/authz/scope.ts`, `LockWaitBound`); the queue producer's pool
+  carries the same timeout; nothing else is bounded. Left to do: (1) the two last reviews of `74d6db9a..f7853552`
+  (security, database; about 9 tool calls each) count once their findings are under "Reviews, round 4"; if that
+  heading is missing, run them again; (2) the full local suite once (HANDOFF's list; a late small fix re-runs only
+  what it touches); (3) if the base moved past ca504674, merge it again and re-run the fast checks and generators;
+  (4) rewrite the description (the mechanism changed twice: say what it is now, the review table, the checks) with
+  the MCP `update_pull_request` and read it back; (5) push to `co-001/web-lock-timeout`, subscribe, wait for CI;
+  (6) the up-to-date check, merge with a merge commit, record here and in LANES.md, unsubscribe, tell the
+  orchestrator in one line (with: the machine was ready at start).
 - **CI on 59eb9e9d:** `unit` failed, everything else passed (`mutation`, `screening-capacity gate`, `capacity`,
   `approval-of-record`, db 1 to 4, e2e 1 and 2, static, lint, build, images). The failure is this change's:
   `tools/screening-capacity/watched.test.ts` (twice), because the committed watched list lacks
@@ -223,7 +223,48 @@ No blocker.
 - R2-U7, note, follow-up for the UX queue: a page's busy state is the generic error state.
 - R2-U8 and R2-U9, notes: the button's name in the lead; "typed" for a choice. Kept as the house pattern.
 
+### Round 3, the narrowed mechanism at 74d6db9a (2026-11-11 02:45 to 03:08 UTC; every finding checked by W4)
+No blocker. All confirmed findings are fixed in f7853552.
+
+**Security, `security-reviewer`:**
+- R3-S1, note, CONFIRMED, DONE: the request key's advisory lock shared its key space with the ledger's and every
+  other lock, and a key is text its sender chooses. Now the two-number form with a class of the request keys' own.
+- R3-S2, note, CONFIRMED, DONE (with R3-D1): "the first statement" was the callback's, not the transaction's.
+- R3-S3, should fix, CONFIRMED, DONE: the guard's pattern could miss a connection taken from a pool. It now counts,
+  by file, every place the web's code reaches the application pool, and holds that each transaction the wrapper
+  opens carries the bound.
+- R3-S4, note: a send commits by itself (known; in the ADR; a follow-up).
+- Found sound: the paths outside the wrapper are byte for byte the base's; `busy` cannot replace `unauthenticated`,
+  `forbidden` or `not_found`; a resend runs once or not at all.
+
+**Database, a general agent (ten experiments; the CAS-57 block ran 5 of 5):**
+- R3-D1, should fix, CONFIRMED, DONE: a practice route's scope read six tables (its permission read) before the
+  bound was set. The scopes now take the bound as an option (`LockWaitBound`), set right after BEGIN; only the
+  web's wrapper passes it. A new case locks a table of that read.
+- R3-D2, note, DONE: another spelling of a key (upper case) took another lock. The key is locked as a uuid's text.
+- R3-D3, note, DONE: false or overstated sentences (a test file that does not exist, "only when", the heartbeat).
+- R3-D4, note, DONE: a first request that ends inside the timeout now has its test (COMMIT: already sent;
+  ROLLBACK: done).
+- R3-D5, note, a follow-up in `packages/db`: the scope does not read COMMIT's answer (no reach found today).
+- Found sound by experiment: the bound covers definer functions, triggers, deferred constraints at COMMIT,
+  savepoints and REPEATABLE READ; a pooled connection never keeps it; lock then insert never runs a mutation twice.
+
+**UX and brand, `ux-brand-reviewer`:**
+- R3-U1, should fix, CONFIRMED, DONE: the resend's lead said it only checks; it now says what it does either way
+  ("If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.").
+- R3-U2, should fix, CONFIRMED, DONE: "type them again" is untrue of a one-time code ("type your password again
+  or enter a new code").
+- R3-U3, should fix, REFUTED: the upload row's button is "Retry" (`uploader.tsx:965`), which the words name.
+- Notes: the button's name in the lead, "Reload the page": kept as the house pattern.
+
+**Follow-ups for the orchestrator to queue (none blocks this PR):** (1) `packages/db/src/migrate.ts` sets no
+`lock_timeout`, so a migration queued behind a long job blocks every reader; (2) a handler's queue send commits by
+itself: make the sends transactional or move them after the commit; (3) the session's end and its audit event are
+two transactions (`auth/sessions.ts`); (4) the scope does not read COMMIT's answer; (5) a page's busy state is the
+generic error state (the UX queue); (6) a second free-screening upload waits for the first without limit.
+
 ## Log
+- 2026-11-11 03:25 UTC: round 3 recorded and fixed (f7853552); the base ca504674 merged (22eb6c18, pushed to the WIP ref); two last reviews and the full local suite running.
 - 2026-11-11 02:50 UTC: the narrowed mechanism built and pushed as WIP 74d6db9a; round 2's database findings recorded; round 3 launched (02:45 UTC).
 - 2026-11-11 02:10 UTC: fix round 1 built and pushed as WIP f3dc3ee6 (words, one mapping for every route, the queue's pool, the same key in flight, a page's error state, the URL guard, a log line by code); three delta reviews launched.
 - 2026-11-11 01:50 UTC: review round 1 recorded; the words half of the fix round pushed as WIP 709fe620; the container restarted once (01:46 UTC), nothing lost.
