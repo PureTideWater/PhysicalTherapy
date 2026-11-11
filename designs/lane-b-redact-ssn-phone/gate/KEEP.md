@@ -22,6 +22,16 @@ flips to redacted or refused, measured on this gate.
   (`dobperm.mts`, `gluedlabel.mts`, `frames.mts`, `lib.mts`; `natural2.mts`, `units.mts`, `units2.mts`, `extra.mts`,
   `lib-gateway.mts`).
 
+- `ts-resolve.mjs`, `ts-resolve-hooks.mjs`: the resolve hook `run.sh` loads the trees through since
+  co-001/redact-ssn-phone-leaks (`redact.ts` imports `./confusables` with no extension; plain node needs the hook).
+- `leaks-scripts/` (co-001/redact-ssn-phone-leaks): `rows.mts <redact.ts>` (the pinned rows' outcome by class),
+  `revdiff.mjs <outA> <outB> <class>` (the letters of a class in one gate run and not in another, by source, with samples),
+  `evalhits.mts <redact.ts> <outA> <outB or -> <class>` (those letters run through a tree with their own patients),
+  `cmp.mts <file of JSON strings> <label=redact.ts>...` (each letter's outcome on each tree, one synthetic patient),
+  `name-forms.mts <redact.ts>...` (MOD-23's residual name forms, one column per tree). Run each with
+  `node --import <this folder>/ts-resolve.mjs`; `residual-scripts/gen-residual6.mts` regenerates the residual table for
+  that PR.
+
 The scripts still carry the absolute paths of the session that wrote them (the gate's corpus, the two checkouts, the
 review folders): set those constants to this folder and to the checkouts before a run. Heavy runs go under
 `flock /tmp/laneb-heavy.lock`.

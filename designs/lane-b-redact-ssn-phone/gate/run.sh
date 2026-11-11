@@ -13,5 +13,5 @@ if [ ! -f "$GATE/corpus/manifest.json" ]; then
   (cd "$GATE/gen" && flock /tmp/laneb-heavy.lock node --max-old-space-size=8000 build-corpus.mts)
 fi
 cd "$GATE"
-flock /tmp/laneb-heavy.lock node --max-old-space-size=6000 gate.mts "$A" "$B" "$OUT" "$@" 2> "$OUT/gate.stderr"
+flock /tmp/laneb-heavy.lock node --import "$GATE/ts-resolve.mjs" --max-old-space-size=6000 gate.mts "$A" "$B" "$OUT" "$@" 2> "$OUT/gate.stderr"
 echo "report: $OUT/report.md"

@@ -4,46 +4,56 @@ Must land before any real PHI is processed (ruling A, 2026-11-07 10:53 UTC; the 
 Counters MOD-21 and MOD-22 are allocated (2026-11-06 21:03 UTC); no new ADR is expected (an ADR 0054 amendment). Any other
 counter comes from the orchestrator.
 
-## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 13:10 UTC)
-- **State:** design reviewed and fixed; the code is final in shape, not yet tested or documented. WIP
-  `co-001/wip-redact-ssn-phone-leaks` = f7da95fe on origin (the design as fixed after both reviews); the local worktree
-  `/home/user/leaks` is one commit ahead (d4985fbf: the debug export out, comments, types; typecheck and lint clean).
-  The branch `co-001/redact-ssn-phone-leaks` is not on origin; no PR. `/home/user/fix` is a frozen copy of f7da95fe.
+## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 06:00 UTC)
+- **State:** the design is reviewed and fixed; the rules are settled at **5d10e0de** = WIP `co-001/wip-redact-ssn-phone-leaks`
+  on origin (typecheck and lint clean; worktree `/home/user/leaks`, branch `co-001/redact-ssn-phone-leaks`, not on origin; no
+  PR). A test-builder subagent is writing the tests in that worktree (uncommitted so far: the regenerated residual table and
+  its test, `confusables.test.ts`). Not yet written: ADR 0054's amendment, the test-matrix rows MOD-21 and MOD-22.
+- **What 5d10e0de changed, and why (found by comparing two gate runs, 2026-11-11 05:40 UTC):** the commit before it
+  (04c2d4a5) had narrowed the read-through of a label over the call's own identifier to "no word but a connecting one
+  between the identifier and the number" and taken it out of the scan's read over numbers. Against ef3e8d20 that build
+  still read no PHI class, but it closed 3,980 SSN, 2,641 phone and 186 name letters fewer than the build before it, and
+  sent `Phone (Jane Zephyra, home): 555.0123` and `SSN (Jane Zephyra, patient): 90012-3456` with the number in clear, where
+  ef3e8d20 redacts or refuses the same line without the name. 5d10e0de withdraws the narrowing (the safer reading: the
+  identifier is transparent to a label, so the line reads as it does without it), and fixes two faults of 04c2d4a5's naming
+  rule: "Paid" and "Medicaid" read as a word and "ID", and an SSN or phone label with "#" or "No." naming a reference
+  (`SSN No. 900-12-3456150.00` is refused now). It also takes the middle dot and the hyphenation point as name joiners.
 - **Design reviews (two adversarial, both delivered, every finding reproduced before it was fixed):**
-  - PHI and regressions (scratch `/home/user/review-d1`): two blocking, a label read through the patient's own
-    placeholder or a list number let the patterns redact part of a chain ef3e8d20 refused whole (1,115 and 37 of 10,000
-    fuzz letters). Fixed: such a label redacts a number only where its own words say nothing, it is written on one line and
-    stands alone, a list number only before a colon; else the scan refuses under that label. The reviewer's fuzzers now find
-    0 on two seeds each. Residual forms it found that ef3e8d20 sends too are closed where cheap (more list-number and
-    glued-label forms, own numbers in another script's digits, "March the 14th" in a held letter).
-  - Must-stay damage and logic (scratch `/home/user/review-d2`): three blocking (the glued-shape rule refused citations and
-    reference numbers such as `29 CFR 2590.715-2719` in every letter; the fold mapped look-alikes before folding case, so a
-    name stored in Greek was sent where ef3e8d20 redacted it; the read-through overrode a number a noun names) and six
-    lesser ("Fairfax" read as a glued fax label, `XXXXXX1234` refused, "well" redacted for a patient Weil, held-letter rows
-    with modifiers, TIN and code-list forms, a year in words). All fixed; its 16 reproductions now read as ef3e8d20 does.
-- **Gate on f7da95fe:** against cc3dd7f6: no PHI class (SSN 0, phone 0, name 0); dates changed 298 (ruling B: "May 2020"
-  for patients named May and June); refused that cc3dd7f6 sent: 659 clean, 7,195 after an SSN or phone word, 2,096 with
-  identifiers; unplaced 386; slowest 642 ms (cc3dd7f6 468 ms). Against ef3e8d20: no PHI class; dates changed 308; refused
-  that ef3e8d20 sent: 3,445 clean (about 3,400 an amount, a dash and a date as one range), 318 after an SSN or phone word,
-  3,092 with identifiers; sent that ef3e8d20 refused: 48, each with every identifier redacted; leaks ef3e8d20 sent, now
-  refused or redacted: SSN 13,479, phone 9,060, name 12,293, initials 669, date of birth 22. Outputs in
-  `/home/user/gate-out/p4-ef3` and `p4-cc3` (not kept).
-- **Pinned rows:** ruling A 697 of 697 (634 refused, 63 redacted), ruling A' 406 of 406 (200 redacted, 206 refused),
-  ruling B 5 of 5 (the month word redacted as the name); the 938 lone-initial rows and 243 fail-safe rows as recorded.
-- **MOD-16's generator** (five seeds of 20,000): only an unlabeled local number (about 320 per 20,000) and a word glued to
-  a held range's end before a bare nine or ten (about 20), and one letter in 100,000 whose run of digits begins with the
-  patient's birth date run together. The generator changes in those three places, each pinned on both sides.
-- **Next:** the reviewer's fuzzers once more on the fixed tree (running); then tests (MOD-21, MOD-22, `confusables.test.ts`,
-  MOD-16's generator, the changed expectations of nine existing tests and two timing rows), the residual table
-  regenerated by a kept script, ADR 0054's amendment and the test matrix; a review of the design fixes' delta with the two
-  adversarial reviews of the build; the full suite once; the base merged; the PR branch rebuilt from the base with clean
-  commits; the push; the draft PR; CI; the merge.
-- **Container paths (not kept):** `/home/user/gate` (run.sh now loads through `ts-resolve.mjs`, because `redact.ts`
-  imports `./confusables`), `/home/user/gate-out`, `/home/user/tree-cc3`, `/home/user/tree-ef3`, `/home/user/work`
-  (`rows.mts`, `stress16.mts`, `mkprop.sh`, `hitreasons.mts`, `d1.mts`, `d1re/`, `d2re/`, `ts-resolve*.mjs`).
-- **Trailers:** every commit from 2026-11-11 12:00 UTC ends with the brief's two lines (the orchestrator's reminder). Three
-  earlier ops commits of this session (95c22f19, a6609b82, dcd462a0) and the WIP ref's first commits carry the harness's
-  line; the PR branch is rebuilt so that only the brief's lines enter history.
+  - PHI and regressions: two blocking (a label read through the patient's own placeholder or a list number let the patterns
+    redact part of a chain ef3e8d20 refused whole). Fixed: such a label redacts a number only where its own words say
+    nothing, it is written on one line and stands alone, a list number only before a colon; else the scan refuses under
+    that label. The reviewer's fuzzers found 0 after the fix; they run again on 5d10e0de.
+  - Must-stay damage and logic: three blocking (the glued-shape rule refused citations such as `29 CFR 2590.715-2719`; the
+    fold mapped look-alikes before folding case; the read-through overrode a number a noun names) and six lesser. All fixed.
+- **Gate (975,489 letters):** on 04c2d4a5, against cc3dd7f6: no PHI class (SSN 0, phone 0, name 0); dates changed 298
+  (ruling B); refused that cc3dd7f6 sent: 657 clean, 7,074 after an SSN or phone word, 1,163 with identifiers; unplaced
+  386; slowest 680 ms (cc3dd7f6 458 ms). Against ef3e8d20: no PHI class; dates changed 308; refused that ef3e8d20 sent:
+  3,443 clean (about 3,400 an amount, a dash and a date as one range), 197 after an SSN or phone word, 2,159 with
+  identifiers; sent that ef3e8d20 refused: 48, each with every identifier redacted. **The gate on 5d10e0de is still to
+  run** (expected near the earlier build f7da95fe: with identifiers 3,092, after an SSN or phone word 318; leaks ef3e8d20
+  sent, closed: SSN 13,479, phone 9,060, name 12,293). Outputs in `/home/user/gate-out/p4-*`, `p5-*` (not kept).
+- **Pinned rows on 5d10e0de:** ruling A 697 of 697 (634 refused, 63 redacted), ruling A' 406 of 406 (200 redacted, 206
+  refused), ruling B 5 of 5 (the month word redacted as the name); the 938 lone-initial rows and 243 fail-safe rows as recorded.
+- **MOD-16's generator** changes in three places, each pinned on both sides: no unlabeled local number in a letter with a
+  held range (about 320 per 20,000), no word glued to a held range's end before a bare nine or ten (about 20), no run of
+  digits that begins or ends with the patient's birth date run together (1 in 100,000).
+- **MOD-23** (allocated by the orchestrator 2026-11-11, `LANES.md` Queues item 26): two name forms this PR leaves, sent in
+  clear outside a held letter on cc3dd7f6, ef3e8d20 and this head alike: a lower-case piece after a space or a period
+  (`Zephy ra`, `Zephy. ra`) and a name written letter by letter (`Z e p h y r a`). Reproduce:
+  `cd designs/lane-b-redact-ssn-phone/gate/leaks-scripts && node --import ../ts-resolve.mjs name-forms.mts <redact.ts of each tree>`.
+- **The packets verifier's fold (W7)** moves `packages/model-gateway/src/redact.ts` whole to `packages/redact/src/redact.ts`
+  (`@tp/redact`). Whichever PR merges second takes the base merge: git follows the rename; `confusables.ts` and this PR's new
+  test files move by hand beside it, and a test's `./redact` import becomes `@tp/redact`.
+- **Next:** the fuzzers and the gate on 5d10e0de; the builder's tests verified (six files; MOD-16's five seeds and ten
+  fresh); ADR 0054's amendment and the test matrix; a review of the design fixes' delta with the two adversarial reviews
+  of the build; the full suite once; the base merged; the push; the draft PR; CI; the merge.
+- **Container paths (not kept):** `/home/user/gate` (a copy of the kept gate), `/home/user/gate-out`, `/home/user/tree-cc3`,
+  `/home/user/tree-ef3`, `/home/user/fix` (a scratch worktree), `/home/user/work` (the reviewers' fuzzers `d1re/`, `d2re/`
+  and their copies `d1p6/`, `d2p6/`; `stress16.mts`, `mkprop.sh`). The scripts worth keeping are in the gate folder's
+  `leaks-scripts/` and `residual-scripts/gen-residual6.mts`.
+- **Trailers:** from 04c2d4a5 on, every commit ends with `Co-Authored-By: Claude <noreply@anthropic.com>` and the session's
+  `Claude-Session:` line (the orchestrator's ruling, STATE.md). Nothing already pushed is rewritten: the PR branch keeps its
+  WIP history, whose first commits and three ops commits (95c22f19, a6609b82, dcd462a0) carry the harness's line.
 
 ## W1's hand-over block (written by W1, session_019i9if9bThP3wWKpHBiU3m8, 2026-11-11 02:50 UTC, for the builder)
 - **State:** not cut, no PR, no live WIP ref. Cut `co-001/redact-ssn-phone-leaks` from `claude/build-platform` at or after
@@ -104,7 +114,8 @@ counter comes from the orchestrator.
 
 ## Log (UTC)
 - 2026-11-11T02:50Z (W1): this file created with the RESUME-BLOCK, after #138 merged as ef3e8d20. The build is W5's.
-- 2026-11-11T04:10Z (W5): started 02:37Z; branch cut at ef3e8d20; the gate and the pinned rows reproduced; the rows classed by shape; direction above.
-- 2026-11-11T08:00Z (W5): prototype pushed as WIP; ruling A and B rows flip; the gate run on both trees; ruling A' next. Context past 300k tokens: the orchestrator told.
-- 2026-11-11T09:40Z (W5): the fold built (ruling A' rows flip); the design written; two design reviews and the gate running. The orchestrator: finish the item in this session.
-- 2026-11-11T13:10Z (W5): both design reviews delivered and fixed; the gate on f7da95fe reads no PHI class against either tree. Tests and documents next.
+- 2026-11-11T02:53Z (W5): started 02:37Z; branch cut at ef3e8d20; the gate and the pinned rows reproduced; the rows classed by shape.
+- 2026-11-11T03:22Z (W5): prototype pushed as WIP; ruling A and B rows flip; the gate run on both trees; ruling A' next.
+- 2026-11-11T03:34Z (W5): the fold built (ruling A' rows flip); the design written; two design reviews and the gate running. The orchestrator: finish the item in this session.
+- 2026-11-11T04:53Z (W5): both design reviews delivered and fixed; the gate on f7da95fe reads no PHI class against either tree.
+- 2026-11-11T06:00Z (W5): the gate on 04c2d4a5 read no PHI class but closed fewer leaks than f7da95fe; the narrowing withdrawn and two naming faults fixed in 5d10e0de; MOD-23 pinned; a builder writes the tests. (The four entries above first carried clock times that were estimates and wrong; they now carry their commits' times.)
