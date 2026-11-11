@@ -233,14 +233,23 @@ describe('a session past a limit: the database ends it on the next request, and 
       expect(await bound(client)).toBe('10s');
       await client.query('COMMIT');
       expect(await bound(client)).toBe('0');
-      // A short bound, and a client that never commits: the server ends the connection and the rows are free again.
-      await owner.query("UPDATE user_session SET last_seen_at = now() - interval '31 minutes' WHERE id = $1", [session.sessionId]);
-      client.on('error', () => undefined);
       await client.query('BEGIN');
-      expect((await client.query(RESOLVE_SESSION, [tokenHash(session.sessionToken), '200'])).rows).toMatchObject([{ outcome: 'idle', ended_now: true }]);
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
-      await expect(client.query('COMMIT')).rejects.toThrow();
-      client.release(true);
+      await client.query(RESOLVE_SESSION, [tokenHash(session.sessionToken), String(SESSION_RESOLVE_IDLE_MS)]);
+      await client.query('ROLLBACK');
+      expect(await bound(client)).toBe('0');
+      client.release();
+      // A short bound, and work that stalls between its statements, through the scope itself on a pool as the
+      // application opens it: the server ends the connection, the work fails without an event the process does not
+      // hear, the rows are free again and the pool's next connection works.
+      await owner.query("UPDATE user_session SET last_seen_at = now() - interval '31 minutes' WHERE id = $1", [session.sessionId]);
+      await expect(
+        withResolvedActor(one, async (stalled) => {
+          expect((await stalled.query(RESOLVE_SESSION, [tokenHash(session.sessionToken), '200'])).rows).toMatchObject([{ outcome: 'idle', ended_now: true }]);
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          await stalled.query('SELECT 1');
+        }),
+      ).rejects.toThrow();
+      expect(await withResolvedActor(one, (next) => bound(next))).toBe('0');
       expect(await standing(session.sessionId)).toBe('live');
       expect(await resolveSession(app, session.sessionToken, 'test')).toEqual({ state: 'ended', reason: 'idle' });
       expect(await events('session_ended', session.sessionId)).toEqual([{ actor_id: userId, purpose: 'idle' }]);
