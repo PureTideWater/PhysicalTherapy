@@ -650,9 +650,20 @@ describe('the job’s reads: due, and the claim, the address’s only reader (do
         ['mfa_enrolled', false],
       ],
     ]);
-    // Read when the notice is claimed, not when it was queued: one enrolled between the reset and the send is told so.
+    // Kept as it was at the reset, by the trigger, not read when the notice is claimed (docs/adr/0091 D10, case (d);
+    // migration 20261112090000): a factor enrolled between the reset and the send, by whoever completed the reset, does
+    // not make the email say a second factor guards the account.
+    expect((await owner.query<{ kept: boolean | null }>('SELECT mfa_enrolled_at_reset AS kept FROM password_notice WHERE id = $1', [notice?.id])).rows).toEqual([{ kept: false }]);
     await asOwner(owner, [], () => owner.query('UPDATE "user" SET mfa_enrolled = true WHERE id = $1', [bare]));
-    expect((await read()).map((row) => row[3])).toEqual([['mfa_enrolled', true]]);
+    expect((await read()).map((row) => row[3])).toEqual([['mfa_enrolled', false]]);
+    // And the other way: an account enrolled at the reset is still told so if the factor is cleared before the send.
+    expect((await owner.query<{ kept: boolean | null }>('SELECT mfa_enrolled_at_reset AS kept FROM password_notice WHERE id = $1', [enrolled.notice])).rows).toEqual([{ kept: true }]);
+    await asOwner(owner, [], () => owner.query('UPDATE "user" SET mfa_enrolled = false WHERE id = $1', [enrolled.user]));
+    expect((await claim(enrolled.notice)).map((row) => row.mfa_enrolled)).toEqual([true]);
+    // A notice queued before the column existed keeps no fact: the claim answers false, the side that claims less.
+    await asOwner(owner, [], () => owner.query('UPDATE "user" SET mfa_enrolled = true WHERE id = $1', [enrolled.user]));
+    await owner.query('UPDATE password_notice SET mfa_enrolled_at_reset = NULL WHERE id = $1', [enrolled.notice]);
+    expect((await claim(enrolled.notice)).map((row) => row.mfa_enrolled)).toEqual([false]);
   });
 });
 

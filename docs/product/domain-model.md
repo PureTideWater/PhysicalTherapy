@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `1a6b2e8be3ea897f5a925f237bf27739b40ceb0b` on branch `co-001/step-before-reset`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `47c99ac7647b97362c5774b40aafdb1853bf3f8b` on branch `co-001/step-before-reset`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 50; head `20261112090000_sign_in_not_before.sql`
 - PostgreSQL 18; schema `public`: 101 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 41 organization- or user-scoped tables with RLS forced; 8 global tables
@@ -6496,7 +6496,7 @@ Maintains `updated_at`: `mail_send_updated_at`.
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261111090000_password_changed_notice` (ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091, ADR 0092)
+- Created by `20261111090000_password_changed_notice` (ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091, ADR 0092); its DDL, policies or trigger functions changed by `20261112090000_sign_in_not_before`
 - Primary key: `id`
 - Privileges: none for any group role
 
@@ -6515,6 +6515,7 @@ Maintains `updated_at`: `mail_send_updated_at`.
 | 11 | `undelivered_reported_at` | `timestamp with time zone` | null |  |  | `20261111090000` |  |
 | 12 | `expires_at` | `timestamp with time zone` | NOT NULL |  |  | `20261111090000` |  |
 | 13 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261111090000` |  |
+| 14 | `mfa_enrolled_at_reset` | `boolean` | null |  |  | `20261112090000` |  |
 
 Keys:
 - Primary: (id)
@@ -7100,7 +7101,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `audit_event_packet_download()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5d9ff171f092c4f1` |
 | `audit_event_packet_export_attempt()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `980bc6bb1ce69ba4` |
 | `audit_event_packet_export_requested()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `41846c4e697780b0` |
-| `audit_event_password_notice()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e0e771daa158c3d4` |
+| `audit_event_password_notice()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `f32933b54296aff4` |
 | `audit_event_sign_in_not_before()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `95e3d21df4b9bd10` |
 | `audit_event_submission_unattested()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8d18da3beb942ba9` |
 | `audit_report_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3e46c1342db1a9db` |
@@ -7232,7 +7233,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `operator_mail_stream_confirmed(text,boolean)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `58a4b66cc84c84e4` |
 | `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2fcf2f8b70481744` |
 | `operator_open_support_notice(uuid,text,text)` | `TABLE(notice_id uuid, recipients integer, opened boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `dbbd884fcd0805f7` |
-| `operator_password_notice_claim(uuid)` | `TABLE(user_id uuid, email text, changed_at timestamp with time zone, mfa_enrolled boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `600ad9dfc04e5a6b` |
+| `operator_password_notice_claim(uuid)` | `TABLE(user_id uuid, email text, changed_at timestamp with time zone, mfa_enrolled boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `0697fb764e328800` |
 | `operator_password_notice_failed(uuid,text,boolean,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `11734c20b5241fd1` |
 | `operator_password_notice_sent(uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `6028322ec0a02407` |
 | `operator_password_notices_due(integer)` | `TABLE(notice_id uuid, user_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `d3ca686c261a2915` |
@@ -7528,7 +7529,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 47 | `20261109090000_line_status_heads.sql` | ADR 0009, ADR 0083 | `68f42516933890daa77c24a0a773cda4fd0a16ab6b5ef7870d844f0011b5f65b` |
 | 48 | `20261110090000_ledger_interest_once.sql` | ADR 0009, ADR 0083, ADR 0084 | `561e3001cf33c8696b37b20c146c975569c45f788b103d4aca12174240aa2097` |
 | 49 | `20261111090000_password_changed_notice.sql` | ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091, ADR 0092 | `e1288b9c074ced20fc8d08b7d64001786a7d29b23ae3d1695eff551eb20ea0eb` |
-| 50 | `20261112090000_sign_in_not_before.sql` | ADR 0009, ADR 0049, ADR 0081, ADR 0083, ADR 0091, ADR 0093 | `7ad9d97d75b57282c0e0a45a95e6f08fba469c7f485f2916fe8ad58328c5765f` |
+| 50 | `20261112090000_sign_in_not_before.sql` | ADR 0009, ADR 0049, ADR 0081, ADR 0083, ADR 0091, ADR 0093 | `f0b6a812daaeeedf7330c363129c5552f906ee5ad271f6b374db4f1d69b527b9` |
 
 ## Cross-checks
 
@@ -7546,4 +7547,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261112090000_sign_in_not_before.sql` (50 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `b882c7dfb1bbeaa8631953184f30a8330ec5b9dfdf739b4a2e70b9e4c8390f35`
+Approved by: ________  Date: ________  Document SHA-256: `c8e35e6477174dfe56e98187b953c087defdd021bfbf377612833313f32219c2`

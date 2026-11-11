@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- operator_password_notice_claim(uuid)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 600ad9dfc04e5a6b
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 0697fb764e328800
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_password_notice_claim(notice uuid)
@@ -20,7 +20,7 @@ BEGIN
     RETURN;
   END IF;
   RETURN QUERY
-    SELECT p.user_id, u.email, p.changed_at, u.mfa_enrolled FROM password_notice p JOIN "user" u ON u.id = p.user_id WHERE p.id = notice;
+    SELECT p.user_id, u.email, p.changed_at, coalesce(p.mfa_enrolled_at_reset, false) FROM password_notice p JOIN "user" u ON u.id = p.user_id WHERE p.id = notice;
 END;
 $function$;
 ALTER FUNCTION public.operator_password_notice_claim(uuid) OWNER TO tp_owner;

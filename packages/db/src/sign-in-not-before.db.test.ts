@@ -1006,7 +1006,8 @@ describe('the migration’s lock loop (docs/adr/0093 D10; docs/adr/0083’s patt
     expect(loop).toContain('LOCK TABLE "user" IN ACCESS EXCLUSIVE MODE NOWAIT;');
     expect(loop).toContain('LOCK TABLE user_session IN ACCESS EXCLUSIVE MODE NOWAIT;');
     expect(loop).toContain('LOCK TABLE audit_event IN SHARE ROW EXCLUSIVE MODE NOWAIT;');
-    expect(loop).toContain(`'"user", user_session or audit_event stayed in use for five minutes; run the deploy again (docs/adr/0093)'`);
+    expect(loop).toContain('LOCK TABLE password_notice IN ACCESS EXCLUSIVE MODE NOWAIT;');
+    expect(loop).toContain(`'"user", user_session, audit_event or password_notice stayed in use for five minutes; run the deploy again (docs/adr/0093)'`);
     expect(loop).toContain('FOR attempt IN 1..300 LOOP');
     // The loop runs as it stands in the file but for its sleep: each sleep is a wait this test ends, its n-th on an
     // advisory key the test holds, so a try happens exactly when the test lets it and the loop stands still between.
@@ -1141,7 +1142,20 @@ BEGIN
   RETURN FOUND;
 END;
 $$;`;
+  /** A function of migration 20261111090000 as that file creates it, as a replacement: the bodies this migration's preflight compares, to the byte. */
+  const before = (name: string): string => {
+    const text = readFileSync(path.join(MIGRATIONS_DIR, '20261111090000_password_changed_notice.sql'), 'utf8');
+    const start = text.indexOf(`CREATE FUNCTION ${name}(`);
+    const end = text.indexOf('\n$$;\n', start);
+    if (start < 0 || end < 0) {
+      throw new Error(`20261111090000_password_changed_notice.sql does not create ${name}()`);
+    }
+    return text.slice(start, end + 5).replace('CREATE FUNCTION', 'CREATE OR REPLACE FUNCTION');
+  };
+  const NOTICE_BEFORE = `${before('audit_event_password_notice')}\n${before('operator_password_notice_claim')}`;
   const UNDO = `
+    ALTER TABLE password_notice DROP COLUMN mfa_enrolled_at_reset;
+    ${NOTICE_BEFORE}
     DROP TRIGGER audit_event_sign_in_not_before ON audit_event;
     DROP TRIGGER user_session_sign_in_not_before ON user_session;
     DROP FUNCTION audit_event_sign_in_not_before(), user_session_sign_in_not_before(), sign_in_step_began(), sign_in_lock_account(), sign_in_step_refused(uuid, timestamptz, text, text),
@@ -1186,6 +1200,18 @@ $$;`;
         message: 'a function of migration 20261112090000 already exists; it creates them',
       });
     }
+  });
+
+  it('refuses when the notice’s trigger function or its claim is not the body of migration 20261111090000 that this migration replaces, and when the notice’s kept fact already exists', async () => {
+    const REBASE =
+      'audit_event_password_notice() or operator_password_notice_claim(uuid) is not the body of migration 20261111090000 that migration 20261112090000 replaces; rebase this migration on its latest body';
+    // The head itself holds this migration's own replacements of the two, so only the undo makes the preflight pass.
+    expect(await preflightAfter(`${UNDO} ${before('audit_event_password_notice').replace('RETURN NULL;', 'RETURN NEW;')}`)).toEqual({ code: '55000', message: REBASE });
+    expect(await preflightAfter(`${UNDO} ${before('operator_password_notice_claim').replace("interval '24 hours'", "interval '25 hours'")}`)).toEqual({ code: '55000', message: REBASE });
+    expect(await preflightAfter(`${UNDO} ALTER TABLE password_notice ADD COLUMN mfa_enrolled_at_reset boolean;`)).toEqual({
+      code: '55000',
+      message: 'password_notice.mfa_enrolled_at_reset already exists; migration 20261112090000 creates it',
+    });
   });
 
   it('refuses when the notice’s trigger is gone or its guard is no longer the one this migration shares', async () => {

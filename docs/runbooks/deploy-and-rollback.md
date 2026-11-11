@@ -449,12 +449,12 @@ later migration.
 
 ## A sign-in step begun before a password reset (ADR 0093; the schema pull request after Schema PR 1)
 
-**The migration's lock loop.** `20261112090000_sign_in_not_before.sql` takes `"user"`'s and `user_session`'s ACCESS
-EXCLUSIVE locks and `audit_event`'s SHARE ROW EXCLUSIVE lock together with `NOWAIT`, once a second, up to 300 tries,
+**The migration's lock loop.** `20261112090000_sign_in_not_before.sql` takes `"user"`'s, `user_session`'s and
+`password_notice`'s ACCESS EXCLUSIVE locks and `audit_event`'s SHARE ROW EXCLUSIVE lock together with `NOWAIT`, once a second, up to 300 tries,
 before any of its DDL. A refused try holds and queues nothing. **It is harder to satisfy than Schema PR 1's loop**,
 which took `"user"` in a mode readers do not refuse. Here a try is refused by any open transaction that has touched
-`"user"` in any way, a read or a foreign-key check included, or `user_session`, or has written `audit_event`; and by
-an autovacuum or autoanalyze of one of the three. Every signed-in request and every job reads `"user"`. A request
+`"user"` in any way, a read or a foreign-key check included, or `user_session`, or has written `audit_event`, or touched `password_notice` (the
+`password_notices` job, for a moment each minute); and by an autovacuum or autoanalyze of one of the four. Every signed-in request and every job reads `"user"`. A request
 holds it for milliseconds; a triage, a pricing run, an audit report or a packet export holds it to its commit; and
 one reconcile pass (about 600 seconds at 2,000 lines) outlasts the loop's five minutes by itself.
 
@@ -473,7 +473,7 @@ for a signed-in request, is refused as busy after its three-second lock timeout 
 If no moment with the three free comes in five minutes, the deploy fails: cdk reports that the migration task stopped
 without migrating, and `/tp/<env>/migration` ends with
 
-> db:migrate: 20261112090000_sign_in_not_before.sql failed: "user", user_session or audit_event stayed in use for five minutes; run the deploy again (docs/adr/0093)
+> db:migrate: 20261112090000_sign_in_not_before.sql failed: "user", user_session, audit_event or password_notice stayed in use for five minutes; run the deploy again (docs/adr/0093)
 
 (`lock_not_available`, 55P03). This migration runs in one transaction, so it changed nothing, and no service moved
 (step 4). Run the deploy again at a quieter moment. Never take the locks by hand, and never end another session's

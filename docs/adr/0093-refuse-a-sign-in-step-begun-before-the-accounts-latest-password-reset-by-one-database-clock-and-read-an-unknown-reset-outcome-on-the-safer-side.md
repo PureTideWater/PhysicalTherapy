@@ -234,11 +234,19 @@ confidential client) closes that. So "required before launch" needs both: this r
   - Other provider calls keep the SDK's retries: a repeat of theirs is a refusal the person can retry.
 - **D10. The migration** adds two nullable columns with no default (catalog-only: no rewrite, no scan), six
   functions, two triggers and one column grant. Its preflight compares the notice trigger's guard word for word and
-  reads it the same whether or not `public` is on the search path. It takes `"user"` and `user_session` in ACCESS EXCLUSIVE (the
+  reads it the same whether or not `public` is on the search path. It takes `"user"`, `user_session` and `password_notice` in ACCESS EXCLUSIVE (the
   columns) and `audit_event` in SHARE ROW EXCLUSIVE (the trigger), together, `NOWAIT` in one subtransaction, once a
   second, up to 300 tries (ADR 0083's loop). **What refuses a try** differs from the notice's migration, which took
   `"user"` in a mode readers do not refuse: here it is any open transaction that has touched `"user"` in any way, a
-  read or a foreign-key check included, or `user_session`, or written `audit_event`; and a vacuum of the three.
+  read or a foreign-key check included, or `user_session`, or written `audit_event`, or touched `password_notice` (the platform's `password_notices` job,
+  each minute, for the moment it claims a notice); and a vacuum of the four.
+  **The notice keeps the second-factor fact as it was at the reset** (the orchestrator's ruling of 2026-11-11 09:20
+  UTC; ADR 0091 D10's case (d); the review of the notice's review round, DS-03 and DD-01): the same migration adds
+  `password_notice.mfa_enrolled_at_reset`, which the notice's trigger function writes in the reset's own transaction,
+  and `operator_password_notice_claim()` returns it as `mfa_enrolled` (false for a notice that kept none), so a factor
+  enrolled between the reset and the send, by whoever completed the reset, does not make the email say a second
+  factor guards the account. Both functions are replaced in place, their bodies compared by hash in the preflight;
+  the claim's result columns are unchanged, so the previous image's job reads it as before.
   Every job and request reads `"user"`, and one reconcile pass (about 600 s at 2,000 lines) outlasts the five
   minutes. So: deploy with no reconcile queued or running, off-hours; a refused loop fails before any service moves
   and changes nothing; run it again (`docs/runbooks/deploy-and-rollback.md`). Safe with the previous image: every

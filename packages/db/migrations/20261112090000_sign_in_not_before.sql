@@ -29,25 +29,33 @@
 --   an account locked for such a key (the constraint name user_key_across_reset_hold) until a security_event with the
 --   purpose key_across_reset_cleared is recorded after the lock, which only the owner writes once the key is removed
 --   at the provider (docs/runbooks/incident-response.md), so the ordinary unlock never hands the key a sign-in.
+-- - password_notice.mfa_enrolled_at_reset (boolean, nullable; NULL: a notice queued before this migration): whether
+--   the account had a second factor when its reset was recorded, written by the notice's trigger in the reset's own
+--   transaction (audit_event_password_notice(), replaced: the body of migration 20261111090000 with the one column
+--   added). operator_password_notice_claim(uuid) (replaced, its result columns unchanged) returns that fact as
+--   mfa_enrolled, and false when there is none, so the email says a second factor guards the account only when one did
+--   at the reset, never because someone enrolled one between the reset and the send (docs/adr/0091 D4 and D10, case
+--   (d); the delta review's DS-03 and DD-01).
 --
--- Tables touched: "user" (one nullable column, no default: catalog only, no rewrite, no scan); user_session (one
+-- Tables touched: password_notice (one nullable column, no default: catalog only); "user" (one nullable column, no default: catalog only, no rewrite, no scan); user_session (one
 -- nullable column, the same; one BEFORE INSERT trigger; one column grant); audit_event (one AFTER INSERT trigger). One
--- existing function is replaced in place, unlock_user(uuid), its signature, owner and grant unchanged. No
+-- existing function is replaced in place, unlock_user(uuid), its signature, owner and grant unchanged; so are the
+-- notice's trigger function and its claim. No
 -- PHI table, no ledger table, no rule table and no pricing table is touched; no function sets app.practice_ids or
 -- app.actor_id. Every function is revoked from PUBLIC. The two trigger functions are SECURITY DEFINER, owned by
 -- tp_owner and granted to no role (a trigger fires without EXECUTE); sign_in_lock_account(), sign_in_step_refused() and
 -- sign_in_lock_key_across_reset() are SECURITY DEFINER, owned by tp_owner, granted to tp_app alone; sign_in_step_began() is SECURITY INVOKER, granted
 -- to tp_app alone. Runs as tp_owner.
 --
--- The locks (docs/adr/0093 D10; docs/adr/0083's loop): "user" and user_session ACCESS EXCLUSIVE for the columns (and
--- user_session's trigger), audit_event SHARE ROW EXCLUSIVE for the trigger, taken together with NOWAIT in one
+-- The locks (docs/adr/0093 D10; docs/adr/0083's loop): "user", user_session and password_notice ACCESS EXCLUSIVE for
+-- the columns (and user_session's trigger), audit_event SHARE ROW EXCLUSIVE for the trigger, taken together with NOWAIT in one
 -- subtransaction, once a second, up to 300 tries. A refused try holds and queues nothing. Unlike migration
 -- 20261111090000, which took "user" in a mode readers do not refuse, a try here is refused by ANY open transaction
 -- that has touched "user" (a read or a foreign-key check included) or user_session, or has written audit_event, and by
 -- a vacuum of the three. Every request and every job reads "user", and one reconcile pass outlasts the five minutes:
 -- deploy off-hours with no reconcile queued or running (docs/runbooks/deploy-and-rollback.md). If no moment comes in
--- five minutes it fails with '"user", user_session or audit_event stayed in use for five minutes; run the deploy
--- again (docs/adr/0093)', before any service moves, having changed nothing.
+-- five minutes it fails with '"user", user_session, audit_event or password_notice stayed in use for five minutes;
+-- run the deploy again (docs/adr/0093)', before any service moves, having changed nothing.
 --
 -- Safe with the previous image running (add only; docs/adr/0009, docs/adr/0049): every object is added. The previous
 -- image's session insert carries no start and is neither checked nor locked; its reset still records
@@ -79,6 +87,17 @@ BEGIN
     RAISE EXCEPTION 'unlock_user(uuid) is not the body of migration 20261015170000 that migration 20261112090000 replaces; rebase this migration on its latest body'
       USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
+  -- The notice's trigger function and its claim are replaced whole, compared the same way.
+  IF (SELECT encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') FROM pg_proc p WHERE p.oid = to_regprocedure('public.audit_event_password_notice()'))
+     IS DISTINCT FROM 'e0e771daa158c3d448140f54e923925a44bfc444d2b4b705455be26cbecf3abf'
+     OR (SELECT encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') FROM pg_proc p WHERE p.oid = to_regprocedure('public.operator_password_notice_claim(uuid)'))
+     IS DISTINCT FROM '600ad9dfc04e5a6b973096edebe703fea3976b7c6a4b614b451aa6bf7dcfa0fb' THEN
+    RAISE EXCEPTION 'audit_event_password_notice() or operator_password_notice_claim(uuid) is not the body of migration 20261111090000 that migration 20261112090000 replaces; rebase this migration on its latest body'
+      USING ERRCODE = 'object_not_in_prerequisite_state';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_attribute a WHERE a.attrelid = 'public.password_notice'::regclass AND a.attname = 'mfa_enrolled_at_reset' AND NOT a.attisdropped) THEN
+    RAISE EXCEPTION 'password_notice.mfa_enrolled_at_reset already exists; migration 20261112090000 creates it' USING ERRCODE = 'object_not_in_prerequisite_state';
+  END IF;
   -- The mark moves under the password notice's guard (docs/adr/0091 D3). If that trigger is gone or its guard is no
   -- longer the one read here, this migration refuses until it is rebased on the new guard. The catalog prints the
   -- function's schema only when public is off the search path; either spelling is the same trigger.
@@ -103,12 +122,13 @@ BEGIN
       LOCK TABLE "user" IN ACCESS EXCLUSIVE MODE NOWAIT;
       LOCK TABLE user_session IN ACCESS EXCLUSIVE MODE NOWAIT;
       LOCK TABLE audit_event IN SHARE ROW EXCLUSIVE MODE NOWAIT;
+      LOCK TABLE password_notice IN ACCESS EXCLUSIVE MODE NOWAIT;
       RETURN;
     EXCEPTION WHEN lock_not_available THEN
       PERFORM pg_sleep(1);
     END;
   END LOOP;
-  RAISE EXCEPTION '"user", user_session or audit_event stayed in use for five minutes; run the deploy again (docs/adr/0093)' USING ERRCODE = 'lock_not_available';
+  RAISE EXCEPTION '"user", user_session, audit_event or password_notice stayed in use for five minutes; run the deploy again (docs/adr/0093)' USING ERRCODE = 'lock_not_available';
 END;
 $$;
 
@@ -309,12 +329,52 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------------------------------
--- 6. Privileges, once
+-- 6. The notice keeps the second-factor fact as it was at the reset (docs/adr/0091, D4 and D10, case (d))
+-- ---------------------------------------------------------------------------------------------------
+
+-- Nullable, no default: a catalog-only change. NULL is a notice queued before this migration.
+ALTER TABLE password_notice ADD COLUMN mfa_enrolled_at_reset boolean;
+
+-- As migration 20261111090000 created it, with the one column: the account's second-factor fact is read in the
+-- reset's own transaction, so a factor enrolled after the reset (by whoever completed it) is not what the email
+-- reports. The guard on the trigger is unchanged, so the actor is the account itself and its row exists.
+CREATE OR REPLACE FUNCTION audit_event_password_notice() RETURNS trigger
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  INSERT INTO password_notice (user_id, audit_event_id, changed_at, expires_at, mfa_enrolled_at_reset)
+  VALUES (NEW.actor_id, NEW.id, NEW.at, NEW.at + interval '90 days', (SELECT u.mfa_enrolled FROM "user" u WHERE u.id = NEW.actor_id))
+  ON CONFLICT ON CONSTRAINT password_notice_once DO NOTHING;
+  RETURN NULL;
+END;
+$$;
+
+-- As migration 20261111090000 created it, but mfa_enrolled is the fact kept at the reset, and false for a notice that
+-- kept none: the email then says nothing about a second factor, the side that claims less. The result's columns are
+-- unchanged, so the previous image's job reads it as before.
+CREATE OR REPLACE FUNCTION operator_password_notice_claim(notice uuid) RETURNS TABLE (user_id uuid, email text, changed_at timestamptz, mfa_enrolled boolean)
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+#variable_conflict use_variable
+BEGIN
+  PERFORM 1 FROM password_notice p
+    WHERE p.id = notice AND p.state = 'pending' AND p.next_attempt_at <= now() AND p.changed_at > now() - interval '24 hours'
+      FOR UPDATE SKIP LOCKED;
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+  RETURN QUERY
+    SELECT p.user_id, u.email, p.changed_at, coalesce(p.mfa_enrolled_at_reset, false) FROM password_notice p JOIN "user" u ON u.id = p.user_id WHERE p.id = notice;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------------------------------
+-- 7. Privileges, once
 -- ---------------------------------------------------------------------------------------------------
 
 GRANT INSERT (sign_in_began_at) ON user_session TO tp_app;
 REVOKE ALL ON FUNCTION sign_in_step_began(), sign_in_lock_account(), audit_event_sign_in_not_before(),
   user_session_sign_in_not_before(), sign_in_step_refused(uuid, timestamptz, text, text),
-  sign_in_lock_key_across_reset(uuid, text), unlock_user(uuid) FROM PUBLIC;
+  sign_in_lock_key_across_reset(uuid, text), unlock_user(uuid), audit_event_password_notice(),
+  operator_password_notice_claim(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION sign_in_step_began(), sign_in_lock_account(), sign_in_step_refused(uuid, timestamptz, text, text),
   sign_in_lock_key_across_reset(uuid, text), unlock_user(uuid) TO tp_app;
+GRANT EXECUTE ON FUNCTION operator_password_notice_claim(uuid) TO tp_operator;
