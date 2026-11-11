@@ -19,7 +19,7 @@ import { peopleEmails } from '../cases/people';
 import { type ListPage, pageWindow } from '../http/paging';
 import { type MonthlySummary, type SummaryFigure, type SummaryRow, monthlySummary } from '../monitoring/queries';
 import { latestRunInEffect, runCount } from '../pricing/queries';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 
 /**
  * The v1 reports' documents in the web app (PRD 5, J12; PRD 6, Reports and exports; PRD 7, Reports:
@@ -109,7 +109,7 @@ export type GenerateRequest = { readonly kind: 'coverage' } | { readonly kind: '
  * its figures read now, and queues its print in the same request: a failure to queue undoes the
  * document, so none waits on a print never sent. Returns its ID.
  */
-export async function generateReportDocument(scope: Scope, services: Services, practiceId: string, request: GenerateRequest, requestId: string): Promise<string> {
+export async function generateReportDocument(scope: Scope, services: SignedInServices, practiceId: string, request: GenerateRequest, requestId: string): Promise<string> {
   const today = services.now().toISOString().slice(0, 10);
   const id = randomUUID();
   const content = request.kind === 'coverage' ? await coverageContent(scope, practiceId, today, requestId) : monthlyContent(await monthlySummary(scope, practiceId, request.month), today);
@@ -221,7 +221,7 @@ async function collect(source: AsyncIterable<Uint8Array>): Promise<Buffer> {
 }
 
 /** A printed document's PDF, checked against its SHA-256, the download audited; undefined when it is not the practice's or not printed. */
-export async function reportDocumentPdf(scope: Scope, services: Services, practiceId: string, documentId: string, requestId: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
+export async function reportDocumentPdf(scope: Scope, services: SignedInServices, practiceId: string, documentId: string, requestId: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
   const { rows } = await scope.client.query<{ pdf_key: string | null; pdf_sha256: string | null }>("SELECT pdf_key, pdf_sha256 FROM report_document WHERE id = $1 AND practice_id = $2 AND status = 'ready'", [
     documentId,
     practiceId,

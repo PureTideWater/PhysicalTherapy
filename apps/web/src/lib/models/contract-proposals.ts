@@ -30,6 +30,7 @@ import type { DocumentStore } from '@tp/worker/documents';
 import type { Sealer } from '../auth/seal';
 import { evidenceFor } from '../contracts/evidence';
 import { type ModelProblem, type ModelServices, gatewayFor, modelProblem } from './path';
+import { serverOf } from '../server/services';
 
 /**
  * The specialist queue's model proposals (PRD 5, J5 in v1: "the model proposes the abstraction and
@@ -218,22 +219,22 @@ const REMEMBERED_MAX = 1_000;
 const screenedKey = (practiceId: string, documentId: string, pages: readonly string[]) => `${practiceId}:${documentId}:${createHash('sha256').update(JSON.stringify(pages)).digest('hex')}`;
 
 function rememberedNamesPatient(services: ProposeServices, key: string): boolean {
-  const until = remembered.get(services)?.get(key);
+  const until = remembered.get(serverOf(services))?.get(key);
   if (until === undefined) {
     return false;
   }
   if (until > services.now().getTime()) {
     return true;
   }
-  remembered.get(services)?.delete(key);
+  remembered.get(serverOf(services))?.delete(key);
   return false;
 }
 
 function rememberNamesPatient(services: ProposeServices, key: string): void {
-  let documents = remembered.get(services);
+  let documents = remembered.get(serverOf(services));
   if (documents === undefined) {
     documents = new Map();
-    remembered.set(services, documents);
+    remembered.set(serverOf(services), documents);
   }
   documents.delete(key);
   documents.set(key, services.now().getTime() + REMEMBERED_MS);

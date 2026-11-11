@@ -12,8 +12,9 @@ import { WEB_POOL_CONNECTIONS } from './pools';
 /**
  * CAS-57's guards (docs/adr/0092, the amendment of 2026-11-11). Every transaction the routes' wrapper opens for a
  * signed-in request carries the bound on its lock waits, which the scope sets as the transaction's first statement, so
- * no handler can leave it out; a signed-in request's work runs on that transaction, so every place the web's code
- * reaches the application pool itself is counted here by its file; and the queue producer's pool, whose sends a
+ * no handler can leave it out; a signed-in request's work runs on that transaction: a handler's services carry no
+ * application pool (SignedInServices; http/transaction-scope.db.test.ts), and every place the web's code reaches the
+ * pool itself, the process-wide accessor included, is counted here by its file; and the queue producer's pool, whose sends a
  * handler makes while its transaction is open, carries the same timeout. These read source text and options; that the
  * setting reaches the server, and what a request then answers, are the database tests' (lock-timeout.db.test.ts and
  * CAS-57 in routes/reconciliation-routes.db.test.ts; the scope's own statements, packages/db scope.test.ts).
@@ -53,7 +54,7 @@ describe('a signed-in request’s lock waits are bounded (CAS-57)', () => {
     // And each carries the bound: as the practice scope's request, or as a person's scope's last argument.
     expect([...invoke.matchAll(/withPracticeScope\(services\.pool, \{[^\n]*\.\.\.BOUNDED \}/g)]).toHaveLength(1);
     expect([...invoke.matchAll(/withActor\(services\.pool,[^\n]*, BOUNDED\)/g)]).toHaveLength(1);
-    expect([...invoke.matchAll(/^ {8}\}, BOUNDED\);$/gm)]).toHaveLength(2);
+    expect([...invoke.matchAll(/^ {10}\}, BOUNDED\),$/gm)]).toHaveLength(2);
     expect([...invoke.matchAll(/\bBOUNDED\b/g)]).toHaveLength(1 + opened.length);
   });
 
@@ -76,6 +77,8 @@ describe('a signed-in request’s lock waits are bounded (CAS-57)', () => {
       'lib/routes/onboarding.ts': 1,
       'lib/routes/support.ts': 3,
       'lib/screening/routes.ts': 12,
+      // Where the pool is taken out of what a signed-in handler is given (signedInServices): a handler's services have none.
+      'lib/server/services.ts': 1,
     });
   });
 });

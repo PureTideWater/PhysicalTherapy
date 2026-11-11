@@ -19,7 +19,7 @@ import {
 } from '@tp/worker/packets';
 
 import type { Services } from '../server/services';
-import type { JobQueue } from '../uploads/queue';
+import type { RequestQueue } from '../uploads/queue';
 import { peopleEmails } from '../cases/people';
 import { REFUSED_FIELD } from '../cases/refusals';
 import { InputError, NotFoundError } from '../http/route';
@@ -563,7 +563,7 @@ export type ExportRequestOutcome =
  */
 export async function requestExportOnce(
   scope: Scope,
-  queue: JobQueue,
+  queue: RequestQueue,
   input: { readonly practiceId: string; readonly caseId: string; readonly versionId: string; readonly asOf: string },
 ): Promise<ExportRequestOutcome> {
   await versionOfCase(scope, input.practiceId, input.caseId, input.versionId);

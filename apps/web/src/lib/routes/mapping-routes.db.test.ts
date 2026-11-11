@@ -497,7 +497,7 @@ describe('under SYNTHETIC release 900001', () => {
     expect((await call(priceAgainAction, target.manager, { practiceId: elsewhere.practiceId }, press)).status).toBe('not_found');
 
     // A failure to queue undoes the whole press.
-    const broken: Services = { ...services, queue: { enqueue: () => Promise.reject(new Error('SYNTHETIC queue down')), enqueueScreeningRun: () => Promise.resolve(null) } };
+    const broken: Services = { ...services, queue: { enqueue: () => Promise.reject(new Error('SYNTHETIC queue down')), enqueueScreeningRun: () => Promise.resolve(null), hold: () => Promise.reject(new Error('SYNTHETIC queue down')) } };
     await call(priceAgainAction, target.manager, P, press, broken).catch((error: unknown) => error);
     expect(await rerunsOf(runId)).toEqual([]);
 

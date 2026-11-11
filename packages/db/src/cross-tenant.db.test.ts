@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { type PracticeScope, withJobScope, withPracticeScope } from './authz';
+import { type PracticeScope, TransactionNotCommittedError, withJobScope, withPracticeScope } from './authz';
 import { PLATFORM_DIRECTORY_TABLES, REVIEWED_PLATFORM_POLICIES, tenantTables } from './catalog';
 import { readDatabaseUrl } from './config';
 import { APP_ROLE } from './roles';
@@ -65,16 +65,49 @@ type Mode = 'request' | 'job' | 'policy';
 const MODES: readonly Mode[] = ['request', 'job', 'policy'];
 
 /** Runs `run` as the application role, scoped to practice B the way `mode` says. */
+/** Set by refused(): the statement the database refused failed its transaction, which a scope then reports at its COMMIT. */
+let refusedInTransaction = false;
+
+/**
+ * The work in a request's or a job's scope. Work in which the database refused a statement leaves its transaction
+ * failed, and the scope says so at its COMMIT (TransactionNotCommittedError) rather than answering as if it had
+ * committed: that report is required here, and anything else thrown is the test's failure.
+ */
+async function scoped<T>(open: (work: (client: pg.PoolClient) => Promise<void>) => Promise<void>, run: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+  let result: { readonly value: T } | undefined;
+  refusedInTransaction = false;
+  const ended = await open(async (client) => {
+    result = { value: await run(client) };
+  }).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  const failure = ended instanceof Error ? ended : new Error('the scope ended without the work’s result');
+  if (result === undefined) {
+    throw failure;
+  }
+  if (refusedInTransaction) {
+    expect(ended, 'a transaction with a refused statement is reported as not committed').toBeInstanceOf(TransactionNotCommittedError);
+  } else if (ended !== undefined) {
+    throw failure;
+  }
+  return result.value;
+}
+
 async function asPracticeB<T>(mode: Mode, run: (client: pg.PoolClient) => Promise<T>): Promise<T> {
   if (mode === 'request') {
     // The request asks for both practices; the database admits only the one the actor reaches.
-    return withPracticeScope(app, { actorId: worldB.adminUserId, practiceIds: [worldA.practiceId, worldB.practiceId] }, (scope: PracticeScope<pg.PoolClient>) => {
-      expect(scope.practiceIds).toEqual([worldB.practiceId]);
-      return run(scope.client);
-    });
+    return scoped(
+      (work) =>
+        withPracticeScope(app, { actorId: worldB.adminUserId, practiceIds: [worldA.practiceId, worldB.practiceId] }, (scope: PracticeScope<pg.PoolClient>) => {
+          expect(scope.practiceIds).toEqual([worldB.practiceId]);
+          return work(scope.client);
+        }),
+      run,
+    );
   }
   if (mode === 'job') {
-    return withJobScope(app, { jobId: randomUUID(), practiceId: worldB.practiceId }, (scope) => run(scope.client));
+    return scoped((work) => withJobScope(app, { jobId: randomUUID(), practiceId: worldB.practiceId }, (scope) => work(scope.client)), run);
   }
   const client = await app.connect();
   try {
@@ -108,6 +141,7 @@ async function refused(attempt: Promise<unknown>, policy: boolean): Promise<void
     () => undefined,
     (caught: unknown) => caught,
   );
+  refusedInTransaction = true;
   expect(error, 'the statement should have been refused').toBeDefined();
   expect(error).toMatchObject({ code: '42501' });
   if (policy) {

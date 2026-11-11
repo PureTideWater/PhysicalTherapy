@@ -38,7 +38,7 @@ import { type ProposalView, reviewVersionProposals, versionProposals } from '../
 import { modelFeatures } from '../models/path';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import { type PayerOption, payerOptions } from '../remittances/queries';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 import { pageSelection } from './contracts';
 import { MODEL_NOTICES, type ModelNotice } from './models';
 import { opaqueId, optionalText, requiredText } from './schemas';
@@ -63,7 +63,7 @@ const date = z.iso.date('a date (YYYY-MM-DD)');
 const days = z.preprocess((value) => (typeof value === 'string' && value.trim() === '' ? undefined : value), z.coerce.number().int('whole days').min(1).max(3650).optional());
 
 /** The workflow's context in this request, with the practice's documents to resolve citations against. */
-async function workflow(scope: PracticeScope<ScopeClient>, services: Services, practiceId: string, requestId: string): Promise<WorkflowContext> {
+async function workflow(scope: PracticeScope<ScopeClient>, services: SignedInServices, practiceId: string, requestId: string): Promise<WorkflowContext> {
   const cipher = await loadPracticeCipher(scope, services.keys, practiceId);
   return { scope, requestId, evidence: evidenceFor(scope, services.documents, cipher, practiceId, requestId) };
 }

@@ -26,6 +26,7 @@ import type { PracticeScope, ScopeClient } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
 
 import { type ModelProblem } from './notices';
+import { serverOf } from '../server/services';
 
 export { MODEL_PROBLEMS, MODEL_PROBLEM_TEXT, type ModelProblem } from './notices';
 
@@ -109,12 +110,12 @@ export interface ModelServices {
 
 const limiters = new WeakMap<object, CallLimiter>();
 
-/** The process's cap on model calls in flight, one per set of services (a server builds one). */
+/** The process's cap on model calls in flight, one per server's services (serverOf: every request's view of them shares it). */
 export function modelLimiterOf(services: ModelServices): CallLimiter {
-  let limiter = limiters.get(services);
+  let limiter = limiters.get(serverOf(services));
   if (limiter === undefined) {
     limiter = new CallLimiter();
-    limiters.set(services, limiter);
+    limiters.set(serverOf(services), limiter);
   }
   return limiter;
 }
@@ -127,12 +128,12 @@ let configured: ModelPath | undefined;
  * configuration (read once, from the environment).
  */
 export function modelPathOf(services: ModelServices): ModelPath {
-  return injected.get(services) ?? (configured ??= modelPathFromEnv(process.env, services.logger));
+  return injected.get(serverOf(services)) ?? (configured ??= modelPathFromEnv(process.env, services.logger));
 }
 
 /** Gives a set of services its own model path (tests, with a local provider whose outputs they register). */
 export function assignModelPath(services: ModelServices, path: ModelPath): void {
-  injected.set(services, path);
+  injected.set(serverOf(services), path);
 }
 
 /** A gateway for the person acting, or null when the model path is unavailable. */

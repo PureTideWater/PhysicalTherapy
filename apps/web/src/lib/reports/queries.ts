@@ -4,7 +4,7 @@ import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit
 import type { AuditReportContent } from '@tp/worker/reports';
 
 import { type ListPage, pageWindow } from '../http/paging';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 
 /**
  * The Reports reads and the report files (PRD 7, Reports: "Audit report ... export history; generate,
@@ -239,7 +239,7 @@ async function collect(source: AsyncIterable<Uint8Array>): Promise<Buffer> {
  * in the downloader's name and audited (action audit_report_downloaded, purpose the file). Undefined
  * when the report is not the practice's or not ready.
  */
-export async function reportFile(scope: Scope, services: Services, practiceId: string, reportId: string, file: ReportFile, requestId: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
+export async function reportFile(scope: Scope, services: SignedInServices, practiceId: string, reportId: string, file: ReportFile, requestId: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
   const { rows } = await scope.client.query<{ key: string | null; sha256: string | null }>(
     `SELECT ${file === 'pdf' ? 'pdf_key' : 'csv_key'} AS key, ${file === 'pdf' ? 'pdf_sha256' : 'csv_sha256'} AS sha256
        FROM audit_report WHERE id = $1 AND practice_id = $2 AND status = 'ready'`,
