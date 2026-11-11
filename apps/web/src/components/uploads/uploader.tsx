@@ -333,6 +333,8 @@ function declaredType(file: { readonly name: string; readonly type: string }, al
 
 export interface Refusal {
   readonly status?: string;
+  /** A busy refusal's closed word (docs/adr/0092): read only to tell a file still being sent from records being updated. */
+  readonly what?: string;
   readonly issues?: readonly { readonly field: string; readonly message: string }[];
   /** A suspended organization's reason (docs/adr/0050). */
   readonly reason?: string;
@@ -346,6 +348,14 @@ export interface Refusal {
  */
 export const UPLOAD_BUSY = 'The records this upload needs are being updated. Try again in a few minutes.';
 
+/** The same request sent again while its first is still running (a PUT repeated to this server's own receiver): never "records", which are not what it waits on. */
+export const UPLOAD_STILL_SENDING = 'This file is already being sent. Retry it in a few minutes.';
+
+/** A busy refusal's words here, by its closed word. */
+function busyUploadWords(what: unknown): string {
+  return what === 'request' ? UPLOAD_STILL_SENDING : UPLOAD_BUSY;
+}
+
 /** What a refused request says: the first issue's words, a suspended organization's reason, a busy refusal's, the role's, or the plain refusal. */
 export function refusalWords(status: number, answer: Refusal): string {
   const issue = answer.issues?.[0]?.message;
@@ -356,17 +366,18 @@ export function refusalWords(status: number, answer: Refusal): string {
     return `Not started: ${answer.reason}.`;
   }
   if (answer.status === 'busy') {
-    return UPLOAD_BUSY;
+    return busyUploadWords(answer.what);
   }
   return status === 403 ? 'Your role cannot upload files here.' : 'The server refused the request. Reload the page and try again.';
 }
 
-/** Whether a refused PUT's body is the routes' busy outcome (this server's own receiver; a presigned PUT's body is never JSON). */
-function busyBody(body: string): boolean {
+/** A refused PUT's body as the routes' busy outcome (this server's own receiver; a presigned PUT's body is never JSON), or null. */
+function busyBody(body: string): { readonly what: unknown } | null {
   try {
-    return (JSON.parse(body) as { readonly status?: unknown } | null)?.status === 'busy';
+    const answer = JSON.parse(body) as { readonly status?: unknown; readonly what?: unknown } | null;
+    return answer?.status === 'busy' ? { what: answer.what } : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -375,11 +386,12 @@ function busyBody(body: string): boolean {
  * condition, or this server's receiver answering a request key used before), not stored because the receiver was
  * refused as busy (also a 409, told apart by its body: nothing was stored), or refused.
  */
-export function putAnswer(status: number, body: string): 'stored' | 'busy' | 'refused' {
-  if (status === 409 && busyBody(body)) {
-    return 'busy';
+export function putAnswer(status: number, body: string): { readonly bytes: 'stored' | 'refused' } | { readonly bytes: 'busy'; readonly words: string } {
+  const busy = status === 409 ? busyBody(body) : null;
+  if (busy !== null) {
+    return { bytes: 'busy', words: busyUploadWords(busy.what) };
   }
-  return (status >= 200 && status < 300) || status === 409 || status === 412 ? 'stored' : 'refused';
+  return { bytes: (status >= 200 && status < 300) || status === 409 || status === 412 ? 'stored' : 'refused' };
 }
 
 async function post<T>(path: string, csrfToken: string, body: Record<string, unknown>): Promise<T> {
@@ -454,10 +466,10 @@ function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (s
     };
     request.onload = () => {
       const answer = putAnswer(request.status, request.responseText);
-      if (answer === 'stored') {
+      if (answer.bytes === 'stored') {
         resolve();
       } else {
-        reject(new Error(answer === 'busy' ? UPLOAD_BUSY : 'The upload was refused. Retry it.'));
+        reject(new Error(answer.bytes === 'busy' ? answer.words : 'The upload was refused. Retry it.'));
       }
     };
     request.onerror = () => {

@@ -32,7 +32,6 @@ import { type JobQueue, PgBossQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
 import { type AuthProviderSettings, DEFAULT_MAIL_VALIDATION_DAILY_CAP, DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
 import { WEB_POOL_CONNECTIONS } from './pools';
-import { openWebPool } from './web-pool';
 
 /**
  * What every route handler and server action runs with: the application role's pool, the identity
@@ -262,20 +261,16 @@ export function servicesFromConfig(config: WebConfig): Services {
   const sealer = new Sealer(config.cookieSecret);
   const logger = createLogger();
   const documents = config.documents;
-  // The request pools, each with the web's lock_timeout (web-pool.ts; docs/adr/0092).
-  const pool = openWebPool(config.databaseUrl, WEB_POOL_CONNECTIONS.application);
-  const billingPool = openWebPool(config.billingDatabaseUrl, WEB_POOL_CONNECTIONS.billing);
+  const pool = openPool(config.databaseUrl, WEB_POOL_CONNECTIONS.application);
+  const billingPool = openPool(config.billingDatabaseUrl, WEB_POOL_CONNECTIONS.billing);
   const auth = provider(config, sealer, logger);
   const store = documents.kind === 's3' ? new DocumentStore(new S3SealedBytes({ client: new S3Client({}), bucket: documents.bucket })) : new DocumentStore(new LocalSealedBytes(documents.dir));
   return createServices({
     origin: config.origin,
     pool,
     billingPool,
-    esignPool: config.esignDatabaseUrl === null ? null : openWebPool(config.esignDatabaseUrl, WEB_POOL_CONNECTIONS.esign),
-    // One connection for each call the process lets be in flight at once, and one to spare (pools.ts). The gateway's
-    // own pool keeps no lock_timeout, on purpose: what it writes are the gateway's own short transactions (a budget
-    // hold, a call's record), and a call's record, written after the model has answered, must wait for its lock, never
-    // be given up. What a request writes for itself stays on the application pool (docs/adr/0092, the amendment).
+    esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, WEB_POOL_CONNECTIONS.esign),
+    // One connection for each call the process lets be in flight at once, and one to spare (pools.ts).
     modelPool: openPool(config.databaseUrl, WEB_POOL_CONNECTIONS.model),
     provider: auth,
     credentialProbe: credentialProbeOf(config.auth, auth, logger),

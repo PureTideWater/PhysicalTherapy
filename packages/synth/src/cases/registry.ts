@@ -394,14 +394,14 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   ]),
   // Acting Lane B (co-001/web-ledger-try-lock; docs/adr/0092): a person's ledger action takes the ledger lock only if it is free.
   'CAS-56': none(8, 'The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding the lock: no file.', ['apps/web/src/lib/routes/reconciliation-routes.db.test.ts']),
-  'CAS-57': none(8, 'The reconciliation routes’ SYNTHETIC LED-06 practice on a pool opened as the web opens its own, with a second session holding a case’s row, a request key or the session’s row: no file.', [
+  'CAS-57': none(8, 'The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding a case’s row, a request key’s lock or a table: no file.', [
     'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
-    'apps/web/src/lib/server/web-pool.test.ts',
-    'apps/web/src/lib/server/web-pool.db.test.ts',
-    'packages/db/src/connect.test.ts',
+    'apps/web/src/lib/server/lock-timeout.test.ts',
+    'apps/web/src/lib/server/lock-timeout.db.test.ts',
     'apps/web/src/lib/http/http.test.ts',
     'apps/web/src/lib/http/next.test.ts',
     'apps/web/src/lib/http/busy-words.test.ts',
+    'apps/web/src/components/action-form.test.tsx',
     'apps/web/src/components/action-form.browser.test.tsx',
     'apps/web/src/components/uploads/uploader.test.tsx',
   ]),

@@ -57,13 +57,13 @@ async function nextRequest(params: unknown, input?: unknown, upload?: UploadBody
 
 /**
  * A refused form's state for a busy outcome (docs/adr/0092 and its amendment of 2026-11-11): the request met the
- * practice's ledger lock, or waited past the web's lock_timeout for a row something else holds. Nothing was saved, and
- * sending it again is the next step. The words never say what holds the lock (a reconcile pass, a job, another person's
+ * practice's ledger lock, waited past its lock_timeout for a lock something else holds, or carried a request key whose
+ * first request is still running. The words never say what holds the lock (a reconcile pass, a job, another person's
  * action). The flag marks it and carries the outcome's closed word: a form with JavaScript writes its own lead from it
- * (RefusalLead), which also says what stays in the form, since that depends on the form (its passwords and codes are
- * emptied; a single button holds nothing typed). The words here are for a post made without JavaScript, which keeps
- * nothing typed, so they claim nothing about the form. "The recovery ledger" is the name the Cases and Reconciliation
- * pages use.
+ * (RefusalLead), which also says what stays in the form and how to send it again, since that depends on the form (its
+ * passwords and codes are emptied; a single button holds nothing typed; its request key is kept). The words here are
+ * for a post made without JavaScript, which keeps nothing typed and no key, so they claim nothing about the form.
+ * "The recovery ledger" is the name the Cases and Reconciliation pages use.
  */
 function busyState(what: BusyWhat): ActionState {
   return { error: busyWords(what, null), busy: what };
@@ -111,10 +111,10 @@ async function paramsOf(params: PageParams, searchParams: PageParams): Promise<R
 }
 
 /**
- * A page whose read gave up waiting for a lock (docs/adr/0092, the amendment of 2026-11-11): a table behind a schema
- * change, the session's own row, a lock its audit event needs. The page cannot be shown now, which is the error state
- * and its "Try again" (app/error.tsx), never "not found" for a record that is there. Thrown, so the framework logs it
- * by these words alone: no statement, relation or identifier.
+ * A signed-in page whose read gave up waiting for a lock (docs/adr/0092, the amendment of 2026-11-11): a table behind
+ * a schema change, a lock its audit event needs. The page cannot be shown now, which is the error state and its "Try
+ * again" (app/error.tsx), never "not found" for a record that is there. Thrown, so the framework logs it by these
+ * words alone: no statement, relation or identifier.
  */
 export class PageBusyError extends Error {
   override readonly name = 'PageBusyError';
@@ -150,9 +150,6 @@ export async function loadPage<R>(route: Route<R>, props: { readonly params?: Pa
 /** A public page whose handler may send the browser elsewhere (a sign-in step that has expired). */
 export async function loadPublicPage<R extends object>(route: Route<R | StepResult>, props: { readonly params?: PageParams; readonly searchParams?: PageParams }): Promise<R> {
   const outcome = await route.invoke(await nextRequest(await paramsOf(props.params, props.searchParams)), services());
-  if (outcome.status === 'busy') {
-    throw new PageBusyError();
-  }
   if (outcome.status !== 'ok') {
     notFound();
   }

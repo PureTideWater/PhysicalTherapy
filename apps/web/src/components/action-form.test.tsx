@@ -39,8 +39,8 @@ describe('a refusal’s first line (FRM-04; docs/adr/0077; design 3.5)', () => {
 });
 
 describe('what a summary says it is (S-SEC-2, S-A11Y-2, U-UX-3, U-UX-4; docs/adr/0077)', () => {
-  const lead = (state: Parameters<typeof RefusalLead>[0]['state'], secrets = false, fields?: boolean) =>
-    renderToStaticMarkup(<RefusalLead state={state} placed={null} fromBrowser submit="Save" secrets={secrets} fields={fields} />);
+  const lead = (state: Parameters<typeof RefusalLead>[0]['state'], secrets = false, kept?: boolean) =>
+    renderToStaticMarkup(<RefusalLead state={state} placed={null} fromBrowser submit="Save" secrets={secrets} kept={kept} />);
 
   it('titles a form cleared for another person first, then a lock, a dropped connection, a key used before, and every other refusal "Not done"', () => {
     expect(summaryKind({ otherPerson: true, stale: true })).toBe('cleared');
@@ -70,23 +70,41 @@ describe('what a summary says it is (S-SEC-2, S-A11Y-2, U-UX-3, U-UX-4; docs/adr
     );
   });
 
-  it('says on a busy refusal what stays in the form, from the flag and never the server’s words: nothing where no field is known, all but passwords and codes where it held one (docs/adr/0092; CAS-57)', () => {
-    // The server's words claim nothing about the form (next.ts); a summary that has not read the page yet, the post
-    // without JavaScript and a form of buttons (the export form gives no `fields`) say the same.
+  it('says on a busy refusal what stays in the form, from the flag and never the server’s words, once the browser has read the form (docs/adr/0092; CAS-57)', () => {
     const records = { error: 'The records this form needs are being updated, so nothing was saved. Try again in a few minutes.', busy: 'records' } as const;
     const ledger = { error: 'The recovery ledger is being updated, so nothing was saved. Try again in a few minutes.', busy: 'ledger' } as const;
+    // Before the page is read, on the server's render, on the post without JavaScript and on a form with a summary
+    // of its own (the export form gives no `kept`): the server's own words, which claim nothing about the form.
     expect(lead(records)).toBe(`<p>${records.error}</p>`);
+    expect(lead(ledger, true)).toBe(`<p>${ledger.error}</p>`);
+    // Read: a form of one button keeps nothing; fields stay; passwords and codes never do.
     expect(lead(ledger, false, false)).toBe(`<p>${ledger.error}</p>`);
     expect(lead(records, false, true)).toBe('<p>The records this form needs are being updated, so nothing was saved. What you typed is still here: try again in a few minutes.</p>');
     expect(lead(ledger, false, true)).toBe('<p>The recovery ledger is being updated, so nothing was saved. What you typed is still here: try again in a few minutes.</p>');
     expect(lead(records, true, true)).toBe(
       '<p>The records this form needs are being updated, so nothing was saved. What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.</p>',
     );
+    expect(lead(records, true, false)).toBe('<p>The records this form needs are being updated, so nothing was saved. Passwords and codes are not kept: type them again, then try again in a few minutes.</p>');
     // The flag decides, whatever words came with it; it is a refusal that did nothing, titled "Not done".
     expect(lead({ error: 'SYNTHETIC other words.', busy: 'records' }, false, true)).not.toContain('SYNTHETIC');
     expect(summaryKind(records)).toBe('error');
+    expect(summaryKind(ledger)).toBe('error');
     // A form cleared for another person says only that: nothing of the refusal it replaced is shown again.
     expect(lead({ ...records, otherPerson: true })).toBe('<p>The person signed in on this browser changed, so this form was cleared.</p>');
+  });
+
+  it('titles a form sent again while its first send is still running "Not confirmed", never "Not done", and has it sent again unchanged (docs/adr/0092; CAS-57)', () => {
+    const request = { error: 'This form was already sent and is still being processed, so nothing new was saved. Reload the page in a few minutes to see whether it saved.', busy: 'request' } as const;
+    expect(summaryKind(request)).toBe('unconfirmed');
+    expect(SUMMARY_TITLES[summaryKind(request)]).toBe('Not confirmed');
+    // The server's words until the browser has read the form: no key is known to be kept.
+    expect(lead(request)).toBe(`<p>${request.error}</p>`);
+    expect(lead(request, false, true)).toBe(
+      '<p>This form was already sent and is still being processed, so nothing new was saved. Send it again in a few minutes, changing nothing, to see whether it saved: nothing is saved twice.</p>',
+    );
+    expect(lead(request, true, true)).toBe(
+      '<p>This form was already sent and is still being processed, so nothing new was saved. Type passwords and codes again, then send it again in a few minutes, changing nothing else, to see whether it saved: nothing is saved twice.</p>',
+    );
   });
 });
 

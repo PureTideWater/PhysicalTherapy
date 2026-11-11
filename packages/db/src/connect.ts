@@ -27,41 +27,8 @@ export const IDLE_TIMEOUT_MS = 30_000;
  */
 const opened = new WeakMap<object, ScopePool<DatabasePoolClient>>();
 
-/**
- * pg's lock_timeout for a pool's connections, as the pool's own setting: sent with each connection's startup
- * parameters, so every lock wait of every statement on every connection is bounded by it (each wait, not the statement
- * or the request: a statement that takes two locks may wait twice). Nothing when no timeout is asked for (a job may
- * wait). The web's request pools and its queue producer set it (docs/adr/0092, the amendment of 2026-11-11).
- *
- * pg lets a URL's query replace the pool's own settings, so a URL that names lock_timeout, or sets it through its
- * `options`, would silently undo this one: it is refused, in words that never hold the URL. A URL's `options` for
- * anything else stays (a login's role, infra/lib/launch.ts): pg sends both.
- */
-export function lockTimeoutParameter(url: string, lockTimeoutMs: number | undefined): { readonly lock_timeout?: number } {
-  if (lockTimeoutMs === undefined) {
-    return {};
-  }
-  let query: URLSearchParams;
-  try {
-    query = new URL(url).searchParams;
-  } catch {
-    // Never the parser's own error, which holds the URL and its password.
-    throw new Error('the database URL could not be read to check that it sets no lock_timeout');
-  }
-  if (query.has('lock_timeout') || (query.get('options') ?? '').includes('lock_timeout')) {
-    throw new Error('the database URL sets lock_timeout itself, which would replace the pool’s own: take it out of the URL');
-  }
-  return { lock_timeout: lockTimeoutMs };
-}
-
-export function openPool(url: string, max = 4, options: { readonly connectionTimeoutMillis?: number; readonly lockTimeoutMs?: number } = {}): DatabasePool {
-  const pool = new pg.Pool({
-    connectionString: url,
-    max,
-    connectionTimeoutMillis: options.connectionTimeoutMillis ?? CONNECTION_TIMEOUT_MS,
-    idleTimeoutMillis: IDLE_TIMEOUT_MS,
-    ...lockTimeoutParameter(url, options.lockTimeoutMs),
-  });
+export function openPool(url: string, max = 4, options: { readonly connectionTimeoutMillis?: number } = {}): DatabasePool {
+  const pool = new pg.Pool({ connectionString: url, max, connectionTimeoutMillis: options.connectionTimeoutMillis ?? CONNECTION_TIMEOUT_MS, idleTimeoutMillis: IDLE_TIMEOUT_MS });
   // Bound now: the connect pg's Pool has as this pool opens, whatever is assigned to the pool later.
   const connect = pool.connect.bind(pool) as () => Promise<DatabasePoolClient>;
   opened.set(pool, Object.freeze({ connect: () => connect() }));

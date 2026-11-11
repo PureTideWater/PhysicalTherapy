@@ -360,18 +360,27 @@ describe('a request refused as busy', () => {
     expect(refusalWords(500, {})).toBe('The server refused the request. Reload the page and try again.');
   });
 
+  it('says of the same request still running that the file is already being sent, never that records are being updated', () => {
+    expect(refusalWords(409, { status: 'busy', what: 'request' })).toBe('This file is already being sent. Retry it in a few minutes.');
+    expect(refusalWords(409, { status: 'busy', what: 'records' })).toBe(BUSY);
+    // Any other word, or none, is the records' sentence: the words are fixed, and nothing of the answer is shown.
+    expect(refusalWords(409, { status: 'busy', what: 'SYNTHETIC other words' })).toBe(BUSY);
+  });
+
   it('reads a PUT’s 409 as bytes already stored, unless its body is the busy refusal of this server’s own receiver', () => {
-    expect(putAnswer(200, '')).toBe('stored');
-    expect(putAnswer(204, '')).toBe('stored');
+    const stored = { bytes: 'stored' };
+    expect(putAnswer(200, '')).toEqual(stored);
+    expect(putAnswer(204, '')).toEqual(stored);
     // A presigned PUT's condition (its body is never JSON), and the receiver's answer to a request key used before.
-    expect(putAnswer(412, '<Error><Code>PreconditionFailed</Code></Error>')).toBe('stored');
-    expect(putAnswer(409, '<Error><Code>ConditionalRequestConflict</Code></Error>')).toBe('stored');
-    expect(putAnswer(409, JSON.stringify({ status: 'duplicate' }))).toBe('stored');
-    expect(putAnswer(409, '')).toBe('stored');
+    expect(putAnswer(412, '<Error><Code>PreconditionFailed</Code></Error>')).toEqual(stored);
+    expect(putAnswer(409, '<Error><Code>ConditionalRequestConflict</Code></Error>')).toEqual(stored);
+    expect(putAnswer(409, JSON.stringify({ status: 'duplicate' }))).toEqual(stored);
+    expect(putAnswer(409, '')).toEqual(stored);
+    expect(putAnswer(409, 'null')).toEqual(stored);
     // Nothing was stored: the file's row shows the refusal and its Retry.
-    expect(putAnswer(409, JSON.stringify({ status: 'busy', what: 'records' }))).toBe('busy');
-    expect(putAnswer(409, 'null')).toBe('stored');
-    expect(putAnswer(403, JSON.stringify({ status: 'busy', what: 'records' }))).toBe('refused');
-    expect(putAnswer(500, '')).toBe('refused');
+    expect(putAnswer(409, JSON.stringify({ status: 'busy', what: 'records' }))).toEqual({ bytes: 'busy', words: BUSY });
+    expect(putAnswer(409, JSON.stringify({ status: 'busy', what: 'request' }))).toEqual({ bytes: 'busy', words: 'This file is already being sent. Retry it in a few minutes.' });
+    expect(putAnswer(403, JSON.stringify({ status: 'busy', what: 'records' }))).toEqual({ bytes: 'refused' });
+    expect(putAnswer(500, '')).toEqual({ bytes: 'refused' });
   });
 });

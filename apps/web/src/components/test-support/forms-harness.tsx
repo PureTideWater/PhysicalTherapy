@@ -314,6 +314,12 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
       <input type="hidden" name="lineId" value="line-1" />
     </HarnessForm>
   ),
+  /** A form whose only field is a code, which a refusal empties: nothing typed stays in it. */
+  code: () => (
+    <HarnessForm submit="Confirm">
+      <Field label="Six-digit code" name="code" autoComplete="one-time-code" inputMode="numeric" />
+    </HarnessForm>
+  ),
   /** A fieldset of independent booleans, each named by its own label, and a group named by its legend. */
   adjustments: () => (
     <HarnessForm submit="Save version">

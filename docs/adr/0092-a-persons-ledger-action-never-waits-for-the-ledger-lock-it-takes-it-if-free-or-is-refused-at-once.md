@@ -93,60 +93,67 @@ a deadlock, which ADR 0087's savepoint retry absorbs on the pass's side.
 - The refusals show in support's records as a complaint during real-size passes: then the pass's own length, not this
   rule, is what to change.
 
-## Amendment, 2026-11-11: no web request waits long on a lock
+## Amendment, 2026-11-11: no signed-in request waits long on a lock
 
 Queue item 24 (`co-001/web-lock-timeout`; test matrix CAS-57), the same decision made general, as the orchestrator
 ruled on 2026-11-10: the seven actions above take the ledger lock or are refused at once; every other lock wait of a
-web request is now bounded too.
+signed-in request is now bounded too.
 
-1. **Where the web's connections are opened.** The web opens its request pools (the application's, billing's and the
-   e-signature vendor's logins) through `openWebPool` (`apps/web/src/lib/server/web-pool.ts`), which sets
-   `lock_timeout` to three seconds as a connection parameter. Its queue producer's pool (pg-boss,
-   `apps/web/src/lib/uploads/queue.ts`, `producerOptions`) carries the same parameter: a handler queues inside its
-   request's open transaction, so a send that waited would hold the request's connection for as long. The setting
-   holds for every statement on every connection of those pools, in a handler, a wrapper or a library, so no request
-   can run without it and nothing has to remember to set it. `web-pool.test.ts` fails, naming the file, if the web's
-   own code opens a pool or a client any other way.
-2. **Each lock wait, not each request.** PostgreSQL applies `lock_timeout` to each wait for a lock: a row, a key
+1. **Where the web's transactions are made.** Every signed-in request runs in one transaction that the routes'
+   wrapper opens (`apps/web/src/lib/http/invoke.ts`: a person's own and the platform's routes, a practice's, an
+   organization's), and each starts with the same call, `gates`, whose first statement is now
+   `SET LOCAL lock_timeout` to three seconds (`apps/web/src/lib/server/lock-timeout.ts`). It holds for every statement
+   the request issues in that transaction, in a handler, a trigger or a library, and for that transaction only, so no
+   handler has to remember it and none can leave it out. `lock-timeout.test.ts` fails if a transaction of the
+   wrapper's does not start there, and names any file that takes a connection of its own from a pool.
+2. **The queue producer's pool too.** A handler queues a job inside its request's open transaction ("Queued in the
+   request"), on pg-boss's own connection, so a send that waited would hold the request's connection for as long.
+   That pool carries the same timeout as pg's own setting (`apps/web/src/lib/uploads/queue.ts`, `producerOptions`).
+   A send is one statement: one that gives up leaves nothing written. A database URL cannot undo the setting
+   silently: pg lets a URL's query replace a pool's own settings, so a URL that names `lock_timeout` is refused as
+   the queue is made, in words that never hold the URL. (A URL's `options`, which a production login's carries for
+   its role, cannot replace it: the server applies the pool's setting after them.)
+3. **Nothing else is bounded, on purpose.** Sign-in, the session's read, the rate limit's count, the public forms
+   and webhooks, and billing's, the e-signature vendor's and the model gateway's pools wait as they always have.
+   They commit in steps of their own or must never give a write up (a session's end and its audit event, a failed
+   sign-in's count, a sign-in step after the provider's grant is released, a model call's record written after the
+   model has answered), so a timeout there would lose a record or say "nothing was saved" falsely; and none of them
+   meets a lock a reconcile pass holds. The review of the first build of this amendment, which set the timeout on
+   the web's pools, found exactly those losses, and that is why it is set on the request's transaction instead.
+4. **Each lock wait, not each request.** PostgreSQL applies `lock_timeout` to each wait for a lock: a row, a key
    behind a foreign key or a unique index, an advisory lock, a table behind a schema change. A statement that takes
-   two locks may wait twice (the free screening's submit takes two), and a request of several statements more. What
-   is bounded is what this decision is about: a wait whose length another transaction decides.
-3. **Not a role setting, so no migration,** and the worker's waits do not change: the worker opens its own pool with
-   no timeout, and a job may wait. `withPracticeScope` is untouched (the gateway, the capacity harness and the
-   worker's test worlds use it). A database URL cannot undo the setting: pg lets a URL's query replace a pool's own
-   settings, so a URL that sets `lock_timeout` (by name, or in its `options`) is refused when the pool is opened, in
-   words that never hold the URL. A URL's `options` for anything else stays (a production login's role), and pg
-   sends both.
-4. **The model gateway's pool is the one exception.** It is opened once in `services.ts` without the timeout. What it
-   writes are the gateway's own short transactions (a rate limit's count, a budget hold, a call's record), and a
-   call's record is written after the model has answered: it must wait for its lock, never be given up. What a
-   request writes for itself stays on the application pool. A request that runs a model call holds its application
-   connection for the call's length, as before; the gateway's limit on calls in flight bounds how many do.
-5. **The refusal is 0092's, from one place.** PostgreSQL's `55P03` (lock not available) anywhere in a route (the
-   session's read, the rate limit's count, the request's transaction, a public handler's own) becomes
-   `{ status: 'busy' }` in one wrapper around every kind of route (`invoke.ts`, `lockBounded`). No path answers it as
-   a server error, and pg's error, which names the statement and the relation, is never thrown on to the framework's
-   log. The statement's transaction is rolled back: for a request inside the routes' wrapper that is the whole
-   request, with its audit event and its request key.
-6. **A closed word.** The outcome carries `what`: `ledger` for the try-lock above; `records` for a lock timeout; and
-   `request` where the same request key was sent while its first request is still running. The second waits on the
-   first's uncommitted key: inside three seconds it is answered as any key used before, and past them it is refused,
+   two locks may wait twice, and a request of several statements more. What is bounded is what this decision is
+   about: a wait whose length another transaction decides.
+5. **Not a role setting, so no migration,** and the worker's waits do not change: a job may wait. `withPracticeScope`
+   is untouched (the gateway, the capacity harness and the worker's test worlds use it); the statement is the
+   wrapper's own.
+6. **The refusal is 0092's.** PostgreSQL's `55P03` (lock not available) from the request's transaction, or from a
+   send a handler made inside it, becomes `{ status: 'busy' }` in the routes' own catch. The transaction is already
+   rolled back there: the whole request, with its audit event and its request key. It is logged by its code and the
+   request's own ID alone, never pg's words, which name the statement and the relation.
+7. **A closed word.** The outcome carries `what`: `ledger` for the try-lock above; `records` for a lock timeout; and
+   `request` where the same request key was sent while its first request is still running. That one waits first on
+   a lock of the key's own, in a statement of its own, so that only it is called `request`: inside three seconds it
+   is answered as any key used before (or goes on, where the first was rolled back), and past them it is refused,
    but "nothing was saved" would be false of it, since the first may yet save. No word names a table, a row, a job
    or a person.
-7. **The words are true of the form they are shown on.** "The recovery ledger is being updated, so nothing was
+8. **The words are true of the form they are shown on.** "The recovery ledger is being updated, so nothing was
    saved.", "The records this form needs are being updated, so nothing was saved." (the held record is often another
    than the one on the page: a case's row behind a submission), or "This form was already sent and is still being
-   processed, so nothing new was saved." The server's words end "Try again in a few minutes." and claim nothing about
-   the form, which a post without JavaScript does not keep. A form with JavaScript writes its own lead from the
-   outcome's word (`busy-words.ts`, `RefusalLead`): "What you typed is still here: try again in a few minutes.", or
-   "What you typed is still here, except passwords and codes: type them again, then try again in a few minutes."
-   where it held one (a refusal empties them), or the server's ending on a form that is one button. A refused
+   processed, so nothing new was saved." The server's words then say "Try again in a few minutes." (or, for a form
+   already sent, "Reload the page in a few minutes to see whether it saved.") and claim nothing about the form,
+   which a post without JavaScript does not keep. A form with JavaScript writes its own lead from the outcome's word
+   once it has read the page (`busy-words.ts`, `RefusalLead`): what was typed is still here; all but passwords and
+   codes, which a refusal empties and which are typed again; or nothing, on a form that is one button or one code.
+   A form already sent is titled "Not confirmed", keeps its request key, and is sent again unchanged ("Send it again
+   in a few minutes, changing nothing, to see whether it saved: nothing is saved twice."): the same send is answered
+   "Already sent" once the first has saved, where a changed one would lose its changes without a word. A refused
    download says "The records this download needs are being updated. Try again in a few minutes."; the upload client
    says the same of "this upload" and never asks for a reload, which would drop the files on screen. A page whose
    read is refused shows the error state and its "Try again", never "not found" for a record that is there. A JSON
    client gets 409 with `Retry-After: 60` for `records` and `request`, each of which held a connection for three
    seconds to answer; 5 stays for the try-lock, which answers at once.
-8. **Three seconds.** Two people's short requests on one row pass each other in milliseconds, and a triage job holds
+9. **Three seconds.** Two people's short requests on one row pass each other in milliseconds, and a triage job holds
    a case's rows for a second or two; a wait past three seconds means a holder that keeps the lock for a long
    transaction (a pass, or a request that runs a model call). A request holds its connection for three seconds at
    most for each lock it waits on, where it held it for the pass.
@@ -154,16 +161,14 @@ web request is now bounded too.
 Consequences of the amendment:
 
 - Logging a submission, recording a payer response and assigning a case no longer wait for a pass: each is refused
-  after three seconds when, and only when, the pass holds its case's row.
-- So is any web request that meets another long holder: a pricing run's `pricing_current:` lock behind a plan
-  mapping or a packet's attestation, a packet export's `packet:` lock. A second free-screening upload for the same
-  practice or contact used to wait for the first and then replace it; where the first is still being stored after
-  three seconds, the second is now refused and the prospect sends it again.
+  after three seconds when, and only when, the pass holds its case's row. So is any signed-in request that meets
+  another long holder: a pricing run's `pricing_current:` lock behind a plan mapping or a packet's attestation, a
+  packet export's `packet:` lock.
 - The seven actions keep the try-lock: they must serialize with the ledger, and they answer at once, not after three
   seconds. The write-off and the reopen can no longer wait behind a triage job for longer than the timeout.
 - A page is not immune. A read takes no row lock, but it waits behind a table lock (a migration's `ALTER TABLE`
-  queued behind a long job holds up every reader of that table), and a page's audit event or its session's read can
-  wait as well. Such a page showed nothing for as long; it now shows the error state after three seconds.
+  queued behind a long job holds up every reader of that table), and a page's audit event can wait as well. Such a
+  page showed nothing for as long; it now shows the error state after three seconds.
   `packages/db/src/migrate.ts` sets no `lock_timeout` of its own, so a migration can still queue behind a long job:
   a gap of the deploy that this change makes visible and does not close.
 - What a refusal does not undo is work outside the request's transaction. A job a handler queued stays queued (the
@@ -171,18 +176,25 @@ Consequences of the amendment:
   reverse, a request rolled back after its send, leaves a job that finds nothing committed to do, as any failure
   after the send always has). The rate limit's count stands. On a route that runs a model call, the gateway's own
   rows stand; on a billing action, what it asked of the payment provider and wrote under billing's own login stands.
-  A public handler that makes several transactions of its own (a sign-in step) keeps what it committed before the
-  one that timed out. Each of these was already so for any failure after the effect; the timeout adds an expected
-  one. So the words say what is true for the person: nothing of theirs was saved by this request.
+  Each of these was already so for any failure after the effect; the timeout adds an expected one. So the words say
+  what is true for the person: nothing of theirs was saved by this request.
+- Not bounded, and so as before: a request waiting for its session's read or its rate limit's count, a public form
+  (a second free-screening upload for the same practice or contact still waits for the first and then replaces it),
+  and a wait on billing's or the model gateway's pool while the request's transaction is open. None of these is
+  held by a reconcile pass. They are the next places to look if a connection is ever seen held for long.
+- The queue producer's own background statements (pg-boss's heartbeat) carry the timeout as its sends do: one that
+  meets a lock for three seconds, as a worker changes the queue's schema, is logged as a queue error where it used to
+  wait in silence.
 
-Alternatives considered for the amendment: `SET LOCAL lock_timeout` in each handler (a handler can forget it; the
-pool cannot); in `withPracticeScope` (shared with the worker and the gateway); `ALTER ROLE ... SET lock_timeout` (a
-migration, and it would bound the application login wherever it is used); the try-lock for every writer (refuses a
-whole practice for a whole pass for writers that need no serializing); a try-lock on the request key (it answers at
-once, but a first request that ends in a moment would be answered "still being processed" where a wait of up to
-three seconds answers "already sent"); the timeout on the model gateway's pool too (a call's record would be given
-up after three seconds); a page of its own for a page's busy state (rare, and the error state's "Try again" is the
-true next step).
+Alternatives considered for the amendment: the timeout as a connection parameter of the web's pools (built first,
+and reviewed: it reaches sign-in, the session's read and the public forms, which commit in steps, and a timeout
+there lost an audit event, skipped a failed sign-in's count and said "nothing was saved" of a step that had saved);
+`SET LOCAL lock_timeout` in each handler (a handler can forget it; the wrapper cannot); in `withPracticeScope`
+(shared with the worker and the gateway); `ALTER ROLE ... SET lock_timeout` (a migration, and it would bound the
+application login wherever it is used); the try-lock for every writer (refuses a whole practice for a whole pass for
+writers that need no serializing); a try-lock on the request key (it answers at once, but a first request that ends
+in a moment would be answered "still being processed" where a wait of up to three seconds answers "already sent");
+a page of its own for a page's busy state (rare, and the error state's "Try again" is the true next step).
 
 Revisit when a request's legitimate wait on another request approaches three seconds (a slow handler holding a row or
 an advisory lock): shorten the holder's transaction first.

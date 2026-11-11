@@ -9,7 +9,7 @@ import { requestAudit } from '../routes/onboarding';
 import { type StepResult, signInWithPassword } from '../routes/sign-in';
 import { createTicket } from '../routes/support';
 import { services } from '../server/services';
-import { PageBusyError, formActorTag, loadPage, loadPublicPage, pageFormActor, runAction, runSignInStep } from './next';
+import { PageBusyError, formActorTag, loadPage, pageFormActor, runAction, runSignInStep } from './next';
 import type { MutationResult, Outcome, Route } from './route';
 
 /**
@@ -138,35 +138,30 @@ describe('a request key used before (U-UX-4)', () => {
 });
 
 describe('a request refused as busy (docs/adr/0092 and its amendment of 2026-11-11; CAS-56, CAS-57)', () => {
-  const LEDGER = { error: 'The recovery ledger is being updated, so nothing was saved. Try again in a few minutes.', busy: 'ledger' };
-  const RECORDS = { error: 'The records this form needs are being updated, so nothing was saved. Try again in a few minutes.', busy: 'records' };
-
   it('carries the outcome’s closed word as a flag, with words for each that claim nothing about a form the server has not seen', async () => {
-    expect(await runAction(answering<MutationResult>({ status: 'busy', what: 'ledger' }), formOf(TICKET))).toEqual(LEDGER);
-    expect(await runAction(answering<MutationResult>({ status: 'busy', what: 'records' }), formOf(TICKET))).toEqual(RECORDS);
+    expect(await runAction(answering<MutationResult>({ status: 'busy', what: 'ledger' }), formOf(TICKET))).toEqual({
+      error: 'The recovery ledger is being updated, so nothing was saved. Try again in a few minutes.',
+      busy: 'ledger',
+    });
+    expect(await runAction(answering<MutationResult>({ status: 'busy', what: 'records' }), formOf(TICKET))).toEqual({
+      error: 'The records this form needs are being updated, so nothing was saved. Try again in a few minutes.',
+      busy: 'records',
+    });
   });
 
-  it('says of the same request key still running that the form was already sent, never that nothing was saved', async () => {
+  it('says of the same request key still running that the form was already sent, never that nothing was saved, and to read the page again: a post without JavaScript keeps no key to send again', async () => {
     expect(await runAction(answering<MutationResult>({ status: 'busy', what: 'request' }), formOf(TICKET))).toEqual({
-      error: 'This form was already sent and is still being processed, so nothing new was saved. Try again in a few minutes.',
+      error: 'This form was already sent and is still being processed, so nothing new was saved. Reload the page in a few minutes to see whether it saved.',
       busy: 'request',
     });
   });
 
-  it('is a page’s error state, never "not found" for a record that is there: a page whose read met the timeout throws by its own name', async () => {
-    const busy = { status: 'busy', what: 'records' } as const;
-    await expect(loadPage(answering<object>(busy), {})).rejects.toBeInstanceOf(PageBusyError);
-    await expect(loadPublicPage(answering<object>(busy), {})).rejects.toBeInstanceOf(PageBusyError);
+  it('is a signed-in page’s error state, never "not found" for a record that is there: a page whose read met the timeout throws by its own name', async () => {
+    await expect(loadPage(answering<object>({ status: 'busy', what: 'records' }), {})).rejects.toBeInstanceOf(PageBusyError);
     // Next's own "not found" is another error, which a route's `not_found` still gets.
     await expect(loadPage(answering<object>({ status: 'not_found' }), {})).rejects.not.toBeInstanceOf(PageBusyError);
     // The words the framework logs hold no statement, relation or identifier.
     expect(new PageBusyError().message).toBe('a page’s read waited past the lock timeout');
-  });
-
-  it('is the same refusal on a sign-in step, whose form empties its password and its code: never "Start again", and no value sent', async () => {
-    const state = await runSignInStep(answering<StepResult>({ status: 'busy', what: 'records' }), formOf({ email: 'typed@synthetic.test', password: TYPED_PASSWORD }));
-    expect(state).toEqual(RECORDS);
-    expect(JSON.stringify(state)).not.toContain(TYPED_PASSWORD);
   });
 });
 

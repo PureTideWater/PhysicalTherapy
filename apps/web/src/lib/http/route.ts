@@ -132,9 +132,9 @@ export class BusyError extends Error {
 
 /**
  * What a busy refusal was waiting on, as a closed word (never a table, a row, a job or a person): the practice's ledger
- * lock, which a ledger action takes if free or is refused at once; records, where a statement waited past the web's
- * lock_timeout for any lock (a row, a key, an advisory lock, a table behind a schema change); or the request itself,
- * where the same request key was sent before and that first request is still running.
+ * lock, which a ledger action takes if free or is refused at once; records, where a statement of the request's
+ * transaction waited past its lock_timeout for any lock (a row, a key, an advisory lock, a table behind a schema
+ * change); or the request itself, where the same request key was sent before and that first request is still running.
  */
 export type BusyWhat = 'ledger' | 'records' | 'request';
 

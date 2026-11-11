@@ -4,7 +4,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 
 import { type ScopeClient, databaseClient, documentObjectKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
-import { addMembership, asOwner, createUser, endPool } from '@tp/db/testing';
+import { addMembership, asOwner, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { practiceLedgerTotals, practiceRecoveredPeriods, casePatientBalance as reportRule } from '@tp/worker/ledger';
 import { type JobContext, printRoiStatement, reconcileHandler } from '@tp/worker/runtime';
@@ -13,15 +13,17 @@ import type { TriageWorld } from '@tp/worker/testing/triage';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { LineCorrectionWords } from '../../components/reconciliation/display';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { practiceRoute, selfRoute } from '../http/invoke';
 import type { CookieJar, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
-import { WEB_LOCK_TIMEOUT_MS, openWebPool } from '../server/web-pool';
+import { WEB_LOCK_TIMEOUT_MS } from '../server/lock-timeout';
 import { lockLedger } from '../../../../worker/src/reconcile/ledger';
 import { LedgerWorld, ledSettings } from '../../../../worker/src/reconcile/test-support/ledger-world';
 import { casePatientBalance, reconciliation } from '../reconciliation/queries';
@@ -727,38 +729,49 @@ describe('no web request waits on the ledger lock (CAS-56)', () => {
  * CAS-57 (docs/adr/0092, the amendment of 2026-11-11): no web mutation waits on a row a reconcile pass holds. A pass
  * keeps, to its commit, the case rows of the lines it writes for, and a request that rewrites such a row (assigning the
  * case here: its activity's trigger sets the case's owner) used to wait for the whole pass on one of the web's
- * connections. The web's request pools now carry a lock_timeout (server/web-pool.ts), so the wait ends after three
- * seconds and the request is answered `busy`, with the closed word `records`, writing nothing. Here the routes run on a
- * pool opened as the web opens its own, a second session holds the case's row as a pass does, and the assignment is
- * refused in about the timeout; with the row free the same assignment, under the same request key, goes through.
- * Synthetic data only.
+ * connections. Every transaction the routes' wrapper opens now bounds its lock waits (invoke.ts, gates;
+ * server/lock-timeout.ts), so the wait ends after three seconds and the request is answered `busy`, with the closed
+ * word `records`, writing nothing. Here a second session holds what a pass, a first request or a schema change would,
+ * and the request is refused in about the timeout; with the lock free the same request, under the same request key,
+ * goes through. Synthetic data only.
  */
 describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () => {
-  let webPool: ReturnType<typeof openWebPool>;
+  /** What the routes logged as a warning: a refusal is logged by its code and the request's own ID alone. */
+  const logged: { readonly message: string; readonly fields: unknown }[] = [];
   let web: Services;
 
   beforeAll(() => {
-    webPool = openWebPool(w.pricing.database.appUrl, 4);
-    web = { ...services, pool: webPool };
-  });
-
-  afterAll(async () => {
-    await endPool(webPool);
+    const quiet = createLogger();
+    web = {
+      ...services,
+      logger: {
+        debug: (message, fields) => quiet.debug(message, fields),
+        info: (message, fields) => quiet.info(message, fields),
+        warn: (message, fields) => {
+          logged.push({ message, fields });
+        },
+        error: (message, fields) => quiet.error(message, fields),
+        child: (fields) => quiet.child(fields),
+      },
+    };
   });
 
   /**
-   * Holds what `statement` locks in an open transaction of a session of its own (the owner's login: only the lock
+   * Holds what the statements lock in an open transaction of a session of its own (the owner's login: only the lock
    * matters here, not who holds it), until released by a rollback or a commit. It lets go by itself five seconds after
-   * the timeout, so a regression that waits for the holder fails its assertions instead of hanging the file with the
-   * transaction open.
+   * the timeouts it must outlast, so a regression that waits for the holder fails its assertions instead of hanging
+   * the file with the transaction open.
    */
-  async function holding(statement: string, values: readonly unknown[]): Promise<{ readonly release: (how?: 'ROLLBACK' | 'COMMIT') => Promise<void> }> {
+  async function holding(statements: readonly (readonly [string, readonly unknown[]])[], timeouts = 1): Promise<{ readonly release: (how?: 'ROLLBACK' | 'COMMIT') => Promise<void> }> {
     const client = databaseClient(w.pricing.database.url);
     await client.connect();
     try {
       await client.query('BEGIN');
-      const held = await client.query(statement, [...values]);
-      expect(held.rowCount).toBeGreaterThanOrEqual(1);
+      for (const [statement, values] of statements) {
+        const held = await client.query(statement, [...values]);
+        // A row locked or written, or a statement that returns none (LOCK TABLE).
+        expect(held.rowCount ?? 1).toBeGreaterThanOrEqual(1);
+      }
     } catch (error) {
       await client.end();
       throw error;
@@ -773,9 +786,12 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
       await client.query(how);
       await client.end();
     };
-    const failSafe = setTimeout(() => {
-      release().catch(() => undefined);
-    }, WEB_LOCK_TIMEOUT_MS + 5_000);
+    const failSafe = setTimeout(
+      () => {
+        release().catch(() => undefined);
+      },
+      timeouts * WEB_LOCK_TIMEOUT_MS + 5_000,
+    );
     return { release };
   }
 
@@ -785,7 +801,7 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
    * and nothing for the counts below to see. (FOR UPDATE would be a stronger lock than a pass's, and would stop the
    * request one statement earlier, at its activity's foreign key.)
    */
-  const holdCase = () => holding('SELECT 1 FROM "case" WHERE id = $1 FOR NO KEY UPDATE', [caseId]);
+  const holdCase = () => holding([['SELECT 1 FROM "case" WHERE id = $1 FOR NO KEY UPDATE', [caseId]]]);
 
   /** How long a call took, with what it answered. */
   async function timed<R>(run: () => Promise<R>): Promise<{ readonly answer: R; readonly waited: number }> {
@@ -808,12 +824,28 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
     return { activity: activity.rows[0]?.n, audit: audit.rows[0]?.n, keys: keys.rows[0]?.n, owner: owner.rows[0]?.owner_user_id ?? null };
   };
 
-  it('opens the web’s request pools with the lock_timeout on every connection', async () => {
-    const clients = await Promise.all([webPool.connect(), webPool.connect()]);
+  /** The one line a refusal logs: its code and the request's own ID, and nothing of pg's words. */
+  const loggedOnce = (code: string): void => {
+    expect(logged).toHaveLength(1);
+    expect(Object.keys(logged[0]?.fields as object).sort()).toEqual(['error_code', 'request_id']);
+    expect(logged[0]?.fields).toMatchObject({ error_code: code });
+    expect(logged[0]?.message).not.toMatch(/relation|tuple|statement|canceling/);
+    logged.length = 0;
+  };
+
+  it('bounds the lock waits of every transaction a route runs in, and of that transaction only', async () => {
+    const shown = async ({ scope }: { readonly scope: { readonly client: ScopeClient } }) => (await scope.client.query<{ lock_timeout: string }>('SHOW lock_timeout')).rows[0]?.lock_timeout;
+    const ofPractice = practiceRoute({ id: 'test.cas57.practice', kind: 'page', path: '/p/[practiceId]/test', phi: true, permission: 'practice.open', params: z.object({ practiceId: z.uuid() }), handle: shown });
+    const ofPerson = selfRoute({ id: 'test.cas57.self', kind: 'page', path: '/test', phi: false, params: z.object({}), handle: shown });
+    const timeout = `${String(WEB_LOCK_TIMEOUT_MS / 1000)}s`;
+    expect(ok(await call(ofPractice, practice.manager, P(), undefined, web))).toBe(timeout);
+    expect(ok(await call(ofPerson, practice.manager, {}, undefined, web))).toBe(timeout);
+    // Not a setting of the pool's connections: outside a route's transaction (sign-in, the session's read, the rate
+    // limit, a job) a statement on the same pool waits as it always has.
+    const clients = await Promise.all([w.app.connect(), w.app.connect(), w.app.connect()]);
     try {
       for (const client of clients) {
-        const { rows } = await client.query<{ lock_timeout: string }>('SHOW lock_timeout');
-        expect(rows[0]?.lock_timeout).toBe(`${String(WEB_LOCK_TIMEOUT_MS / 1000)}s`);
+        expect((await client.query<{ lock_timeout: string }>('SHOW lock_timeout')).rows[0]?.lock_timeout).toBe('0');
       }
     } finally {
       for (const client of clients) {
@@ -825,6 +857,7 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
   it('answers busy after the timeout, never after the holder, writes nothing, and goes through once the row is free', async () => {
     const assign = { caseId, ownerUserId: practice.manager, requestKey: randomUUID() };
     const before = await state();
+    logged.length = 0;
     const holder = await holdCase();
     try {
       const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
@@ -832,6 +865,7 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
       expect(answer).toEqual({ status: 'busy', what: 'records' });
       waitedTheTimeout(waited);
       expect(await state()).toEqual(before);
+      loggedOnce('LOCK_TIMEOUT');
     } finally {
       await holder.release();
     }
@@ -841,19 +875,25 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
     expect(after.owner).toBe(practice.manager);
     expect(Number(after.activity)).toBe(Number(before.activity) + 1);
     expect(Number(after.keys)).toBe(Number(before.keys) + 1);
+    expect(logged).toEqual([]);
   }, 60_000);
 
   it('answers the same request key sent while its first request is still running as already sent and still being processed, and as already sent once the first has saved', async () => {
     const assign = { caseId, ownerUserId: '', requestKey: randomUUID() };
     const before = await state();
-    // The first request, part way through: its key written, its transaction still open.
-    const first = await holding('INSERT INTO mutation_request (user_id, request_key, route_id) VALUES ($1, $2, $3)', [practice.manager, assign.requestKey, assignCaseAction.id]);
+    logged.length = 0;
+    // The first request, part way through: its key's lock taken and its key written, its transaction still open.
+    const first = await holding([
+      ["SELECT pg_advisory_xact_lock(hashtextextended('request_key:' || $1::text || ':' || $2::text, 0))", [practice.manager, assign.requestKey]],
+      ['INSERT INTO mutation_request (user_id, request_key, route_id) VALUES ($1, $2, $3)', [practice.manager, assign.requestKey, assignCaseAction.id]],
+    ]);
     try {
       const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
       // Never "nothing was saved": the first may yet save. The closed word alone, and nothing written by this one.
       expect(answer).toEqual({ status: 'busy', what: 'request' });
       waitedTheTimeout(waited);
       expect(await state()).toEqual(before);
+      loggedOnce('REQUEST_STILL_RUNNING');
     } finally {
       // The first request saves.
       await first.release('COMMIT');
@@ -864,24 +904,37 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
     expect(Number(after.keys)).toBe(Number(before.keys) + 1);
   }, 60_000);
 
-  it('answers busy, never a server error, when the wait is outside the request’s transaction (the session’s own row), for an action and for a page', async () => {
+  it('calls only the same key still running "already sent": another lock met as the key is written (the table, behind a schema change) is the records’ refusal', async () => {
     const assign = { caseId, ownerUserId: '', requestKey: randomUUID() };
-    // The person's session is opened before its row is held (call() opens it on first use).
-    expect((await call(reconciliationPage, practice.manager, P(), undefined, web)).status).toBe('ok');
     const before = await state();
-    const holder = await holding('SELECT 1 FROM user_session WHERE user_id = $1 FOR UPDATE', [practice.manager]);
+    logged.length = 0;
+    // What a schema change queued behind a long request amounts to for every later one: the table cannot be written.
+    const holder = await holding([['LOCK TABLE mutation_request IN SHARE MODE', []]]);
     try {
-      const action = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
-      expect(action.answer).toEqual({ status: 'busy', what: 'records' });
-      waitedTheTimeout(action.waited);
-      // A page's read is refused the same way; its adapter shows the error state, never "not found" (next.ts, loadPage).
-      const page = await timed(() => call(reconciliationPage, practice.manager, P(), undefined, web));
-      expect(page.answer).toEqual({ status: 'busy', what: 'records' });
+      const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
+      expect(answer).toEqual({ status: 'busy', what: 'records' });
+      waitedTheTimeout(waited);
       expect(await state()).toEqual(before);
+      loggedOnce('LOCK_TIMEOUT');
     } finally {
       await holder.release();
     }
-    // The row free: the same request under the same key goes through.
+    // The table free: the same request under the same key goes through.
     expect(ok(await call(assignCaseAction, practice.manager, P(), assign, web)).objectId).toBe(caseId);
+  }, 60_000);
+
+  it('refuses a page’s read the same way when it waits on a lock (a table behind a schema change): its adapter shows the error state, never "not found"', async () => {
+    logged.length = 0;
+    expect((await call(casePage, practice.manager, { ...P(), caseId }, undefined, web)).status).toBe('ok');
+    const holder = await holding([['LOCK TABLE "case" IN ACCESS EXCLUSIVE MODE', []]]);
+    try {
+      const { answer, waited } = await timed(() => call(casePage, practice.manager, { ...P(), caseId }, undefined, web));
+      expect(answer).toEqual({ status: 'busy', what: 'records' });
+      waitedTheTimeout(waited);
+      loggedOnce('LOCK_TIMEOUT');
+    } finally {
+      await holder.release();
+    }
+    expect((await call(casePage, practice.manager, { ...P(), caseId }, undefined, web)).status).toBe('ok');
   }, 60_000);
 });
