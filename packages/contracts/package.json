@@ -17,7 +17,7 @@
     "@tp/db": "workspace:*",
     "@tp/money": "workspace:*",
     "@tp/rules": "workspace:*",
-    "pdfjs-dist": "^6.4.299",
+    "pdfjs-dist": "^6.5.438",
     "yauzl": "3.4.0",
     "zod": "catalog:"
   },
