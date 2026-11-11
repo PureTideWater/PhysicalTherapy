@@ -1665,3 +1665,56 @@ cents, an SSN or phone glued digit to digit to a date, an amount or a currency a
 900.12 3456`, `SSN for Zephyra Vantree: 90012-3456`), and other-script digits in member IDs, claim numbers and dates.
 ADR 0070's Part 3 lists the call's own number in other-script digits as not caught: for the letter reader it is caught
 now.
+
+## Amendment (`co-001/time-budget-bound`, 2026-11-11): how the letter reader's time budget is proved
+
+**The budget does not change.** A letter of 100,000 characters is redacted and checked within 3 seconds on the
+reference machine (the build's container class, on which the gate's timing table is measured). That is the product's
+budget; this amendment changes how the tests prove it, not the number, and no row was removed or skipped.
+
+**What was wrong.** The tests compared a wall clock with that number, which proves it only on a machine as fast as the
+reference and as idle. On a shared CI runner three such rows read 3.2 to 4.6 s on a pull request that touched nothing
+of the reader's (three of that pull request's four attempts failed `unit` there), because a wall clock also counts the
+time the runner gave to other work.
+
+**What the tests do now** (`packages/model-gateway/src/test-support/time-budget.ts`, proved by
+`time-budget.test.ts` beside it):
+
+- The reader's work is measured in the processor time of its own thread (`process.threadCpuUsage`, user and system).
+  The reader is one thread and waits for nothing, so on an idle machine that is the wall clock's number within 3 %,
+  and the time the runner gives to other work is not in it. Work that returns a promise is refused.
+- The first run is held to the budget itself. Work under it passes against the stated number, with no allowance and
+  no calibration: on the reference machine, or any as fast, the bound is 3 s (and 1 s for the two rows of
+  `redact.leaks.test.ts`).
+- Only work that ran over the budget is asked whether the machine is the slower one. The machine is then measured in
+  the same thread, right before the work is run again, by a fixed workload of the reader's kind (regular expressions
+  with look-behind and Unicode classes over 100,000 characters, 150 passes, allocating nothing) that calls none of the
+  reader's code. The fastest of five runs counts, since a run can only be slowed by what else the machine does. The
+  bound is `budget x (calibration now / 144 ms)`, and that ratio counts only above 1.05: a slowdown inside the
+  calibration's own spread allows nothing. The work is run again at most twice, each time after its own calibration.
+- The allowance cannot grow with the reader's own slowness, since the calibration runs none of its code: a reader
+  that became slower is slower against the same allowance.
+
+**The reference, as measured** (2026-11-11, this container class, four cores, Node 24.22.0, CI's major version; the
+scripts are on `claude/build-ops`, `designs/time-budget-bound/scripts`). The calibration's fastest of five, taken in
+a process that had run the reader, as the tests take it: 138 to 148 ms over 27 readings (Node 22: 139 to 146 over 9).
+The reference is 144 ms; a thread's processor time steps by 4 ms, 3 % of it. In a process that has not run the reader
+the same workload has read 132 to 174 ms; the tests never take it there, and the helper's own tests do not depend on
+it, since their work is the calibration workload itself.
+
+**What was run against it.** A reader with processor time added to reach 2.90 s passed, and to reach 3.05, 3.10,
+3.20 and 3.40 s failed, each time with no allowance: 21 of 21 over three runs, one of them under eight busy processes
+on the four cores. The first build of this helper (the bound `budget x max(1, calibration / 40 ms)` from the faster of
+one calibration before and one after) failed that test: its calibration read over its reference on nearly every run,
+so readers at 3.36 to 3.79 s passed. It was replaced before it merged. Under eight busy processes on the four cores
+every timed row passed; the review read their processor time 6 to 18 % over idle under such loads, the dearest row at
+2.3 s idle on Node 22 and 2.0 s on Node 24.
+
+**What stays a wall clock, and is no budget.** The four blocks carry a 60-second test timeout in place of the test
+runner's default of 5 seconds: it bounds how long a row may hang, and a loaded runner's wall clock is no part of the
+reader's cost. Recorded, not changed here: under eight busy processes on four cores one other test of
+`denial-letter.test.ts` (the property over synthetic letters, no timing row) ran past the runner's default 5 seconds
+and failed there;
+the engine's version moves the reader's cost more than the calibration's (12 to 21 % against 0 to 8 % between Node
+22 and 24), so the reference is stated for Node 24; and a first run in a cold process costs 14 to 16 % more than later
+runs, which the first-run rule counts whenever the first run is under the budget.
