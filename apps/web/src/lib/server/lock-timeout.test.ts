@@ -6,16 +6,17 @@ import { createLogger } from '@tp/observability';
 import { describe, expect, it } from 'vitest';
 
 import { PgBossQueue, producerOptions } from '../uploads/queue';
-import { BOUND_LOCK_WAITS, WEB_LOCK_TIMEOUT_MS, lockTimeoutParameter } from './lock-timeout';
+import { WEB_LOCK_TIMEOUT_MS, lockTimeoutParameter } from './lock-timeout';
 import { WEB_POOL_CONNECTIONS } from './pools';
 
 /**
  * CAS-57's guards (docs/adr/0092, the amendment of 2026-11-11). Every transaction the routes' wrapper opens for a
- * signed-in request starts by bounding its lock waits, so no handler can forget to; a signed-in request's work runs on
- * that transaction, so a file that takes a connection of its own from a pool is named here; and the queue producer's
- * pool, whose sends a handler makes inside its transaction, carries the same timeout. These read source text and
- * options; that the setting reaches the server, and what a request then answers, are the database tests'
- * (lock-timeout.db.test.ts and CAS-57 in routes/reconciliation-routes.db.test.ts).
+ * signed-in request carries the bound on its lock waits, which the scope sets as the transaction's first statement, so
+ * no handler can leave it out; a signed-in request's work runs on that transaction, so every place the web's code
+ * reaches the application pool itself is counted here by its file; and the queue producer's pool, whose sends a
+ * handler makes while its transaction is open, carries the same timeout. These read source text and options; that the
+ * setting reaches the server, and what a request then answers, are the database tests' (lock-timeout.db.test.ts and
+ * CAS-57 in routes/reconciliation-routes.db.test.ts; the scope's own statements, packages/db scope.test.ts).
  */
 
 const SRC = path.resolve(import.meta.dirname, '../..');
@@ -28,45 +29,54 @@ function sources(dir: string): string[] {
   });
 }
 
+/** A file's code without its comments' lines, so a comment's words are never counted. */
+function code(file: string): string {
+  return readFileSync(file, 'utf8')
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\/\*|\*)/.test(line))
+    .join('\n');
+}
+
 const SYNTHETIC_URL = 'postgres://synthetic_login:synthetic-words@db.synthetic.test:5432/synthetic';
 
 describe('a signed-in request’s lock waits are bounded (CAS-57)', () => {
-  it('waits three seconds for a lock, never the length of a reconcile pass, in its own transaction only', () => {
+  it('waits three seconds for a lock, never the length of a reconcile pass', () => {
     expect(WEB_LOCK_TIMEOUT_MS).toBe(3_000);
-    // SET LOCAL ends with the transaction: a pooled connection never carries it to other work.
-    expect(BOUND_LOCK_WAITS).toBe('SET LOCAL lock_timeout = 3000');
   });
 
-  it('is set first in every transaction the routes’ wrapper opens: each starts with the gates, and the gates start with the bound', () => {
-    const invoke = readFileSync(path.join(SRC, 'lib/http/invoke.ts'), 'utf8');
-    // The wrapper's transactions: one for each kind of signed-in route (self and platform, practice, organization).
-    const opened = [...invoke.matchAll(/const outcome = await (withActor|withPracticeScope)\(services\.pool,[^\n]*=> \{\n((?:\s*\/\/[^\n]*\n)*)\s*([^\n]*)\n/g)];
-    expect(opened.map((match) => `${String(match[1])}: ${String(match[3]).slice(0, 24)}`)).toEqual(['withActor: await gates(scope, { ter', 'withPracticeScope: await gates(scope, { ter', 'withActor: await gates(scope, { ter']);
-    // No other transaction of a route's own is opened in the wrapper.
-    expect([...invoke.matchAll(/const outcome = await /g)]).toHaveLength(3);
-    expect(invoke).toMatch(/async function gates\([^\n]*\): Promise<void> \{\n {2}await scope\.client\.query\(BOUND_LOCK_WAITS\);\n/);
+  it('carries the bound on every transaction the routes’ wrapper opens: each of a person’s, a practice’s and an organization’s routes, and a refused page’s frame', () => {
+    const invoke = code(path.join(SRC, 'lib/http/invoke.ts'));
+    expect(invoke).toContain('const BOUNDED = { lockTimeoutMs: WEB_LOCK_TIMEOUT_MS } as const;');
+    // Every transaction opened on the application pool here, by the scope it opens.
+    const opened = [...invoke.matchAll(/\b(withActor|withPracticeScope|withClient|withJobScope|withPublicSnapshot)\(services\.pool\b/g)].map((match) => String(match[1]));
+    expect(opened).toEqual(['withActor', 'withActor', 'withPracticeScope', 'withActor']);
+    // And each carries the bound: as the practice scope's request, or as a person's scope's last argument.
+    expect([...invoke.matchAll(/withPracticeScope\(services\.pool, \{[^\n]*\.\.\.BOUNDED \}/g)]).toHaveLength(1);
+    expect([...invoke.matchAll(/withActor\(services\.pool,[^\n]*, BOUNDED\)/g)]).toHaveLength(1);
+    expect([...invoke.matchAll(/^ {8}\}, BOUNDED\);$/gm)]).toHaveLength(2);
+    expect([...invoke.matchAll(/\bBOUNDED\b/g)]).toHaveLength(1 + opened.length);
   });
 
-  it('runs a signed-in request’s work on that transaction: a file that takes a connection of its own from a pool is one of these, by name', () => {
-    const takers = /\b(withPracticeScope|withActor|withClient|withJobScope)\(\s*[A-Za-z_.]*[pP]ool\b|[A-Za-z_.]*[pP]ool\.(connect|query)\(/;
-    const found = sources(SRC)
-      .filter((file) => takers.test(readFileSync(file, 'utf8')))
-      .map((file) => path.relative(SRC, file).split(path.sep).join('/'));
-    expect(found.sort()).toEqual([
-      // Sign-in and the session's read: they commit in steps (a session's end and its audit event, a failed attempt's count), and none may be given up.
-      'lib/auth/sessions.ts',
-      'lib/auth/sign-in.ts',
-      // The wrapper itself (its transactions, bounded above), and the rate limit's count before them.
-      'lib/http/invoke.ts',
-      'lib/http/rate-limit.ts',
-      // The model gateway's own pool: a call's limit and record.
-      'lib/models/contract-proposals.ts',
+  it('runs a signed-in request’s work on that transaction: every place the web’s code reaches the application pool itself is one of these, by file and count', () => {
+    // The application pool is the services' `pool`; billing's, the e-signature vendor's and the model gateway's are
+    // other logins with pools of their own, which no request's own records are written on.
+    const reached = /\b(?:services(?:\(\))?|deps)\.pool\b|\{[^}\n]*\bpool\b[^}\n]*\}\s*=\s*(?:this\.)?(?:services|deps)\b/g;
+    const found = Object.fromEntries(
+      sources(SRC)
+        .map((file) => [path.relative(SRC, file).split(path.sep).join('/'), [...code(file).matchAll(reached)].length] as const)
+        .filter(([, count]) => count > 0),
+    );
+    expect(found).toEqual({
+      // Sign-in: it commits in steps (a failed attempt's count, a session after the provider's grant), and none may be given up.
+      'lib/auth/sign-in.ts': 5,
+      // The wrapper: the four transactions above, bounded, and before them the session's read and the rate limit's
+      // count, which are not (a session's end and its audit event are two steps).
+      'lib/http/invoke.ts': 6,
       // The public forms, pages and webhooks, which open no scope.
-      'lib/routes/onboarding.ts',
-      'lib/routes/support.ts',
-      'lib/screening/routes.ts',
-      'lib/screening/validation.ts',
-    ]);
+      'lib/routes/onboarding.ts': 1,
+      'lib/routes/support.ts': 3,
+      'lib/screening/routes.ts': 12,
+    });
   });
 });
 

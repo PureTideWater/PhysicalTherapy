@@ -82,9 +82,9 @@ describe('what a summary says it is (S-SEC-2, S-A11Y-2, U-UX-3, U-UX-4; docs/adr
     expect(lead(records, false, true)).toBe('<p>The records this form needs are being updated, so nothing was saved. What you typed is still here: try again in a few minutes.</p>');
     expect(lead(ledger, false, true)).toBe('<p>The recovery ledger is being updated, so nothing was saved. What you typed is still here: try again in a few minutes.</p>');
     expect(lead(records, true, true)).toBe(
-      '<p>The records this form needs are being updated, so nothing was saved. What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.</p>',
+      '<p>The records this form needs are being updated, so nothing was saved. What you typed is still here, except passwords and codes: in a few minutes, type your password again or enter a new code, then try again.</p>',
     );
-    expect(lead(records, true, false)).toBe('<p>The records this form needs are being updated, so nothing was saved. Passwords and codes are not kept: type them again, then try again in a few minutes.</p>');
+    expect(lead(records, true, false)).toBe('<p>The records this form needs are being updated, so nothing was saved. Passwords and codes are not kept: in a few minutes, type your password again or enter a new code, then try again.</p>');
     // The flag decides, whatever words came with it; it is a refusal that did nothing, titled "Not done".
     expect(lead({ error: 'SYNTHETIC other words.', busy: 'records' }, false, true)).not.toContain('SYNTHETIC');
     expect(summaryKind(records)).toBe('error');
@@ -100,10 +100,10 @@ describe('what a summary says it is (S-SEC-2, S-A11Y-2, U-UX-3, U-UX-4; docs/adr
     // The server's words until the browser has read the form: no key is known to be kept.
     expect(lead(request)).toBe(`<p>${request.error}</p>`);
     expect(lead(request, false, true)).toBe(
-      '<p>This form was already sent and is still being processed, so nothing new was saved. Send it again in a few minutes, changing nothing, to see whether it saved: nothing is saved twice.</p>',
+      '<p>This form was already sent and is still being processed, so nothing new was saved. Send it again in a few minutes, changing nothing. If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.</p>',
     );
     expect(lead(request, true, true)).toBe(
-      '<p>This form was already sent and is still being processed, so nothing new was saved. Type passwords and codes again, then send it again in a few minutes, changing nothing else, to see whether it saved: nothing is saved twice.</p>',
+      '<p>This form was already sent and is still being processed, so nothing new was saved. In a few minutes, type your password again or enter a new code, and send it again, changing nothing else. If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.</p>',
     );
   });
 });

@@ -31,10 +31,11 @@ export interface BusyForm {
  * server's own words, the post without JavaScript, a summary before the page is read), and then the words claim
  * nothing about the form.
  *
- * The ledger and the records: what stays is said only of what a refusal keeps, and a password or a code is asked for
- * again. The same key still running: the form is sent again unchanged, since the same send is answered "Already sent"
- * once the first has saved and nothing is saved twice, while a changed one would lose its changes without a word;
- * without the form (no request key is kept), the page is read again instead.
+ * The ledger and the records: what stays is said only of what a refusal keeps; a password is typed again and a code
+ * is a new one, since the one typed has passed by then. The same key still running: the form is sent again unchanged,
+ * and the words say what that send does either way (answered "Already sent" where the first saved, saved by this one
+ * where it did not, never twice), while a changed one would lose its changes without a word; without the form (no
+ * request key is kept), the page is read again instead.
  */
 export function busyWords(what: BusyWhat, form: BusyForm | null): string {
   const lead = HELD[what];
@@ -43,16 +44,16 @@ export function busyWords(what: BusyWhat, form: BusyForm | null): string {
       return `${lead} Reload the page in a few minutes to see whether it saved.`;
     }
     return form.secrets
-      ? `${lead} Type passwords and codes again, then send it again in a few minutes, changing nothing else, to see whether it saved: nothing is saved twice.`
-      : `${lead} Send it again in a few minutes, changing nothing, to see whether it saved: nothing is saved twice.`;
+      ? `${lead} In a few minutes, type your password again or enter a new code, and send it again, changing nothing else. If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.`
+      : `${lead} Send it again in a few minutes, changing nothing. If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.`;
   }
   if (form === null || (!form.kept && !form.secrets)) {
     return `${lead} Try again in a few minutes.`;
   }
   if (!form.kept) {
-    return `${lead} Passwords and codes are not kept: type them again, then try again in a few minutes.`;
+    return `${lead} Passwords and codes are not kept: in a few minutes, type your password again or enter a new code, then try again.`;
   }
   return form.secrets
-    ? `${lead} What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.`
+    ? `${lead} What you typed is still here, except passwords and codes: in a few minutes, type your password again or enter a new code, then try again.`
     : `${lead} What you typed is still here: try again in a few minutes.`;
 }

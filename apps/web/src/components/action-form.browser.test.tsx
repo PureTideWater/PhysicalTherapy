@@ -334,7 +334,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     expect(await looks(keep, SUMMARY)).toEqual(FAILURE);
     // The form held a password and a code, which the refusal emptied: the lead never says they are still here.
     expect(await keep.textContent(DESCRIPTION)).toBe(
-      'The records this form needs are being updated, so nothing was saved. What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.',
+      'The records this form needs are being updated, so nothing was saved. What you typed is still here, except passwords and codes: in a few minutes, type your password again or enter a new code, then try again.',
     );
     expect(await keep.inputValue('#field-zip')).toBe('27514');
     expect(await keep.inputValue('#field-password')).toBe('');
@@ -345,7 +345,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await refusedWith(keep, ledger);
     expect(await sentKeys(keep)).toEqual([FIRST_KEY, FIRST_KEY]);
     expect(await keep.textContent(DESCRIPTION)).toBe(
-      'The recovery ledger is being updated, so nothing was saved. What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.',
+      'The recovery ledger is being updated, so nothing was saved. What you typed is still here, except passwords and codes: in a few minutes, type your password again or enter a new code, then try again.',
     );
     await keep.close();
 
@@ -361,7 +361,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     const code = await harness.open('code');
     await code.fill('#field-code', '123 456');
     await refusedWith(code, records, 'Confirm');
-    expect(await code.textContent(DESCRIPTION)).toBe('The records this form needs are being updated, so nothing was saved. Passwords and codes are not kept: type them again, then try again in a few minutes.');
+    expect(await code.textContent(DESCRIPTION)).toBe('The records this form needs are being updated, so nothing was saved. Passwords and codes are not kept: in a few minutes, type your password again or enter a new code, then try again.');
     expect(await code.inputValue('#field-code')).toBe('');
     await code.close();
 
@@ -392,7 +392,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     expect(await page.getAttribute(SUMMARY, 'data-state')).toBe('unconfirmed');
     expect(await page.textContent(TITLE)).toBe('Not confirmed');
     expect(await page.textContent(DESCRIPTION)).toBe(
-      'This form was already sent and is still being processed, so nothing new was saved. Type passwords and codes again, then send it again in a few minutes, changing nothing else, to see whether it saved: nothing is saved twice.',
+      'This form was already sent and is still being processed, so nothing new was saved. In a few minutes, type your password again or enter a new code, and send it again, changing nothing else. If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.',
     );
     expect(await page.inputValue('#field-zip')).toBe('27514');
     // The key is pinned: a refresh renders a new one, and the next press still sends the first, which alone can be
@@ -408,7 +408,7 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     const row = await harness.open('row');
     await refusedWith(row, request, 'Set');
     expect(await row.textContent(DESCRIPTION)).toBe(
-      'This form was already sent and is still being processed, so nothing new was saved. Send it again in a few minutes, changing nothing, to see whether it saved: nothing is saved twice.',
+      'This form was already sent and is still being processed, so nothing new was saved. Send it again in a few minutes, changing nothing. If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.',
     );
     await row.close();
   });

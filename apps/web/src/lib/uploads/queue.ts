@@ -25,12 +25,13 @@ export interface JobQueue {
 /**
  * pg-boss's options as the web's producer: it supervises, schedules and migrates nothing (the worker does). Its pool
  * carries the web's lock_timeout (server/lock-timeout.ts; docs/adr/0092, the amendment of 2026-11-11): a handler
- * queues inside its request's open transaction ("Queued in the request"), so a send that waited on a lock (the
- * queue's own schema change as a worker starts, a send of the same singleton key in flight) would hold the request's
- * application connection for as long. A send is one statement of its own, so one that gives up leaves nothing
- * written: inside a request it rolls the request back, after a commit its caller takes the failure (invoke.ts,
- * runCommitted; the screening's sweep). Given as pg's own parameter, which pg-boss hands to its pool with the rest of
- * its options; lock-timeout.db.test.ts reads it back from a connection pg-boss opens.
+ * queues while its request's transaction is open ("Queued in the request"), on pg-boss's own connection, so a send
+ * that waited on a lock (the queue's own schema change as a worker starts, a send of the same singleton key in
+ * flight) would hold the request's application connection for as long. A send is one statement that commits by
+ * itself: one that gives up leaves nothing written, and makes its request roll back; one that went through stays
+ * queued whatever its request does next. After a commit, a send's caller takes its failure (invoke.ts, runCommitted;
+ * the screening's sweep). Given as pg's own parameter, which pg-boss hands to its pool with the rest of its options;
+ * lock-timeout.db.test.ts reads it back from a connection pg-boss opens.
  */
 export function producerOptions(connectionString: string): ConstructorOptions {
   return {

@@ -803,6 +803,17 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
    */
   const holdCase = () => holding([['SELECT 1 FROM "case" WHERE id = $1 FOR NO KEY UPDATE', [caseId]]]);
 
+  /**
+   * A first request with this key, part way through: the key's lock taken as claimRequestKey takes it (the request
+   * keys' own class, "REQK", and the person's ID with the key as a uuid's text) and the key written, its transaction
+   * still open.
+   */
+  const firstRequest = (requestKey: string) =>
+    holding([
+      ["SELECT pg_advisory_xact_lock($1, hashtext($2::text || ':' || $3::uuid::text))", [0x5245514b, practice.manager, requestKey]],
+      ['INSERT INTO mutation_request (user_id, request_key, route_id) VALUES ($1, $2, $3)', [practice.manager, requestKey, assignCaseAction.id]],
+    ]);
+
   /** How long a call took, with what it answered. */
   async function timed<R>(run: () => Promise<R>): Promise<{ readonly answer: R; readonly waited: number }> {
     const started = performance.now();
@@ -883,10 +894,7 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
     const before = await state();
     logged.length = 0;
     // The first request, part way through: its key's lock taken and its key written, its transaction still open.
-    const first = await holding([
-      ["SELECT pg_advisory_xact_lock(hashtextextended('request_key:' || $1::text || ':' || $2::text, 0))", [practice.manager, assign.requestKey]],
-      ['INSERT INTO mutation_request (user_id, request_key, route_id) VALUES ($1, $2, $3)', [practice.manager, assign.requestKey, assignCaseAction.id]],
-    ]);
+    const first = await firstRequest(assign.requestKey);
     try {
       const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
       // Never "nothing was saved": the first may yet save. The closed word alone, and nothing written by this one.
@@ -936,5 +944,49 @@ describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () =>
       await holder.release();
     }
     expect((await call(casePage, practice.manager, { ...P(), caseId }, undefined, web)).status).toBe('ok');
+  }, 60_000);
+
+  it('waits for a first request that ends inside the timeout, and answers by how it ended: already sent where it saved, done where it was rolled back', async () => {
+    logged.length = 0;
+    for (const [end, expected] of [
+      ['COMMIT', 'duplicate'],
+      ['ROLLBACK', 'ok'],
+    ] as const) {
+      const assign = { caseId, ownerUserId: '', requestKey: randomUUID() };
+      const first = await firstRequest(assign.requestKey);
+      // The first request ends half a second in.
+      const ending = setTimeout(() => {
+        first.release(end).catch(() => undefined);
+      }, 500);
+      try {
+        const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
+        expect(answer.status).toBe(expected);
+        // It waited for the first, and not for the timeout.
+        expect(waited).toBeGreaterThanOrEqual(400);
+        expect(waited).toBeLessThan(WEB_LOCK_TIMEOUT_MS);
+      } finally {
+        clearTimeout(ending);
+        await first.release(end);
+      }
+    }
+    // Neither was refused: nothing is logged.
+    expect(logged).toEqual([]);
+  }, 60_000);
+
+  it('bounds the scope’s own opening read too: a request that waits there (a table of the permission read behind a schema change) is refused the same way', async () => {
+    const assign = { caseId, ownerUserId: '', requestKey: randomUUID() };
+    const before = await state();
+    logged.length = 0;
+    const holder = await holding([['LOCK TABLE practice IN ACCESS EXCLUSIVE MODE', []]]);
+    try {
+      const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
+      expect(answer).toEqual({ status: 'busy', what: 'records' });
+      waitedTheTimeout(waited);
+      loggedOnce('LOCK_TIMEOUT');
+    } finally {
+      await holder.release();
+    }
+    expect(await state()).toEqual(before);
+    expect(ok(await call(assignCaseAction, practice.manager, P(), assign, web)).objectId).toBe(caseId);
   }, 60_000);
 });

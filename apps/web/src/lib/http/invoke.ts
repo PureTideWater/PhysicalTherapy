@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { type ActiveSession, SESSION_COOKIE, resolveSession } from '../auth/sessions';
 import { RUN_STARTING_ROUTES, SuspendedError } from '../billing/runs';
 import { cookieToken } from '../auth/tokens';
-import { BOUND_LOCK_WAITS } from '../server/lock-timeout';
+import { WEB_LOCK_TIMEOUT_MS } from '../server/lock-timeout';
 import type { Services } from '../server/services';
 import { CSRF_FIELD, csrfTokenMatches, sameOrigin } from './csrf';
 import { type RateBucket, takeRateLimit } from './rate-limit';
@@ -88,10 +88,28 @@ function issuesOf(error: z.ZodError): Issue[] {
 }
 
 /**
- * PostgreSQL's lock_not_available: a statement gave up waiting for a lock, in a request's own transaction (gates sets
- * its lock_timeout) or in a queue send a handler made inside it (uploads/queue.ts). The web's own code uses no NOWAIT.
+ * PostgreSQL's lock_not_available: a statement gave up waiting for a lock, in a request's own transaction (BOUNDED) or
+ * in a queue send a handler made while it was open (uploads/queue.ts). The web's own code uses no NOWAIT.
  */
 const LOCK_NOT_AVAILABLE = '55P03';
+
+/**
+ * The bound every transaction this wrapper opens for a signed-in request carries (docs/adr/0092, the amendment of
+ * 2026-11-11; server/lock-timeout.ts): its lock_timeout, set by the scope as the transaction's first statement, so
+ * every lock wait in it, the scope's own opening read, a handler's statement, a trigger's, a library's, ends after
+ * three seconds, for that transaction only. A handler cannot leave it out, since the wrapper opens the transaction;
+ * lock-timeout.test.ts holds that every transaction opened here carries it.
+ */
+const BOUNDED = { lockTimeoutMs: WEB_LOCK_TIMEOUT_MS } as const;
+
+/**
+ * The class of the request keys' advisory locks, in PostgreSQL's two-number key space, which the single-number keys
+ * every other lock here uses (the ledger's, a packet's, a pricing run's: hashtextextended of a prefixed ID) can never
+ * equal. A request key is text its sender chooses, so in the shared space a key could be made to hash to another
+ * practice's lock; here it can only ever meet another request key. "REQK" in ASCII; the rules loader's class is
+ * another (packages/rules/src/loader.ts).
+ */
+const REQUEST_KEY_LOCK_CLASS = 0x5245514b;
 
 function isPgError(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
@@ -190,15 +208,8 @@ export function forgetMaintenanceFlag(): void {
   maintenanceCache.until = 0;
 }
 
-/**
- * Inside the transaction, before the permission check. First the bound on its lock waits (server/lock-timeout.ts;
- * docs/adr/0092, the amendment of 2026-11-11): every route's transaction starts here, so no statement a signed-in
- * request issues in it, in a handler, a trigger or a library, waits longer for a lock, and no handler can forget to
- * set it (invoke.test.ts holds that each of the wrapper's transactions starts with this call). Then maintenance
- * (unless exempt) and the terms of use (unless exempt).
- */
+/** Inside the transaction, before the permission check: maintenance (unless exempt) and the terms of use (unless exempt). */
 async function gates(scope: AnyScope<ScopeClient>, route: { readonly termsExempt: boolean; readonly maintenanceExempt: boolean }): Promise<void> {
-  await scope.client.query(BOUND_LOCK_WAITS);
   if (!route.maintenanceExempt && (await maintenanceOn(scope, Date.now()))) {
     throw new MaintenanceError();
   }
@@ -254,7 +265,8 @@ export async function shellFor(scope: AnyScope<ScopeClient>, currentPracticeId: 
  */
 async function claimRequestKey(scope: AnyScope<ScopeClient>, routeId: string, requestKey: string): Promise<boolean> {
   try {
-    await scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended('request_key:' || app_actor_id()::text || ':' || $1::text, 0))", [requestKey]);
+    // The key as the uuid it is stored as, so another spelling of it (upper case) is the same lock.
+    await scope.client.query("SELECT pg_advisory_xact_lock($1, hashtext(app_actor_id()::text || ':' || $2::uuid::text))", [REQUEST_KEY_LOCK_CLASS, requestKey]);
   } catch (error) {
     if (isPgError(error, LOCK_NOT_AVAILABLE)) {
       throw new BusyError('request');
@@ -358,7 +370,17 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
     return { status: 'invalid', issues: error.issues.length > 0 ? error.issues : [{ field: 'input', message: error.message }] };
   }
   if (error instanceof PermissionDeniedError) {
-    const shell = kind === 'page' ? await withActor(services.pool, actor.userId, (scope) => shellFor(scope, practiceId)) : undefined;
+    let shell: Shell | undefined;
+    try {
+      shell = kind === 'page' ? await withActor(services.pool, actor.userId, (scope) => shellFor(scope, practiceId), BOUNDED) : undefined;
+    } catch (shellError) {
+      if (isPgError(shellError, LOCK_NOT_AVAILABLE)) {
+        // The refused page's frame is a read of its own, bounded as the request was: one that waits is the same refusal.
+        services.logger.warn('a request waited past the lock timeout and was refused as busy', { error_code: 'LOCK_TIMEOUT', request_id: requestId });
+        return { status: 'busy', what: 'records' };
+      }
+      throw shellError;
+    }
     const outcome = { status: 'forbidden' as const, permission: error.permission, message: error.message, roles: error.roles };
     return shell === undefined ? outcome : { ...outcome, shell };
   }
@@ -488,7 +510,7 @@ function actorRoute<P, I, R>(spec: ActorSpec<P, I, R>, access: Extract<Access, {
           return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
             spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles, afterCommit }),
           );
-        });
+        }, BOUNDED);
         await runCommitted(committed, services);
         return outcome;
       } catch (error) {
@@ -541,7 +563,7 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
         committed.push(work);
       };
       try {
-        const outcome = await withPracticeScope(services.pool, { actorId: actor.userId, practiceIds: [practiceId], oneSnapshot }, async (scope) => {
+        const outcome = await withPracticeScope(services.pool, { actorId: actor.userId, practiceIds: [practiceId], oneSnapshot, ...BOUNDED }, async (scope) => {
           await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
           if (scope.access(practiceId) === undefined) {
             throw new NotFoundError();
@@ -611,7 +633,7 @@ export function organizationRoute<P extends { readonly organizationId: string },
           return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
             spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles, organizationId, organizationRoles: held, afterCommit }),
           );
-        });
+        }, BOUNDED);
         await runCommitted(committed, services);
         return outcome;
       } catch (error) {

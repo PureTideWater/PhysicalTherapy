@@ -6,23 +6,18 @@
  * web's few connections, which every practice shares, so the wait ends here and the request is answered `busy`
  * (http/invoke.ts), its transaction rolled back.
  *
- * Where it is set: on every transaction the routes' wrapper opens for a signed-in request (http/invoke.ts, `gates`,
- * the first statement of each), and on the queue producer's pool (uploads/queue.ts), whose sends a handler makes
- * inside that transaction. Nowhere else: sign-in, the session's read, the rate limit's count, the public forms, and
- * billing's, the e-signature vendor's and the model gateway's pools wait as they always have, since they commit in
- * steps or must never give a write up, and none of them meets a lock a reconcile pass holds.
+ * Where it is set: on every transaction the routes' wrapper opens for a signed-in request (http/invoke.ts, BOUNDED:
+ * the scope sets it as the transaction's first statement, before its own opening read), and on the queue producer's
+ * pool (uploads/queue.ts), whose sends a handler makes while that transaction is open. Nowhere else: sign-in, the
+ * session's read, the rate limit's count, the public forms, and billing's, the e-signature vendor's and the model
+ * gateway's pools wait as they always have, since they commit in steps or must never give a write up, and none of
+ * them meets a lock a reconcile pass holds.
  *
  * PostgreSQL applies it to each wait for a lock (a row, a key behind a foreign key or a unique index, an advisory
  * lock, a table behind a schema change), not to the statement or the request: a statement that takes two locks may
  * wait twice.
  */
 export const WEB_LOCK_TIMEOUT_MS = 3_000;
-
-/**
- * The statement that bounds every lock wait of the transaction it runs in, and of that transaction only: SET LOCAL
- * ends with the transaction, so a pooled connection never carries it to the next request's work or keeps it from one.
- */
-export const BOUND_LOCK_WAITS = `SET LOCAL lock_timeout = ${String(WEB_LOCK_TIMEOUT_MS)}`;
 
 /**
  * pg's lock_timeout for a pool of connections that run single statements of their own (the queue producer's), as the

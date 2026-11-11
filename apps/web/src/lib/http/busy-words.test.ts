@@ -27,19 +27,19 @@ describe('what a busy refusal says', () => {
     expect(busyWords('ledger', { kept: false, secrets: false })).toBe(busyWords('ledger', null));
   });
 
-  it('never says a password or a code is still here: a refusal empties them, so the words ask for them again, and say nothing stays where nothing does', () => {
-    expect(busyWords('records', { kept: true, secrets: true })).toBe(`${RECORDS} What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.`);
-    expect(busyWords('ledger', { kept: true, secrets: true })).toBe(`${LEDGER} What you typed is still here, except passwords and codes: type them again, then try again in a few minutes.`);
+  it('never says a password or a code is still here: a refusal empties them, so the words ask for the password again and for a new code (the one typed has passed), and say nothing stays where nothing does', () => {
+    expect(busyWords('records', { kept: true, secrets: true })).toBe(`${RECORDS} What you typed is still here, except passwords and codes: in a few minutes, type your password again or enter a new code, then try again.`);
+    expect(busyWords('ledger', { kept: true, secrets: true })).toBe(`${LEDGER} What you typed is still here, except passwords and codes: in a few minutes, type your password again or enter a new code, then try again.`);
     // A form whose only field is a password or a code: nothing typed is still here.
-    expect(busyWords('records', { kept: false, secrets: true })).toBe(`${RECORDS} Passwords and codes are not kept: type them again, then try again in a few minutes.`);
+    expect(busyWords('records', { kept: false, secrets: true })).toBe(`${RECORDS} Passwords and codes are not kept: in a few minutes, type your password again or enter a new code, then try again.`);
     expect(busyWords('records', { kept: false, secrets: true })).not.toContain('still here');
   });
 
-  it('never says nothing was saved of a form whose earlier send is still running, and has it sent again unchanged: a changed one would lose its changes once the first has saved', () => {
-    expect(busyWords('request', { kept: true, secrets: false })).toBe(`${REQUEST} Send it again in a few minutes, changing nothing, to see whether it saved: nothing is saved twice.`);
+  it('never says nothing was saved of a form whose earlier send is still running, has it sent again unchanged, and says what that send does whether the first saved or not', () => {
+    expect(busyWords('request', { kept: true, secrets: false })).toBe(`${REQUEST} Send it again in a few minutes, changing nothing. If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.`);
     expect(busyWords('request', { kept: false, secrets: false })).toBe(busyWords('request', { kept: true, secrets: false }));
     expect(busyWords('request', { kept: true, secrets: true })).toBe(
-      `${REQUEST} Type passwords and codes again, then send it again in a few minutes, changing nothing else, to see whether it saved: nothing is saved twice.`,
+      `${REQUEST} In a few minutes, type your password again or enter a new code, and send it again, changing nothing else. If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.`,
     );
     // Without the form (a post without JavaScript keeps no request key), sending again could save twice: the page is read instead.
     expect(busyWords('request', null)).toBe(`${REQUEST} Reload the page in a few minutes to see whether it saved.`);
