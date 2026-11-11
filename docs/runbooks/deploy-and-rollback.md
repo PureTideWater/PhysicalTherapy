@@ -527,7 +527,7 @@ So, before this deploy:
 - check that no vacuum runs, as the sections above show.
 
 Once the migration holds the four, it reads every practice's responses and versions once (the preflight, below), adds
-one nullable column with its foreign key (a scan of `source_document`, every row NULL), builds two partial indexes and
+one nullable column with its foreign key (no scan: every row is NULL), builds two partial indexes and
 replaces five functions. No table is rewritten and no ledger table is locked. The index on `source_document` is the
 whole of the hold: the column and its key took milliseconds on two million synthetic rows and the index about a
 second per million documents on a development machine, so once an environment holds more than about two million
