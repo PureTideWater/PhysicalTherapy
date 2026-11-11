@@ -39,6 +39,7 @@ describe('the client secret in the configuration and the provider', () => {
     const client = { send: () => Promise.reject(new Error('unscripted')) } as unknown as CognitoClient;
     const provider = new CognitoAuthProvider({
       client,
+      confirmClient: { send: () => Promise.reject(new Error('unscripted')), config: { maxAttempts: () => Promise.resolve(1) } },
       userPoolId: 'us-east-1_Synthetic',
       clientId: 'syntheticclient',
       verifier: { verify: () => Promise.reject(new Error('unscripted')) },

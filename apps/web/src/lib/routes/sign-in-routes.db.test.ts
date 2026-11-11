@@ -1128,3 +1128,66 @@ describe('SEC-20: a refused client credential (docs/adr/0088, D2)', () => {
     expect(resetting.get(SIGN_IN_COOKIE)).toBeUndefined();
   });
 });
+
+describe('SGN-17 and SGN-18: a step begun before a password reset, and a reset whose outcome is unknown (docs/adr/0093)', () => {
+  const COULD_NOT_CONTINUE = { status: 'ok', data: { error: 'Sign-in could not continue. Start again.', final: true } };
+
+  /** The sealed step as the release before this rule wrote it: with no start of its attempt. */
+  function withoutBegan(browser: Browser): void {
+    const opened = services.sealer.open('sign-in-pending', browser.get(SIGN_IN_COOKIE), clock) as Record<string, unknown>;
+    const { began: _began, ...before } = opened;
+    browser.set(SIGN_IN_COOKIE, services.sealer.seal('sign-in-pending', before, new Date(clock.getTime() + 180_000)));
+  }
+
+  it('SGN-17: a code step in another browser, begun before the reset, starts again after it in the existing words’ place, opening no session and counting no failure', async () => {
+    const user = await person();
+    const stale = new Browser();
+    await step(signInWithPassword, stale, { email: user.email, password: PASSWORD });
+    const resetting = new Browser();
+    expect(await step(resetRequest, resetting, { email: user.email })).toEqual(CODE_SENT);
+    expect(await step(resetConfirm, resetting, { email: user.email, code: codeFor(user.email), password: CHOSEN, confirm: CHOSEN })).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=password_reset' } });
+    const from = logLines.length;
+    stale.forget();
+    expect(await step(answerMfa, stale, { code: nextCode() })).toEqual(RESTARTED);
+    expect(stale.deleted).toContain(SIGN_IN_COOKIE);
+    expect((await owner.query('SELECT 1 FROM user_session WHERE user_id = $1 AND ended_at IS NULL', [user.id])).rowCount).toBe(0);
+    expect(await failures(user.id)).toEqual({ count: 0, events: 0 });
+    expect(loggedSince(from, 'security event: sign-in step refused after a password reset')).toEqual([expect.objectContaining({ level: 'warn', user_id: user.id, error_code: 'mfa' })]);
+  });
+
+  it('SGN-17: a step the release before sealed, with no start, is no step: its page and its action start again, and the provider is not asked', async () => {
+    const user = await person();
+    const browser = new Browser();
+    await step(signInWithPassword, browser, { email: user.email, password: PASSWORD });
+    withoutBegan(browser);
+    expect(await step(mfaPage, browser)).toEqual(RESTARTED);
+    const answer = vi.spyOn(services.provider, 'answerTotp');
+    expect(await step(answerMfa, browser, { code: nextCode() })).toEqual(RESTARTED);
+    expect(answer.mock.calls).toEqual([]);
+    answer.mockRestore();
+    // The reset step holds no proof and carries no start: it stays a step.
+    const resetting = new Browser();
+    expect(await step(resetRequest, resetting, { email: user.email })).toEqual(CODE_SENT);
+    expect(await step(resetConfirm, resetting, { email: user.email, code: wrongCode(codeFor(user.email)), password: CHOSEN, confirm: CHOSEN })).toMatchObject({ status: 'ok', data: { error: 'That did not match.' } });
+  });
+
+  it('SGN-18: a confirmation whose outcome the provider did not give ends the step with the generic words, never the code’s refusal, and ends the account’s sessions', async () => {
+    const user = await person();
+    const signedIn = new Browser();
+    await step(signInWithPassword, signedIn, { email: user.email, password: PASSWORD });
+    expect(await step(answerMfa, signedIn, { code: nextCode() })).toEqual({ status: 'ok', data: { redirect: '/' } });
+    const resetting = new Browser();
+    expect(await step(resetRequest, resetting, { email: user.email })).toEqual(CODE_SENT);
+    const from = logLines.length;
+    const confirm = vi.spyOn(services.provider, 'confirmPasswordReset').mockResolvedValueOnce({ kind: 'outcome_unknown', code: 'InternalErrorException' });
+    resetting.forget();
+    expect(await step(resetConfirm, resetting, { email: user.email, code: codeFor(user.email), password: CHOSEN, confirm: CHOSEN })).toEqual(COULD_NOT_CONTINUE);
+    confirm.mockRestore();
+    expect(resetting.get(SIGN_IN_COOKIE)).toBeUndefined();
+    expect(resetting.get(KEPT_EMAIL_COOKIE)).toBeUndefined();
+    expect(await step(homePage, signedIn)).not.toMatchObject({ status: 'ok' });
+    expect(loggedSince(from, 'security event: password reset outcome unknown')).toEqual([expect.objectContaining({ level: 'error', user_id: user.id, error_code: 'InternalErrorException' })]);
+    expect(loggedSince(from, 'password reset code refused')).toEqual([]);
+    expect((await owner.query('SELECT 1 FROM password_notice WHERE user_id = $1', [user.id])).rowCount).toBe(0);
+  });
+});

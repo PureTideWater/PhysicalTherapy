@@ -1139,6 +1139,16 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'infra/test/mail-streams.test.ts',
     'infra/test/monitoring.test.ts',
   ]),
+  // A sign-in step begun before a password reset, and a reset whose answer was lost (co-001/step-before-reset; docs/adr/0093).
+  'SGN-17': none(1, 'Synthetic personas reset their passwords and answer stale steps through the local identity provider against a synthetic database; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  'SGN-18': none(1, 'A synthetic persona confirms a reset through a provider twin that loses its answer, and the Cognito classification runs on a fake client; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
   // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).
   'HOM-01': none(9, 'The tests load SYNTHETIC CAS-08 and the LED worlds, whose files belong to those cases, and the property test generates its ledgers in memory; no file.', [

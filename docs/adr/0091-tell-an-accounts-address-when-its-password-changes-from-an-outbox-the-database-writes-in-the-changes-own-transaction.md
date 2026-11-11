@@ -512,6 +512,7 @@ What the design did not state, added with their reasons:
   latest completed reset. Its own change, required before launch: `LANES.md` Queues item 28, the next schema pull
   request, in build on `co-001/step-before-reset`. The same change takes the reset whose answer from Cognito is lost
   (D15), and its scope takes a hardware key registered in case (b): nothing an operator holds removes one.
+  Built as ADR 0093 (the amendment of 2026-11-11, below).
 - The sibling outboxes (`support-notices.ts`, `dunning.ts`) rethrow an error after an accepted send uncounted, as this
   job did before R7, and bound no run by time; and the two earlier lock-loop tests (`ledger-interest.db.test.ts`,
   `line-status.db.test.ts`) never look at what a refused try holds, as this one did before the review. Base behaviour,
@@ -581,3 +582,39 @@ record and the build as follows; what was deferred is under Not covered.
 - **SEC-05.** "Revisit when" names a route that changes an address.
 - **DB-11** is the pull request description's: it names the five new grants to `tp_operator` and the definer trigger
   function.
+
+## Amendment: the close of D10's two cases and of the lost-answer reset (co-001/step-before-reset, 2026-11-11)
+
+[ADR 0093](0093-refuse-a-sign-in-step-begun-before-the-accounts-latest-password-reset-by-one-database-clock-and-read-an-unknown-reset-outcome-on-the-safer-side.md) is the close D10 and D15 named (`LANES.md` Queues item 28; test matrix SGN-17 and SGN-18). It edits
+no line of the email and nothing of this decision's migration. Three residuals close; what stays is listed after
+them.
+
+- **D10, case (a), a step waiting at its second factor: closed.** A code step begun at or before the reset is
+  refused as a closed step when its code is answered after it, before the provider is asked. It opens no session,
+  counts no failure and uses up no code. The refusal is a `security_event` for the account and pages
+  (`SignInStepRefusedAfterReset`), so case (a) no longer passes unseen.
+- **D10, case (b), a key-registration step: closed.** A key-registration step begun at or before the reset is
+  refused at its options and at its verify, whatever the provider's sign-out did. A registration already at the
+  provider when the reset commits is removed there or reported (`HardwareKeyRegisteredAcrossReset`; not removed
+  goes to the founder's break-glass until Queues item 29). `PasswordResetProviderSignOutFailed` still pages: the
+  provider's own tokens outlive a failed sign-out, though the app's steps no longer do.
+- **D15, the reset whose answer never reached the app: closed.** The confirm is sent once. An answer that does not
+  say whether the password changed is read on the safer side: the account's sessions end, the mark moves,
+  `password_reset_outcome_unknown` is recorded and `PasswordResetOutcomeUnknown` pages. The person is not told the
+  code did not match. **No notice is queued for it**: D2's WHEN still names `password_reset_completed` alone, since
+  the email's words would claim a change nobody has proved. So D15's sentence now reads: every completed reset the
+  app learns of, for an account, either queues a notice or pages; and a reset the app cannot tell from a failed one
+  pages too.
+- **N-3's line.** "Every session of this account has ended." now rests on the database: the trigger that moves the
+  mark ends every open session in the transaction that records the reset, and a session whose sign-in began at or
+  before the mark is refused under the account's row lock, so a sign-in racing the reset is either ended or refused.
+  The trade-off this decision put to the founder (keep the line while the two cases stood open) ends with ADR 0093.
+- **SGN-16** no longer records the two cases as open: its two tests flip, and SGN-17 asserts them refused.
+
+What stays open, each named in ADR 0093's known limits:
+
+- a reset made at Cognito directly from start to finish, and a challenge opened there before a reset and answered
+  after it, while the client is public (ADR 0088's second release closes both);
+- a reset for an address the app has no account for;
+- the web's process ending between the provider's answer and the commit;
+- a hardware key registered before the reset: nothing an operator holds removes one (Queues item 29).

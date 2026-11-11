@@ -3,7 +3,16 @@ import { createHmac } from 'node:crypto';
 import { createLogger } from '@tp/observability';
 import { describe, expect, it } from 'vitest';
 
-import { type CognitoClient, CognitoAuthProvider, type IdTokenVerifier, MfaNotProvenError } from './cognito-provider';
+import {
+  type CognitoClient,
+  CognitoAuthProvider,
+  ConfirmClientRetriesError,
+  type IdTokenVerifier,
+  MfaNotProvenError,
+  type OneAttemptClient,
+  cognitoClients,
+  confirmChangedNothing,
+} from './cognito-provider';
 import type { AuthStep, NewPasswordStep } from './provider';
 import { ClientSecret } from './secret-hash';
 
@@ -29,6 +38,16 @@ function named(name: string, message = name): Error {
   const error = new Error(message);
   error.name = name;
   return error;
+}
+
+/** An error as the SDK gives a service's answer: its name, the fault the model names and the HTTP status. */
+function answered(name: string, status: number, fault: 'client' | 'server' = status < 500 ? 'client' : 'server', message = name): Error {
+  return Object.assign(named(name, message), { $fault: fault, $metadata: { httpStatusCode: status } });
+}
+
+/** A client as the provider takes the confirm's: the scripted send(), and the attempts it says it makes. */
+function attempts(client: CognitoClient, maxAttempts = 1): OneAttemptClient {
+  return { send: client.send.bind(client), config: { maxAttempts: () => Promise.resolve(maxAttempts) } };
 }
 
 /** The synthetic client's secret, as the endpoint holds it. */
@@ -134,14 +153,19 @@ const TOKENS = { AuthenticationResult: { IdToken: 'id-token', AccessToken: 'acce
 
 /**
  * A provider over the scripted endpoint. `secret`: what the provider is given (the client's own by default; null for
- * the public client); `endpoint`: what the endpoint holds (the client's own by default).
+ * the public client); `endpoint`: what the endpoint holds (the client's own by default). The confirm's one-attempt
+ * client is the same scripted endpoint unless `confirmClient` gives another.
  */
-function make(script: Record<string, Answer | Answer[]>, options: { readonly secret?: string | null; readonly endpoint?: string | null } = {}) {
+function make(
+  script: Record<string, Answer | Answer[]>,
+  options: { readonly secret?: string | null; readonly endpoint?: string | null; readonly confirmClient?: OneAttemptClient } = {},
+) {
   const secret = options.secret === undefined ? SECRET : options.secret;
   const { client, sent } = cognito(script, options.endpoint === undefined ? secret : options.endpoint);
   const lines: string[] = [];
   const provider = new CognitoAuthProvider({
     client,
+    confirmClient: options.confirmClient ?? attempts(client),
     userPoolId: 'us-east-1_Synthetic',
     clientId: CLIENT_ID,
     verifier,
@@ -537,12 +561,140 @@ describe('CognitoAuthProvider: a forgotten password (SGN-05, SGN-06)', () => {
     }
   });
 
-  it('checks the policy before Cognito, maps the pool’s own refusal, and passes other failures through', async () => {
-    const { provider, sent } = resetting({ ConfirmForgotPasswordCommand: [named('InvalidPasswordException'), named('InternalErrorException')] });
+  it('checks the policy before Cognito, maps the pool’s own refusal, and passes a client fault that changed nothing through', async () => {
+    const { provider, sent } = resetting({ ConfirmForgotPasswordCommand: [named('InvalidPasswordException'), answered('ResourceNotFoundException', 400)] });
     expect(await provider.confirmPasswordReset(EMAIL, '123456', 'weak')).toMatchObject({ kind: 'invalid_password' });
     expect(sent).toEqual([]);
     expect(await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).toEqual({ kind: 'invalid_password', problems: [] });
-    await expect(provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).rejects.toThrow('InternalErrorException');
+    await expect(provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).rejects.toThrow('ResourceNotFoundException');
+  });
+});
+
+describe('CognitoAuthProvider: a reset whose answer is lost (SGN-18; docs/adr/0093, D9)', () => {
+  const EMAIL = 'person@synthetic.test';
+  const NEW_PASSWORD = 'Chosen-Reset-Pass-2026';
+  const LAMBDA = ['UnexpectedLambdaException', 'UserLambdaValidationException', 'InvalidLambdaResponseException'];
+
+  it('SGN-18: the confirm is sent on the one-attempt client and never on the retrying one', async () => {
+    const retrying = cognito({ ConfirmForgotPasswordCommand: {}, ForgotPasswordCommand: {} });
+    const once = cognito({ ConfirmForgotPasswordCommand: {} });
+    const { provider, sent } = make({ ForgotPasswordCommand: {} }, { confirmClient: attempts(once.client) });
+    await provider.requestPasswordReset(EMAIL, 'request-1');
+    expect(await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).toEqual({ kind: 'reset' });
+    expect(once.sent.map((call) => call.command)).toEqual(['ConfirmForgotPasswordCommand']);
+    expect(sent.map((call) => call.command)).toEqual(['ForgotPasswordCommand']);
+    expect(retrying.sent).toEqual([]);
+  });
+
+  it('SGN-18: a confirm client left on more than one attempt sends nothing and throws', async () => {
+    for (const maxAttempts of [3, 2, 0]) {
+      const once = cognito({ ConfirmForgotPasswordCommand: {} });
+      const { provider, sent } = make({}, { confirmClient: attempts(once.client, maxAttempts) });
+      await expect(provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).rejects.toThrow(ConfirmClientRetriesError);
+      expect([...once.sent, ...sent]).toEqual([]);
+    }
+  });
+
+  it('SGN-18: the composed clients: the confirm’s is set to one attempt, the other keeps the SDK’s retries', async () => {
+    const { client, confirmClient } = cognitoClients('us-east-1');
+    expect(await confirmClient.config.maxAttempts()).toBe(1);
+    expect(await client.config.maxAttempts()).toBeGreaterThan(1);
+    expect(confirmClient).not.toBe(client);
+  });
+
+  it('SGN-18: no answer, a server fault and a trigger’s failure are an unknown outcome, by the error’s name alone', async () => {
+    const unknown: readonly (readonly [Error, string])[] = [
+      [named('TimeoutError', `socket timed out for ${EMAIL}`), 'TimeoutError'],
+      [new Error('socket hang up'), 'Error'],
+      [Object.assign(named('ECONNRESET'), { $metadata: {} }), 'ECONNRESET'],
+      [answered('InternalErrorException', 500), 'InternalErrorException'],
+      [answered('ServiceUnavailable', 503), 'ServiceUnavailable'],
+      [answered('UnknownError', 502, 'client'), 'UnknownError'],
+      [named('InternalErrorException'), 'InternalErrorException'],
+      ...LAMBDA.map((name) => [answered(name, 400), name] as const),
+    ];
+    const { provider, sent, lines } = make({ ConfirmForgotPasswordCommand: unknown.map(([error]) => error) });
+    for (const [, name] of unknown) {
+      expect([name, await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)]).toEqual([name, { kind: 'outcome_unknown', code: name }]);
+    }
+    expect(sent).toHaveLength(unknown.length);
+    expect(lines.join('\n')).not.toContain(EMAIL);
+  });
+
+  it('SGN-18: an error with no name at all is an unknown outcome named unknown', async () => {
+    const { provider } = make({ ConfirmForgotPasswordCommand: Object.assign(new Error('x'), { name: '' }) });
+    expect(await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).toEqual({ kind: 'outcome_unknown', code: 'unknown' });
+  });
+
+  it('SGN-18: every answer that changed nothing stays what it was: the code’s refusals, the policy’s, the credential’s, and any other client fault thrown', async () => {
+    const rejected = ['CodeMismatchException', 'ExpiredCodeException', 'LimitExceededException', 'TooManyFailedAttemptsException', 'UserNotFoundException', 'NotAuthorizedException', 'UserNotConfirmedException'];
+    const thrown = ['TooManyRequestsException', 'InvalidParameterException', 'ResourceNotFoundException', 'ForbiddenException', 'OperationNotEnabledException', 'PasswordHistoryPolicyViolationException', 'SomeUnmodelledClientFault'];
+    const { provider } = make({
+      ConfirmForgotPasswordCommand: [
+        ...rejected.slice(0, 6).map((name) => answered(name, 400)),
+        answered('InvalidPasswordException', 400),
+        answered('NotAuthorizedException', 400, 'client', `Unable to verify secret hash for client ${CLIENT_ID}`),
+        ...thrown.map((name) => answered(name, name === 'ForbiddenException' ? 403 : 400)),
+        Object.assign(named('ThrottlingException'), { $fault: 'client' }),
+        answered('UserNotConfirmedException', 400),
+      ],
+    });
+    for (const name of rejected.slice(0, 6)) {
+      expect([name, await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)]).toEqual([name, { kind: 'rejected' }]);
+    }
+    expect(await provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).toEqual({ kind: 'invalid_password', problems: [] });
+    await expect(provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).rejects.toMatchObject({ name: 'ClientCredentialError', code: 'NotAuthorizedException' });
+    for (const name of [...thrown, 'ThrottlingException', 'UserNotConfirmedException']) {
+      await expect(provider.confirmPasswordReset(EMAIL, '123456', NEW_PASSWORD)).rejects.toMatchObject({ name });
+    }
+  });
+
+  it('SGN-18: the rule itself: a 4xx or a client fault with no status changed nothing, unless a trigger’s; a status wins over the fault', () => {
+    expect(confirmChangedNothing(answered('TooManyRequestsException', 429))).toBe(true);
+    expect(confirmChangedNothing(Object.assign(named('X'), { $fault: 'client' }))).toBe(true);
+    expect(confirmChangedNothing(answered('X', 500, 'client'))).toBe(false);
+    expect(confirmChangedNothing(answered('X', 400, 'server'))).toBe(true);
+    expect(confirmChangedNothing(Object.assign(named('X'), { $fault: 'server' }))).toBe(false);
+    expect(confirmChangedNothing(answered('X', 399))).toBe(false);
+    expect(confirmChangedNothing(named('X'))).toBe(false);
+    for (const name of LAMBDA) {
+      expect(confirmChangedNothing(answered(name, 400))).toBe(false);
+    }
+    for (const value of [undefined, null, 'TooManyRequestsException', 400]) {
+      expect(confirmChangedNothing(value)).toBe(false);
+    }
+  });
+});
+
+describe('CognitoAuthProvider: a hardware key removed (docs/adr/0093, D6)', () => {
+  const GRANT = JSON.stringify({ a: 'access-token', r: 'refresh-token' });
+
+  it('removes the credential with the grant’s access token and no client credential', async () => {
+    const { provider, sent, lines } = make({ DeleteWebAuthnCredentialCommand: {} });
+    expect(await provider.removeHardwareKey(GRANT, 'credential-1')).toBe(true);
+    expect(sent).toEqual([{ command: 'DeleteWebAuthnCredentialCommand', input: { AccessToken: 'access-token', CredentialId: 'credential-1' } }]);
+    expect(lines).toEqual([]);
+  });
+
+  it('answers false for any failure, a grant that does not open included, logging the error’s name alone', async () => {
+    const { provider, lines } = make({
+      DeleteWebAuthnCredentialCommand: [answered('ResourceNotFoundException', 400, 'client', 'credential-1 of access-token'), answered('InternalErrorException', 500), named('NotAuthorizedException', 'Access Token has been revoked'), new Error('socket hang up')],
+    });
+    for (let call = 0; call < 4; call += 1) {
+      expect(await provider.removeHardwareKey(GRANT, 'credential-1')).toBe(false);
+    }
+    expect(await provider.removeHardwareKey('not a grant', 'credential-1')).toBe(false);
+    const entries = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(entries.map((entry) => [entry.level, entry.msg, entry.error_code])).toEqual(
+      ['ResourceNotFoundException', 'InternalErrorException', 'NotAuthorizedException', 'Error', 'SyntaxError'].map((name) => ['warn', 'provider hardware key removal failed', name]),
+    );
+    expect(lines.join('\n')).not.toContain('access-token');
+    expect(lines.join('\n')).not.toContain('credential-1');
+  });
+
+  it('a refused client credential is thrown, never answered as not removed', async () => {
+    const { provider } = make({ DeleteWebAuthnCredentialCommand: named('NotAuthorizedException', `Unable to verify secret hash for client ${CLIENT_ID}`) });
+    await expect(provider.removeHardwareKey(GRANT, 'credential-1')).rejects.toMatchObject({ name: 'ClientCredentialError', code: 'NotAuthorizedException' });
   });
 });
 

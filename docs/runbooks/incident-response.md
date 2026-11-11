@@ -231,6 +231,126 @@ event: password reset provider sign-out failed`.
    outage at Cognito, or the application role without `cognito-idp:AdminUserGlobalSignOut`
    (`infra/lib/constructs/application-role.ts`).
 
+## A sign-in step refused after a password reset (`SignInStepRefusedAfterReset`; docs/adr/0093, D5)
+
+A security event alarm as well. It fires (on the operator topic, at one in five minutes) on the web's line `security
+event: sign-in step refused after a password reset`, for every step but the hardware-key sign-in step (`key`), which
+is logged and not counted.
+
+1. **What it means.** Someone began a sign-in before the account's latest password reset, got past the password, and
+   answered a later step after the reset. The step was refused: no session opened, no key was registered, and nothing
+   was counted against the account. A reset asked for in one browser replaces that browser's own pending step, so
+   the stale step came from another browser or device. It can be the person's own second tab, phone or laptop. It
+   can also be someone who held the old password.
+2. **Read the line**; the alarm names no user, and it pages when it goes into ALARM, not once a line. In Logs Insights
+   on `/tp/<env>/web`, from five minutes before the alarm was raised until it is back at OK:
+
+   ```
+   fields @timestamp, user_id, request_id, error_code
+   | filter msg = "security event: sign-in step refused after a password reset"
+   ```
+
+   Keep the user IDs, the request IDs, each line's time and its `error_code`, which is the step: `mfa` (the code
+   step), `register_key` and `key_registered` (registering a hardware key), `new_password` and `mfa_setup` (an
+   invited person's first sign-in), `key` (a hardware-key sign-in). The audit log holds the same refusal as a
+   `security_event` for the user, its purpose `step_before_reset_<step>`.
+3. **Tell the person another way**, through their organization's administrator or the account contact, working by
+   user ID: a sign-in begun before their password reset was tried after it, at the line's time, and was refused. Ask
+   whether it was theirs.
+4. **If it was not theirs, or they cannot say**, treat it as an attempted takeover: open the record (section 1). The
+   reset already ended the sessions and changed the password. At the code step (`mfa`) the old password was proved
+   around the reset and a code was about to be answered, so tell the person their second factor may be known too. A
+   reset does not change a second factor; until a factor reset exists, the person's ticket follows
+   docs/runbooks/support-mail.md, "Sign-in help tickets". At `register_key` or `key_registered` the other party had
+   passed the code as well: tell the person the same, and look at the next section's alarm for the same user.
+5. **If it was theirs**, record it and close.
+6. **Record it** in a ticket by user ID and request ID, never an address or a name.
+
+**A mark ahead of the clock.** If a person with the right password and factor is refused as a closed step on every
+try, and this line is written for each, the account's mark may be ahead of the database's clock (the clock stepped
+forward at a reset and was then corrected). The refusals stop by themselves once the clock passes the mark. To see
+it, in a session as the operator role (`tp_operator`) where it can read the row, or else the founder's:
+
+```sql
+SELECT sign_in_not_before, sign_in_not_before > clock_timestamp() AS ahead FROM "user" WHERE id = '<user_id>';
+```
+
+If `ahead` is true and the wait is too long, give the user ID to the founder: only the owner's SQL moves a mark, and
+only back to the clock, never before a real reset.
+
+## A hardware key registered across a password reset (`HardwareKeyRegisteredAcrossReset`; docs/adr/0093, D6)
+
+A security event alarm as well. It fires (on the operator topic, at one in five minutes) on the web's line `security
+event: hardware key registered across a password reset`.
+
+1. **What it means.** A key-registration step begun before a reset had its call at the provider when the reset was
+   recorded, and the provider registered the key. The app saw that the step was stale once the provider answered,
+   asked the provider to remove the key, and closed the step. The line says whether the removal worked.
+2. **Read the line**, as above:
+
+   ```
+   fields @timestamp, user_id, request_id, error_code
+   | filter msg = "security event: hardware key registered across a password reset"
+   ```
+
+   Keep the user IDs, the request IDs, each line's time and its `error_code`: `removed` or `not_removed`.
+3. **`not_removed`: the key is still on the account**, and a hardware key signs in without the password. Open the
+   record (section 1) and contain (section 2, "A user or session"). Give the user ID to the founder at once: nothing
+   an operator holds removes a key (not a reset, not End membership), so the founder's break-glass removes it, until
+   `LANES.md` Queues item 29 gives the operator an action. The audit log holds `hardware_key_registered` for the
+   user at the line's time. Do not add the person back until the founder has dealt with the key.
+4. **`removed`: the key is gone.** Look in the audit log for a `sign_in` by that user after the line, in a session as
+   the operator role:
+
+   ```sql
+   SELECT action, purpose, at, request_id FROM audit_event
+   WHERE actor_id = '<user_id>' AND action IN ('hardware_key_registered', 'sign_in')
+     AND at >= '<line time>'::timestamptz
+   ORDER BY at;
+   ```
+
+   A row is treated as a takeover until the person says otherwise ("A password reset whose provider sign-out
+   failed", step 4).
+5. **Tell the person another way** in both cases, by user ID: a hardware key was registered on their account at the
+   moment of their password reset, and was removed, or is being removed. Whoever registered it had passed the
+   password and the code, so their second factor may be known too. Ask whether it was theirs; a person who wanted
+   the key registers it again after signing in.
+6. **Record it** in a ticket by user ID and request ID, never an address or a name.
+
+## A password reset whose outcome is unknown (`PasswordResetOutcomeUnknown`; docs/adr/0093, D9)
+
+A security event alarm as well. It fires (on the operator topic, at one in five minutes) on the web's line `security
+event: password reset outcome unknown`.
+
+1. **What it means.** A person confirmed a reset with a code, and Cognito did not say whether it changed the
+   password: no answer, a server fault, or a trigger's failure. The confirm is sent once and never repeated. The app
+   took the safer reading: it ended the account's sessions, moved the account's mark so that sign-in steps begun
+   before it are refused, recorded `password_reset_outcome_unknown`, and signed the user out at Cognito. It queued
+   **no** password-changed email, since nobody has proved a change. The person was answered "Sign-in could not
+   continue. Start again.", not that the code was wrong.
+2. **Read the line**, as above:
+
+   ```
+   fields @timestamp, user_id, request_id, error_code
+   | filter msg = "security event: password reset outcome unknown"
+   ```
+
+   Keep the user IDs, the request IDs and each line's time. `error_code` is the name of the provider's error. A null
+   `user_id` is an address the app has no account for: nothing was ended or recorded; go to step 5.
+3. **Find out whether the password changed.** In the Cognito console, or with `admin-get-user` for the user's
+   subject, read the user's last-modified time: one at the line's time means the reset was applied. Where that does
+   not settle it, ask the person (step 4): the password that signs them in tells which.
+4. **Tell the person another way**, through their organization's administrator or the account contact, working by
+   user ID, as ADR 0091 D15's section does: a reset of their password was tried at the line's time, it may have
+   taken effect, and they were signed out everywhere. If the password changed and it was not them, open the record
+   (section 1) and follow docs/runbooks/support-mail.md's "Password changed, not by me". If it was them, they sign in
+   with whichever password works, or ask for a new code.
+5. **Find the cause** from the line's `error_code` and Cognito's service health in the same minutes: an outage or a
+   throttle at Cognito, a network fault between the web task and Cognito, or a failing Lambda trigger on the pool.
+   If `PasswordResetSessionsNotEnded` is raised for the same request, the transaction that ends the sessions failed
+   twice as well: follow that section's step 3.
+6. **Record it** in a ticket by user ID and request ID, never an address or a name.
+
 ## Weekly sign-in review
 
 The reset and enrolment alarms (docs/adr/0088, D7; test matrix SEC-23) tell the operator within the hour; this review
@@ -256,7 +376,8 @@ accounts, in a session as the operator role (`tp_operator`), which reads `audit_
 4. Read the week's history of the other reset and enrolment alarms (`PasswordResetNotDeliveredConfig`,
    `PasswordResetNotDeliveredThrottled`, `PasswordResetRequestFailed`, `SecondFactorEnrolmentRefused`,
    `ClientCredentialRefused`, `ClientCredentialProbeRefused`, `PasswordResetRequestOverFloor`,
-   `PasswordResetSessionsNotEnded`, `PasswordResetProviderSignOutFailed`): each one raised that no ticket or incident
+   `PasswordResetSessionsNotEnded`, `PasswordResetProviderSignOutFailed`, `SignInStepRefusedAfterReset`,
+   `HardwareKeyRegisteredAcrossReset`, `PasswordResetOutcomeUnknown`): each one raised that no ticket or incident
    record already explains gets one.
 5. Check that no undelivered password-changed email was missed (docs/adr/0091, D9). Its page is a log line, and
    several can share one page; the audit log keeps one `password_notice_undelivered` a notice whether or not its line

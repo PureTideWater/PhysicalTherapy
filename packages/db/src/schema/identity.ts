@@ -67,10 +67,10 @@ export const userSession = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     endedAt: timestamp('ended_at', { withTimezone: true }),
     endReason: text('end_reason', { enum: SESSION_END_REASONS }),
-    /** When the sign-in attempt that opened the session began (sign_in_step_began(); docs/adr/0093). Absent on a session the release before opened. */
-    signInBeganAt: timestamp('sign_in_began_at', { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** When the sign-in attempt that opened the session began (sign_in_step_began(); docs/adr/0093). Absent on a session the release before opened. */
+    signInBeganAt: timestamp('sign_in_began_at', { withTimezone: true }),
   },
   (table) => [index('user_session_by_user').on(table.userId), index('user_session_by_device').on(table.deviceId)],
 );
