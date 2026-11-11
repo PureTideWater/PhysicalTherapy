@@ -2592,12 +2592,18 @@ const NAMED_REACH = 120;
 const SSN_LABEL_THEN = new RegExp(`(?:${SSN_LABEL.source})[ \\t]*$`, 'u');
 /**
  * A date up to its four-digit year, glued before a shape: its month and day in digits ("01/02/" before "2020900-12-3456")
- * or with its month's word ("JAN 1, ", "1 JANUARY ", "1ST OF JANUARY, "), on the scan's folded text.
+ * or with its month's word ("JAN 1, ", "1 JANUARY ", "1ST OF JANUARY, "), on the scan's folded text; a word glued before
+ * the month's word by a lost space too ("PAIDJAN 1, "), as the scan reads a date glued to a word.
  */
 const YEAR_GLUED_BEFORE = new RegExp(
-  `(?:(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212](?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212]|(?<!\\p{L})${MONTH_FOLDED}\\.?[ \\t]{1,2}(?:0?[1-9]|[12][0-9]|3[01])(?:ST|ND|RD|TH)?,?[ \\t]{1,2}|(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])(?:ST|ND|RD|TH)?[ \\t]{1,2}(?:OF[ \\t]{1,2})?${MONTH_FOLDED}\\.?,?[ \\t]{1,2})$`,
+  `(?:(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212](?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212]|${MONTH_FOLDED}\\.?[ \\t]{1,2}(?:0?[1-9]|[12][0-9]|3[01])(?:ST|ND|RD|TH)?,?[ \\t]{1,2}|(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])(?:ST|ND|RD|TH)?[ \\t]{1,2}(?:OF[ \\t]{1,2})?${MONTH_FOLDED}\\.?,?[ \\t]{1,2})$`,
   'u',
 );
+/**
+ * A date with a four-digit year glued after a bare nine or ten, the run's last digits its first: its day or month
+ * ("94156421006-22-2027" is a nine and "06-22-2027") or, written year first, its year ("9001234562020-01-02").
+ */
+const BARE_DATE_AFTER = /^(?:(?:0[1-9]|[12][0-9]|3[01])[/.\p{Pd}\u2212](?:0?[1-9]|[12][0-9]|3[01])[/.\p{Pd}\u2212](?:19|20)[0-9]{2}|(?:19|20)[0-9]{2}[/.\p{Pd}\u2212](?:0?[1-9]|1[0-2])[/.\p{Pd}\u2212](?:0?[1-9]|[12][0-9]|3[01]))(?![0-9])/u;
 
 /**
  * Whether a Social Security or phone number's own shape stands with another number's digits glued to it: three groups
@@ -2661,6 +2667,9 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labelOf: (group:
     const inCurrency = a.blocked && currencyAt[a.start] === 1;
     if (a.blocked && !inCurrency) continue;
     if (!inCurrency && a.digits.length >= 11 && CENTS_GLUED.test(text.slice(a.end, a.end + CENTS_REACH)) && !named(a)) return 'structure';
+    // A date glued after a bare nine or ten ("SSN: 94156421006-22-2027", "92146703003.03.2028"), unless a noun names the run.
+    const dateLead = a.digits.length === 11 || a.digits.length === 12 ? 2 : a.digits.length === 13 || a.digits.length === 14 ? 4 : 0;
+    if (!inCurrency && dateLead > 0 && BARE_DATE_AFTER.test(text.slice(a.end - dateLead, a.end + 10)) && !named(a)) return 'structure';
     // An amount's cents and then a nine or a ten with nothing between ("150.00900123456", "$150.002025550123").
     if ((a.digits.length === 11 || a.digits.length === 12) && /(?<![0-9.,])[0-9]{1,6}\.$/u.test(text.slice(Math.max(0, a.start - 9), a.start))) return 'structure';
     if (b === undefined || c === undefined || b.blocked || c.blocked) continue;

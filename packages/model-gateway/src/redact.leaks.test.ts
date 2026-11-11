@@ -913,6 +913,16 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     refused('Service (555) 012-3456150.00'),
     unchanged('Claim (123) 456-78901.50 applies'),
     unchanged('Service (555) 012-34567 today'),
+    // The gate's replay of the round after it: a date with a four-digit year glued after a bare nine or ten, and a word
+    // glued by a lost space before the month's word of a date that ends before the shape.
+    refused('SSN: 94156421006\u201322\u20132027'),
+    refused('Seen 96104065401-04-2026'),
+    refused('On 9001234562020-01-02 today'),
+    unchanged('ICN 96104065401-04-2026 today'),
+    unchanged('On 12345678901-04-26 today'),
+    unchanged('On 20260112345-01-2026 today'),
+    refused('PaidJan 1, 2020900\u201312\u20133456-$20.00.'),
+    unchanged('Plan 1, 2020900-12-3456 applies'),
   ])('B1-8, B2-3, B2-4, B2-6, C2-2, C2-3, C2-4: digits glued to an SSN’s or a phone’s shape refuse the letter where structure or a label says whose they are; a reference stays: %j %s', (letter, _outcome, sent) => {
     expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
   });
