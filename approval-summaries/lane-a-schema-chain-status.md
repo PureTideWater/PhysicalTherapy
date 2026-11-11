@@ -94,7 +94,24 @@ Started by the orchestrator session_019i9ifDAzQNA3kLHozjBoeS. Setup OK; worktree
   dispatched on 026eceba. **Scope (orchestrator, 04:26 UTC):** this session keeps #126 only, then records, unsubscribes
   and stands down; password-changed-notice is W6's. Trailer: this session's commits name no model (its own standing
   rule); the orchestrator accepted that at 04:39 UTC.
-- **RESUME-BLOCK (#126), head 026eceba, waiting on the founder:** when the founder's commit of the suggestion lands (a push event on
+- **#126 MERGED as 2e26a416 at 05:37 UTC 2026-11-11.** The founder committed the suggested line at 05:06:33 UTC
+  (8ee290ae: Tyler Williams, 2026-11-11, `bb7662c6…6bf8`; the name is on approvers.json). On 8ee290ae: `all green`,
+  `mutation`, `screening-capacity gate`, `approval-of-record` and `domain model` green; base 4fe8bcca an ancestor;
+  CAS-42.5 green on 026eceba (run 42961096211). Marked ready, merged with method merge and the expected head SHA.
+  **A slip, corrected:** the founder's commit superseded 026eceba's mutation run (its packets-scan job cancelled); I
+  read that as a slow runner and re-ran the old run, which cancelled the new head's run; I cancelled mine, re-ran run
+  42963559887 on 8ee290ae (green) and corrected the PR comment. Lesson: on a cancelled job, fetch the branch first.
+  Orchestrator told; PR unsubscribed; the check-in cancelled. **W2 stands down: nothing of #126 is left.**
+  Password-changed-notice is W6's. Worktree /home/user/interest and `co-001/wip-interest-fix` (at 026eceba) can go.
+- **Owed after #126, each its own item (none started):** (1) with no planner statistics the chain walk's link lookups
+  (`claim k`, reportedInterest's `claim v`, claimLines' `named` join) are planned against a practice-wide index once a
+  step: analyze `claim` after a load, or make them statistics-proof, measured at CAS-51's sizes; (2) CAS-50/51 seeded
+  with PLB L6s and WOs, the interest statements bounded; (3) the settle entries compared row for row (ADR 0087);
+  (4) a composite foreign key (practice_id, link) on claim.reversal_of_claim_id and superseded_by_claim_id (schema
+  queue); (5) D19's exact alternative (one entry per PLB L6, line and chain) only if the founder asks: a new freeze
+  exception; (6) the capacity run's advisory: the windows query 50,314 ms cold against 5,000 ms on 8a61c612, not looked
+  into.
+- **Done steps (kept for the record), head 026eceba:** when the founder's commit of the suggestion lands (a push event on
   the subscribed PR): read the line (name on approvers.json, a date, the hash), check `domain model` and the required
   checks (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`) are green on that commit and
   origin/claude/build-platform is an ancestor (merge the base once if not, then the checks again); merge with method
