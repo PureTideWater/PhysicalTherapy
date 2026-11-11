@@ -254,3 +254,21 @@ exact design, one commit; a migration, so not this change); every send after the
 saved record with no job and a person told "saved", where a failed send undoes the request today); a delayed job
 cancelled on rollback (every job starts late, and a cancel can be lost as a send can).
 
+## Amendment, 2026-11-11 (2): the free screening's upload waits three seconds a lock, then is refused in its own words
+
+Item 3 above left the public forms unbounded. One of them waits by design: `submit_screening()` makes the later of two
+uploads of one practice or contact address wait for the earlier to commit (two advisory locks, then the rows it
+replaces). With no limit, every waiting upload held one of the web's connections for as long as the first ran, on a
+route anyone can post to (the reviews of the first amendment, D4; Queues item 25 (b)).
+
+- The upload's one storing statement now runs in a transaction of its own that sets the same `lock_timeout`, three
+  seconds a lock (`WEB_LOCK_TIMEOUT_MS`), as its first statement and commits reading the answer
+  (`screening/routes.ts`, `withBoundedLockWaits`). The function is unchanged: no migration.
+- A wait that reaches the limit is rolled back, stores nothing, and is answered as a refusal of the form, which keeps
+  what the person typed: "We could not store this screening just now, so nothing was sent. Wait a minute, then send it
+  again." The sentence says nothing of the other upload, so it tells no one that a practice or an address is
+  screening at that moment. It is logged by its code (`SCREENING_UPLOAD_BUSY`) and the request's ID alone.
+- The route's other statements (the mail refusal's read, the address checks, the queue's place) take no lock an
+  upload holds and stay as they were. Sign-in, the session's read and the other public forms stay unbounded, for the
+  reasons item 3 gives.
+
