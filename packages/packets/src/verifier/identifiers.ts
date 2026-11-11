@@ -62,20 +62,6 @@ export function joinedSpans(spans: readonly TextSpan[]): TextSpan[] {
  */
 const INVISIBLE = '­';
 
-/** The text with each token as one invisible character, and where each of them stands in it with the length it had. */
-function tokensAsInvisible(text: string, tokens: readonly TextSpan[]): { readonly prose: string; readonly places: readonly { readonly at: number; readonly length: number }[] } {
-  const places: { readonly at: number; readonly length: number }[] = [];
-  let prose = '';
-  let cursor = 0;
-  for (const token of joinedSpans(tokens)) {
-    prose += text.slice(cursor, token.start);
-    places.push({ at: prose.length, length: token.end - token.start });
-    prose += INVISIBLE;
-    cursor = token.end;
-  }
-  return { prose: prose + text.slice(cursor), places };
-}
-
 /**
  * The reading for a case's identifiers: the whole-word reading's spans and the letter reader's matcher's, joined where
  * they overlap, so it never finds less than either. The matcher reads the text twice.
@@ -110,11 +96,14 @@ export function identifierReader(identifiers: CaseIdentifiers): IdentifierReader
         found.push({ start: match.start, end: match.end });
       }
     }
-    const { prose, places } = tokensAsInvisible(text, skip.tokens);
-    /** Where a character of the prose is in the text: past each token before it, by the length the token had. */
-    const inText = (position: number) => places.reduce((at, place) => (place.at < position ? at + place.length - 1 : at), position);
+    // The second reading: the text with each token as one invisible character, last token first so no position moves
+    // before its token is replaced.
+    const tokens = joinedSpans(skip.tokens);
+    const prose = tokens.reduceRight((out, token) => `${out.slice(0, token.start)}${INVISIBLE}${out.slice(token.end)}`, text);
+    /** Where a position of the prose is in the text: each token before it, in turn, is back at its own length. */
+    const inText = (position: number) => tokens.reduce((at, token) => (token.start < at ? at + token.end - token.start - 1 : at), position);
     for (const match of nameOrNumberMatches(prose, identifiers)) {
-      const span = { start: inText(match.start), end: inText(match.end - 1) + 1 };
+      const span = { start: inText(match.start), end: inText(match.end) };
       if (prose.slice(match.start, match.end).includes(INVISIBLE) && !isDate(span, match.kind)) {
         found.push(span);
       }

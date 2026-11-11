@@ -601,6 +601,13 @@ describe('pass 1 at its edges', () => {
     ]);
   });
 
+  it('reads a number of the case inside a longer figure that is no date: only a dated figure is the date', () => {
+    expect(codes('Ref 12345-678 is named [1].', { names: [], numbers: ['12345'] })).toEqual([
+      ['identifier_in_narrative', 'identifier', '12345'],
+      ['free_figure', 'identifier', '12345-678'],
+    ]);
+  });
+
   it('reads a date as a figure, and as a number of the case only after a label that says it is one', () => {
     expect(codes('Seen on 2026-03-02 here [1].', { names: [], numbers: ['2026-03-02'] })).toEqual([['free_figure', 'date', '2026-03-02']]);
     expect(codes('Seen on 2026-03-02 here [1].', { names: [], numbers: ['2026', '0302'] })).toEqual([['free_figure', 'date', '2026-03-02']]);

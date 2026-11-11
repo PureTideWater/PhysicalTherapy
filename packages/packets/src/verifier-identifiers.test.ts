@@ -11,7 +11,7 @@ import { scanText } from './scan';
 import { assemblyInput } from './test-support';
 import { type CaseIdentifiers, NO_CASE_IDENTIFIERS, identifierReader, readsNoIdentifier, verifyNarrative, verifyTemplate } from './verifier';
 import { joinedSpans } from './verifier/identifiers';
-import { DATED, type IdentifierSkip, identifierSpans } from './verifier/mismatches';
+import { DATED, type IdentifierSkip, identifierForms, identifierSpans } from './verifier/mismatches';
 
 /**
  * The verifier's reading of a narrative for the case's own identifiers (docs/adr/0047, amendment of 2026-11-11; test
@@ -352,6 +352,30 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
       }),
       { numRuns: 400 },
     );
+  });
+});
+
+describe('the whole-word reading by itself (docs/adr/0047), which the matcher’s now stands beside', () => {
+  // Each of these the verifier's report no longer shows by itself: the matcher's reading finds the same text. The
+  // whole-word reading is still half of the union, so it is held here directly.
+  it('counts a form by its letters and digits, of which it needs two', () => {
+    expect(identifierForms(['12', 'A.', '7', '.-', 'Q R'])).toEqual(['Q R', '12']);
+  });
+
+  it('matches a form with its punctuation as written and its white space of any length', () => {
+    expect(identifierSpans('St. Synthetic was paid.', ['ST. SYNTHETIC'], [])).toEqual([{ start: 0, end: 13 }]);
+    expect(identifierSpans('StX Synthetic was paid.', ['ST. SYNTHETIC'], [])).toEqual([{ start: 4, end: 13 }]);
+    expect(identifierSpans('Jane Synthetic was paid.', ['JANE  SYNTHETIC'], [])).toEqual([{ start: 0, end: 14 }]);
+    expect(identifierSpans('Jane \n Synthetic was paid.', ['JANE SYNTHETIC'], [])).toEqual([{ start: 0, end: 16 }]);
+  });
+
+  it('skips a form inside a span to skip, and keeps one that only touches it on either side', () => {
+    expect(identifierSpans('Jane[3] and [3]Jane.', ['JANE'], [{ start: 4, end: 7 }, { start: 12, end: 15 }])).toEqual([
+      { start: 0, end: 4 },
+      { start: 15, end: 19 },
+    ]);
+    expect(identifierSpans('Jane[3] and [3]Jane.', ['JANE'], [{ start: 3, end: 7 }, { start: 12, end: 16 }])).toEqual([]);
+    expect(identifierSpans('See [13] and 13.', ['13'], [{ start: 4, end: 8 }])).toEqual([{ start: 13, end: 15 }]);
   });
 });
 
