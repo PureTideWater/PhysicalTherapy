@@ -1171,6 +1171,56 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
   });
 
+  // The two reviews of the next delta, I1 (PHI) and I2 (must-stay), each finding on both sides, and the gate's replay.
+  it.each(['_', '~', '\u2500', '_ ', '-'])('I1-1, I2-1: a long rule of %j between a noun and a number is read in time linear in its length', (mark) => {
+    for (const length of [48, 60, 110, 5000]) {
+      const letter = `IMPORTANT NOTICE\n${mark.repeat(length)}\nClaim Number: 20260112345.01`;
+      const started = performance.now();
+      expect(outcome(letter)).toBe(letter);
+      expect(performance.now() - started, `a rule of ${String(length)}`).toBeLessThan(1000);
+    }
+  });
+  it.each([
+    // I2-2: what ends a label may stand alone on the line under it ("#", a table's alignment row, a rule of "#"); on
+    // the number's own line it is the number's (H1-5).
+    unchanged('Claim\n#\n20260112345.01'),
+    unchanged('Claim\n#:\n12345678901234.01'),
+    unchanged('| Claim |\n|:------|\n| 20260112345.01 |'),
+    unchanged('Statement\n#########\n802-45-678901.50'),
+    unchanged(`${HELD}Claim\n#\n802-456-78901`),
+    refused('REMITTANCE ADVICE\n\n#900-12-3456150.00'),
+    // I2-3, I1-2: the month's word after a bare nine or ten with its year after a space or a comma, as after a shape.
+    refused('Seq 90012345601Jan 2020'),
+    refused('Seq 90012345601Jan, 2020'),
+    refused('Seq 202555012301Jan 2020'),
+    refused('SSN: 90012345601Jan 2020'),
+    // I2-4: a label of three lines, a rule inside a label; never a blank line inside one.
+    unchanged('Member\nID\nNumber\n20260112345.01'),
+    unchanged('Remittance\nAdvice\nNumber\n12345678901234.01'),
+    unchanged('Invoice\n-------\nNo. 20260112345.01'),
+    refused('Invoice\n\nNo. 20260112345.01'),
+    // I2-5: a cell drawn with box lines, a label's own full stop before its rule, the line break U+0085.
+    unchanged('\u2502 Claim Number \u2502\n\u251C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502 20260112345.01 \u2502'),
+    unchanged('Acct.\n-----\n802-45-678901.50'),
+    unchanged('Claim:\u008520260112345.01'),
+    // I2-6: an amount that begins as a year does is no year after a month's word.
+    unchanged('Row 366-535-16935Nov 2000.00'),
+    unchanged('Seq 12345678901Jan 2000.00'),
+    // The gate's replay: the label right before the number is the number's own; with another word between them the
+    // writing with a point stays an amount and a number.
+    refused('1651.90. Medicare 917 16.2677535.06-17-AUG-23'),
+    refused('Call 900 77.3283150.00'),
+    refused('SSN/Medicare ID 900 12.3456150.00'),
+    unchanged('Medicare rate 110 32.74420'),
+    unchanged('Contact: Billing 250 75.123456'),
+    // A "+" before a digit is a phone's own sign, a table's corner beside a dash a connector.
+    refused('Provider: +1-202-555-0123150.00'),
+    refused('Claim + 900-12-3456150.00'),
+    unchanged('+--------------+\n| Claim Number |\n+--------------+\n| 20260112345.01 |'),
+  ])('I1-2, I2-2 to I2-6 and the gate\u2019s replay: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
   // ef3e8d20's reading stands where the strict reading leaves a group out of its chains (the fuzzers on the round after E1
   // and E2, and the review of its delta, G1-1: letters ef3e8d20 refuses were sent). To ef3e8d20 a label's list number is
   // the chain's first group, and a long run before a decimal point an amount it chains under its label: the scan reads
