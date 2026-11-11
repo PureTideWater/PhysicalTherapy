@@ -344,46 +344,106 @@ another session's transaction or cancel a reconcile to make room.
 **The migration's lock loop.** `20261111090000_password_changed_notice.sql` takes `"user"`'s SHARE ROW EXCLUSIVE lock and
 `audit_event`'s and `mail_send`'s ACCESS EXCLUSIVE locks together with `NOWAIT`, once a second, up to 300 tries, before
 any of its DDL. A refused try holds and queues nothing, so sign-ins (which write `audit_event` and then `"user"`),
-audited mutations and the mail record go on while it waits for a moment with none of the three in use. Once it holds
-them, every write of `"user"`, every audited mutation, every read of `audit_event` and every read or write of `mail_send`
-waits for the DDL and one scan of `mail_send` (at most about 91 days of messages), then proceeds. If no such moment comes
-in five minutes, the deploy fails: cdk reports "the migration task … stopped without migrating (exit code 1, …)", and
-`/tp/<env>/migration` ends with
+audited requests and the mail record go on while it waits for a moment with none of the three in use. What refuses a
+try is any open transaction that has read or written `audit_event` or `mail_send`, or written `"user"`: a sign-in and
+every signed-in request, for their milliseconds (a page's audited read writes `audit_event`, as a mutation does); a
+triage, a pricing run, an audit report or a packet export, from its first audited read or write to its commit (a
+triage is one transaction); the nightly audit copy's read (01:20 UTC); and an autovacuum or autoanalyze of one of the
+three, which a `NOWAIT` try never cancels, as a waiting lock would. A transaction that only reads `"user"`, or checks
+a foreign key against it, refuses nothing.
+
+Once the migration holds the three, until its commit (the DDL and one scan of `mail_send`, at most about 91 days of
+messages: about 0.3 seconds measured with 500,000 mail records, not yet on RDS), every write of `"user"`, every audited
+read or mutation, every other read of `audit_event` and every read or write of `mail_send` waits. Jobs and sign-ins
+wait and then proceed. A signed-in request waits up to its three-second lock timeout and is then refused as busy, with
+nothing saved (ADR 0092's amendment of 2026-11-11): a page shows its error state with "Try again", and a form answers
+"The records this form needs are being updated, so nothing was saved." At the measured window no one is refused; if
+people report those words during a deploy, the scan of `mail_send` has outgrown the measurement, and they try again
+once it ends.
+
+If no moment with the three free comes in five minutes, the deploy fails: cdk reports "the migration task … stopped
+without migrating (exit code 1, …)", and `/tp/<env>/migration` ends with
 
 > db:migrate: 20261111090000_password_changed_notice.sql failed: "user", audit_event or mail_send stayed in use for five minutes; run the deploy again (docs/adr/0091)
 
-(`lock_not_available`, 55P03). The migration changed nothing and no service moved (step 4). Run the deploy again, at a
-quieter hour if it repeats; never take the locks by hand or end another session's transaction to make room.
+(`lock_not_available`, 55P03). This migration runs in one transaction, so it changed nothing (a migration before it in
+the same deploy stays applied: each commits on its own), and no service moved (step 4). It means no try in the five
+minutes found the three free: steady signed-in traffic, a long triage or audit report, or jobs running back to back.
+Run the deploy again at a quieter hour: outside the practices' working hours, with no triage, pricing run, audit
+report or packet export queued or running (the daily monitoring schedule queues every practice's monitoring at 05:10
+UTC, which starts the day's pricing runs and their triage), and not at 01:20 UTC, when the audit copy reads. A vacuum
+ends by itself; whether one runs is, in a session as the operator role (`tp_operator`):
 
-**The forward deploy.** The migration runs before any service moves (step 4). From its commit, every completed reset
-queues a notice in its own transaction, and the notices wait, pending, for the new platform task, which sends them
-within a minute of starting; one not sent within 24 hours of its change is never sent, and pages
-(`PASSWORD_NOTICE_UNDELIVERED`; docs/runbooks/deliverability.md, 3.10). The web is unchanged. The previous platform
-task, while it still runs, selects `operator_record_mail_event()`'s six columns by name and calls the new
+```sql
+SELECT count(*) FROM pg_stat_progress_vacuum WHERE datname = current_database();
+```
+
+(0 when none runs; the operator role sees that a vacuum runs, not on which table). Never take the locks by hand, and
+never end another session's transaction, or cancel a job or a vacuum, to make room.
+
+**The forward deploy.** The migration runs before any service moves (step 4). From its commit, every reset the web
+completes for an account queues a notice in its own transaction, whichever web image completed it (the database writes
+it), and the notices wait, pending, for the new platform task, which sends them within a minute of starting; one not
+sent within 24 hours of its change is never sent, and pages (`PASSWORD_NOTICE_UNDELIVERED`;
+docs/runbooks/deliverability.md, 3.10). In the web image this change touches two things only: the reset looks the
+account up before it asks Cognito to change the password, so a database that cannot be reached leaves the password as
+it was, and the console's mail page names the notices in the transactional stream's label. The previous platform task,
+while it still runs, selects `operator_record_mail_event()`'s six columns by name and calls the new
 `operator_mail_expire()`, so its mail jobs keep working. The same deploy gives the operator role its
-`PasswordNoticeEmail` statement and the platform task `SUPPORT_EMAIL` (from the stack's `SupportEmail` parameter);
-while IAM propagates, a refused first send is retried a minute later.
+`PasswordNoticeEmail` statement and the platform task `SUPPORT_EMAIL` (from the stack's `SupportEmail` parameter), and
+adds the alarms `PASSWORD_NOTICE_UNDELIVERED`, `PasswordResetSessionsNotEnded` and
+`PasswordResetProviderSignOutFailed`; while IAM propagates, a refused first send is retried a minute later.
 
 **The rolling platform deploy.** The platform service rolls with a minimum of 100% and a maximum of 200%
 (`infra/lib/environments.ts`), so an old and a new platform task overlap, and an old task cannot read an SES event of
 kind `password_changed` (it logs `MAIL_EVENT_UNREADABLE` and leaves the event, which moves to `tp-<env>-mail-events-dlq`
 after five receives and raises `EventsDeadLetter`). After each deploy, check that queue, and redrive it once only new
-tasks run (docs/runbooks/deliverability.md, 3.6).
+tasks run (docs/runbooks/deliverability.md, 3.6). The dead-letter queue keeps an event 14 days, counted from when it
+first reached the events queue; one left longer is gone, and its notice stays `sent`.
 
 **Rollback across Schema PR 1** (to an earlier image, below) keeps the migration: every object it made is added and its
 CHECKs only widen, so the previous image runs on it, and it sets no rollback floor of its own (the floors the sections
-above state stay). What the previous image cannot do:
+above state stay). What the previous images cannot do:
 
-- send the notices: it has no `password_notices` job, so every reset's notice waits pending, unsent and unreported (the
-  previous web is the current web, so resets still queue them);
+- send the notices: the previous platform image has no `password_notices` job, so every reset's notice waits pending,
+  unsent and unreported, and nobody is paged for it (resets still queue them: the database writes the notice,
+  whichever web image completes the reset);
 - read an SES event of kind `password_changed`: each moves to the dead-letter queue as above, so a notice already sent
-  stays `sent`, its delivery or bounce unrecorded, until the events are redriven.
+  stays `sent`, its delivery or bounce unrecorded, until the events are redriven, within the queue's 14 days;
+- keep a reset from landing while the database cannot be reached: the previous web asks Cognito first and looks the
+  account up afterwards, so such a reset changes the password, ends no session, records nothing and writes neither
+  counted line (ADR 0091, D15).
 
-The operator role's statement and both of ADR 0091's alarms stay with the stack; `PasswordResetSessionsNotEnded` counts
-a line the current web already writes (docs/runbooks/incident-response.md), so it keeps paging. Roll forward with a fix
-rather than staying back. After rolling forward, the new job sends every pending notice inside the cutoff, and every
-one older than 24 hours fails as `NoticeStale` and pages one by one (tell each person another way: deliverability.md,
-3.10); then redrive `tp-<env>-mail-events-dlq`, so the delivered and bounced states, and any
+The operator role's statement and ADR 0091's three alarms stay with the stack; `PasswordResetSessionsNotEnded` and
+`PasswordResetProviderSignOutFailed` count lines the previous web already writes (docs/runbooks/incident-response.md),
+so they keep paging. Roll forward with a fix rather than staying back. While rolled back, list who waits, in a session
+as the operator role:
+
+```sql
+SELECT * FROM operator_password_notices_due(100);
+```
+
+It returns the notice's ID and the user's ID, nothing else, for each notice that waits, is due a try and is still
+inside its 24 hours: at most 100, in the order the job would try them. A notice already past 24 hours is not in it: it
+stays pending and unreported until the new job fails it. Every `password_reset_completed` the audit log holds since
+the rollback began has a notice that waits, so this lists those, past the cutoff or not:
+
+```sql
+SELECT object_id AS user_id, at FROM audit_event
+WHERE action = 'password_reset_completed' AND at >= '<rollback began>'::timestamptz
+ORDER BY at;
+```
+
+A reset from before the rollback waits too if the new job had not sent its notice: one in the job's last minute, one
+whose send was being retried (over up to 81 minutes), or every one since the job stopped sending, when that is why the
+image was rolled back. Begin the statement that much earlier, and leave out each reset the platform log shows sent after
+it (`password notice sent`, by `user_id`).
+
+A person whose notice passes its 24 hours before the roll forward is never sent it: tell them another way then
+(deliverability.md, 3.10, "In every case"), without waiting for the page that follows the roll forward. After rolling
+forward, the new job sends every pending notice inside the cutoff, and every one older than 24 hours fails as
+`NoticeStale`, up to 100 a run, and they share one page, one line a notice (tell each person another way:
+deliverability.md, 3.10); then redrive `tp-<env>-mail-events-dlq`, so the delivered and bounced states, and any
 `PASSWORD_NOTICE_UNDELIVERED` they raise, are recorded. The schema is never rolled back; undoing the trigger would be a
 later migration.
 

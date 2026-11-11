@@ -505,13 +505,21 @@ export class SignInFlow {
   }
 
   /**
-   * Sets a new password with the mailed code (docs/adr/0081, the forgotten password). The code is the authorization: a
-   * refused one is one answer, counts no failure and writes nothing (a count would mark real accounts by timing and let
-   * anyone lock one). On a reset, one transaction as the account ends every session and records the reset, retried once;
-   * then the provider signs the user out everywhere, its failure logged and not failing the reset (review SEC-N1). The
-   * lock and the second factor stay: a reset proves the mailbox, nothing more.
+   * Sets a new password with the mailed code (docs/adr/0081, the forgotten password). The account is looked up first,
+   * the provider asked second (docs/adr/0091, D15; review SEC-02 of 2026-11-11): a database that cannot be reached
+   * throws from the lookup while the provider still holds the old password and the code is unspent, so the person tries
+   * again, and nothing after the provider's answer needs the lookup, so a reset whose sessions cannot be ended, or whose
+   * provider sign-out fails, is always logged by the user's ID. The lookup decides nothing before that answer: the
+   * provider is asked for every address, with an account or none, and a refusal is answered alike for both. The code is
+   * the authorization: a refused one is one answer, counts no failure and writes nothing (a count would mark real
+   * accounts by timing and let anyone lock one). On a reset, one transaction as the account ends every session and
+   * records the reset, retried once; then the provider signs the user out everywhere, its failure logged and not
+   * failing the reset (review SEC-N1). The lock and the second factor stay: a reset proves the mailbox, nothing more.
    */
   async confirmPasswordReset(email: string, code: string, password: string, context: SignInContext): Promise<ResetResult> {
+    // A lookup that throws leaves from here, with nothing changed at the provider; its row is not read until the
+    // provider has reset.
+    const account = await this.account({ email });
     const result = await this.guarded<PasswordResetResult | { readonly kind: 'client_credential' }>(context, { kind: 'client_credential' }, () =>
       this.deps.provider.confirmPasswordReset(email, code, password),
     );
@@ -525,7 +533,6 @@ export class SignInFlow {
     if (result.kind === 'invalid_password') {
       return result;
     }
-    const account = await this.account({ email });
     if (account === undefined) {
       return { kind: 'reset', locked: false, keepEmail: false };
     }

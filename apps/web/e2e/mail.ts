@@ -159,7 +159,7 @@ export async function sendSupportNoticesOnce(): Promise<void> {
   });
 }
 
-/** The support address the password-changed email names: the web's development default, which the e2e server keeps. */
+/** The support address the password-changed email names, and its Reply-To: the web's development default, which the e2e server keeps. */
 export const E2E_SUPPORT_EMAIL = 'support@synthetic.test';
 
 /**

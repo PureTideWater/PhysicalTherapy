@@ -37,10 +37,13 @@ import { type NoticeClient, asOperator } from './support-notices';
  *    the queue only after that commits (JOB-05). An account alarm's state change pauses the screening stream
  *    (account_rate). A message that does not parse is logged by its queue ID (MAIL_EVENT_UNREADABLE) and left for the
  *    dead-letter queue; one the database refuses is logged by its SQLSTATE and left to be received again.
- * 4. Act on what the record returns: a pause (MAIL_STREAM_PAUSED) disables the screening set at once; a notice not
- *    delivered to every recipient is NOTICE_UNDELIVERED with its support grant's or invoice's ID; an invitation not
- *    delivered is INVITATION_UNDELIVERED with its ID; a password-changed email bounced, suppressed or rejected is
- *    PASSWORD_NOTICE_UNDELIVERED with its notice's and user's IDs and the mail state, reported once (docs/adr/0091).
+ * 4. Act on what the record returns. What it reports not delivered is logged first, once the record has committed and
+ *    before the message is deleted from the queue: a notice not delivered to every recipient is NOTICE_UNDELIVERED with
+ *    its support grant's or invoice's ID; an invitation not delivered is INVITATION_UNDELIVERED with its ID; a
+ *    password-changed email bounced, suppressed or rejected is PASSWORD_NOTICE_UNDELIVERED with its notice's and user's
+ *    IDs and the mail state, reported once (docs/adr/0091). The database names each to that one call alone, so a delete
+ *    that fails after the commit cannot lose the line, and the event received again reports and logs nothing. Then the
+ *    delete, and after it a pause (MAIL_STREAM_PAUSED), which disables the screening set at once.
  *
  * Logs carry IDs and codes only: no address, in no log line, payload, audit event or error. Outside SES, this event
  * path keeps the address only in the queue's encrypted message, for at most 4 days (14 in the dead-letter queue); the
@@ -449,25 +452,10 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
         logger.error('mail event could not be recorded; it is received again', { job_id: requestId, queue_message_id: message.id, error_code: sqlState(error) });
         continue;
       }
-      // Deleted only once its record has committed (JOB-05): a failure before this leaves it to be received again.
-      await options.source.remove(message);
-      if (!row.recorded) {
-        repeated += 1;
-        continue;
-      }
-      recorded += 1;
-      if (entry.record.kind === 'probe') {
-        // A probe's outcome, readable by its message ID (the staging checks of docs/runbooks/deliverability.md, section 2;
-        // the review of 2026-10-27): no address, since a probe goes only to the simulator or the operator's own mailbox.
-        logger.info('mail probe event recorded', {
-          job_id: requestId,
-          ses_message_id: entry.record.messageId,
-          mail_stream_code: entry.record.stream,
-          ses_event_type: entry.record.sesEventType,
-          mail_state_code: row.state,
-          bounce_subtype_code: entry.record.event === 'bounce' ? entry.record.bounceSubtype : null,
-        });
-      }
+      // What the record reported not delivered is logged here, before the delete: the database names each to the one
+      // call whose record made it so, and that record has committed, so a delete that then fails (or a task stopped
+      // there) must not take the operator's line with it. The event received again is answered with every one of these
+      // null, and logs nothing.
       if (row.notice_undelivered !== null) {
         logger.error('support-access notice not delivered to every administrator', { job_id: requestId, support_grant_id: row.notice_undelivered, error_code: MAIL_LOG_CODES.noticeUndelivered });
       }
@@ -485,6 +473,25 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
           user_id: entry.record.recipientUserId,
           undelivered_reason_code: row.state,
           error_code: MAIL_LOG_CODES.passwordNoticeUndelivered,
+        });
+      }
+      // Deleted only once its record has committed (JOB-05): a failure before this leaves it to be received again.
+      await options.source.remove(message);
+      if (!row.recorded) {
+        repeated += 1;
+        continue;
+      }
+      recorded += 1;
+      if (entry.record.kind === 'probe') {
+        // A probe's outcome, readable by its message ID (the staging checks of docs/runbooks/deliverability.md, section 2;
+        // the review of 2026-10-27): no address, since a probe goes only to the simulator or the operator's own mailbox.
+        logger.info('mail probe event recorded', {
+          job_id: requestId,
+          ses_message_id: entry.record.messageId,
+          mail_stream_code: entry.record.stream,
+          ses_event_type: entry.record.sesEventType,
+          mail_state_code: row.state,
+          bounce_subtype_code: entry.record.event === 'bounce' ? entry.record.bounceSubtype : null,
         });
       }
       if (row.stream_paused !== null) {

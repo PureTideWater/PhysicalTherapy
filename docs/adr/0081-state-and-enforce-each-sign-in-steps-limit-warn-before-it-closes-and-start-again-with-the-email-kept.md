@@ -386,7 +386,10 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
     `password_reset_completed`), sent by a platform job on the transactional stream as kind `password_changed`.
     [ADR 0091](0091-tell-an-accounts-address-when-its-password-changes-from-an-outbox-the-database-writes-in-the-changes-own-transaction.md)
     sends it so, with SGN-16 (`co-001/password-changed-notice`), once the founder approves the domain model
-    (CO-02). Not for the invitation's first password;
+    (CO-02), and with three of the four lines as its review round of 2026-11-11 left them (its D5): the second factor
+    named only to an account that has one enrolled, "ignore this email" in place of "nothing more to do", and the
+    support route "from the address you sign in with", beside the organization's administrator. Not for the
+    invitation's first password;
   - dark rules in email. A client that inverts colors made the worker's lockup PNG close to unreadable; the brand
     owner's delegate decided (O-5, co-001/email-lockup-plate) that the worker's lockup sits on a fixed White plate in
     every variant, not a reversed variant and not a dark rule. Since such a client inverts the plate's cells too, the

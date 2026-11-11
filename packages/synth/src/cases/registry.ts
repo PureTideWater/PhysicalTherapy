@@ -1131,6 +1131,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/platform/password-notices.test.ts',
     'apps/worker/src/platform/password-notices.db.test.ts',
     'apps/worker/src/platform/mail-events.db.test.ts',
+    'apps/worker/src/mail/mail.test.ts',
+    'packages/auth-mail/src/render.test.ts',
     'apps/web/src/lib/auth/sign-in.db.test.ts',
     'apps/web/e2e/sign-in.spec.ts',
     'infra/test/operator-role.test.ts',

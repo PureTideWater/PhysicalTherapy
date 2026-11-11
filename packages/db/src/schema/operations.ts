@@ -338,7 +338,10 @@ export const passwordNotice = pgTable(
     nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
     /** Set only by operator_password_notice_sent(): the message SES accepted. */
     sesMessageId: text('ses_message_id').unique(),
-    /** Set exactly when failed: the SES error's name, Unrecognized, or PASSWORD_NOTICE_STALE_CODE. Never a message. */
+    /**
+     * Set exactly when failed: the SES error's name, Unrecognized, RecordFailed (the record kept failing after SES had
+     * accepted the message; the job's name for it) or PASSWORD_NOTICE_STALE_CODE. Never a message.
+     */
     errorCode: text('error_code'),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     /** When it was reported undelivered: once a notice. */

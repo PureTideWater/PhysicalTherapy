@@ -12,9 +12,9 @@ import { InputError, type MutationResult } from '../http/route';
  *   waiting for the reconcile to confirm SES is sending), the window's sends, bounces and complaints, the last probes
  *   and whether the screening is ready to open (console_mail_streams()); the screening's live bounce marks by kind,
  *   counts only (Q10 (a)); and the last 7 days' undelivered customer messages, one row each (support notices, dunning,
- *   invitations, digests), with the screening's counted by kind and state and never listed (console_mail_undelivered()).
- *   No screening address is read or shown, and SES's own record of a recipient is never read: a customer's row names its
- *   user by the sign-in email the console's other screens show.
+ *   invitations, digests, password-changed notices), with the screening's counted by kind and state and never listed
+ *   (console_mail_undelivered()). No screening address is read or shown, and SES's own record of a recipient is never
+ *   read: a customer's row names its user by the sign-in email the console's other screens show.
  * - Pause: the screening stream alone, by hand (reason `operator`); the platform's mail_events job disables its SES set.
  * - Resume: with a reason, the cause fixed or a false alarm; the stream waits for the reconcile to confirm SES is
  *   sending, and the probes go at once.

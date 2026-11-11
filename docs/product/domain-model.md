@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `f750ff0680eb36b7fb0937ea3f61d157077f0810` on branch `co-001/password-changed-notice` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `68895f0fd71ad87b37770496bbb071654e6ce69e` on branch `co-001/password-changed-notice`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 49; head `20261111090000_password_changed_notice.sql`
 - PostgreSQL 18; schema `public`: 101 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 41 organization- or user-scoped tables with RLS forced; 8 global tables
@@ -6490,7 +6490,7 @@ Maintains `updated_at`: `mail_send_updated_at`.
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261111090000_password_changed_notice` (ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091)
+- Created by `20261111090000_password_changed_notice` (ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091, ADR 0092)
 - Primary key: `id`
 - Privileges: none for any group role
 
@@ -6828,7 +6828,7 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | D19 | [`model_proposal`](#table-model-proposal) | Model gateway | PHI (registered) | `20261029190000_model_proposals` | ADR 0052 |
 | D20 | [`mutation_request`](#table-mutation-request) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261015170000_identity_and_permissions` | ADR 0012, ADR 0016, ADR 0017 |
 | D21 | [`organization_status_change`](#table-organization-status-change) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261108090000_suspension_refusal` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 |
-| D22 | [`password_notice`](#table-password-notice) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261111090000_password_changed_notice` | ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091 |
+| D22 | [`password_notice`](#table-password-notice) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261111090000_password_changed_notice` | ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091, ADR 0092 |
 | D23 | [`place_of_service_split`](#table-place-of-service-split) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
 | D24 | [`practice_site`](#table-practice-site) | Tenancy and access | PHI (registered) | `20261105090000_pricing_location_and_zip_plus_four` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 |
 | D25 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
@@ -7225,9 +7225,9 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `operator_mail_stream_confirmed(text,boolean)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `58a4b66cc84c84e4` |
 | `operator_mail_streams()` | `TABLE(stream text, paused boolean, confirmed boolean, probe_due boolean, probe_missed boolean)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2fcf2f8b70481744` |
 | `operator_open_support_notice(uuid,text,text)` | `TABLE(notice_id uuid, recipients integer, opened boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `dbbd884fcd0805f7` |
-| `operator_password_notice_claim(uuid)` | `TABLE(user_id uuid, email text, changed_at timestamp with time zone)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `71c91bc39c2d902a` |
+| `operator_password_notice_claim(uuid)` | `TABLE(user_id uuid, email text, changed_at timestamp with time zone, mfa_enrolled boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `600ad9dfc04e5a6b` |
 | `operator_password_notice_failed(uuid,text,boolean,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `11734c20b5241fd1` |
-| `operator_password_notice_sent(uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `82b40ab2f16b4e66` |
+| `operator_password_notice_sent(uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `6028322ec0a02407` |
 | `operator_password_notices_due(integer)` | `TABLE(notice_id uuid, user_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `d3ca686c261a2915` |
 | `operator_password_notices_stale(integer,text)` | `TABLE(notice_id uuid, user_id uuid)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `04e09af840e2d487` |
 | `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text, password_notice_undelivered uuid)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `d0c75c27551b0f52` |
@@ -7515,7 +7515,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 46 | `20261108090000_suspension_refusal.sql` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 | `42d1885de95b0763735a856698bdc7f72822a90a4132122954bb7ba3ee7ea0f9` |
 | 47 | `20261109090000_line_status_heads.sql` | ADR 0009, ADR 0083 | `68f42516933890daa77c24a0a773cda4fd0a16ab6b5ef7870d844f0011b5f65b` |
 | 48 | `20261110090000_ledger_interest_once.sql` | ADR 0009, ADR 0083, ADR 0084 | `561e3001cf33c8696b37b20c146c975569c45f788b103d4aca12174240aa2097` |
-| 49 | `20261111090000_password_changed_notice.sql` | ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091 | `a8ca25aa7bd94cc4aefdce09c3c4635ffdb6f749b248139ccb71a5e2ec1a9753` |
+| 49 | `20261111090000_password_changed_notice.sql` | ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091, ADR 0092 | `e1288b9c074ced20fc8d08b7d64001786a7d29b23ae3d1695eff551eb20ea0eb` |
 
 ## Cross-checks
 
@@ -7533,4 +7533,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261111090000_password_changed_notice.sql` (49 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `80d375ba9ac53dbf5c7f20c49dae5f33f2f62c8cd8fec12645744c52e1320cbe`
+Approved by: ________  Date: ________  Document SHA-256: `6002e2afb2b830a519e6edc5de428f312ef3ada3591fa10b18f861cf83beea33`

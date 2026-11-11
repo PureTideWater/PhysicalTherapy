@@ -286,6 +286,10 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
     expect(alarm(streams.screeningBounceAlarm)).toMatchObject(reputation('Reputation.BounceRate', SET_REPUTATION_ALARMS.screeningBounce, 'screening'));
     expect(alarm(streams.screeningComplaintAlarm)).toMatchObject(reputation('Reputation.ComplaintRate', SET_REPUTATION_ALARMS.screeningComplaint, 'screening'));
     expect(alarm(streams.transactionalBounceAlarm)).toMatchObject(reputation('Reputation.BounceRate', SET_REPUTATION_ALARMS.transactionalBounce, 'transactional'));
+    // The transactional stream's alarm names the four kinds the stream carries (docs/adr/0091: the password-changed notices are the fourth).
+    expect(alarm(streams.transactionalBounceAlarm).AlarmDescription).toBe(
+      `The ${environment} transactional stream's bounce rate (invitations, codes, digests, password-changed notices) reached 2%.`,
+    );
     for (const construct of [streams.accountBounceWarningAlarm, streams.accountBounceHighAlarm, streams.accountComplaintWarningAlarm, streams.accountComplaintHighAlarm]) {
       expect(alarm(construct).Dimensions).toBeUndefined();
     }
@@ -456,8 +460,12 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
       AlarmActions: [ref(logicalIdOf(stack, stack.monitoring.operatorTopic))],
     });
     expect(alarm.Dimensions).toBeUndefined();
-    expect(alarm.AlarmDescription).toContain('password-changed email did not reach its account, or was not sent within 24 hours');
-    expect(alarm.AlarmDescription).toContain('docs/runbooks/deliverability.md, 3.10');
+    // One page can stand for several notices (the alarm notifies when it goes into ALARM, not once a notice), so its words
+    // say so and what to read: every line while it is raised.
+    expect(alarm.AlarmDescription).toBe(
+      `One or more ${environment} password-changed emails did not reach their accounts, or were not sent within 24 hours: read every line while this alarm is raised, tell each person another way and check the platform service and SES (docs/runbooks/deliverability.md, 3.10).`,
+    );
+    expect(alarm.OKActions).toBeUndefined();
   });
 
   it('has eighteen mail alarms', () => {

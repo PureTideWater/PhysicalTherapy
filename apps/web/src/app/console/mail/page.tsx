@@ -14,7 +14,7 @@ import { pauseMailStreamAction, resumeMailStreamAction } from './actions';
 export const metadata: Metadata = { title: 'Mail streams' };
 
 const STREAM_NAMES: Readonly<Record<MailStreamView['stream'], string>> = {
-  transactional: 'Transactional (invitations, codes, digests)',
+  transactional: 'Transactional (invitations, codes, digests, password-changed notices)',
   notices: 'Notices (support access, dunning)',
   screening: 'Screening (results, failure notices)',
 };

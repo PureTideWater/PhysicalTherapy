@@ -266,6 +266,7 @@ describe('the copy lint: what it reads', () => {
       'apps/worker/src/digest/view.ts',
       'apps/worker/src/mail/template.ts',
       'apps/worker/src/packets/export.ts',
+      'apps/worker/src/platform/password-notices.ts',
       'apps/worker/src/platform/support-notices.ts',
       'apps/worker/src/price/release.ts',
       'apps/worker/src/reconcile/stages.ts',
@@ -317,6 +318,9 @@ describe('the copy lint: what it reads', () => {
       'apps/worker/src/screening/message.ts',
       'apps/worker/src/billing/dunning.ts',
       'apps/worker/src/platform/support-notices.ts',
+      // The job that builds the password-changed email (docs/adr/0091): its words are packages/auth-mail's, read below,
+      // and any sentence placed in the job's own file is read too.
+      'apps/worker/src/platform/password-notices.ts',
       'apps/worker/src/support/support-mail.ts',
       'packages/ui/src/states/empty-state.tsx',
       'packages/ui/src/states/loading-state.tsx',

@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- operator_password_notice_sent(uuid,text,text)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 82b40ab2f16b4e66
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 6028322ec0a02407
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_password_notice_sent(notice uuid, message_id text, request text)
@@ -21,7 +21,7 @@ BEGIN
     RAISE EXCEPTION 'a password notice is recorded with the message ID SES gave' USING ERRCODE = 'check_violation', CONSTRAINT = 'password_notice_message_id';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('password_notice:' || message_id, 0));
-  SELECT m.* INTO arrived FROM mail_send m WHERE m.ses_message_id = message_id;
+  SELECT m.* INTO arrived FROM mail_send m WHERE m.ses_message_id = message_id AND m.kind = 'password_changed';
   UPDATE password_notice p
      SET ses_message_id = message_id, sent_at = now(),
          state = CASE WHEN arrived.state IN ('bounced', 'suppressed', 'rejected') THEN 'undelivered'

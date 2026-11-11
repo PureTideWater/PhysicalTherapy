@@ -9,6 +9,8 @@ export interface OutboxMessage {
   readonly subject: string;
   readonly body: string;
   readonly html: string;
+  /** The message's own Reply-To, written only for a message that names one (the password-changed email: the support address). */
+  readonly replyTo?: string;
 }
 
 /**

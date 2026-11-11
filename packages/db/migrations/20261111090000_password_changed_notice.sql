@@ -7,21 +7,24 @@
 --   ID and time, the send's state, its SES message ID and an error code. No PHI, no address and no name; the address
 --   is read only by operator_password_notice_claim(), for a pending notice that is due and under 24 hours old.
 -- - audit_event_password_notice, an AFTER INSERT trigger on audit_event: the database writes one pending notice in the
---   reset's own transaction (the web is unchanged), for password_reset_completed alone, and only when a person records
---   it about themselves (the guard: actor_kind user, object_type user, object_id the actor; docs/adr/0091 D3), so no
---   event can send a notice to another account's address. One notice an event (password_notice_once).
+--   reset's own transaction (the web's code writes none of it), for password_reset_completed alone, and only when a
+--   person records it about themselves (the guard: actor_kind user, object_type user, object_id the actor;
+--   docs/adr/0091 D3), so no event can send a notice to another account's address. One notice an event
+--   (password_notice_once).
 -- - The mail kind password_changed, on the transactional stream (mail_send_kind and mail_send_stream_kind).
 -- - password_notice_report_undelivered(), the one helper that reports a notice undelivered (password_notice_undelivered
 --   in the audit log), once a notice, called by exactly four definers: the record of an SES event, the record of the
---   send (an undelivered state that arrived first), a failed send, and the stale sweep.
+--   send (an undelivered state that arrived first), a failed try, and the stale sweep.
 -- - Five operator functions for the platform's password_notices job, in the order it calls them each minute:
 --   operator_password_notices_stale(at_most, request) fails and reports every pending notice 24 hours old
 --   (NoticeStale); operator_password_notices_due(at_most) lists the pending, due notices under 24 hours (IDs only);
 --   operator_password_notice_claim(notice) locks one, checks the cutoff again under the lock, and returns its account's
---   ID, address and change time; operator_password_notice_sent(notice, message_id, request) records the message SES
---   accepted (password_notice_sent) in the claim's transaction; operator_password_notice_failed(notice, error_name,
---   permanent, request), in a new transaction after a send that threw, retries after 1, 5, 15 and 60 minutes and fails
---   it at the fifth try or at once on a permanent error.
+--   ID, address, change time and whether a second factor is enrolled (mfa_enrolled: the email's second line says one
+--   guards the account only then); operator_password_notice_sent(notice, message_id, request) records the message SES
+--   accepted (password_notice_sent) in the claim's transaction, taking the notice's state from that message's
+--   password_changed mail record alone; operator_password_notice_failed(notice, error_name, permanent, request), in a
+--   new transaction after a send that threw, or after a record that failed once SES had accepted the message
+--   (RecordFailed), retries after 1, 5, 15 and 60 minutes and fails it at the fifth try or at once on a permanent error.
 -- - operator_record_mail_event() returns a seventh column, password_notice_undelivered, last (an OUT column cannot be
 --   added in place, so it is dropped and created, its body that of migration 20261107090000 with exactly the notice's
 --   additions, and its privileges stated again); the notice takes its message's state, and a message-ID lock
@@ -44,22 +47,30 @@
 -- NOWAIT in one subtransaction, once a second, up to 300 tries. A refused try holds and queues nothing, so a sign-in
 -- (which writes audit_event and then "user") goes on and never deadlocks against it. If no moment comes in five minutes
 -- it fails with '"user", audit_event or mail_send stayed in use for five minutes; run the deploy again (docs/adr/0091)'
--- (55P03), before any service moves, and the deploy is run again. Once held, to the commit (the DDL and one scan of
--- mail_send, at most about 91 days of messages), these wait and then proceed: every write of "user" (sign-in
--- bookkeeping, record_sign_in_with_mfa, a settings save), every audited mutation and every read of audit_event, every
--- read or write of mail_send (the mail_events job, the console's mail page).
+-- (55P03), before any service moves, and the deploy is run again. Once held, to the commit, these wait on them: every
+-- write of "user" (sign-in bookkeeping, record_sign_in_with_mfa, a settings save), every audited read and every audited
+-- mutation (an audited read writes audit_event too), every read of audit_event, and every read or write of mail_send
+-- (the mail_events job, the console's mail page). A job and a sign-in wait and then proceed. A signed-in request waits
+-- up to its three-second lock timeout and is then refused as busy, with nothing saved (docs/adr/0092's amendment of
+-- 2026-11-11, pull request #137). The wait is the DDL and one scan of mail_send (at most about 91 days of messages):
+-- measured in review over 500,000 synthetic mail records, the two CHECKs' one scan took about 0.2 s and the whole file
+-- about 0.3 s, so at launch size nobody is refused.
 --
 -- Safe with the previous image running, and on rollback (ADR 0009:42-43; ADR 0049; docs/adr/0091 D12): every object is
 -- added and the CHECKs only widen.
--- - The web is unchanged; its reset now also queues a notice, in its own transaction.
+-- - The web, in its previous image or its new one, reads and writes none of the new objects: the audit event its reset
+--   already records now also queues a notice, in the reset's own transaction. What this pull request changes in the web
+--   is beside the schema: its reset looks the account up before the provider's confirm, and its console's mail page
+--   names the new kind in the transactional stream's label.
 -- - The previous platform image selects operator_record_mail_event()'s six columns by name (the seventh is last), calls
 --   operator_mail_expire(integer) with the new body (which never deletes a pending notice), writes neither reserved
 --   action, and has no password_notices job: notices wait pending until the new image sends them, inside the cutoff,
---   or fails and reports them as stale past it. It cannot read an SES event of kind password_changed (its dead-letter
---   queue holds it until it is redriven); such events exist only after the new image sends.
+--   or fails and reports them as stale past it. It cannot read an SES event of kind password_changed: its dead-letter
+--   queue keeps the event 14 days, to be redriven, and one not redriven by then is gone, its notice left as sent. Such
+--   events exist only after the new image sends.
 -- - A rollback of the image keeps this schema; roll forward rather than stay back (docs/runbooks/deploy-and-rollback.md).
--- Rollout: migrate, then the new platform image (with the operator role's transactional statement and SUPPORT_EMAIL),
--- then the rest; the web needs nothing.
+-- Rollout: the deploy's migration run, then the services, each of which depends on that run alone, so none has to move
+-- before another. The new platform image comes with the operator role's transactional statement and SUPPORT_EMAIL.
 --
 -- Not in it: SS-01 D11's REVOKE of organization.status from the application role (no deploy fact yet), and ADR 0081 A6
 -- (Schema PR 6).
@@ -68,6 +79,19 @@
 -- Preflight: what this migration replaces is what its design read, and nothing it creates exists
 -- ---------------------------------------------------------------------------------------------------
 
+-- What it replaces is compared whole, by SHA-256, so that a body or a policy some earlier migration changed, by as
+-- little as one statement, is refused here and never undone without a word: each replaced function's stored body
+-- (pg_proc.prosrc, the text between its dollar quotes; packages/db/functions prints the first 16 digits of the same
+-- hash), and the policy's whole WITH CHECK expression as the catalog prints it (pg_policies.with_check, on PostgreSQL
+-- 18, which the product runs). The three values are those of a database migrated to the 48 migrations before this
+-- one, 20261015120000 to 20261110090000, read there with
+--   SELECT encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') FROM pg_proc p
+--    WHERE p.oid = '<the function, with its argument types>'::regprocedure;
+--   SELECT encode(sha256(convert_to(p.with_check, 'UTF8')), 'hex') FROM pg_policies p
+--    WHERE p.schemaname = 'public' AND p.tablename = 'audit_event' AND p.policyname = 'audit_event_record';
+-- A migration that comes to sort before this one and changes any of the three makes this one refuse until it is
+-- rebased: the new body or text below, then its value here. An expiry or a policy that is missing is refused in the
+-- words of one that changed; a record function that is missing, in words of its own.
 DO $$
 DECLARE
   columns text[];
@@ -85,20 +109,20 @@ BEGIN
     FROM pg_proc p, unnest(p.proargnames, p.proargmodes) WITH ORDINALITY AS a (name, mode, n)
    WHERE p.oid = 'operator_record_mail_event(text, text, text, timestamptz, timestamptz, text, text, uuid, uuid, uuid, text, text, text, text)'::regprocedure AND a.mode = 't';
   IF columns IS DISTINCT FROM ARRAY['recorded', 'state', 'notice_undelivered', 'invoice_undelivered', 'invitation_undelivered', 'stream_paused']
-     OR position('invitation_undelivered := NULL;' IN pg_get_functiondef('operator_record_mail_event(text, text, text, timestamptz, timestamptz, text, text, uuid, uuid, uuid, text, text, text, text)'::regprocedure)) = 0
-     OR position('stream_paused := mail_stream_cutoff(request);' IN pg_get_functiondef('operator_record_mail_event(text, text, text, timestamptz, timestamptz, text, text, uuid, uuid, uuid, text, text, text, text)'::regprocedure)) = 0 THEN
+     OR (SELECT encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') FROM pg_proc p
+          WHERE p.oid = 'operator_record_mail_event(text, text, text, timestamptz, timestamptz, text, text, uuid, uuid, uuid, text, text, text, text)'::regprocedure)
+        IS DISTINCT FROM '3c175325fc14b48c68b45c7d53dd7463948fe802c9664ccbaa40e0198999c490' THEN
     RAISE EXCEPTION 'operator_record_mail_event() is not the body of migration 20261107090000 that migration 20261111090000 replaces; rebase this migration on its latest body'
       USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
-  IF position('DELETE FROM screening_mail_refusal f' IN pg_get_functiondef('operator_mail_expire(integer)'::regprocedure)) = 0 THEN
+  IF (SELECT encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') FROM pg_proc p WHERE p.oid = to_regprocedure('operator_mail_expire(integer)'))
+     IS DISTINCT FROM 'faa298581d4c547909bfb08258b4a5a4cdf5f80cd08fa4edadda3a31fc1c9723' THEN
     RAISE EXCEPTION 'operator_mail_expire(integer) is not the body of migration 20261107090000 that migration 20261111090000 replaces; rebase this migration on its latest body'
       USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_policies
-     WHERE schemaname = 'public' AND tablename = 'audit_event' AND policyname = 'audit_event_record'
-       AND position('organization_reinstated' IN with_check) > 0 AND position('password_notice_sent' IN with_check) = 0
-  ) THEN
+  IF (SELECT encode(sha256(convert_to(p.with_check, 'UTF8')), 'hex') FROM pg_policies p
+       WHERE p.schemaname = 'public' AND p.tablename = 'audit_event' AND p.policyname = 'audit_event_record')
+     IS DISTINCT FROM 'aa4610040f9d9eed924d4bdb04b305438d6e3847eaeda968083b09595b6ffd8d' THEN
     RAISE EXCEPTION 'audit_event_record is not the policy of migration 20261108090000 that migration 20261111090000 replaces; rebase this migration on its latest text'
       USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
@@ -152,8 +176,9 @@ ALTER TABLE mail_send
 -- 2. The outbox (docs/adr/0091, D4)
 -- ---------------------------------------------------------------------------------------------------
 
--- One row a completed reset: pending until SES accepts its message (sent), then delivered or undelivered as SES reports
--- it, or failed when never accepted (the SES error's name, Unrecognized, or NoticeStale past the cutoff). No index on
+-- One row a completed reset: pending until SES accepts its message and that is recorded (sent), then delivered or
+-- undelivered as SES reports it, or failed when no accepted message was ever recorded (the SES error's name,
+-- Unrecognized, RecordFailed when the record itself kept failing, or NoticeStale past the cutoff). No index on
 -- user_id: no user row is ever deleted, and nothing reads notices by user. No foreign key to audit_event, which is
 -- append-only and guarded by its own triggers: a key would add a lock to every reset's insert for nothing. expires_at
 -- is changed_at plus 90 days, written by the trigger; its CHECK is a range, as mail_send_expiry_window's, so the
@@ -191,7 +216,7 @@ CREATE POLICY password_notice_owner ON password_notice FOR ALL TO tp_owner USING
 
 -- A notice undelivered (bounced, suppressed or rejected) or failed, reported once: password_notice_undelivered in the
 -- audit log, naming the account. True exactly once a notice. Its callers are the four definers below (the record of an
--- SES event, the record of the send, a failed send and the stale sweep), which run as the owner; granted to no role.
+-- SES event, the record of the send, a failed try and the stale sweep), which run as the owner; granted to no role.
 CREATE FUNCTION password_notice_report_undelivered(notice uuid, request text) RETURNS boolean
 LANGUAGE plpgsql VOLATILE SET search_path = pg_catalog, public, pg_temp AS $$
 #variable_conflict use_variable
@@ -279,10 +304,12 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_te
 $$;
 
 -- Step 3, in the transaction that sends the one message and records it: locks the notice if it is still pending, due
--- and under 24 hours old (the cutoff checked again under the lock), and returns its account's ID, address and the
--- change's time. The only reader of the address. Nothing when another run holds it, or it is not due, not pending or
--- past the cutoff. No status filter on the account: one disabled after the reset is still told.
-CREATE FUNCTION operator_password_notice_claim(notice uuid) RETURNS TABLE (user_id uuid, email text, changed_at timestamptz)
+-- and under 24 hours old (the cutoff checked again under the lock), and returns its account's ID and address, the
+-- change's time, and mfa_enrolled from the account's own row as the claim finds it: the email's second line says a
+-- second factor guards the account only when one is enrolled (docs/adr/0091, D10). The only reader of the address.
+-- Nothing when another run holds it, or it is not due, not pending or past the cutoff. No status filter on the
+-- account: one disabled after the reset is still told.
+CREATE FUNCTION operator_password_notice_claim(notice uuid) RETURNS TABLE (user_id uuid, email text, changed_at timestamptz, mfa_enrolled boolean)
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 #variable_conflict use_variable
 BEGIN
@@ -293,16 +320,18 @@ BEGIN
     RETURN;
   END IF;
   RETURN QUERY
-    SELECT p.user_id, u.email, p.changed_at FROM password_notice p JOIN "user" u ON u.id = p.user_id WHERE p.id = notice;
+    SELECT p.user_id, u.email, p.changed_at, u.mfa_enrolled FROM password_notice p JOIN "user" u ON u.id = p.user_id WHERE p.id = notice;
 END;
 $$;
 
 -- Step 3's record, before the claim's transaction commits: the message SES accepted, once, while pending, with
 -- password_notice_sent. The message-ID lock comes before the read of the mail record, so an SES event of the message
--- being recorded meanwhile is read once it commits (the mirror takes the same lock before it writes). The notice takes
--- F of that record: undelivered when it is bounced, suppressed or rejected; delivered when it was delivered; sent
--- otherwise. True when that is undelivered and this reported it. The cutoff is not checked again: a message SES
--- accepted is recorded as sent.
+-- being recorded meanwhile is read once it commits (the mirror takes the same lock before it writes). Only a
+-- password_changed message's record is read, as the mirror moves a notice only for one: a record of any other kind
+-- under the ID given (a probe, a digest) is not this notice's message, and its state never becomes the notice's. The
+-- notice takes F of the record read: undelivered when it is bounced, suppressed or rejected; delivered when it was
+-- delivered; sent otherwise, and when there is none. True when that is undelivered and this reported it. The cutoff is
+-- not checked again: a message SES accepted is recorded as sent.
 CREATE FUNCTION operator_password_notice_sent(notice uuid, message_id text, request text) RETURNS boolean
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 #variable_conflict use_variable
@@ -315,7 +344,7 @@ BEGIN
     RAISE EXCEPTION 'a password notice is recorded with the message ID SES gave' USING ERRCODE = 'check_violation', CONSTRAINT = 'password_notice_message_id';
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('password_notice:' || message_id, 0));
-  SELECT m.* INTO arrived FROM mail_send m WHERE m.ses_message_id = message_id;
+  SELECT m.* INTO arrived FROM mail_send m WHERE m.ses_message_id = message_id AND m.kind = 'password_changed';
   UPDATE password_notice p
      SET ses_message_id = message_id, sent_at = now(),
          state = CASE WHEN arrived.state IN ('bounced', 'suppressed', 'rejected') THEN 'undelivered'
@@ -335,9 +364,10 @@ BEGIN
 END;
 $$;
 
--- Step 4, a send that threw, in a new transaction after the rollback: one attempt more, the next after 1, 5, 15 and 60
--- minutes; failed after the fifth, or at once for a permanent SES error, with the error's name (a code, never its
--- message; Unrecognized for anything else), which reports it (true). A notice no longer pending is unchanged.
+-- Step 4, a try that failed, in a new transaction after the rollback (a send that threw; or a record that failed once
+-- SES had accepted the message, which the job names RecordFailed and never permanent): one attempt more, the next after
+-- 1, 5, 15 and 60 minutes; failed after the fifth, or at once for a permanent SES error, with the error's name (a code,
+-- never its message; Unrecognized for anything else), which reports it (true). A notice no longer pending is unchanged.
 CREATE FUNCTION operator_password_notice_failed(notice uuid, error_name text, permanent boolean, request text) RETURNS boolean
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 #variable_conflict use_variable
