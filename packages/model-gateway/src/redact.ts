@@ -1516,6 +1516,18 @@ function decideBare(window: string, length: number, digits: string): Decision {
   return named ? 'keep' : 'none';
 }
 
+/** A word that connects the call's own identifier to the number after it: "at", "is", "on", "no", "number" and their like. */
+const CONNECTING_WORD = /^(?:AT|IS|ON|TO|NO|NUMBERS?|NBR|NUM|ID)$/u;
+
+/** The whole word of letters and digits around a position of a window collected back to front (labelWindow). */
+function wordAt(units: readonly string[], at: number): string {
+  let first = at;
+  let last = at;
+  while (first > 0 && WORD_UNIT.test(units[first - 1] ?? '')) first -= 1;
+  while (last + 1 < units.length && WORD_UNIT.test(units[last + 1] ?? '')) last += 1;
+  return units.slice(first, last + 1).reverse().join('');
+}
+
 /** What the call's own identifier's placeholder becomes for the survivor scan: a BARRIER to every reader but the label window, which reads through it. */
 const OWN_MARK = '\u0003';
 /** After a label's own list number: ":" or ")", an ordinal's suffix or a space before it too ("1:", "2)", "1st:", "1 :"). */
@@ -1542,13 +1554,18 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
   let passed = false;
   // The window as read: the call's own identifier and a label's own list number are read through, each as a space.
   const units: string[] = [];
+  // Whether the call's own identifier has been reached: its other parts are read through with it ("Zephyra, Jane").
+  let reached = false;
   while (from > 0 && units.length < LABEL_WINDOW) {
     const index = from - 1;
     const character = text[index] ?? '';
     const digit = DIGIT.test(character);
     const inSpan = digit && spanned !== undefined && spanned(index);
-    // The call's own identifier (its placeholder in masked text) between a label and its number, on the number's line.
-    if (through && breaks === 0 && (character === OWN_MARK || (own !== undefined && own(index)))) {
+    // The call's own identifier (its placeholder in masked text) between a label and its number, on the number's line, with
+    // no word between it and the number but a connecting one ("Call Zephyra at 555-0123", "SSN for Zephyra: 90012-3456";
+    // never "Contact Jane Zephyra, Springfield, IL 62701-1234", where the number is the address's).
+    if (through && breaks === 0 && (character === OWN_MARK || (own !== undefined && own(index))) && (reached || units.every((unit, at) => !WORD_UNIT.test(unit) || CONNECTING_WORD.test(wordAt(units, at))))) {
+      reached = true;
       if (units[units.length - 1] !== ' ') units.push(' ');
       from = index;
       continue;
@@ -2061,7 +2078,7 @@ function survivorIn(text: string): Survivor {
     const key = `${String(start)}${spansOnly ? 's' : 'n'}${glued ? 'g' : ''}`;
     let held = labeledOver.get(key);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, spansOnly, through: true }).replace(/[0-9]/gu, ' '), glued);
+      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, spansOnly }).replace(/[0-9]/gu, ' '), glued);
       labeledOver.set(key, held);
     }
     return held;
@@ -2356,8 +2373,12 @@ const survivorLeft = (text: string): Survivor => {
   return survivorIn(viewOf(text, 'space', true).text) ?? dropped;
 };
 
-/** A keep-noun or an identifier's label and its connectors, up to a position: what names a long number as a reference ("ICN 12345678901234.01", "Case No. 123-45-678901"). */
-const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|ID|NUMBER|NO|NBR)(?!\\p{L}))(?:[\\s:#.*=(\\p{Pd}\\u2212]|(?<![\\p{L}\\p{N}])(?:NO|NUMBERS?|NBR|NUM|ID|IS)(?!\\p{L}))*$`, 'u');
+/**
+ * What names a long number as a reference, up to a position: a keep-noun or a reference's noun and its connectors ("ICN
+ * 12345678901234.01", "Case No. 123-45-678901", "Ticket 802-91-69413"), or any word with "#", "No.", "number" or "ID" after
+ * it ("Inquiry # 150-98-68279"). An SSN or phone label is none of them.
+ */
+const NAMED_BEFORE = new RegExp(`(?:(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION)(?!\\p{L}))(?:[\\s:#.*=(\\p{Pd}\\u2212]|(?<![\\p{L}\\p{N}])(?:NO|NUMBERS?|NBR|NUM|ID|IS)(?!\\p{L}))*|(?<![\\p{L}\\p{N}])\\p{L}+[ \\t]{0,2}(?:#|(?:NO|NBR|NUM)\\.|(?:NUMBER|ID)\\b)[\\s:#.=\\p{Pd}\\u2212]*)$`, 'u');
 
 /**
  * Whether a Social Security or phone number's own shape stands with another number's digits glued to it, three groups no
