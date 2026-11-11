@@ -269,10 +269,12 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
       expect(screens(text, ['ZZ1234567']), written).toBe(false);
       expect(screens(text, [written]), written).toBe(true);
     }
-    // And neither reads digits of another script, which NFKC does not fold (a recorded gap: docs/adr/0070 Part 3 "Not caught", review finding R5-3);
-    // full-width digits it folds are read by both.
+    // And the screen does not read digits of another script, which NFKC does not fold (a recorded gap: docs/adr/0070 Part 3 "Not caught", review
+    // finding R5-3). The letter path read them no more than the screen until co-001/redact-ssn-phone-leaks (MOD-22; docs/adr/0054, its
+    // amendment): its fold now reads a decimal digit of any script as its value, so the call's own number in Arabic-Indic digits is found.
+    // Full-width digits, which NFKC folds, are read by both.
     expect(screens('Member \u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668 on file', ['12345678'])).toBe(false);
-    expect(holdsIdentifier('Member \u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668 on file', { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: ['12345678'] }, [])).toBe(false);
+    expect(holdsIdentifier('Member \u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668 on file', { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: ['12345678'] }, [])).toBe(true);
     expect(screens('Member \uFF11\uFF12\uFF13\uFF14\uFF15\uFF16\uFF17\uFF18 on file', ['12345678'])).toBe(true);
     expect(holdsIdentifier('Member \uFF11\uFF12\uFF13\uFF14\uFF15\uFF16\uFF17\uFF18 on file', { pseudonym: 'synthetic', names: [], datesOfBirth: [], memberIds: ['12345678'] }, [])).toBe(true);
   });
