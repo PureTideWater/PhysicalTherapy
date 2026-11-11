@@ -232,7 +232,7 @@ export const SCREENING_PAUSED = {
  * upload, whose practice or address it shares, so the sentence tells no one that a given practice or address is
  * screening right now.
  */
-export const SCREENING_BUSY = 'We could not store this screening just now, so nothing was sent. Wait a minute, then send it again.';
+export const SCREENING_BUSY = 'We could not store this screening just now, so nothing was sent. Wait a minute, then send it again. If it happens again, request an audit instead.';
 
 /**
  * What the screening says when the client, or the email account it is counted under, has had 3 screening results that

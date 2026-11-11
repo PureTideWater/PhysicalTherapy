@@ -6,6 +6,7 @@ import {
   type ScopeClient,
   type ScopePool,
   type ScreeningWaitReason,
+  CommitOutcomeUnknownError,
   committed,
   withPublicSnapshot,
 } from '@tp/db/runtime';
@@ -206,18 +207,29 @@ async function withBoundedLockWaits<T>(pool: ScopePool<ScopeClient>, work: (clie
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+  } catch (error) {
+    client.release(true);
+    throw error;
+  }
+  // A connection whose transaction could not be ended, or whose commit went unanswered, never goes back to the pool.
+  let discard = false;
+  try {
+    await client.query("SELECT set_config('lock_timeout', $1, true)", [`${String(WEB_LOCK_TIMEOUT_MS)}ms`]);
+    const result = await work(client);
+    await committed(client);
+    return result;
+  } catch (error) {
     try {
-      await client.query("SELECT set_config('lock_timeout', $1, true)", [`${String(WEB_LOCK_TIMEOUT_MS)}ms`]);
-      const result = await work(client);
-      await committed(client);
-      return result;
-    } catch (error) {
-      // After a refused commit there is nothing to roll back, and on a lost connection nothing can be sent.
-      await client.query('ROLLBACK').catch(() => undefined);
-      throw error;
+      await client.query('ROLLBACK');
+    } catch {
+      discard = true;
     }
+    if (error instanceof CommitOutcomeUnknownError) {
+      discard = true;
+    }
+    throw error;
   } finally {
-    client.release();
+    client.release(discard);
   }
 }
 
@@ -754,8 +766,9 @@ export const screeningSubmit = publicRoute({
         throw new InputError([submitIssue(refused.constraint)]);
       }
       if (refused?.code === LOCK_NOT_AVAILABLE) {
-        // Another upload of the same practice or contact address held its place for the whole wait. By its code and
-        // the request alone: never the practice, the address or which of the two it was.
+        // Something held a lock this upload needs for the whole wait: most often another upload of the same practice
+        // or contact address, else a transaction on a screening it replaces, or a schema change. By its code and the
+        // request alone: never the practice, the address or which lock it was.
         services.logger.warn('a screening upload waited past the lock timeout and was refused', { error_code: 'SCREENING_UPLOAD_BUSY', request_id: request.requestId });
         throw new InputError([{ field: 'input', message: SCREENING_BUSY }]);
       }

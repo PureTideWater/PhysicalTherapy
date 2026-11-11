@@ -1327,34 +1327,51 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
     );
   const prospects = async (email: string) => (await world.owner.query('SELECT 1 FROM screening_prospect WHERE contact_email = $1', [email])).rowCount ?? 0;
 
-  it('refuses an upload that waits past the limit behind another of the same contact address, plainly, storing nothing; the next try is stored', async () => {
-    const email = 'second.upload@clinic-waits.synthetic.test';
-    // What an earlier upload of this address holds until it commits: submit_screening()'s lock on the contact address.
-    const first = databaseClient(world.database.url);
-    await first.connect();
-    const from = world.logLines.length;
-    try {
-      await first.query('BEGIN');
-      await first.query("SELECT pg_advisory_xact_lock(hashtextextended('screening_contact:' || lower(btrim($1)), 0))", [email]);
-      const started = Date.now();
-      expect(issuesOf(await submitted(submitInput({ contactEmail: email })))).toEqual([{ field: 'input', message: SCREENING_BUSY }]);
-      // Bounded: the web's three seconds a lock, not the first upload's length (which here has no end).
-      expect(Date.now() - started).toBeGreaterThanOrEqual(2_500);
-      expect(Date.now() - started).toBeLessThan(15_000);
-      expect(await prospects(email)).toBe(0);
-      const lines = world.logLines.slice(from).filter((line) => line.error_code === 'SCREENING_UPLOAD_BUSY');
-      expect(lines.length).toBe(1);
-      expect(JSON.stringify(world.logLines.slice(from))).not.toMatch(/second\.upload|clinic-waits/);
-      // Nothing waits on after the refusal: its transaction is over and its connection is back.
-      expect((await world.owner.query("SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted")).rowCount).toBe(0);
-    } finally {
-      await first.query('ROLLBACK');
-      await first.end();
-    }
-    expect((await submitted(submitInput({ contactEmail: email }))).status).toBe('ok');
-    expect(await prospects(email)).toBe(1);
+  it.each([
+    ['the same contact address', "hashtextextended('screening_contact:' || lower(btrim($1)), 0)"],
+    ['the same practice', "hashtextextended('screening_practice:' || $3 || ':' || screening_practice_key($2), 0)"],
+  ])(
+    'refuses an upload that waits past the limit behind another of %s, plainly, storing nothing; the next try is stored',
+    async (which, key) => {
+      const email = `second.upload.${which.split(' ').at(-1) ?? ''}@clinic-waits.synthetic.test`;
+      const practiceName = `Synthetic Waiting Therapy ${which}`;
+      const input = submitInput({ contactEmail: email, practiceName });
+      // What an earlier upload holds until it commits: one of submit_screening()'s two locks.
+      const first = databaseClient(world.database.url);
+      await first.connect();
+      const from = world.logLines.length;
+      try {
+        await first.query('BEGIN');
+        await first.query(`SELECT pg_advisory_xact_lock(${key}), $1::text, $2::text, $3::text`, [email, practiceName, (input.zip ?? '').slice(0, 5)]);
+        const started = Date.now();
+        expect(issuesOf(await submitted(input))).toEqual([{ field: 'input', message: SCREENING_BUSY }]);
+        // Bounded: the web's three seconds a lock, not the first upload's length (which here has no end).
+        expect(Date.now() - started).toBeGreaterThanOrEqual(2_500);
+        expect(Date.now() - started).toBeLessThan(15_000);
+        expect(await prospects(email)).toBe(0);
+        const lines = world.logLines.slice(from).filter((line) => line.error_code === 'SCREENING_UPLOAD_BUSY');
+        expect(lines.length).toBe(1);
+        expect(JSON.stringify(world.logLines.slice(from))).not.toMatch(/second\.upload|clinic-waits|Waiting Therapy/);
+        // The refused upload's transaction is over: nothing of it waits, and no session but the holder's is left open in one.
+        expect((await world.owner.query("SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted")).rowCount).toBe(0);
+        expect(
+          (await world.owner.query("SELECT 1 FROM pg_stat_activity WHERE datname = current_database() AND state LIKE 'idle in transaction%' AND pid <> $1", [
+            (await first.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid,
+          ])).rowCount,
+        ).toBe(0);
+      } finally {
+        await first.query('ROLLBACK');
+        await first.end();
+      }
+      expect((await submitted(input)).status).toBe('ok');
+      expect(await prospects(email)).toBe(1);
+    },
+    40_000,
+  );
+
+  it('says nothing of the other upload in the refusal', () => {
     expect(SCREENING_BUSY).not.toMatch(/practice|address|another|email/i);
-  }, 40_000);
+  });
 
   it('closes the page while the screening stream is paused, says so, and records nothing of an upload sent anyway', async () => {
     await pause();
