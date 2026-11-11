@@ -22,7 +22,7 @@ import {
 } from '../remittances/queries';
 import { type LineRunOption, type PricedLineView, lineRuns, pricedLineOf, pricedLineWords } from '../pricing/queries';
 import { type TraceStepView, traceSteps } from '../pricing/view';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 import { opaqueId, optionalText, requiredText } from './schemas';
 
 /**
@@ -40,7 +40,7 @@ const month = optionalText(z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'a month,
 const page = z.coerce.number().int().min(1).max(100_000).default(1);
 const id = optionalText(opaqueId);
 
-async function phiCipher(scope: PracticeScope<ScopeClient>, services: Services, practiceId: string, roles: readonly string[]): Promise<PracticeCipher | null> {
+async function phiCipher(scope: PracticeScope<ScopeClient>, services: SignedInServices, practiceId: string, roles: readonly string[]): Promise<PracticeCipher | null> {
   return rolesPermit(roles, 'phi.read') ? loadPracticeCipher(scope, services.keys, practiceId) : null;
 }
 

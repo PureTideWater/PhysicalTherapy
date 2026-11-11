@@ -11,6 +11,7 @@ export {
   type ClientOf,
   type AnyScope,
   CommitOutcomeUnknownError,
+  type Committing,
   JobActorIsPersonError,
   type JobScopeRequest,
   OnePracticePerJobError,

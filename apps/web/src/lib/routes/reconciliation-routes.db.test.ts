@@ -23,7 +23,7 @@ import { SESSION_COOKIE } from '../auth/sessions';
 import { openSessionNow } from './test-support/open-session';
 import { practiceRoute, selfRoute } from '../http/invoke';
 import type { CookieJar, Outcome, Route } from '../http/route';
-import { type Services, createServices } from '../server/services';
+import { type Services, createServices, signedInServices } from '../server/services';
 import { WEB_LOCK_TIMEOUT_MS } from '../server/lock-timeout';
 import { lockLedger } from '../../../../worker/src/reconcile/ledger';
 import { LedgerWorld, ledSettings } from '../../../../worker/src/reconcile/test-support/ledger-world';
@@ -412,7 +412,7 @@ describe('the Reconciliation screen (PRD 7)', () => {
     // The screen's reads refuse a scope that reads statement by statement.
     await expect(
       withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, (scope) =>
-        reconciliation(scope, services, practice.practiceId, { caseId: null, linesPage: 1, entriesPage: 1 }, true, `test-${randomUUID()}`),
+        reconciliation(scope, signedInServices(services, { enqueue: () => Promise.resolve() }), practice.practiceId, { caseId: null, linesPage: 1, entriesPage: 1 }, true, `test-${randomUUID()}`),
       ),
     ).rejects.toThrow('the ledger is read in one snapshot');
     const page = ok(await call(reconciliationPage, practice.manager, P()));

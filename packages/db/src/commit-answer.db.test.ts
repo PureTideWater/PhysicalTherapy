@@ -42,13 +42,13 @@ describe('a scope’s COMMIT is read, on PostgreSQL', () => {
     // A statement fails and the work's own code swallows the error: the transaction is failed from there.
     const swallowed = (client: { query(text: string): Promise<unknown> }) => client.query('SELECT 1 / 0').catch(() => undefined);
     const inPractice = withPracticeScope(app, { actorId: world.adminUserId, practiceIds: [world.practiceId] }, async (scope) => {
-      await recordAuditEvent(scope, { action: 'settings_changed', objectType: 'practice', practiceId: world.practiceId });
+      await recordAuditEvent(scope, { action: 'settings_changed', objectType: 'practice', practiceId: world.practiceId, requestId: 'req-commit-answer' });
       await swallowed(scope.client);
       return 'saved';
     });
     await expect(inPractice).rejects.toBeInstanceOf(TransactionNotCommittedError);
     const asActor = withActor(app, world.adminUserId, async (scope) => {
-      await recordAuditEvent(scope, { action: 'settings_changed', objectType: 'practice' });
+      await recordAuditEvent(scope, { action: 'settings_changed', objectType: 'practice', requestId: 'req-commit-answer' });
       await swallowed(scope.client);
       return 'saved';
     });
@@ -57,7 +57,7 @@ describe('a scope’s COMMIT is read, on PostgreSQL', () => {
     // The connections went back sound: the next transaction on the pool commits and is saved.
     await expect(
       withPracticeScope(app, { actorId: world.adminUserId, practiceIds: [world.practiceId] }, async (scope) => {
-        await recordAuditEvent(scope, { action: 'settings_changed', objectType: 'practice', practiceId: world.practiceId });
+        await recordAuditEvent(scope, { action: 'settings_changed', objectType: 'practice', practiceId: world.practiceId, requestId: 'req-commit-answer' });
         return 'saved';
       }),
     ).resolves.toBe('saved');

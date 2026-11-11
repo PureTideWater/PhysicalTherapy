@@ -78,6 +78,11 @@ function refusedByServer(error: unknown): boolean {
   return typeof code === 'string' && SQLSTATE.test(code) && severity !== 'FATAL' && severity !== 'PANIC';
 }
 
+/** What commits: a connection with a transaction open, as far as `committed` uses it (a pg client, or a queue's transaction). */
+export interface Committing {
+  query(text: string): Promise<{ readonly command?: unknown } | undefined>;
+}
+
 /**
  * Commits the client's open transaction and reads the answer, which a bare `COMMIT` does not (docs/adr/0092, the
  * amendment of 2026-11-11, item 4 of its follow-ups): returns only when the server answered COMMIT. A transaction
@@ -86,7 +91,7 @@ function refusedByServer(error: unknown): boolean {
  * for certain; any other end is CommitOutcomeUnknownError. Every scope here commits through it; a caller that writes
  * its own transaction may too.
  */
-export async function committed(client: Pick<ScopeClient, 'query'>): Promise<void> {
+export async function committed(client: Committing): Promise<void> {
   let answer: { readonly command?: unknown } | undefined;
   try {
     answer = await client.query('COMMIT');

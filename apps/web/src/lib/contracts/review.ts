@@ -1,7 +1,7 @@
 import { type EvidenceResolution, type EvidenceResolver, RATE_RECORD_FIELDS, type RateRecord, type RateRecordField } from '@tp/contracts';
 import { type PracticeScope, type ScopeClient, loadPracticeCipher } from '@tp/db/runtime';
 
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 import { type DocumentSummary, type VersionSummary, versionDetail } from './contract-queries';
 import { EVIDENCE_PROBLEM_TEXT, FIELD_NAMES, describeTerms } from './display';
 import { evidenceFor } from './evidence';
@@ -106,7 +106,7 @@ async function citedPage(resolver: EvidenceResolver, documentIds: readonly strin
 }
 
 /** The review of one version, with the page the selection names (the selected record's cited page by default). */
-export async function versionReview(scope: PracticeScope<ScopeClient>, services: Services, practiceId: string, versionId: string, requestId: string, selection: PageSelection): Promise<VersionReview | undefined> {
+export async function versionReview(scope: PracticeScope<ScopeClient>, services: SignedInServices, practiceId: string, versionId: string, requestId: string, selection: PageSelection): Promise<VersionReview | undefined> {
   const detail = await versionDetail(scope, practiceId, versionId, requestId);
   if (detail === undefined) {
     return undefined;

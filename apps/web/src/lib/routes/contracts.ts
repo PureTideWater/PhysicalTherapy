@@ -23,7 +23,7 @@ import { tagDocument, tagInput } from '../contracts/tagging';
 import { practiceRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import { type PayerOption, payerOptions } from '../remittances/queries';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 import { CONTENT_TYPES, MAX_FILES_PER_BATCH, MAX_UPLOAD_BYTES } from '../uploads/limits';
 import { opaqueId, optionalText, requiredText } from './schemas';
 import { type UploadGate, uploadGate } from './uploads';
@@ -71,7 +71,7 @@ export interface ContractUploadSettings {
   readonly kinds: readonly { readonly kind: ContractDocumentKind; readonly label: string; readonly contentTypes: readonly string[] }[];
 }
 
-function todayOf(services: Services): string {
+function todayOf(services: SignedInServices): string {
   return services.now().toISOString().slice(0, 10);
 }
 
