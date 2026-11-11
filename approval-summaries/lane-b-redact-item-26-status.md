@@ -2,7 +2,7 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9m
 
 # Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
 
-## RESUME-BLOCK, current (W18 at its token limit, 2026-11-11 about 22:35 UTC; fix round 1 is built and green, NOT yet reviewed on its delta; no PR is open)
+## RESUME-BLOCK, current (W18 at its token limit, 2026-11-11 about 21:50 UTC; fix round 1 is built and green, NOT yet reviewed on its delta; no PR is open)
 
 - **WIP ref:** `co-001/wip-redact-item-26` at **b29e611a** (on f3f5a642). Local branch name `co-001/redact-item-26`.
   Reviews A and B: `designs/lane-b-redact-item-26/reviews/review-a.md`, `review-b.md` (scripts beside them; rerun
@@ -34,6 +34,23 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9m
     change for them: the blunt rule is kept (the safer side), and each is handed to Queues item 34.
   - Six files on b29e611a: gateway 4,165, packets' `verifier-identifiers.test.ts` 107, `@tp/redact` 46; typecheck and
     lint clean. ADR 0054's amendment and the test matrix's MOD-23 row are written and committed.
+- **FIRST, by the orchestrator's change of order (21:52 UTC; W18 was past its limit and did not start it): the time
+  bound as its own small PR, cut from the base (356914e2 or later), not from this WIP.** Everything it needs is in
+  b29e611a; extract just this:
+  1. `git checkout -b co-001/time-budget-bound origin/claude/build-platform`, then
+     `git checkout b29e611a -- packages/model-gateway/src/test-support/time-budget.ts`.
+  2. `packages/model-gateway/src/functions/denial-letter.test.ts`: the import of `timed`, the constant `BUDGET_MS`,
+     and the two assertion bodies (`git diff f3f5a642 b29e611a -- <file>` shows them: the two hunks that replace
+     `performance.now()`; leave out the MOD-23 rows and the recorded-cost test, which are item 26's).
+  3. `packages/model-gateway/src/redact.leaks.test.ts`: the import and the two 1-second rows (I1-1, J-5), the same way.
+  4. ADR 0054: the paragraph "*How the budget is proved.*" of item 26's amendment, as a short amendment of its own
+     (the ratio 3,000 ms to 40 ms and why; 40 ms is the idle median of 200 runs on this container class,
+     `designs/lane-b-redact-item-26/tools/cal.mts`). Item 26's amendment then cites it instead of repeating it.
+  5. Run the two test files; one review (tests and time: can a loaded or slow runner flip it; can a slower reader
+     hide under it; `max(1, .)` with the faster calibration; thread time's 4 ms grain on short rows; the work's fastest
+     of three); the draft PR; merge on green. Then item 26 merges the base and drops its own copy of these hunks.
+  Measured by W18: under a load of six on four cores the 100,000-character rows read 0.7 to 1.4 s of processor time
+  with the factor at 1.00 (`tools/track.mts`); idle the calibration reads 32 to 48 ms (median 40.0, three runs of 200).
 - **OPEN, in this order:**
   1. **The delta review of round 1** (one subagent, about 20 tool calls, report
      `designs/lane-b-redact-item-26/reviews/review-c.md`): the delta is `git diff 2ab3e0dd b29e611a --
@@ -160,4 +177,4 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9m
 - 2026-11-11 (W17): design note pushed (cee084c6) and sent to the orchestrator; prototype built; cost measured; tests
   written; WIP 7cbdd33d pushed. Stopped at the token limit with the items above open.
 - 2026-11-11T20:28Z (W18): started from 7cbdd33d; time and run-count fixed at their causes; six files pass; WIP d67775d0; gate and batteries running.
-- 2026-11-11T22:35Z (W18): reviews A and B in, every finding run; fix round 1 built and green (WIP b29e611a); the time bound made sound; stopped at the token limit before the delta review.
+- 2026-11-11T21:50Z (W18): reviews A and B in, every finding run; fix round 1 built and green (WIP b29e611a); the time bound made sound; stopped at the token limit before the delta review.
