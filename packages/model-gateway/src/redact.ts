@@ -433,7 +433,7 @@ const writtenAt = (view: View, normal: string, index: number) => codePointAt(nor
 // Forms and the matcher
 
 /** Dashes (with the minus sign and hyphen bullet PDF text writes for a hyphen), apostrophes, the underscore and VANISHED: they join a name anywhere. */
-const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC\\u02B9\\u02CA`\\u00B4_\\u00AD";
+const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC\\u02B9\\u02CA`\\u00B4_\\u00AD\\u00B7\\u2027";
 /**
  * What joins a member ID or claim number anywhere ("." "/" ":" "#" and "(" only next to a letter): white space, dashes
  * (with the minus sign, the hyphen bullet, U+02D7 and U+2796), "_", "|", "\\", VANISHED, and since review finding
@@ -1516,18 +1516,6 @@ function decideBare(window: string, length: number, digits: string): Decision {
   return named ? 'keep' : 'none';
 }
 
-/** A word that connects the call's own identifier to the number after it: "at", "is", "on", "no", "number" and their like. */
-const CONNECTING_WORD = /^(?:AT|IS|ON|TO|NO|NUMBERS?|NBR|NUM|ID)$/u;
-
-/** The whole word of letters and digits around a position of a window collected back to front (labelWindow). */
-function wordAt(units: readonly string[], at: number): string {
-  let first = at;
-  let last = at;
-  while (first > 0 && WORD_UNIT.test(units[first - 1] ?? '')) first -= 1;
-  while (last + 1 < units.length && WORD_UNIT.test(units[last + 1] ?? '')) last += 1;
-  return units.slice(first, last + 1).reverse().join('');
-}
-
 /** What the call's own identifier's placeholder becomes for the survivor scan: a BARRIER to every reader but the label window, which reads through it. */
 const OWN_MARK = '\u0003';
 /** After a label's own list number: ":" or ")", an ordinal's suffix or a space before it too ("1:", "2)", "1st:", "1 :"). */
@@ -1554,18 +1542,16 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
   let passed = false;
   // The window as read: the call's own identifier and a label's own list number are read through, each as a space.
   const units: string[] = [];
-  // Whether the call's own identifier has been reached: its other parts are read through with it ("Zephyra, Jane").
-  let reached = false;
   while (from > 0 && units.length < LABEL_WINDOW) {
     const index = from - 1;
     const character = text[index] ?? '';
     const digit = DIGIT.test(character);
     const inSpan = digit && spanned !== undefined && spanned(index);
-    // The call's own identifier (its placeholder in masked text) between a label and its number, on the number's line, with
-    // no word between it and the number but a connecting one ("Call Zephyra at 555-0123", "SSN for Zephyra: 90012-3456";
-    // never "Contact Jane Zephyra, Springfield, IL 62701-1234", where the number is the address's).
-    if (through && breaks === 0 && (character === OWN_MARK || (own !== undefined && own(index))) && (reached || units.every((unit, at) => !WORD_UNIT.test(unit) || CONNECTING_WORD.test(wordAt(units, at))))) {
-      reached = true;
+    // The call's own identifier (its placeholder in masked text) between a label and its number, on the number's line: the
+    // label reads the line as it reads it with the identifier gone ("Call Zephyra at 555-0123", "Phone (Jane Zephyra, home):
+    // 555.0123", "SSN (Jane Zephyra, patient): 90012-3456" as "Call at 555-0123", "Phone (home): 555.0123", "SSN (patient):
+    // 90012-3456").
+    if (through && breaks === 0 && (character === OWN_MARK || (own !== undefined && own(index)))) {
       if (units[units.length - 1] !== ' ') units.push(' ');
       from = index;
       continue;
@@ -2078,7 +2064,7 @@ function survivorIn(text: string): Survivor {
     const key = `${String(start)}${spansOnly ? 's' : 'n'}${glued ? 'g' : ''}`;
     let held = labeledOver.get(key);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, spansOnly }).replace(/[0-9]/gu, ' '), glued);
+      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, spansOnly, through: true }).replace(/[0-9]/gu, ' '), glued);
       labeledOver.set(key, held);
     }
     return held;
@@ -2292,7 +2278,7 @@ function survivorIn(text: string): Survivor {
     return false;
   };
   const heldWhole = (from: number, to: number) => groups.slice(from, to).every((group) => group.blocked && (group.kept || rangeStands(group.range)));
-  if (gluedShape(text, groups)) {
+  if (gluedShape(text, groups, (group) => labeledAt(group.start) === 'person')) {
     return 'survivor';
   }
   if (survives((group) => group.blocked, () => false) || survives((group) => group.kept, heldWhole)) {
@@ -2375,10 +2361,11 @@ const survivorLeft = (text: string): Survivor => {
 
 /**
  * What names a long number as a reference, up to a position: a keep-noun or a reference's noun and its connectors ("ICN
- * 12345678901234.01", "Case No. 123-45-678901", "Ticket 802-91-69413"), or any word with "#", "No.", "number" or "ID" after
- * it ("Inquiry # 150-98-68279"). An SSN or phone label is none of them.
+ * 12345678901234.01", "Case No. 123-45-678901", "Ticket 802-91-69413"), or any word with "#" after it or, across a space,
+ * "No.", "number" or "ID" ("Inquiry # 150-98-68279"; never "Paid" or "Medicaid" for a word and "ID"). An SSN or phone
+ * label names no reference: gluedShape asks the scan's label first ("SSN No. 900-12-3456150.00" is refused).
  */
-const NAMED_BEFORE = new RegExp(`(?:(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION)(?!\\p{L}))(?:[\\s:#.*=(\\p{Pd}\\u2212]|(?<![\\p{L}\\p{N}])(?:NO|NUMBERS?|NBR|NUM|ID|IS)(?!\\p{L}))*|(?<![\\p{L}\\p{N}])\\p{L}+[ \\t]{0,2}(?:#|(?:NO|NBR|NUM)\\.|(?:NUMBER|ID)\\b)[\\s:#.=\\p{Pd}\\u2212]*)$`, 'u');
+const NAMED_BEFORE = new RegExp(`(?:(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION)(?!\\p{L}))(?:[\\s:#.*=(\\p{Pd}\\u2212]|(?<![\\p{L}\\p{N}])(?:NO|NUMBERS?|NBR|NUM|ID|IS)(?!\\p{L}))*|(?<![\\p{L}\\p{N}])\\p{L}+(?:[ \\t]{0,2}#|[ \\t]{1,2}(?:(?:NO|NBR|NUM)\\.|(?:NUMBER|ID)\\b))[\\s:#.=\\p{Pd}\\u2212]*)$`, 'u');
 
 /**
  * Whether a Social Security or phone number's own shape stands with another number's digits glued to it, three groups no
@@ -2393,8 +2380,8 @@ const NAMED_BEFORE = new RegExp(`(?:(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?
  * And a run of eleven digits or more with cents after it ("900123456150.00"), unless named ("ICN 12345678901234.01").
  * A date written year first with digits glued after its day ("2020-01-02150.00") is read as cc3dd7f6 read it.
  */
-function gluedShape(text: string, groups: readonly ScanGroup[]): boolean {
-  const named = (group: ScanGroup) => NAMED_BEFORE.test(text.slice(Math.max(0, group.start - 48), group.start));
+function gluedShape(text: string, groups: readonly ScanGroup[], person: (group: ScanGroup) => boolean): boolean {
+  const named = (group: ScanGroup) => !person(group) && NAMED_BEFORE.test(text.slice(Math.max(0, group.start - 48), group.start));
   for (let i = 0; i < groups.length; i += 1) {
     const [a, b, c] = [groups[i], groups[i + 1], groups[i + 2]];
     if (a === undefined || a.blocked) continue;
