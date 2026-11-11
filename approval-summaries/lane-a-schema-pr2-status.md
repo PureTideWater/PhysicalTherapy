@@ -4,42 +4,52 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
 `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 2. Grant: `approval-summaries/founder-asks-2026-10-27.md`,
 "Decided 2026-11-06"; the granted text: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` at 38123394.
 
-## RESUME-BLOCK (current at 2026-11-11 16:45 UTC)
-- **State: draft PR #143 is OPEN** (https://github.com/PureTideWater/PhysicalTherapy/pull/143), head **c4272c33** on
-  `co-001/ledger-function-bodies` (= `co-001/wip-ledger-function-bodies`), base 3bff4fd6. W11 is subscribed. Its
-  description is `lane-a-wip/schema-pr2/pr-description.md`.
-- **The full local suite ran once on c4272c33, all green** (`lane-a-wip/schema-pr2/suite-summary.txt`): only
-  `--check --require-approval` fails, on the blank approval line. Unit 13,500; infra 815; golden 381; oracle 738;
-  database 10,220 (1 skipped); e2e 87. Mutation left to CI.
-- **CI, attempt 1 (run 43043707704, 14:58 UTC):** static, lint, build, images, capacity, `screening-capacity gate`,
-  `mutation` and `approval-of-record` green; `domain model` red on the blank approval line alone (its log: the document
-  and the function files match the schema on CI's PostgreSQL 18.6). `unit`, `db 1-4` and `e2e 1-2` failed BEFORE any
-  test: the runner could not resolve Ubuntu's archive hosts while `playwright install --with-deps chromium` fetched
-  system packages (not this PR's). **Failed jobs re-run once at 15:53 UTC** (W11); a second failure of a test job is
-  real and gets read. Check-in set for 16:38 UTC. The container restarted again about 15:50 UTC (checkout intact).
-- **BLOCKED on CI's runners, not on the change (16:45 UTC):** the one re-run failed the same way at 16:00 UTC (same
-  step, same "Temporary failure resolving" for Ubuntu's three archive hosts; no test ran). #144 (W12) fails alike on
-  every attempt since 15:10 UTC; W12's record: `lane-b-web-transaction-scope-status.md`. One comment on #143 says so
-  (issuecomment-6801581958). The orchestrator was told (16:45 UTC); until it rules otherwise W11 follows the word it
-  gave W12: re-run the FAILED JOBS ONLY (`rerun_failed_jobs`, run 43043707704) once the runners resolve those hosts
-  again, 30 minutes or more apart, up to three more times, then tell it; push nothing to kick CI, change no workflow,
-  skip no test. **Re-runs under that word so far: 0 of 3.** Check-in set for about 17:25 UTC. The suggested approval
-  line is NOT posted until the test jobs have run and passed on the head.
-- **Next, in order:** (1) CI on c4272c33: every check green but `domain model` and `all green` (the blank line); a red
-  check otherwise: reproduce, fix, show it passing, push; (2) then post the suggested approval line as ONE
-  pull-request comment: `gh api repos/PureTideWater/PhysicalTherapy/pulls/143/comments -f commit_id=<head sha>
-  -f path=docs/product/domain-model.md -f side=RIGHT -F line=<the last line's number> -f body=$'```suggestion\nApproved
-  by: Tyler Williams  Date: <YYYY-MM-DD>  Document SHA-256: `47fae5d1e01a8417244275f6c56cb603a367c90595882e89a615485964c7d10e`\n```'`
-  followed by the Claude Code footer lines (take the exact line from `pnpm -s db:domain-model --check
-  --require-approval` on a fresh database; never write the line or approvers.json; never a review); (3) update the
-  description's "CI on this head" row; mark ready if the lane's practice asks; send the orchestrator the link with the
-  description's "What the founder should know before approving"; (4) end the turn; merge only after the founder's
-  "Commit suggestion" commit and green required checks, with the base an ancestor of the head (rule 2a: if the base
-  moved, merge it, fast checks, generators, push, wait for CI); then unsubscribe and record the merge here.
-- **Not in this PR:** ADR 0093's status line (rides PR 3); step 7b's move (a no-migration follow-up); the every-state
-  `ledger_line_net` body (candidate for schema PR 5's ask); a guard on `service_line.practice_id` (proposal).
-- **After any restart:** setup script if PostgreSQL is down; `git -C /home/user/PhysicalTherapy checkout
-  co-001/ledger-function-bodies` (a restart put the checkout back on `claude/build-platform` once).
+## RESUME-BLOCK (final from W11, 2026-11-11 18:20 UTC; W11 has stood down and holds nothing)
+**For the successor: the only work left on this item is the merge, then three records.**
+- **Draft PR #143** (https://github.com/PureTideWater/PhysicalTherapy/pull/143), branch `co-001/ledger-function-bodies`,
+  head **a3a32024b2a5030c87920a3e5ad9901f95632163**, base `claude/build-platform` at **91bc6b7c** (an ancestor of the
+  head). No one is subscribed: subscribe first (`subscribe_pr_activity`, 143).
+- **Waiting for the founder's "Commit suggestion"** on https://github.com/PureTideWater/PhysicalTherapy/pull/143#discussion_r4541570803
+  (line 7551 of `docs/product/domain-model.md`; the orchestrator was sent the link and the founder's reading at 18:15
+  UTC). The line it commits must read exactly:
+  `Approved by: Tyler Williams  Date: 2026-11-11  Document SHA-256: \`47fae5d1e01a8417244275f6c56cb603a367c90595882e89a615485964c7d10e\``
+- **CI on a3a32024:** every check green but `domain model` and `all green`, both on the blank approval line alone
+  (checked in the jobs' logs). Both new test files green on CI's PostgreSQL 18.6.
+- **The merge step, after the founder's commit (never before; never write the line or approvers.json; never approve):**
+  1. `git fetch`; the PR's head is now the founder's commit on top of a3a32024. Check that commit touches ONLY the last
+     line of `docs/product/domain-model.md` (`git diff a3a32024 <new head> --stat`: one file, one line) and that the
+     line is the one above, hash 47fae5d1….
+  2. CI on that new head: `domain model`, `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`
+     green (the founder's APPROVED review of the latest commit is the approval of record, ADR 0063; if
+     `approval-of-record` waits for his review, that is his to give: tell the orchestrator, do nothing else).
+  3. Rule 2a: `origin/claude/build-platform` must be an ancestor of the head. If the base moved past 91bc6b7c, a base
+     merge is a NEW COMMIT and dismisses the founder's approval: do not do it silently. Tell the orchestrator first;
+     if it must be done: merge the base, fast checks, `db:domain-model --check --strict --require-approval` on a fresh
+     database, both `ledger-lookups.db.test.ts` files, push, CI, and the founder approves again. If the new base
+     touches `apps/worker/src/reconcile`, `packages/ledger`, `packages/db/src/authz` or adds a migration, re-run the
+     proof at R 2,000 and F 10,000 first (kit: `lane-a-wip/schema-pr2/probe/`, `queue3.sh`; about 12 minutes).
+     A migration that sorts before 20261113090000 and changes either body makes this one refuse: stop, tell the orchestrator.
+  4. Mark the PR ready and merge it (a merge commit, as the lane merges), record the merge commit here and in
+     `lanes/STATE.md` (the orchestrator's), unsubscribe, tell the orchestrator in one line.
+- **Owed after the merge (none of it is in #143):**
+  1. **Step 7b back to practice A's month** (D14's acceptance): a no-migration PR measured on the merged tree with the
+     weekly run's own harness; CAS-51's and CAS-42.3's budgets, the Known gap line, ADR 0083's dated note. It must
+     measure the ledger as A's pass finds it: if it holds about 160 to 80,000 never-analyzed entries when the pass
+     plans, `ledger_line_net` is the slow one (ADR 0087's note of 2026-11-11). A's month here: 333.2 s and 317.1 s
+     against the 360 s sizing bound, so the margin is small.
+  2. **Candidate for schema PR 5's ledger freeze ask:** a `ledger_line_net` body that reads the line's entries in every
+     planner state (today's granted body does on an empty or tiny never-analyzed ledger and with statistics, not on
+     160 to 80,000 never-analyzed entries: `probe/plan-probe-1.txt`, `-2.txt`), beside `ledger_entry_within_evidence`
+     (95 s of A's 333 s). The cause: the tenant policy's `practice_id = ANY(scope)` and the body's `practice_id =
+     (line's practice)` are both counted as selective, so `ledger_entry_by_date` looks as good as `ledger_entry_by_line`.
+  3. **Proposal, its own schema item:** a trigger refusing a change of `service_line.practice_id` (today only the
+     application role's missing UPDATE privilege prevents it; the owner role could).
+  4. **ADR 0093's status line** ("proposed" to "accepted") rides the next schema PR (PR 3), not this one.
+  5. **Queues item 32** (the queue outbox table from #144) is unplaced in the schema plan: the next schema session
+     says where it fits.
+- **Local state W11 leaves:** nothing running; the private cluster and the seed worktree are removed; scratch
+  databases dropped. After a restart the setup script puts the checkout on `claude/build-platform`: check
+  `git status -sb` before any git command.
 
 ## The run of record (the tree the PR merges onto: base 3bff4fd6; `run-of-record-compare.txt`, `run-of-record-queue.log`)
 Seeds migrated from the base without the migration; before = those bodies (hashes abbcba68…/f151e27e… recorded per
@@ -52,6 +62,12 @@ run), after = the placed migration applied as tp_owner in one transaction (834cd
 
 Not a quiet container throughout: the delta reviews (psql only) and this session's pushes ran beside A's "after"
 pass. The first run (below) is the quieter one for A's "after" (317.1 s).
+
+## The proof on the final tree (head a3a32024, base 91bc6b7c; `run-of-record-2-compare.txt`)
+#144 changed no migration, ledger or reconcile file but did change `packages/db/src/authz` (the transaction scope),
+so the grant's two proof sizes were run again on the merged tree, seeds from 91bc6b7c without the migration:
+spread R 2,000 lines 56.9 s to 20.7 s, IDENTICAL (20,635 rows); F 10,000 lines 260.8 s to 85.4 s, IDENTICAL (102,907
+rows); body hashes recorded per run. A's month stands as measured on the previous base (below).
 
 ## Reviews, round 2 (delta; `review-database-delta.md`, `review-money-delta.md`): nothing blocking
 Every finding checked, then applied as wording (ADR 0087, reconciliation-001, the test's comments, the description):

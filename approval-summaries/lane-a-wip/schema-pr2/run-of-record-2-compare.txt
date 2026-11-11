@@ -1,0 +1,2 @@
+2026-11-11T17:23:00Z compare cap3_r_2000 rec2: cap3_r_2000_pr2_rec2.dump.ndjson: IDENTICAL row for row, in order, seq included [settle entries in match seq order: before ['t'], after ['t']] (20635 row
+2026-11-11T17:31:04Z compare cap3_fx_10000 rec2: cap3_fx_10000_pr2_rec2.dump.ndjson: IDENTICAL row for row, in order, seq included [settle entries in match seq order: before ['t'], after ['t']] (10290
