@@ -46,6 +46,8 @@
  * call's own (redactLetterForScreen). Nothing else of the letter changes.
  */
 
+import { LOOK_ALIKES } from './confusables';
+
 export interface PatientIdentifiers {
   /** The patient's pseudonym (patient_ref.pseudonym): the one patient the call is about. */
   readonly pseudonym: string;
@@ -275,11 +277,22 @@ const PLACEHOLDER = /\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|SSN|PHONE|CLAIM_(
 
 const foldedCodePoints = new Map<string, string>();
 
-/** One code point folded: decomposed, its marks dropped, its case folded in full (ß and ẞ are SS). */
+/** A code point with its marks dropped and each look-alike letter or digit as the ASCII one it reads as (LOOK_ALIKES), its case kept. */
+const asWritten = (codePoint: string): string => {
+  const bare = codePoint.normalize('NFD').replace(MARKS, '');
+  let read = '';
+  for (const each of bare) read += LOOK_ALIKES.get(each) ?? each;
+  return read;
+};
+
+/**
+ * One code point folded: decomposed, its marks dropped, a look-alike of another script read as the ASCII letter or digit
+ * it stands for (Cyrillic "А", Greek "Α" and the small capital "ᴀ" are A), its case folded in full (ß and ẞ are SS).
+ */
 export function fold(codePoint: string): string {
   let folded = foldedCodePoints.get(codePoint);
   if (folded === undefined) {
-    folded = codePoint.normalize('NFD').replace(MARKS, '').toLowerCase().toUpperCase().normalize('NFD').replace(MARKS, '');
+    folded = asWritten(codePoint).toLowerCase().toUpperCase().normalize('NFD').replace(MARKS, '');
     foldedCodePoints.set(codePoint, folded);
   }
   return folded;
@@ -961,10 +974,151 @@ function matchesIn(normal: string, subject: Subject): Found[] {
     if (match !== undefined && match.kind !== 'birth' && inBirthForm(match)) found.splice(i, 1);
   }
   if (subject.patterns) {
+    // The call's own identifiers written with a scan's look-alikes, as words of their own (ruling A').
+    found.push(...confusedMatchesIn(normal, subject));
     // Last, so a bare number's label window ends at every match already found (section 3.4).
     found.push(...patternMatchesIn(normal, found, subject));
   }
   return found;
+}
+
+/**
+ * What a letter or digit, as written, may stand for where a scan or an eye confuses them: itself, and O for 0, l or I for
+ * 1, S for 5, B for 8 and E for 3, each way (the orchestrator's ruling A' of 2026-11-07 names the first four pairs; the
+ * pinned rows hold the fifth, "VANTR3E"). A capital I is an l only beside a small letter ("EIIe" for Elle, never "BELIEF").
+ */
+function mayBe(written: string, besideSmall: boolean): string {
+  switch (written) {
+    case 'O':
+    case 'o':
+    case '0':
+      return 'O0';
+    case 'l':
+    case '1':
+      return 'LI1';
+    case 'I':
+      return besideSmall ? 'IL1' : 'I1';
+    case 'S':
+    case 's':
+    case '5':
+      return 'S5';
+    case 'B':
+    case '8':
+      return 'B8';
+    case 'E':
+    case '3':
+      return 'E3';
+    default:
+      return written.toUpperCase();
+  }
+}
+
+interface WrittenToken {
+  /** Each letter or digit as written (asWritten), one unit each. */
+  readonly units: readonly string[];
+  /** Where each unit's code point starts and ends in the NFKC text. */
+  readonly starts: readonly number[];
+  readonly ends: readonly number[];
+}
+
+/** The runs of letters and digits of NFKC text as written, look-alikes read as ASCII, invisible characters dropped. */
+function writtenTokens(normal: string): WrittenToken[] {
+  const tokens: WrittenToken[] = [];
+  let units: string[] = [];
+  let starts: number[] = [];
+  let ends: number[] = [];
+  const close = () => {
+    if (units.length > 0) tokens.push({ units, starts, ends });
+    units = [];
+    starts = [];
+    ends = [];
+  };
+  let offset = 0;
+  for (const codePoint of normal) {
+    const start = offset;
+    offset += codePoint.length;
+    if (IGNORABLE.test(codePoint)) continue;
+    const read = codePoint.charCodeAt(0) < 0x80 ? codePoint : asWritten(codePoint);
+    if (read === '' || ![...read].every((unit) => WORD_CHARACTER.test(unit))) {
+      close();
+      continue;
+    }
+    for (const unit of read) {
+      units.push(unit);
+      starts.push(start);
+      ends.push(offset);
+    }
+  }
+  close();
+  return tokens;
+}
+
+const SMALL_LETTER = /^\p{Ll}$/u;
+const WRITTEN_DIGIT = /^[0-9]$/u;
+
+/** The forms the confusable reading looks for: four letters or digits or more, six for a number of digits alone. */
+const confusableForms = (subject: Subject) => formsOf(subject).flatMap((form) => { const units = [...form.compact]; return units.length >= (form.digitsOnly ? 6 : 4) ? [{ form, units }] : []; });
+
+/**
+ * How a window of a written token reads against a form of the same length: null when it is not the form, or is the form
+ * as written (the matcher's own business); else whether a digit stands for a letter or a letter for a digit in it. A
+ * window reads as the form when every unit may be the form's (mayBe), half of them or more are the form's own, and it is
+ * not digits alone.
+ */
+function confusedAs(token: WrittenToken, at: number, units: readonly string[]): { readonly crossed: boolean } | null {
+  let own = 0;
+  let letters = 0;
+  let crossed = false;
+  for (let i = 0; i < units.length; i += 1) {
+    const written = token.units[at + i] ?? '';
+    const wanted = units[i] ?? '';
+    const besideSmall = SMALL_LETTER.test(token.units[at + i - 1] ?? '') || SMALL_LETTER.test(token.units[at + i + 1] ?? '');
+    if (!mayBe(written, besideSmall).includes(wanted)) return null;
+    if (written.toUpperCase() === wanted) own += 1;
+    const digit = WRITTEN_DIGIT.test(written);
+    if (!digit) letters += 1;
+    if (digit !== WRITTEN_DIGIT.test(wanted)) crossed = true;
+  }
+  return own === units.length || own * 2 < units.length || letters === 0 ? null : { crossed };
+}
+
+/**
+ * The call's own name parts, member IDs and claim numbers written with a look-alike of the kind a scan makes (a digit for
+ * a letter, a letter for a digit, l for I), as a word of their own ("S1MONE", "VANTR3E", "SYNMEMBERO042", "7654321O",
+ * "ZZ765432l"): each such word, as a Found range of the form's kind.
+ */
+function confusedMatchesIn(normal: string, subject: Subject): Found[] {
+  const forms = confusableForms(subject);
+  const found: Found[] = [];
+  if (forms.length === 0) return found;
+  for (const token of writtenTokens(normal)) {
+    for (const { form, units } of forms) {
+      if (units.length === token.units.length && confusedAs(token, 0, units) !== null) {
+        found.push({ start: token.starts[0] ?? 0, end: token.ends[token.ends.length - 1] ?? 0, kind: form.kind, claim: form.claim });
+        break;
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * Whether one of the call's own identifiers stands so written inside a longer run of letters and digits, where no boundary
+ * can be read ("2020S1MONE", "PaidVANTR3E"): with a digit for a letter or a letter for a digit in every letter, and with
+ * a letter for a letter too (l for I) in a held letter.
+ */
+function confusedGlued(normal: string, subject: Subject, held: boolean): boolean {
+  const forms = confusableForms(subject);
+  if (forms.length === 0) return false;
+  for (const token of writtenTokens(normal)) {
+    for (const { units } of forms) {
+      for (let at = 0; units.length < token.units.length && at + units.length <= token.units.length; at += 1) {
+        const read = confusedAs(token, at, units);
+        if (read !== null && (held || read.crossed)) return true;
+      }
+    }
+  }
+  return false;
 }
 
 /** What may lie between an initial and the name it belongs to: white space, apostrophes, dashes, "_" and VANISHED (after the name, a comma too). */
@@ -2547,7 +2701,8 @@ function ownIdentifierGlued(normal: string, subject: Subject, held: boolean): bo
     nameGlued(normal, subject, inOtherDate, held) ||
     spacedNameGlued(normal, subject, inOtherDate, held) ||
     MASKED_SSN_GLUED.test(viewOf(normal, 'drop', true).text) ||
-    (held && heldOwnIdentifier(normal, subject))
+    (subject.patterns && confusedGlued(normal, subject, held)) ||
+    (held && (heldOwnIdentifier(normal, subject) || heldBirthUnread(normal, subject)))
   );
 }
 
@@ -2557,6 +2712,88 @@ function ownIdentifierGlued(normal: string, subject: Subject, held: boolean): bo
  * it), the letter is refused; elsewhere it is the follow-on leak PR's class (docs/adr/0054).
  */
 const MASKED_SSN_GLUED = /[\p{L}0-9]\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_\u2022\u25CF]{2}|[X*#_\u2022\u25CF]{5})[\p{Pd}\u2212 .]?[0-9]{4}(?![0-9])/u;
+
+const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+const ONES = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN'];
+const TENS = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY'];
+const WORD_GAP = '[\\s\\p{Pd}\\u2212]*';
+
+/** A number under one hundred in words, as a pattern ("SEVENTY-FIVE", "TWELVE"), or null for zero. */
+function underHundredInWords(value: number): string | null {
+  if (value <= 0) return null;
+  if (value < 20) return ONES[value] ?? null;
+  const ones = ONES[value % 10] ?? '';
+  return `${TENS[Math.floor(value / 10)] ?? ''}${ones === '' ? '' : `${WORD_GAP}${ones}`}`;
+}
+
+/** A year from 1900 to 2099 in words, as a pattern: "NINETEEN SEVENTY-FIVE", "NINETEEN HUNDRED AND SEVEN", "NINETEEN OH SEVEN", "TWO THOUSAND AND FIVE", "TWENTY TWELVE". */
+function yearInWords(year: number): string | null {
+  if (year < 1900 || year > 2099) return null;
+  const century = year < 2000 ? 'NINETEEN' : 'TWENTY';
+  const rest = year % 100;
+  const tail = underHundredInWords(rest);
+  const forms: string[] = [];
+  if (tail === null) {
+    forms.push(year < 2000 ? `NINETEEN${WORD_GAP}HUNDRED` : `TWO${WORD_GAP}THOUSAND`);
+  } else {
+    forms.push(`${century}${WORD_GAP}(?:HUNDRED${WORD_GAP}(?:AND${WORD_GAP})?)?${rest < 10 ? `(?:OH?${WORD_GAP})?` : ''}${tail}`);
+    if (year >= 2000) forms.push(`TWO${WORD_GAP}THOUSAND${WORD_GAP}(?:AND${WORD_GAP})?${tail}`);
+  }
+  return `(?:${forms.join('|')})`;
+}
+
+/**
+ * Whether a held letter holds the date of birth in a writing no rule reads (ruling A' of 2026-11-07; cc3dd7f6 refused
+ * every held letter), with no boundary asked for, as for every held reading: its month as a Roman numeral with its day and
+ * year ("14-III-1980", "III/14/1980", "1980-III-14"); year, month and day with the CJK date characters ("1980年3月14日");
+ * its year in words; its month's word with its day and no year ("Mar 14th", "14th of March"); and its two-digit year,
+ * month and day run together in any order as four or five digits, at the start or the end of a run of digits ("80314",
+ * "14380", "202080314"), but four digits that read as a year from 1900 to 2099.
+ */
+function heldBirthUnread(normal: string, subject: Subject): boolean {
+  const births = subject.datesOfBirth ?? [];
+  if (births.length === 0) return false;
+  const text = viewOf(normal, 'drop', true).text;
+  const runs = text.match(/[0-9]{4,}/gu) ?? [];
+  for (const birth of births) {
+    const [yearText = '', monthText = '', dayText = ''] = birth.split('-');
+    const [year, month, day] = [num(yearText), num(monthText), num(dayText)];
+    if (!(year > 0 && month >= 1 && month <= 12 && day >= 1 && day <= 31)) continue;
+    const dd = `0?${String(day)}`;
+    const mm = `0?${String(month)}`;
+    const sep = `[\\s${DATE_SEPARATOR},]{1,3}`;
+    const roman = `(?<![A-Z])${ROMAN_MONTHS[month - 1] ?? 'I'}(?![A-Z])`;
+    const words = monthWords(month).toUpperCase();
+    // With no year after it: a date of another year on the same day of the same month is a date of service, read as written.
+    const noYear = `(?![\\s,.${APOSTROPHE}\\p{Pd}\\u2212]{0,3}[0-9]{2})`;
+    const patterns = [
+      `${dd}${sep}${roman}${sep}${yearText}`,
+      `${roman}${sep}${dd}${sep}${yearText}`,
+      `${yearText}${sep}${roman}${sep}${dd}(?![0-9])`,
+      `${yearText}\\s?年\\s?${mm}\\s?月\\s?${dd}(?![0-9])`,
+      `(?:${words})\\.?[\\s,.\\p{Pd}\\u2212]{0,3}${dd}(?:ST|ND|RD|TH)?(?![0-9])${noYear}`,
+      `(?<![0-9])${dd}(?:ST|ND|RD|TH)?[\\s,.\\p{Pd}\\u2212]{0,3}(?:OF\\s+)?(?:${words})(?![A-Z])${noYear}`,
+    ];
+    const inWords = yearInWords(year);
+    if (inWords !== null) patterns.push(`(?<![A-Z])${inWords}(?![A-Z])`);
+    if (new RegExp(patterns.join('|'), 'u').test(text)) return true;
+    const yy = yearText.slice(2);
+    const parts = [[yy], [...new Set([String(month), monthText])], [...new Set([String(day), dayText])]];
+    const compacts = new Set<string>();
+    for (const [a, b, c] of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]] as const) {
+      for (const first of parts[a] ?? []) for (const second of parts[b] ?? []) for (const third of parts[c] ?? []) {
+        const compact = `${first}${second}${third}`;
+        if ((compact.length === 4 && !/^(?:19|20)/u.test(compact)) || compact.length === 5) compacts.add(compact);
+      }
+    }
+    for (const run of runs) {
+      for (const compact of compacts) {
+        if (run.startsWith(compact) || run.endsWith(compact)) return true;
+      }
+    }
+  }
+  return false;
+}
 
 /** A modifier letter (\p{Lm}): no letter of a name or number for heldOwnIdentifier's stream. */
 const MODIFIER_LETTER = /^\p{Lm}$/u;
