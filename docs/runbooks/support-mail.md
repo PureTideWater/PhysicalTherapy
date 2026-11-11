@@ -81,22 +81,25 @@ account's name. Work from the ticket ID and the user ID only, never the message'
 
   1. Treat it as a mailbox compromise: someone read the code sent to that mailbox. A changed password nobody asked for
      is a security event: open the record (docs/runbooks/incident-response.md, section 1).
-  2. With the organization's administrator, end the account's sessions: End membership beside the person, pressed by
-     the administrator in Settings, Users, or by a platform administrator on the organization's console page
+  2. With the organization's administrator, end the account's sessions: End membership beside the person, pressed by the
+     administrator in Settings, Users, or by a platform administrator on the organization's console page
      (`/console/organizations/<id>`). It ends every session of the user, signs them out at the identity provider and
      ends their role in that organization at once. It does not disable the account or change its password, and the
      database refuses it for an organization's only practice administrator. When the membership must stay, or the
-     account must be disabled, give the user ID to the founder, whose break-glass session does it
-     (docs/runbooks/incident-response.md, section 2, "A user or session"). An enrolled second factor still guards the
-     account meanwhile, because a reset never removes it (docs/adr/0081 A5).
+     account must be disabled, give the user ID to the founder, whose break-glass session ends the sessions by user ID
+     and disables the account at the identity provider. A disable at the provider ends no session of the app, and for an
+     organization's only practice administrator the database refuses to disable the account's row as it refuses End
+     membership: for that account the sessions are ended directly (docs/runbooks/incident-response.md, section 2, "A
+     user or session"). An enrolled second factor still guards the account meanwhile, because a reset never removes it
+     (docs/adr/0081 A5).
   3. Ask the person to secure the mailbox, and go on by mail or through the administrator: after End membership the
-     person's mail to the support address still opens tickets, but once the account is disabled, mail from its address
-     opens none (`unknown_sender`). Once the administrator confirms the mailbox is the person's alone again, the
-     person resets the password again: an account whose membership ended can still reset, and a disabled one is sent
-     no reset code, so the founder re-enables it first. Then a platform administrator adds the person back with Send
-     invitation on the organization's console page, the same address and role (Settings refuses an address that
-     already has an account): it restores the role at once and mails nothing, since the person has a password of
-     their own.
+     person's mail to the support address still opens tickets, but once the account's own row is disabled, mail from its
+     address opens none (`unknown_sender`); a disable at the identity provider alone does not change that. Once the
+     administrator confirms the mailbox is the person's alone again, the person resets the password again: an account
+     whose membership ended can still reset, and one the founder disabled is re-enabled by the founder first (a disabled
+     row is sent no reset code). Then a platform administrator adds the person back with Send invitation on the
+     organization's console page, the same address and role (Settings refuses an address that already has an account):
+     it restores the role at once and mails nothing, since the person has a password of their own.
   4. Work by the ticket ID and the user ID only. A ticket shows the requester's address, not their user ID: find the
      reset, and the user ID with it, by its time, in a session as the operator role (`tp_operator`):
 
