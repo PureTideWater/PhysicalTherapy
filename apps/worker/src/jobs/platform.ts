@@ -95,7 +95,8 @@ export function parsePlatformPayload<T extends PlatformJobType>(type: T, payload
  * minute and a notice's delivery is recorded within one; the mail expiry nightly at 03:50; the dunning notices' sends
  * every minute, so a send that threw is tried again after 1, 5, 15 and 60 minutes (docs/adr/0065); and the
  * password-changed notices every minute, from the database's outbox, so the account's address is told within a minute of
- * a reset and a refused send is tried again on the same steps (docs/adr/0091).
+ * a reset (a backlog goes out over several runs: each stops claiming once it has spent 8 seconds sending) and a refused
+ * send is tried again on the same steps (docs/adr/0091).
  */
 export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   audit_copy: '20 1 * * *',
@@ -132,7 +133,7 @@ export interface PlatformDependencies {
   readonly mail: MailSender;
   /** The application's origin, for the notices' links. */
   readonly appOrigin: string;
-  /** The support address the password-changed email says to write to (SUPPORT_EMAIL; docs/adr/0091). */
+  /** The support address the password-changed email says to write to, and its Reply-To (SUPPORT_EMAIL; docs/adr/0091). */
   readonly supportEmail: string;
   /** Where the monitoring schedule queues each practice's jobs (pg-boss). */
   readonly queue?: JobSender;

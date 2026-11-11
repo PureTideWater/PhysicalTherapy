@@ -327,7 +327,7 @@ describe('platform handlers', () => {
         return [{ notice_id: NOTICE, user_id: USER }];
       }
       if (text.includes('operator_password_notice_claim')) {
-        return [{ user_id: USER, email: `${USER}@synthetic.test`, changed_at: new Date('2026-11-05T14:32:59Z') }];
+        return [{ user_id: USER, email: `${USER}@synthetic.test`, changed_at: new Date('2026-11-05T14:32:59Z'), mfa_enrolled: true }];
       }
       if (text.includes('operator_password_notice_sent')) {
         return [{ undelivered: false }];
@@ -345,6 +345,9 @@ describe('platform handlers', () => {
     expect(mail.sent.map((message) => [message.to, message.subject, message.identity])).toEqual([
       [[`${USER}@synthetic.test`], 'Your password was changed', { stream: 'transactional', kind: 'password_changed', subjectId: NOTICE, recipientUserId: USER }],
     ]);
+    // The platform's support address (SUPPORT_EMAIL) is the one the email names and the one a reply goes to.
+    expect(mail.sent[0]?.replyTo).toBe(notices.supportEmail);
+    expect(mail.sent[0]?.lines.at(-1)).toContain(notices.supportEmail);
     expect(lines).toEqual([
       expect.objectContaining({ level: 'info', msg: 'password notice sent', job_id: JOB, password_notice_id: NOTICE, user_id: USER }),
       expect.objectContaining({ level: 'info', msg: 'password notices sent', job_id: JOB, record_count: 1 }),

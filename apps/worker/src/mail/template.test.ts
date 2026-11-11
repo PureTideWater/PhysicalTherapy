@@ -8,10 +8,10 @@ import { describe, expect, it } from 'vitest';
 import { EMAIL_LOCKUP_PATH, EMAIL_LOCKUP_WIDTH, EMAIL_PLATE_WIDTH, EMAIL_PROSPECT_LOCKUP_PATH, MAIL_FOOTERS, brandedSubject, emailLockup, mailHtml } from './template';
 
 const STATIC = 'https://static.paidwhole.example';
-/** Synthetic: the support address and the change's time. */
-const LINES = passwordChangedLines(new Date('2026-11-05T14:32:00Z'), 'support@paidwhole.example');
+/** Synthetic: the support address and the change's time, as an account with a second factor enrolled is sent them. */
+const LINES = passwordChangedLines(new Date('2026-11-05T14:32:00Z'), 'support@paidwhole.example', true);
 
-describe('the account variant (the password-changed email; sent from the follow-on pull request, docs/adr/0091)', () => {
+describe('the account variant (the password-changed email, which the password_notices job sends; docs/adr/0091)', () => {
   it('without a static host, is the user pool’s own frame exactly: the two cannot drift', () => {
     expect(mailHtml(PASSWORD_CHANGED_SUBJECT, LINES, [], null, 'account')).toBe(authMailHtml(PASSWORD_CHANGED_SUBJECT, LINES));
     expect(mailHtml('A <b> & c', ['One & <two>'], [], null, 'account')).toBe(authMailHtml('A <b> & c', ['One & <two>']));
