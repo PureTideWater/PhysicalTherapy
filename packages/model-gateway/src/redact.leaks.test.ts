@@ -882,6 +882,89 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
     expect(sentOrRefused('SSN on file.  Statement\r\nNo. 900-12-3456150.00', JANE, JANE_CLAIMS)).toBe('SSN on file.  Statement\r\nNo. 900-12-3456150.00');
   });
 
+  // The review of the build (review A of co-001/redact-item-26). Each finding on both sides: what is closed, and what stays.
+  describe('review A', () => {
+    /** The reading without the screen: redactLetter, then the check. */
+    const letterPath = (letter: string, who: PatientIdentifiers, numbers: readonly LetterClaim[]) => {
+      const sent = redactLetter(letter, who, numbers).text;
+      return holdsIdentifier(sent, who, numbers) ? REFUSED : sent;
+    };
+    const chainTail = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['3456150.00']);
+
+    it.each([
+      ['a claim number held as the amount of the held range', patientOf(['TOBE ZEPHYRA'], ['1988-02-29'], ['SYN 0042 77']), claimsOf('150.00'), 'Service 01/01/2020-150.00 Paid\nSSN on file. Statement\n\nNo. 900-12-345678'],
+      ['a member ID held as the end of a chain', chainTail, claims, 'SSN on file. Statement\nNo. 900-12-3456150.00'],
+      ['the same after a member ID label', chainTail, claims, 'SSN: see Member\nID Number: 900-12-3456150.00. Date of birth: 03/14/1980'],
+      ['the name written apart in a held letter', patient, claims, 'Seen 01/01/2020-150.00Paid in full. Dear Zephy ra, your claim'],
+    ] as const)('A-1: a wider match is applied only to a letter the first reading sends, with the screen and without it: %s', (_case, who, numbers, letter) => {
+      // The base refused each on both paths; with every wider match applied, the path without the screen sent the first
+      // with the Social Security twin whole and the second with five of its digits.
+      expect(letterPath(letter, who, numbers)).toBe(REFUSED);
+      expect(sentOrRefused(letter, who, numbers)).toBe(REFUSED);
+      // No span of the wider reading is among the spans: the text is the first reading's.
+      expect(redactionSpans(letter, who, numbers).spans.every((span) => span.placeholder === '[DATE_OF_BIRTH]')).toBe(true);
+    });
+
+    it('A-1: in a letter the first reading sends, both paths write the same wider placeholders', () => {
+      const letter = 'Dear Zephy ra, your claim SYNCLAIM0001 was paid.';
+      expect(letterPath(letter, patient, claims)).toBe('Dear [PATIENT_NAME], your claim [CLAIM_1] was paid.');
+      expect(sentOrRefused(letter, patient, claims)).toBe('Dear [PATIENT_NAME], your claim [CLAIM_1] was paid.');
+    });
+
+    it('A-2: a CR LF letter whose writing with LF the first reading refuses takes no wider placeholder, and is refused', () => {
+      // The base sent it whole; with the member ID's wider placeholder applied first, "No. 900-12-[MEMBER_ID]" went out.
+      const letter = 'SSN on file. Statement\r\nNo. 900-12-3456150.00';
+      expect(sentOrRefused(letter, chainTail, claims)).toBe(REFUSED);
+      expect(letterPath(letter, chainTail, claims)).toBe(REFUSED);
+      expect(redactLetter(letter, chainTail, claims).text).toBe(letter);
+      expect(sentOrRefused(letter.replace('\r\n', '\n'), chainTail, claims)).toBe(REFUSED);
+    });
+
+    it('A-2, recorded: redaction reads a letter as it is written, so a CR LF letter can be sent, with nothing of the call shown, where the redaction of its writing with LF is refused', () => {
+      const who = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['3456150.00', '12-3456', '345.678']);
+      const numbers = claimsOf('56150', '0123', '1/02/2020', '12/3456');
+      const letter = 'ZЕPHYRA, Z\r\n\r\n(202) 555-0123\r\nSeen 01/01/2020-150.00Paid in full. \r\nICN\r\n';
+      expect(sentOrRefused(letter, who, numbers)).toBe('[PATIENT_NAME], [PATIENT_NAME]\r\n\r\n[PHONE]\r\nSeen 01/01/2020-150.00Paid in full. \r\nICN\r\n');
+      expect(sentOrRefused(letter.replaceAll('\r\n', '\n'), who, numbers)).toBe(REFUSED);
+    });
+
+    it.each(['Dear Z e p h y r a900-12-3456, your claim', 'Dear Zephy ra202-555-0123.'])('A-3, the recorded cost: %j, the name written apart and glued to a number that is replaced, is refused', (letter) => {
+      // The base sent each with the name in clear beside the placeholder. Redaction reads no name with a digit against
+      // it; the check reads the placeholder as a barrier and finds the name.
+      expect(sentOrRefused(letter, patient, claims)).toBe(REFUSED);
+    });
+
+    it.each(['\u0085', '\u0085 ', ' ', '\f', '\n', '\r\n', '\t', ' '])('A-4: a line break or a space of any kind (%j) inside a part joins it', (between) => {
+      expect(sentOrRefused(`Dear Zephy${between}ra, your claim`, patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
+    });
+
+    it.each([', ', ': ', '; ', '(', '。', '・', '*', '/'])('A-4, recorded for Queues item 34: a part split by %j is sent as written, as on the base', (between) => {
+      const letter = `Dear Zephy${between}ra, your claim`;
+      expect(sentOrRefused(letter, patient, claims)).toBe(letter);
+    });
+
+    it.each([
+      ['ZZ12345]01', 'The member ZZ12345]01 was paid short.', 'The member [MEMBER_ID] was paid short.'],
+      ['ZZ12345[01', 'The member ZZ12345[01 was paid short.', 'The member [MEMBER_ID] was paid short.'],
+      ['ZZ[12345]01', 'Member ID: ZZ[12345]01 was paid short.', 'Member ID: [MEMBER_ID] was paid short.'],
+    ])('A-5: a member ID held %j with a square bracket is read as held (a letter’s brackets are parentheses by then)', (memberId, letter, sent) => {
+      expect(sentOrRefused(letter, patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], [memberId]), claims)).toBe(sent);
+    });
+
+    it('A-5, recorded: a stored number written with another separator than the records hold is sent as written, as on the base', () => {
+      const held = patientOf(['JUNE MARCH'], ['1975-06-01'], ['ZZ12345/01']);
+      expect(sentOrRefused('The member ZZ12345.01 was paid short.', held, claims)).toBe('The member ZZ12345.01 was paid short.');
+      expect(sentOrRefused('The member ZZ12345,01 was paid short.', held, claims)).toBe('The member ZZ12345,01 was paid short.');
+    });
+
+    it('A-6: every CR before a line feed is that line ending’s; a line feed before a CR is as written, recorded', () => {
+      expect(sentOrRefused('SSN verified. Account \nNo. 900-12-345678', JANE, JANE_CLAIMS)).toBe(REFUSED);
+      expect(sentOrRefused('SSN verified. Account \r\nNo. 900-12-345678', JANE, JANE_CLAIMS)).toBe(REFUSED);
+      expect(sentOrRefused('SSN verified. Account \r\r\nNo. 900-12-345678', JANE, JANE_CLAIMS)).toBe(REFUSED);
+      expect(sentOrRefused('SSN verified. Account \n\rNo. 900-12-345678', JANE, JANE_CLAIMS)).toBe('SSN verified. Account \n\rNo. 900-12-345678');
+    });
+  });
+
   it('refuses a CR LF letter wherever its writing with LF is refused (property)', () => {
     const piece = fc.constantFrom('SSN on file.', 'SSN verified.', 'Statement', 'Account', 'Provider', 'No.', 'Member', 'ID Number:', 'Phone', 'Tel', 'Claim', 'Paid', '900-12-3456', '900-12-3456150.00', '900 12 3456', '90012345601/02/2020', '5550123', '202-555-0123', '150.00', '01/01/2020-150.00', 'Jane Zephyra', 'Thank you.');
     const gap = fc.constantFrom(' ', '  ', '\n', '\n\n', ' \n', '\n ', '');

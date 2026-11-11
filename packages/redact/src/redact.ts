@@ -513,6 +513,8 @@ const GAP = {
   tight: `(?:[${NAME_JOINERS}]|${HYPHENATION})*`,
   /** Inside a name's part, two letters or more from each end: a space or period too, if the pieces it makes pass (spacedPiecesPass). */
   spaced: `[${NAME_JOINERS}\\s.]*`,
+  /** Inside a name's part in the letter reader's wider reading (nameForm with `apart`): as `spaced`, and U+0085, a line break here (LINE_BREAK) that \\s does not hold. */
+  apart: `[${NAME_JOINERS}\\s\\u0085.]*`,
   /** Between the parts the records hold apart: any joiner, white space, a period or a comma. */
   part: `[${NAME_JOINERS}\\s.,]*`,
   number: `[${NUMBER_JOINERS}]*`,
@@ -581,7 +583,8 @@ function numberForm(value: string, kind: 'claim' | 'member', claim: number, asSt
   const stored: string[] = [];
   if (asStored) {
     let between = '';
-    for (const codePoint of folded) {
+    // A letter's square brackets are parentheses by the time it is matched (unbracketed): the stored value's are read so too.
+    for (const codePoint of folded.replace(/[[\]]/g, (bracket) => (bracket === '[' ? '(' : ')'))) {
       if (compactFolded(codePoint) === '') {
         between += `\\u{${(codePoint.codePointAt(0) ?? 0).toString(16)}}`;
       } else {
@@ -610,7 +613,7 @@ function nameWords(name: string): string[][] {
 /**
  * A name form from its parts (the whole name's, a word's, or one part), or null under two letters or digits. With
  * `apart` (the letter reader's wider reading, widerMatchesIn), a space or a period joins anywhere inside a part, whatever
- * the pieces it leaves: "Zephy ra", "Zephy. ra", "Z e p h y r a".
+ * the pieces it leaves: "Zephy ra", "Zephy. ra", "Z e p h y r a"; a line break of any kind is such a space (GAP.apart).
  */
 function nameForm(parts: readonly string[], apart = false): Form | null {
   const characters: string[] = [];
@@ -623,7 +626,7 @@ function nameForm(parts: readonly string[], apart = false): Form | null {
         gaps.push(GAP.part);
         insidePart.push(false);
       } else if (i > 0) {
-        gaps.push(apart || (i >= 2 && letters.length - i >= 2) ? GAP.spaced : GAP.tight);
+        gaps.push(apart ? GAP.apart : i >= 2 && letters.length - i >= 2 ? GAP.spaced : GAP.tight);
         insidePart.push(true);
       }
       characters.push(letter);
@@ -3336,7 +3339,20 @@ function appliedMatches(normal: string, subject: Subject, claims: number): Found
 export function redactionSpans(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
   const normal = unbracketed(text);
   const subject = letterSubject(patient, claims);
-  return inOneReading(() => ({ text: normal, spans: merge([...matchesIn(unmarked(normal), subject), ...widerMatchesIn(unmarked(normal), subject)]) }));
+  return inOneReading(() => {
+    // The first reading's spans, as before; the wider reading's are added under the rule redactLetterForScreen keeps
+    // (screenAsBothRead): only to a text the first reading's check does not refuse, so that no placeholder of the wider
+    // reading hides what that check read ("Service 01/01/2020-150.00 Paid" for a claim number held "150.00": with the
+    // amount replaced the letter is held no more, and a number the held letter is refused for would be sent. Review A-1).
+    const found = matchesIn(unmarked(normal), subject);
+    const first = merge(found);
+    const covered = within([...first]);
+    const wider = widerMatchesIn(unmarked(normal), subject).filter((match) => !covered(match));
+    if (wider.length === 0 || refusedAsFirstRead(written(normal, first), patient, claims)) {
+      return { text: normal, spans: first };
+    }
+    return { text: normal, spans: merge([...found, ...wider]) };
+  });
 }
 
 /** NFKC text with the spans replaced by their placeholders (those `replace` takes). */
@@ -3380,12 +3396,14 @@ function screenAsBothRead(text: string, patient: PatientIdentifiers, claims: rea
   const subject = letterSubject(patient, claims);
   const first = screenAsFirstRead(normal, subject, claims);
   // The wider reading (widerMatchesIn; MOD-23) only adds, and only to a letter the first reading sends. What the first
-  // reading's own check refuses is returned as the first reading wrote it, and the check, which reads no less, refuses it
-  // again: no placeholder of the wider reading can hide what that check read. In a letter it sends, every span the first
+  // reading's own check refuses, as written or with its CR LF line endings read as line feeds (refusedAsFirstRead), is
+  // returned as the first reading wrote it, and the check, which reads no less, refuses it again: no placeholder of the
+  // wider reading can hide what that check read in either writing (review A-2: a member ID held "3456150.00" replaced
+  // in "No. 900-12-3456150.00" after a CR LF hid the number from the reading with line feeds). In a letter it sends, every span the first
   // reading replaced is replaced (merge only joins and widens spans), and every run it offered the screen is offered.
   const covered = within([...first.spans]);
   const wider = widerMatchesIn(unmarked(normal), subject).filter((match) => !covered(match));
-  if (wider.length === 0 || holdsAsFirstRead(first.text, patient, claims)) {
+  if (wider.length === 0 || refusedAsFirstRead(first.text, patient, claims)) {
     return { text: first.text, claims: first.claims, replaced: first.replaced, candidates: first.candidates };
   }
   const spans = merge([...first.found, ...wider]);
@@ -3479,10 +3497,24 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
   // characters: the text is read once more with each CR LF written as a line feed, and the worse answer is taken, so a
   // letter is refused wherever its writing with LF is ("SSN on file. Statement", CR LF and "No. 900-12-3456150.00":
   // review K-1 of co-001/redact-ssn-phone-leaks). The first reading stands, and this one only adds.
-  return inOneReading(() => holds(text) || (text.includes('\r\n') && holds(text.replaceAll('\r\n', '\n'))));
+  return inOneReading(() => holds(text) || (text.includes('\r\n') && holds(asLineFeeds(text))));
 }
 
-/** holdsIdentifier as the first reading alone gives it: what decides whether the wider reading's matches are applied (redactLetterForScreen). */
+/**
+ * A text with each CR LF written as a line feed, every CR of a run before the line feed with it: "\r\r\n" is one line
+ * ending too, a file converted twice (review A-6).
+ */
+const asLineFeeds = (text: string) => text.replace(/\r+\n/g, '\n');
+
+/**
+ * Whether the first reading's check refuses a text in either writing holdsIdentifier reads it in: as written, and with
+ * its CR LF line endings as line feeds. What decides whether the wider reading's matches are applied.
+ */
+function refusedAsFirstRead(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): boolean {
+  return holdsAsFirstRead(text, patient, claims) || (text.includes('\r\n') && holdsAsFirstRead(asLineFeeds(text), patient, claims));
+}
+
+/** holdsIdentifier as the first reading alone gives it, on the text as it is given (refusedAsFirstRead reads both writings). */
 function holdsAsFirstRead(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): boolean {
   // A letter that itself writes one of the checks' own three marks is refused: ef3e8d20 read a letter's own mark as its
   // placeholder and refused such letters in places ("Total<U+0002>for45.00 ...": the review of the last round's delta,
