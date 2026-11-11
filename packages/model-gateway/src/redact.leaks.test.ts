@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, redactLetter, redactLetterForScreen, redactionSpans } from './redact';
+import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, holdsNameOrNumber, redactLetter, redactLetterForScreen, redactionSpans } from './redact';
 
 /**
  * The leaks co-001/redact-ssn-phone-leaks closes (test matrix MOD-21, MOD-22; docs/adr/0054, the amendment of that change;
@@ -966,6 +966,15 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     sentAs('Dear Zeph\u00B7yra J, hello', 'Dear [PATIENT_NAME] [PATIENT_NAME], hello'),
   ])('D1-1: an initial read only beside a name ef3e8d20 did not read is no settled match: %j %s', (letter, _outcome, sent) => {
     expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // The new name joiners are the letter reader's. The narrative's check, which the packet verifier shares, reads a name as
+  // ef3e8d20 read it: which stored narratives fail is the verifier's to change.
+  it('reads a name written with a new joiner in a letter, and leaves the narrative’s reading as it was', () => {
+    expect(outcome('Dear Zeph\u00B7yra, hello')).toBe('Dear [PATIENT_NAME], hello');
+    expect(holdsNameOrNumber('Dear Zeph\u00B7yra, hello', { names: ['JANE Q ZEPHYRA'], numbers: [] })).toBe(false);
+    expect(holdsNameOrNumber('Dear Zephyra, hello', { names: ['JANE Q ZEPHYRA'], numbers: [] })).toBe(true);
+    expect(holdsNameOrNumber('ID ZZ\u00B77654321', { names: [], numbers: ['ZZ7654321'] })).toBe(true);
   });
 
   // D1's note: where no check follows, a pattern's match inside a run that holds an identifier glued in a look-alike form

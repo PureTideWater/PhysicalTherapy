@@ -1075,14 +1075,18 @@ const asBaseRead = (normal: string) => normal.replace(NEW_NAME_JOINERS, '\u30FB'
  * identifier.
  */
 function matchesIn(normal: string, subject: Subject, marked: string = normal): Found[] {
-  const plain = ownMatchesIn(normal, subject);
+  // ef3e8d20's own reading of the call's identifiers: the text with the new name joiners written as it read them.
+  const joined = NEW_NAME_JOINER.test(normal);
+  const base = ownMatchesIn(joined ? asBaseRead(normal) : normal, subject);
   if (!subject.patterns) {
-    return plain;
+    // The narrative's check and the packet verifier read a name as ef3e8d20 read it: which stored narratives fail is
+    // theirs to change (packages/packets, verifier-identifiers.test.ts pins what the matcher does not read).
+    return base;
   }
   // ef3e8d20's own matches stand settled. Whatever the new name joiners add is fresh: the name written with one, and what
   // is read only beside it (an initial next to that name: the review of the fix round's delta, D1-1).
-  const base = NEW_NAME_JOINER.test(normal) ? ownMatchesIn(asBaseRead(normal), subject) : plain;
-  const found: Found[] = base === plain ? [...plain] : [...base, ...plain.filter((match) => !base.some((known) => known.start === match.start && known.end === match.end && known.kind === match.kind)).map((match) => ({ ...match, fresh: true }))];
+  const plain = joined ? ownMatchesIn(normal, subject) : base;
+  const found: Found[] = plain === base ? [...base] : [...base, ...plain.filter((match) => !base.some((known) => known.start === match.start && known.end === match.end && known.kind === match.kind)).map((match) => ({ ...match, fresh: true }))];
   if (alikeReads(normal, subject)) {
     onFold('alike', () => {
       for (const match of ownMatchesIn(normal, subject)) {
