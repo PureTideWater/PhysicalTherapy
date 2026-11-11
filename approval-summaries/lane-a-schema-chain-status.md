@@ -80,7 +80,18 @@ Started by the orchestrator session_019i9ifDAzQNA3kLHozjBoeS. Setup OK; worktree
   session's ops commits since 23:25 UTC carry a co-author trailer that names the model family and version (a harness
   attribution note was followed over the brief's "no model identifier in a commit body"). From ec606eff on the trailer
   names none. Told to the orchestrator.
-- **RESUME-BLOCK (#126), head ec606eff:** (1) read CI on ec606eff (expected red: `domain model`, `all green`) and the
+- **04:23 UTC: the suggested approval line is POSTED:**
+  https://github.com/PureTideWater/PhysicalTherapy/pull/126#discussion_r4533967660 (commit ec606eff, line 7469, hash
+  `bb7662c6…6bf8`). On ec606eff: CI green but `domain model` (the approval step) and `all green`; mutation green (run
+  42953657838); CAS-42.5 green (run 42953660378). Link sent to the orchestrator with D19's trade-off and the trailer note.
+  The founder wrote "I approve as the founder" in this session at ~03:38 UTC: answered that only the committed
+  suggestion on GitHub records it; nothing was written or merged on that word.
+- **RESUME-BLOCK (#126), waiting on the founder:** when the founder's commit of the suggestion lands (a push event on
+  the subscribed PR): read the line (name on approvers.json, a date, the hash), check `domain model` and the required
+  checks (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`) are green on that commit and
+  origin/claude/build-platform is an ancestor (merge the base once if not, then the checks again); merge with method
+  merge and the expected head SHA; tell the orchestrator in one line; then cut password-changed-notice.
+- **Done steps (kept for the record), head ec606eff:** (1) read CI on ec606eff (expected red: `domain model`, `all green`) and the
   release-capacity run dispatched at 03:41 UTC; (2) post ONE suggestion comment with the approval line on line 7469 of
   docs/product/domain-model.md, commit_id ec606eff (`gh api repos/PureTideWater/PhysicalTherapy/pulls/126/comments`;
   .claude/skills/new-migration); (3) send its link to the orchestrator, with D19's trade-off and the trailer note;
