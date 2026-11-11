@@ -30,12 +30,28 @@ Started by the orchestrator session_019i9ifDAzQNA3kLHozjBoeS. Setup OK; worktree
   a generated practice expects one interest credit. ADR 0087 dated note; **owed as its own item:** the settle entries
   compared row for row in `seq` order (ADR 0087 "Revisit when"). CAS-49.1 30/30, pass-equality-led 82/82, bounds and
   deadlock green. No migration change. Both on `co-001/wip-interest-fix`; not yet on the PR branch.
-- **RESUME-BLOCK (#126):** (1) two reviews of b1c1b161 running (money; database and security): verify findings, fix;
-  (2) full local suite once on the final tree (`lane-a-wip/interest-pr/suite.sh`); (3) push to
-  `co-001/ledger-interest-once` from the hooked checkout; (4) dispatch `release-capacity.yml` (CAS-42.5) on that head;
-  (5) body (`body-build.py`; add RVM5-1, RVM6-1, D19's trade-off for the founder, the #134 alignment), read back;
-  (6) fresh-clone verification reading CI; (7) one suggestion comment with the approval line on
-  docs/product/domain-model.md; (8) its link to the orchestrator; merge only after the founder's committed line.
+- **Reviews of b1c1b161 and of 97225576's SQL (four, all reported, none blocking):** fixed in 97225576 and d0a46a42
+  (stale settle-order comments; CAS-49.1 holds the row-for-row count at 0 over a full set of runs; a direct check that a
+  generated practice's interest is the PLB L6's alone; the manual comparison reads `seq`; `hashesOf` names the practice).
+  **Declined after measuring (73f-series commit before bf2fc44f):** practice predicates inside the interest chains'
+  LATERAL lookups moved the plan off the link indexes: CAS-42.3 did not end in 30 minutes with them, 15.9 s without
+  (budget 60 s); the walk stays scoped where it takes a claim in. **Owed, each its own item:** CAS-50/51 practices seeded
+  with PLB L6/WO and the interest statements bounded (ADR 0087 note); the row-for-row settle comparison replacing the
+  set comparison (ADR 0087); a composite foreign key (practice_id, link) on `claim.reversal_of_claim_id` and
+  `superseded_by_claim_id` (a migration: for the schema queue; today a trigger holds it for the app role only).
+- **Base 06cde5eb (#136, ADR 0092) merged: bf2fc44f**, one conflict (reconciliation-routes.db.test.ts, both sides
+  appended; both kept). **Pushed to `co-001/ledger-interest-once` at 01:09 UTC 2026-11-11** (64aa14d9..bf2fc44f); no
+  migration or domain-model change since 64aa14d9, so the hash to approve is unchanged. Local suite: full through e2e
+  on f0a3b6ad; on 97225576 green through db-2 except MOD-16 (unit, W1's) and the CAS-42.3 hang fixed above; the
+  container restarted there, so CI on bf2fc44f is the suite of record (decision, W2: no third local run).
+- **RESUME-BLOCK (#126), head bf2fc44f:** (1) read CI on bf2fc44f (expected red: unit from MOD-16 until its base
+  merge; the domain model's blank approval line); (2) dispatch `release-capacity.yml` (CAS-42.5) on the head;
+  (3) body (`lane-a-wip/interest-pr/body-build.py`; add RVM5-1, RVM6-1, D19's trade-off for the founder, the #134 and
+  #136 merges, the three owed items), read back; (4) fresh-clone verification reading CI; (5) one suggestion comment
+  with the approval line on docs/product/domain-model.md (`gh api .../pulls/126/comments`, commit_id the head);
+  (6) its link to the orchestrator, then end the turn and wait; (7) when MOD-16 and #129 are on the base, merge the
+  base once; merge #126 only after the founder's committed line and green required checks. password-changed-notice
+  starts only after #126 merges.
 
 ## 2026-11-06 19:50 UTC (acting Lane A): #126 resumed from the RESUME-BLOCK
 - Worktree /home/user/interest fast-forwarded to `co-001/wip-interest-fix` 23369ae6 (setup re-run, OK). subscribe_pr_activity
