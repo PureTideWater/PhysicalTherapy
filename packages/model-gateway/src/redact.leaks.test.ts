@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, holdsNameOrNumber, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
+import { timed } from './test-support/time-budget';
 
 import { timed } from './test-support/time-budget';
 
@@ -1421,7 +1422,7 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
   });
 
   // The two reviews of the next delta, I1 (PHI) and I2 (must-stay), each finding on both sides, and the gate's replay.
-  it.each(['_', '~', '\u2500', '_ ', '-'])('I1-1, I2-1: a long rule of %j between a noun and a number is read in time linear in its length', (mark) => {
+  it.each(['_', '~', '\u2500', '_ ', '-'])('I1-1, I2-1: a long rule of %j between a noun and a number is read in time linear in its length', { timeout: 60_000 }, (mark) => {
     for (const length of [48, 60, 110, 5000]) {
       const letter = `IMPORTANT NOTICE\n${mark.repeat(length)}\nClaim Number: 20260112345.01`;
       const run = timed(1_000, () => outcome(letter));
@@ -1530,7 +1531,7 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
   ])('J-1 to J-5: %j %s', (letter, _outcome, sent) => {
     expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
   });
-  it.each(['-+', '+-', '=+', '_~', '─_', '+ ', '(S)', 'NO ', '# ', '| '])('J-5: %j repeated between a noun and a number is read in time linear in its count', (pair) => {
+  it.each(['-+', '+-', '=+', '_~', '─_', '+ ', '(S)', 'NO ', '# ', '| '])('J-5: %j repeated between a noun and a number is read in time linear in its count', { timeout: 60_000 }, (pair) => {
     for (const count of [24, 28, 50, 2500]) {
       const letter = `Claim ${pair.repeat(count)} Total 20260112345.01`;
       const run = timed(1_000, () => outcome(letter));

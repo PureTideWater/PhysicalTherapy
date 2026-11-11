@@ -321,6 +321,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
   const N = 100_000;
   /** The reader's budget for a letter of N characters, on the reference machine (docs/adr/0054). */
   const BUDGET_MS = 3_000;
+  /** No budget: only how long a row may hang. A loaded runner's wall clock is no part of the reader's cost (vitest's default is 5 s). */
+  const HANG_GUARD_MS = 60_000;
   const fill = (unit: string) => unit.repeat(Math.floor(N / unit.length));
   const half = (unit: string) => unit.repeat(Math.floor(N / 2 / unit.length));
   /** MOD-16's CI counterexample: a letter whose chain only the range fix's barriers hold (cc3dd7f6 refused it for the range's digits). */
@@ -367,7 +369,7 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['one word as long as the letter, glued to a digit', ['JANE Q VANTREE'], `${'a'.repeat(N - 2)}1a`, ['SYN555001']],
     // Review GATEWAY1-1 and GATEWAY1-2: the third reading, and SEC-5's label read over the numbers before an amount.
     ['date ranges glued to an ordinal-like word after the year, repeated', ['JANE Q VANTREE'], fill('Service 01/01/2020-01/02/2020St. '), ['SYN555001']],
-  ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
+  ])('redacts a letter crafted to be slow in time linear in its length: %s', { timeout: HANG_GUARD_MS }, (_case, names, text, claimNumbers) => {
     const who = patient(names);
     // The path prepare runs: redaction, the screen's candidates, then the check (review GATEWAYJ1-5). The budget is the
     // reference machine's, held on any machine by a calibration in the same process (test-support/time-budget.ts).
@@ -452,7 +454,7 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['a label read through the name before two numbers joined by a slash, the letter over (MOD-21)', ['JANE Q VANTREE'], fill('Call Vantree at 555-0123/555-0124 '), true],
     ['short tokens that are pieces of no identifier, the letter over (MOD-22)', ['JANE Q VANTREE'], fill('SY 55 50 0l x '), false],
     ['a mask in an SSN’s shape with spaced dashes and three digits, glued to a word, the letter over (MOD-21)', ['JANE Q VANTREE'], fill('PaidXXX - XX - 345 '), false],
-  ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
+  ] as const)('checks a letter crafted to be slow in time linear in its length: %s', { timeout: HANG_GUARD_MS }, (_case, names, text, refused) => {
     const who = patient([...names]);
     const run = timed(BUDGET_MS, () => holdsIdentifier(redactLetterForScreen(text, who, claim('SYN555001')).text, who, claim('SYN555001')));
     expect(run.value).toBe(refused);
