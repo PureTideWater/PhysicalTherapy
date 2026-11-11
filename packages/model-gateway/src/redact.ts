@@ -296,12 +296,29 @@ export function fold(codePoint: string): string {
       folded = digitValue(codePoint);
     } else {
       // Case first, then the look-alike of the capital (or, where the capital has none, of its small letter): both cases of
-      // a letter fold to one thing, as before, whatever each of them looks like ("υ" and "Υ" are both Y; "ω" and "Ω" both W).
+      // a letter fold to one thing, as before, whatever each of them looks like ("υ" and "Υ" are both Y).
       const capital = codePoint.normalize('NFD').replace(MARKS, '').toLowerCase().toUpperCase().normalize('NFD').replace(MARKS, '');
       folded = '';
       for (const each of capital) folded += each.charCodeAt(0) < 0x80 ? each : (LOOK_ALIKES.get(each) ?? LOOK_ALIKES.get(each.toLowerCase()) ?? each).toUpperCase();
     }
     foldedCodePoints.set(codePoint, folded);
+  }
+  return folded;
+}
+
+const plainlyFolded = new Map<string, string>();
+
+/**
+ * One code point folded as cc3dd7f6 and ef3e8d20 folded every view: decomposed, its marks dropped, its case folded in full,
+ * no look-alike read. The Social Security and phone patterns and the survivor scan read this fold: a look-alike is theirs
+ * to read as the letter it is ("\u0417\u043E\u044F" holds no digit and ends no label's window, "\u0406\u0421N" is no ICN and keeps no number: the
+ * review of the build, B1-3 and B1-14). The look-alike fold is for the call's own identifiers (ruling A').
+ */
+function foldPlain(codePoint: string): string {
+  let folded = plainlyFolded.get(codePoint);
+  if (folded === undefined) {
+    folded = codePoint.normalize('NFD').replace(MARKS, '').toLowerCase().toUpperCase().normalize('NFD').replace(MARKS, '');
+    plainlyFolded.set(codePoint, folded);
   }
   return folded;
 }
@@ -354,18 +371,19 @@ const DECIMAL_DIGIT = /^\p{Nd}$/u;
  * read as a space (`space`). Dates are read on both of the last two, so neither a zero-width space inside
  * a date nor one between a date and a digit hides it. With `digits`, each decimal digit is its ASCII value
  * (digitValue), one unit for one code point: the view the Social Security and phone patterns and the survivor
- * scan read (docs/adr/0054, amendment of 2026-11-04, R3).
+ * scan read (docs/adr/0054, amendment of 2026-11-04, R3). With `alike`, another script's look-alike is the ASCII letter or
+ * digit it reads as (fold): the views the call's own identifiers are matched on, never the patterns' or the scan's.
  */
-function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = false): View {
+function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = false, alike = !digits): View {
   if (viewsOfCheck === null) {
-    return buildView(normal, invisible, digits);
+    return buildView(normal, invisible, digits, alike);
   }
-  const key = `${invisible}${digits ? '#' : ''}`;
+  const key = `${invisible}${digits ? '#' : ''}${alike ? '~' : ''}`;
   const known = viewsOfCheck.find((each) => each.key === key && each.normal === normal);
   if (known !== undefined) {
     return known.view;
   }
-  const view = buildView(normal, invisible, digits);
+  const view = buildView(normal, invisible, digits, alike);
   viewsOfCheck.push({ normal, key, view });
   return view;
 }
@@ -377,7 +395,7 @@ function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = f
  */
 let viewsOfCheck: { readonly normal: string; readonly key: string; readonly view: View }[] | null = null;
 
-function buildView(normal: string, invisible: 'join' | 'drop' | 'space', digits: boolean): View {
+function buildView(normal: string, invisible: 'join' | 'drop' | 'space', digits: boolean, alike: boolean): View {
   // The units are collected and joined once, and whether the last one is a VANISHED of its own run is kept beside them:
   // reading the end of a string built by concatenation flattens it, which made a letter of invisible runs quadratic.
   const units: string[] = [];
@@ -391,7 +409,7 @@ function buildView(normal: string, invisible: 'join' | 'drop' | 'space', digits:
     offset += codePoint.length;
     const code = codePoint.charCodeAt(0);
     // ASCII folds to itself in upper case (no ASCII character is a blank, invisible or a digit of another script).
-    let unit = code < 0x80 ? (code >= 0x61 && code <= 0x7a ? String.fromCharCode(code - 0x20) : codePoint) : BLANK.test(codePoint) ? ' ' : IGNORABLE.test(codePoint) ? '' : digits && DECIMAL_DIGIT.test(codePoint) ? digitValue(codePoint) : fold(codePoint);
+    let unit = code < 0x80 ? (code >= 0x61 && code <= 0x7a ? String.fromCharCode(code - 0x20) : codePoint) : BLANK.test(codePoint) ? ' ' : IGNORABLE.test(codePoint) ? '' : digits && DECIMAL_DIGIT.test(codePoint) ? digitValue(codePoint) : alike ? fold(codePoint) : foldPlain(codePoint);
     if (unit === '') {
       emptied = true;
       if (invisible === 'drop') {
@@ -433,7 +451,7 @@ const writtenAt = (view: View, normal: string, index: number) => codePointAt(nor
 // Forms and the matcher
 
 /** Dashes (with the minus sign and hyphen bullet PDF text writes for a hyphen), apostrophes, the underscore and VANISHED: they join a name anywhere. */
-const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC\\u02B9\\u02CA`\\u00B4_\\u00AD\\u00B7\\u2027";
+const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC\\u02B9\\u02CA`\\u00B4_\\u00AD\\u00B7\\u2027\\u2219\\u22C5\\u2022";
 /**
  * What joins a member ID or claim number anywhere ("." "/" ":" "#" and "(" only next to a letter): white space, dashes
  * (with the minus sign, the hyphen bullet, U+02D7 and U+2796), "_", "|", "\\", VANISHED, and since review finding
@@ -787,6 +805,12 @@ interface Found extends Range {
   readonly claim: number;
   /** For a Social Security or phone number that is not the call's own: its compact forms the one-patient screen is offered (whole, core, joined to the token written against it). */
   readonly compacts?: readonly string[];
+  /**
+   * A match ef3e8d20 did not make that can change what the survivor scan chains: a number a label names only through the
+   * call's own identifier or a list number, or a member ID or claim number in a form only this reading reads. Redaction
+   * applies it only where the letter is not refused without it (appliedMatches).
+   */
+  readonly fresh?: boolean;
 }
 
 /**
@@ -931,6 +955,11 @@ function matchesIn(normal: string, subject: Subject): Found[] {
         if (inWholeDate(range)) {
           continue;
         }
+        // A part of two or three letters written wholly in another script's letters is that script's word ("\u043D\u0430" in a
+        // Russian notice is no HA, "\u03BA\u03B1\u03B9" no KAI: the review of the build, B2-7); with an ASCII letter among them it is the name.
+        if ([...form.compact].length < 4 && !/[A-Za-z]/u.test(normal.slice(range.start, range.end).normalize('NFD'))) {
+          continue;
+        }
         names.push({ start, end });
       } else if (form.digitsOnly && ((form.kind === 'claim' && isAmount(normal, range)) || (inDateAsRead(range) && writtenAsDate(normal, range) && !labelFor(view, normal, start, form.kind)))) {
         continue;
@@ -982,13 +1011,25 @@ function matchesIn(normal: string, subject: Subject): Found[] {
     if (match !== undefined && match.kind !== 'birth' && inBirthForm(match)) found.splice(i, 1);
   }
   if (subject.patterns) {
+    // A member ID or claim number with a letter or a digit outside ASCII in it is a form ef3e8d20 did not read (Found.fresh).
+    found.forEach((match, at) => {
+      if (match.kind !== 'name' && match.kind !== 'birth' && NOT_ASCII_WORD.test(normal.slice(match.start, match.end).normalize('NFD').replace(MARKS, '').replace(NUMBER_JOINER, ''))) found[at] = { ...match, fresh: true };
+    });
     // The call's own identifiers written with a scan's look-alikes, as words of their own (ruling A').
-    found.push(...confusedMatchesIn(normal, subject));
-    // Last, so a bare number's label window ends at every match already found (section 3.4).
-    found.push(...patternMatchesIn(normal, found, subject));
+    const tokens = writtenTokens(normal);
+    found.push(...confusedMatchesIn(tokens, subject, normal));
+    // Last, so a bare number's label window ends at every match already found (section 3.4); never inside a run that holds
+    // one of the call's identifiers glued in a look-alike form, which the check refuses whole.
+    const glued = confusedGluedIn(tokens, subject);
+    found.push(...patternMatchesIn(normal, found, subject).filter((match) => (match.kind !== 'ssn' && match.kind !== 'phone') || !glued.some((range) => match.start < range.end && range.start < match.end)));
   }
   return found;
 }
+
+/** A letter or a digit outside ASCII: a member ID or claim number written with one is a form ef3e8d20 did not read. */
+const NOT_ASCII_WORD = /(?!\p{ASCII})[\p{L}\p{N}]/u;
+/** One of a number's joiners (some are modifier letters: no part of the number). */
+const NUMBER_JOINER = new RegExp(`[${NUMBER_JOINERS}]`, 'gu');
 
 /**
  * What a letter or digit, as written, may stand for where a scan or an eye takes a digit for a letter or a letter for a
@@ -1030,6 +1071,10 @@ function mayBe(written: string): string {
 interface WrittenToken {
   /** Each letter or digit as written (asWritten), one unit each. */
   readonly units: readonly string[];
+  /** For a digit of another script that looks like a letter ("\u0667" like V), that letter: the unit is its value, and may be the letter too. */
+  readonly alts: readonly (string | undefined)[];
+  /** Whether each unit is a look-alike of another script. */
+  readonly alike: readonly boolean[];
   /** Whether a unit is a look-alike of another script, read as its ASCII letter or digit. */
   readonly likened: boolean;
   /** Where each unit's code point starts and ends in the NFKC text. */
@@ -1041,12 +1086,16 @@ interface WrittenToken {
 function writtenTokens(normal: string): WrittenToken[] {
   const tokens: WrittenToken[] = [];
   let units: string[] = [];
+  let alts: (string | undefined)[] = [];
+  let alike: boolean[] = [];
   let starts: number[] = [];
   let ends: number[] = [];
   let likened = false;
   const close = () => {
-    if (units.length > 0) tokens.push({ units, starts, ends, likened });
+    if (units.length > 0) tokens.push({ units, alts, alike, starts, ends, likened });
     units = [];
+    alts = [];
+    alike = [];
     starts = [];
     ends = [];
     likened = false;
@@ -1060,6 +1109,8 @@ function writtenTokens(normal: string): WrittenToken[] {
       // ASCII: a letter or a digit is itself, anything else ends the run (no regular expression per character).
       if ((code >= 0x30 && code <= 0x39) || (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a)) {
         units.push(codePoint);
+        alts.push(undefined);
+        alike.push(false);
         starts.push(start);
         ends.push(offset);
       } else {
@@ -1067,15 +1118,20 @@ function writtenTokens(normal: string): WrittenToken[] {
       }
       continue;
     }
-    if (IGNORABLE.test(codePoint)) continue;
-    const read = DECIMAL_DIGIT.test(codePoint) ? digitValue(codePoint) : asWritten(codePoint);
+    if (IGNORABLE.test(codePoint) || LONE_MARK.test(codePoint)) continue;
+    const digit = DECIMAL_DIGIT.test(codePoint);
+    const read = digit ? digitValue(codePoint) : asWritten(codePoint);
     if (read === '' || ![...read].every((unit) => WORD_CHARACTER.test(unit))) {
       close();
       continue;
     }
-    likened ||= [...read].some((unit) => unit.charCodeAt(0) < 0x80);
+    const letter = digit ? LOOK_ALIKES.get(codePoint) : undefined;
+    // A digit of another script is its value, as every digits view reads it: no look-alike.
+    likened ||= !digit && [...read].some((unit) => unit.charCodeAt(0) < 0x80);
     for (const unit of read) {
       units.push(unit);
+      alts.push(letter !== undefined && /^[A-Za-z]$/u.test(letter) ? letter.toUpperCase() : undefined);
+      alike.push(!digit && unit.charCodeAt(0) < 0x80);
       starts.push(start);
       ends.push(offset);
     }
@@ -1084,10 +1140,28 @@ function writtenTokens(normal: string): WrittenToken[] {
   return tokens;
 }
 
+/** A combining mark as a code point of its own (NFKC composed it with no letter): dropped, as the views drop it. */
+const LONE_MARK = /^\p{M}$/u;
+
 const writtenDigit = (unit: string) => unit.length === 1 && unit >= '0' && unit <= '9';
 
-/** The forms the confusable reading looks for: four letters or digits or more, six for a number of digits alone. */
-const confusableForms = (subject: Subject) => formsOf(subject).flatMap((form) => { const units = [...form.compact]; return units.length >= (form.digitsOnly ? 6 : 4) ? [{ form, units }] : []; });
+/** What stands between two pieces of a name written in pieces: one or two of its joiners, or a hyphen at a line's end. */
+const NAME_PIECE_GAP = new RegExp(`^(?:[${NAME_JOINERS}]{1,2}|[\\p{Pd}\\u2212][ \\t]{0,16}(?:\\r\\n|[\\n\\r])[ \\t]{0,16})$`, 'u');
+/** What stands between two pieces of a member ID or claim number written in pieces: one or two of a number's joiners. */
+const NUMBER_PIECE_GAP = new RegExp(`^[${NUMBER_JOINERS}]{1,2}$`, 'u');
+
+/** Two written tokens as one. */
+const joinedTokens = (a: WrittenToken, b: WrittenToken): WrittenToken => ({ units: [...a.units, ...b.units], alts: [...a.alts, ...b.alts], alike: [...a.alike, ...b.alike], starts: [...a.starts, ...b.starts], ends: [...a.ends, ...b.ends], likened: a.likened || b.likened });
+
+/**
+ * The forms the confusable reading looks for: five letters or digits or more, six for a number of digits alone. A form of
+ * four is as often an ordinary token ("11am" for LIAM, "CO13" for COLE, "80th" for BOTH: the review of the build, B2-1).
+ */
+const confusableForms = (subject: Subject) => formsOf(subject).flatMap((form) => { const units = [...form.compact]; return units.length >= (form.digitsOnly ? 6 : 5) ? [{ form, units }] : []; });
+
+/** A date written with no space, a month's word and its day's or year's digits ("MAR13" is no MARIE, "10MAR2026", "JUL1326"): the token is the date. */
+const MONTH_DAY_TOKEN = /^(?:[0-9]{1,2})?(?:JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUNE?|JULY?|AUG(?:UST)?|SEPT?(?:EMBER)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?)(?:[0-9]{1,6})?$/iu;
+const dateToken = (token: WrittenToken) => MONTH_DAY_TOKEN.test(token.units.join(''));
 
 /**
  * How a window of a written token reads against a form of the same length: 'no' when it is not the form; 'same' when it
@@ -1101,7 +1175,7 @@ function confusedAs(token: WrittenToken, at: number, units: readonly string[]): 
   for (let i = 0; i < units.length; i += 1) {
     const written = token.units[at + i] ?? '';
     const wanted = units[i] ?? '';
-    if (!mayBe(written).includes(wanted)) return 'no';
+    if (!mayBe(written).includes(wanted) && token.alts[at + i] !== wanted) return 'no';
     if (written.toUpperCase() === wanted) own += 1;
     const digit = writtenDigit(written);
     if (!digit) letters += 1;
@@ -1116,17 +1190,41 @@ function confusedAs(token: WrittenToken, at: number, units: readonly string[]): 
  * a letter, a letter for a digit, l for I), as a word of their own ("S1MONE", "VANTR3E", "SYNMEMBERO042", "7654321O",
  * "ZZ765432l"): each such word, as a Found range of the form's kind.
  */
-function confusedMatchesIn(normal: string, subject: Subject): Found[] {
+function confusedMatchesIn(tokens: readonly WrittenToken[], subject: Subject, normal: string): Found[] {
   const forms = confusableForms(subject);
   const found: Found[] = [];
   if (forms.length === 0) return found;
-  for (const token of writtenTokens(normal)) {
+  const longest = Math.max(...forms.map(({ units }) => units.length));
+  const match = (token: WrittenToken, pieces: 'one' | 'name' | 'number') => {
     for (const { form, units } of forms) {
-      // The form with a digit for a letter or a letter for a digit; or the form itself spelled with another script's
-      // look-alikes, whose two cases the fold reads as one letter where they look like two ("Z\u03C5phyra" with a small upsilon).
-      const read = units.length === token.units.length ? confusedAs(token, 0, units) : 'no';
-      if (read === 'crossed' || (read === 'same' && token.likened)) {
-        found.push({ start: token.starts[0] ?? 0, end: token.ends[token.ends.length - 1] ?? 0, kind: form.kind, claim: form.claim });
+      if (units.length !== token.units.length || (pieces !== 'one' && (form.kind === 'name') !== (pieces === 'name'))) continue;
+      // The form with a digit for a letter or a letter for a digit; or, as one word, the form itself spelled with another
+      // script's look-alikes, whose two cases the fold reads as one letter where they look like two ("Zeph\u03C5ra" with a
+      // small upsilon).
+      const read = confusedAs(token, 0, units);
+      if ((read === 'crossed' && !dateToken(token)) || (pieces === 'one' && read === 'same' && token.likened)) {
+        found.push({ start: token.starts[0] ?? 0, end: token.ends[token.ends.length - 1] ?? 0, kind: form.kind, claim: form.claim, ...(form.kind === 'name' ? {} : { fresh: true }) });
+        return true;
+      }
+    }
+    return false;
+  };
+  for (let i = 0; i < tokens.length; i += 1) {
+    let merged = tokens[i];
+    if (merged === undefined || match(merged, 'one')) continue;
+    // Written in pieces, a joiner between them as the identifier's plain pattern reads one ("ZZ 765432l", "SYNCLAIM-OOO1",
+    // "VAN-TR3E", a name wrapped after its hyphen): the pieces are read together (the review of the build, B1-11).
+    let [named, numbered] = [true, true];
+    for (let j = i + 1; j < tokens.length && j <= i + 3 && merged.units.length < longest; j += 1) {
+      const next = tokens[j];
+      if (next === undefined) break;
+      const gap = normal.slice(merged.ends[merged.ends.length - 1] ?? 0, next.starts[0] ?? 0);
+      named &&= NAME_PIECE_GAP.test(gap);
+      numbered &&= NUMBER_PIECE_GAP.test(gap);
+      if (!named && !numbered) break;
+      merged = joinedTokens(merged, next);
+      if ((named && match(merged, 'name')) || (numbered && match(merged, 'number'))) {
+        i = j;
         break;
       }
     }
@@ -1135,21 +1233,30 @@ function confusedMatchesIn(normal: string, subject: Subject): Found[] {
 }
 
 /**
- * Whether one of the call's own identifiers stands so written, with a digit for a letter or a letter for a digit, inside a
- * longer run of letters and digits, where no boundary can be read ("2020S1MONE", "PaidVANTR3E"): the letter is refused.
+ * The runs of letters and digits that hold one of the call's own identifiers so written inside them, where no boundary
+ * can be read: with a digit for a letter or a letter for a digit ("2020S1MONE", "PaidVANTR3E"), or spelled as it is with
+ * another script's look-alike among its letters ("150.00\u03BDantree": the review of the build, B1-10). The check refuses the
+ * letter for one (confusedGlued), and no pattern takes a part of one first ("ZZ76S432197110" is no "ZZ76S[SSN]").
  */
-function confusedGlued(normal: string, subject: Subject): boolean {
+function confusedGluedIn(tokens: readonly WrittenToken[], subject: Subject): Range[] {
   const forms = confusableForms(subject);
-  if (forms.length === 0) return false;
-  for (const token of writtenTokens(normal)) {
-    for (const { units } of forms) {
+  const ranges: Range[] = [];
+  if (forms.length === 0) return ranges;
+  for (const token of tokens) {
+    const glued = forms.some(({ units }) => {
       for (let at = 0; units.length < token.units.length && at + units.length <= token.units.length; at += 1) {
-        if (confusedAs(token, at, units) === 'crossed') return true;
+        const read = confusedAs(token, at, units);
+        if (read === 'crossed' && !dateToken(token)) return true;
+        if (read === 'same' && token.alike.slice(at, at + units.length).some(Boolean)) return true;
       }
-    }
+      return false;
+    });
+    if (glued) ranges.push({ start: token.starts[0] ?? 0, end: token.ends[token.ends.length - 1] ?? 0 });
   }
-  return false;
+  return ranges;
 }
+
+const confusedGlued = (normal: string, subject: Subject): boolean => confusedGluedIn(writtenTokens(normal), subject).length > 0;
 
 /** What may lie between an initial and the name it belongs to: white space, apostrophes, dashes, "_" and VANISHED (after the name, a comma too). */
 const INITIAL_GAP = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD]*$/u;
@@ -1375,6 +1482,8 @@ const SPACED = /[\s\u0085]/u;
 /** A period or a shape joiner in a gap: never with white space in one match (R1a). */
 const TIGHT = new RegExp(`[.${SHAPE_JOINERS}]`, 'u');
 const CENTS_AFTER = /^[.,][0-9]{1,2}(?![0-9])/u;
+/** An amount's end after a run of digits: its cents, with thousands groups before them too ("…150.00", "…1,250.00"). */
+const AMOUNT_TAIL = /^(?:,[0-9]{3}){0,4}[.,][0-9]{1,2}(?![0-9])/u;
 const CURRENCY_BEFORE = /\p{Sc}[ \t]?$/u;
 const DIGIT = /^[0-9]$/u;
 const DASH_UNIT = /^[\p{Pd}\u2212\u2043\u02D7\u2796]$/u;
@@ -1443,7 +1552,14 @@ const PHONE_LABEL = /(?<![\p{L}\p{N}])(?:PHONES?|PH|TEL(?:EPHONE)?S?|FAX(?:ES)?|
  * "PatientSocialSecurityNumber"), read by the survivor scan in every letter; never "Assn" or "ISSN". The phone labels are
  * not read so: words end in them ("Fairfax", "smartphone").
  */
-const GLUED_LONG_LABEL = /(?<=\p{L})(?:(?<!(?<!\p{L})[AI])S\.?S\.?N\.?|SOC(?:IAL)?\.?[ \t]*SEC(?:URITY)?)(?:S|[ \t]?(?:NO|NUMBERS?|NBR|NUM))?(?!\p{L})/gu;
+const GLUED_LONG_LABEL = /(?<=\p{L})(?:(?<!(?<!\p{L})[AI])S\.?S\.?N\.?|SOC(?:IAL)?\.?[ \t]*SEC(?:URITY)?|HICN)(?:S|[ \t]?(?:NO|NUMBERS?|NBR|NUM))?(?!\p{L})/gu;
+
+/**
+ * Where a Social Security label that words end in ("SS#", "SS No", "HIC": "Class#", "Address No", "Graphic") is glued to
+ * the word before it and a change of case sets it apart ("PatientSS# 900.12 3456", "PatientHIC"): the scan reads it with a
+ * space there. In capitals throughout no boundary can be read, and it stays unread (the review of the build, B1-6).
+ */
+const CASE_GLUED_LABEL = /(?<=\p{Ll})(?=SS[ \t]?#|SS[ \t]?N[Oo]\b|HIC\b)/gu;
 /** SSN_LABEL and PHONE_LABEL glued to the word before them by a lost space ("PaidSSN", "PatientPhone"): read only in a letter whose chain only held barriers hold (survivorIn). */
 const GLUED_PERSON_LABELS = [SSN_LABEL, PHONE_LABEL].map((label) => new RegExp(label.source.replace('(?<![\\p{L}\\p{N}])', '(?<!\\p{N})'), 'gu'));
 /** Nouns that name a bare number as something that is no person's SSN or phone: a claim's, a reference's, an NPI ... */
@@ -1519,9 +1635,9 @@ function decideBare(window: string, length: number, digits: string): Decision {
 /** What the call's own identifier's placeholder becomes for the survivor scan: a BARRIER to every reader but the label window, which reads through it. */
 const OWN_MARK = '\u0003';
 /** After a label's own list number: ":" or ")", an ordinal's suffix or a space before it too ("1:", "2)", "1st:", "1 :"). */
-const LIST_NUMBER_AFTER = /^(?:ST|ND|RD|TH)?[ \t]?[:)]/u;
+const LIST_NUMBER_AFTER = /^(?:ST|ND|RD|TH)?[ \t]?(?:\([^()\r\n]{1,16}\)[ \t]?)?[:)]/u;
 /** An SSN or phone label right before its own list number. */
-const PERSON_LABEL_BEFORE = new RegExp(`(?:${SSN_LABEL.source}|${PHONE_LABEL.source})(?:[ \\t]{0,2}(?:NO|NUMBER|NBR|NUM)\\b\\.?)?[ \\t]{0,2}[:#\\p{Pd}\\u2212]?[ \\t]{0,2}$`, 'u');
+const PERSON_LABEL_BEFORE = new RegExp(`(?:${SSN_LABEL.source}|${PHONE_LABEL.source})\\.?(?:[ \\t]{0,2}(?:NO|NUMBER|NBR|NUM)\\b\\.?)?[ \\t]{0,2}[:#\\p{Pd}\\u2212]?[ \\t]{0,2}\\(?$`, 'u');
 const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
 
 /**
@@ -1547,20 +1663,20 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
     const character = text[index] ?? '';
     const digit = DIGIT.test(character);
     const inSpan = digit && spanned !== undefined && spanned(index);
-    // The call's own identifier (its placeholder in masked text) between a label and its number, on the number's line: the
-    // label reads the line as it reads it with the identifier gone ("Call Zephyra at 555-0123", "Phone (Jane Zephyra, home):
-    // 555.0123", "SSN (Jane Zephyra, patient): 90012-3456" as "Call at 555-0123", "Phone (home): 555.0123", "SSN (patient):
-    // 90012-3456").
-    if (through && breaks === 0 && (character === OWN_MARK || (own !== undefined && own(index)))) {
+    // The call's own identifier (its placeholder in masked text) between a label and its number: the label reads the text
+    // as it reads it with the identifier gone, across the one line break a label reads too ("Call Zephyra at 555-0123",
+    // "Phone (Jane Zephyra, home): 555.0123", "SSN (Jane Zephyra, patient): 90012-3456", "Phone Zephyra\n555-0123" as "Call
+    // at 555-0123", "Phone (home): 555.0123", "SSN (patient): 90012-3456", "Phone\n555-0123").
+    if (through && (character === OWN_MARK || (own !== undefined && own(index)))) {
       if (units[units.length - 1] !== ' ') units.push(' ');
       from = index;
       continue;
     }
-    if (through && digit && !inSpan && breaks === 0) {
+    if (through && digit && !inSpan) {
       // A label's own list number ("Phone 1: 555-0100", "Fax No. 2) ..."): one or two digits right after an SSN or phone label.
       let first = index;
       while (first > 0 && DIGIT.test(text[first - 1] ?? '')) first -= 1;
-      if (index - first < 2 && LIST_NUMBER_AFTER.test(text.slice(index + 1, index + 6)) && PERSON_LABEL_BEFORE.test(text.slice(Math.max(0, first - 32), first))) {
+      if (index - first < 2 && LIST_NUMBER_AFTER.test(text.slice(index + 1, index + 24)) && PERSON_LABEL_BEFORE.test(text.slice(Math.max(0, first - 32), first))) {
         units.push(' ');
         from = first;
         continue;
@@ -1666,20 +1782,6 @@ function ownNumbers(subject: Subject): Map<string, { readonly kind: 'claim' | 'm
   return own;
 }
 
-/** A label's list number and what follows it, up to a position: "1: ", "2) ", "1st: ". */
-const LIST_NUMBER_BEFORE = /(?<![0-9])[0-9]{1,2}(?:ST|ND|RD|TH)?[ \t]?:[ \t]{0,16}$/u;
-
-/**
- * Whether a number at a view range stands alone: no digit joined to either end as a chain joins (a letter may touch it, as
- * it may touch any match), but a digit of the call's own identifier or of a label's list number before it.
- */
-function standsAlone(text: string, start: number, end: number, own: (index: number) => boolean): boolean {
-  if (JOINED_AFTER.test(text.slice(end, end + 48))) return false;
-  const before = text.slice(Math.max(0, start - 48), start);
-  const joined = JOINED_BEFORE.exec(before);
-  return joined === null || own(start - before.length + joined.index) || LIST_NUMBER_BEFORE.test(before);
-}
-
 /** A compact the screen may be offered: a digit, five characters or more (identifierCandidates' own rule). */
 const offerable = (compact: string) => /[0-9]/u.test(compact) && compact.length >= 5;
 
@@ -1751,14 +1853,14 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
     cover(reach);
     return true;
   };
-  const push = (view: View, start: number, end: number, kind: PatternKind, core: string, form: PatternForm) => {
+  const push = (view: View, start: number, end: number, kind: PatternKind, core: string, form: PatternForm, fresh = false) => {
     const readings = readingsOf(view, start, end, core);
     if (pushOwn(view, readings)) {
       return;
     }
     const range = inNormal(view, start, end);
     const compacts = form === 'masked' || form === 'mask5' ? [] : [...new Set(readings.map((reading) => reading.compact).filter(offerable))];
-    results.push({ ...range, kind, claim: 0, compacts });
+    results.push({ ...range, kind, claim: 0, compacts, ...(fresh ? { fresh: true } : {}) });
     cover(range);
   };
   // The space reading only where it differs from the join reading: a letter with no invisible run is read once (review finding corr-ssn-2).
@@ -1814,12 +1916,12 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
         }
         const plainly = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core);
         // A label read through the call's own identifier or its list number ("Call Zephyra at 555-0123", "Phone 1:
-        // 555-0100") takes a number its own words say nothing of, and only where ef3e8d20 refused nothing for it: written on
-        // one line (a number wrapped across a line break is a chain to the scan) and standing alone (no digit joined to it
-        // as a chain joins, a list number before ")" among them: "TTY 11) 555 0123" is nine digits in one chain). Elsewhere
-        // it is left as it was, for the survivor scan to refuse under that label; a number a noun names stays named.
-        const through = plainly === 'none' && !wrapped ? decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core, true, own) : plainly;
-        const decision = plainly === 'none' && (through === 'ssn' || through === 'phone') && standsAlone(view.text, start, end, own) ? through : plainly;
+        // 555-0100") takes a number its own words say nothing of; a number a noun names stays named. ef3e8d20 did not make
+        // this match, so it is marked fresh: redaction applies it only in a letter the scan does not refuse without it
+        // (appliedMatches), whatever is joined to the number ("Call Zephyra at 555-0123/555-0124" stays refused whole).
+        const through = plainly === 'none' ? decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core, true, own) : plainly;
+        const fresh = plainly === 'none' && (through === 'ssn' || through === 'phone');
+        const decision = fresh ? through : plainly;
         const labeled = decision === 'ssn' || decision === 'phone';
         let taken: PatternKind | null;
         if (wrapped) {
@@ -1840,7 +1942,7 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
           matcher.lastIndex = start + 1;
           continue;
         }
-        push(view, start, end, taken, core, form);
+        push(view, start, end, taken, core, form, fresh);
       }
     }
   });
@@ -1862,9 +1964,6 @@ const SCAN_SPACE = `[ \\t]{0,16}(?:(?:\\r\\n|[\\n\\r\\f\\v\\u0085\\u2028\\u2029]
 const SCAN_GAP = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER})${SCAN_SPACE})?$`, 'u');
 /** Under an SSN or phone label a comma joins two groups too ("SSN 900,12 3456"); elsewhere it is an amount's or a list's. */
 const SCAN_LABELED_GAP = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER}|,)${SCAN_SPACE})?$`, 'u');
-/** A digit, then what joins two groups of a chain (white space, with one joiner or a comma at most), up to a position; and the same from a position on (standsAlone). */
-const JOINED_BEFORE = new RegExp(`([0-9])${SCAN_SPACE}(?:(?:${SCAN_JOINER}|,)${SCAN_SPACE})?$`, 'u');
-const JOINED_AFTER = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER}|,)${SCAN_SPACE})?[0-9]`, 'u');
 const SCAN_JOINER_CHARACTER = /^[\p{Pd}\u2212\u2043\u02D7\u2796./()_|\\'\u2018\u2019\u02BC\u02B9\u02CA\u2032\u2035`~\u00B7\u2027\u2219\u22C5\u30FB\u2022"\u201C\u201D;\u30FC\u2053\u02C9\u2215\u2044\u3001]$/u;
 const SCAN_DASH = /^[\p{Pd}\u2212\u2043\u02D7\u2796]$/u;
 const SCAN_DIGIT = /^[0-9]$/u;
@@ -2020,7 +2119,7 @@ function wholeRanges<T extends { readonly start: number; readonly end: number }>
  *    cc3dd7f6 refused it (review round 3 of the range fix; the orchestrator's ruling of 2026-11-07: where a range's end
  *    cannot be told from an identifier's fragment, refuse as cc3dd7f6 did).
  */
-function survivorIn(text: string): Survivor {
+function survivorIn(text: string, strict = true): Survivor {
   const barrier = new Uint8Array(text.length + 1);
   const mark = (start: number, end: number) => {
     for (let i = start; i < end; i += 1) barrier[i] = 1;
@@ -2030,7 +2129,7 @@ function survivorIn(text: string): Survivor {
     const key = `${String(start)}${glued ? 'g' : ''}`;
     let held = labeled.get(key);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false, { through: true }), glued);
+      held = scanLabeled(labelWindow(text, start, () => false, { through: strict }), glued);
       labeled.set(key, held);
     }
     return held;
@@ -2064,7 +2163,7 @@ function survivorIn(text: string): Survivor {
     const key = `${String(start)}${spansOnly ? 's' : 'n'}${glued ? 'g' : ''}`;
     let held = labeledOver.get(key);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, spansOnly, through: true }).replace(/[0-9]/gu, ' '), glued);
+      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, spansOnly, through: strict }).replace(/[0-9]/gu, ' '), glued);
       labeledOver.set(key, held);
     }
     return held;
@@ -2278,7 +2377,8 @@ function survivorIn(text: string): Survivor {
     return false;
   };
   const heldWhole = (from: number, to: number) => groups.slice(from, to).every((group) => group.blocked && (group.kept || rangeStands(group.range)));
-  if (gluedShape(text, groups, (group) => labeledAt(group.start) === 'person', currencyAt)) {
+  const glued = strict ? gluedShape(text, groups, (group) => labeledAt(group.start) !== null, currencyAt) : null;
+  if (glued === 'structure') {
     return 'survivor';
   }
   if (survives((group) => group.blocked, () => false) || survives((group) => group.kept, heldWhole)) {
@@ -2294,7 +2394,7 @@ function survivorIn(text: string): Survivor {
   if (survives((group) => group.blocked && !(amountAt[group.start] === 1 && gluedLabel(amountStarts[group.start] ?? -1)), () => false, true)) {
     return 'survivor';
   }
-  return heldStrict({ text, groups, currencyAt, dateAt, amountAt, amountStarts, rangeSpans, rangeEnds, labeledAt }) ? 'survivor' : 'held';
+  return strict && (glued === 'shape' || heldStrict({ text, groups, currencyAt, dateAt, amountAt, amountStarts, rangeSpans, rangeEnds, labeledAt })) ? 'survivor' : 'held';
 }
 
 /**
@@ -2349,64 +2449,87 @@ function scanLabeled(window: string, glued = false): ScanLabel {
 type Survivor = 'survivor' | 'held' | null;
 
 /** What masked text holds (survivorIn) on its digits view with invisible runs dropped or read as spaces (R4, R7): the more of the two. */
-const survivorLeft = (text: string): Survivor => {
+const survivorLeft = (text: string, strict = true): Survivor => {
   const drop = viewOf(text, 'drop', true);
-  const dropped = survivorIn(drop.text);
+  const dropped = survivorIn(drop.text, strict);
   // With no invisible run the two readings are one text: it is scanned once (review finding corr-ssn-2).
   if (dropped === 'survivor' || !drop.emptied) {
     return dropped;
   }
-  return survivorIn(viewOf(text, 'space', true).text) ?? dropped;
+  return survivorIn(viewOf(text, 'space', true).text, strict) ?? dropped;
 };
 
 /**
  * What names a long number as a reference, up to a position: a keep-noun or a reference's noun and its connectors ("ICN
- * 12345678901234.01", "Case No. 123-45-678901", "Ticket 802-91-69413"), or any word with "#" after it or, across a space,
- * "No.", "number" or "ID" ("Inquiry # 150-98-68279"; never "Paid" or "Medicaid" for a word and "ID"). An SSN or phone
- * label names no reference: gluedShape asks the scan's label first ("SSN No. 900-12-3456150.00" is refused).
+ * 12345678901234.01", "Case No. 123-45-678901-02", "Policy No. 01-23456-78-9012"). No other word does ("Patient #
+ * 900-12-3456150.00", "Paid-975-20-18460.00" are refused), and an SSN, phone or Medicare label names no reference:
+ * gluedShape asks the scan's label first ("SSN No. 900-12-3456150.00").
  */
-const NAMED_BEFORE = new RegExp(`(?:(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION)(?!\\p{L}))(?:[\\s:#.*=(\\p{Pd}\\u2212]|(?<![\\p{L}\\p{N}])(?:NO|NUMBERS?|NBR|NUM|ID|IS)(?!\\p{L}))*|(?<![\\p{L}\\p{N}])\\p{L}+(?:[ \\t]{0,2}#|[ \\t]{1,2}(?:(?:NO|NBR|NUM)\\.|(?:NUMBER|ID)\\b))[\\s:#.=\\p{Pd}\\u2212]*)$`, 'u');
+const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION)(?!\\p{L}))(?:[\\s:#.*=(\\p{Pd}\\u2212]|(?<![\\p{L}\\p{N}])(?:NO|NUMBERS?|NBR|NUM|ID|IS|LINE)(?!\\p{L}))*$`, 'u');
 
 /**
- * Whether a Social Security or phone number's own shape stands with another number's digits glued to it, three groups
- * joined by joiners with no white space, the middle one of two digits (three for a phone; a slash only for a phone), no
- * barrier holding them but a currency amount its first:
- * - its first group three digits and its last longer than four, the digits glued after it ("900-12-3456150.00",
- *   "202-555-0123202-555-0124"), unless a reference's noun names the number ("Case No. 123-45-678901"); a number under an
- *   SSN or phone label is never named ("SSN No. 900-12-3456150.00");
- * - its last group four digits and its first longer than three, where the digits before it are another number's: joined to
- *   a group before them, a currency amount's, or four or more of them ("01/01/2020900-12-3456", "$150.00900-12-3456",
- *   "$514451/293-6215", "2020900-12-3456"); a group one to three digits longer alone is a reference's ("29 CFR
- *   2590.715-2719");
- * - both longer, where the digits before it are another number's as above ("150.00900-12-3456150.00").
- * And a run of eleven digits or more with cents after it ("900123456150.00"), unless named ("ICN 12345678901234.01").
+ * Whether a Social Security or phone number's own shape stands with another number's digits glued to it: three groups
+ * joined by joiners with no white space, the middle one of two digits (three for a phone; a slash only for a phone), the
+ * first of three digits or more and the last of four or more, one of them longer, no barrier holding them but a currency
+ * amount its first. It does where structure says whose the other digits are:
+ * - after it: an amount's end after its last group, or a group joined to that group ("900-12-3456150.00",
+ *   "202-555-0123202-555-0124"), the shape wrapped after a dash too ("900-12-\n3456150.00");
+ * - before it: a currency amount's digits, or a group joined to its first group ("$150.00900-12-3456",
+ *   "$514451/293-6215", "01/01/2020900-12-3456", "150.00900-12-3456");
+ * unless a reference's noun names the number ("Case No. 123-45-678901-02", "Policy No. 01-23456-78-9012"). Under an SSN,
+ * phone or Medicare label the shape is the person's number whatever is glued to it ("SSN No. 900-12-345678", "Phone
+ * number 202-555-01234567", "Medicare ID 900-12-345678"), in the number's usual writing too, with digits glued after it
+ * ("Phone number (202) 555-01234567", "Tel 202 555-0123150.00": the review of the build, B1-8). With no structure and no label a longer group is as often a
+ * reference's ("Tracking 123-456-78901", "Claim # 20260115-12-3456", "29 CFR 2590.715-2719": the review of the build,
+ * B2-3 and B2-6): 'shape', which a held letter alone refuses (the first group three digits, or four or more longer, and
+ * no noun naming it: "900-01-202012th", "2020900-12-3456"), as cc3dd7f6 refused every held letter.
+ * And a run of eleven digits or more with an amount's end after it ("900123456150.00", "20255501231,250.00"), unless named
+ * ("ICN 12345678901234.01"); and an amount's cents with a nine or a ten right after them ("150.00900123456").
  * A date written year first with digits glued after its day ("2020-01-02150.00") is read as cc3dd7f6 read it.
  */
-function gluedShape(text: string, groups: readonly ScanGroup[], person: (group: ScanGroup) => boolean, currencyAt: Uint8Array): boolean {
-  const named = (group: ScanGroup) => !person(group) && NAMED_BEFORE.test(text.slice(Math.max(0, group.start - 48), group.start));
+function gluedShape(text: string, groups: readonly ScanGroup[], labeled: (group: ScanGroup) => boolean, currencyAt: Uint8Array): 'structure' | 'shape' | null {
+  const named = (group: ScanGroup) => NAMED_BEFORE.test(text.slice(Math.max(0, group.start - 48), group.start));
+  let shape = false;
   for (let i = 0; i < groups.length; i += 1) {
     const [a, b, c] = [groups[i], groups[i + 1], groups[i + 2]];
     if (a === undefined) continue;
     // A currency amount holds its digits, but a shape that starts inside one is no part of it: the amount's digits are the
-    // other number's ("$150.00900-12-3456", "$514451/293-6215").
+    // other number's.
     const inCurrency = a.blocked && currencyAt[a.start] === 1;
     if (a.blocked && !inCurrency) continue;
-    if (!inCurrency && a.digits.length >= 11 && CENTS_AFTER.test(text.slice(a.end, a.end + 4)) && !named(a)) return true;
+    if (!inCurrency && a.digits.length >= 11 && AMOUNT_TAIL.test(text.slice(a.end, a.end + 24)) && (labeled(a) || !named(a))) return 'structure';
+    // An amount's cents and then a nine or a ten with nothing between ("150.00900123456", "$150.002025550123").
+    if ((a.digits.length === 11 || a.digits.length === 12) && /[0-9][.,]$/u.test(text.slice(Math.max(0, a.start - 2), a.start))) return 'structure';
     if (b === undefined || c === undefined || b.blocked || c.blocked) continue;
     const [g1, g2] = [text.slice(a.end, b.start), text.slice(b.end, c.start)];
-    if (!TIGHT_JOIN.test(g1) || !TIGHT_JOIN.test(g2)) continue;
     const slashed = g1.includes('/') || g2.includes('/');
     if (!((b.digits.length === 2 && !slashed) || b.digits.length === 3) || a.digits.length < 3 || c.digits.length < 4) continue;
     const head = a.digits.length - 3;
     const tail = c.digits.length - 4;
     if (head === 0 && tail === 0) continue;
+    if (!((TIGHT_JOIN.test(g1) || WRAPPED_JOIN.test(g1)) && (TIGHT_JOIN.test(g2) || WRAPPED_JOIN.test(g2)))) {
+      // In a number's usual writing (spaces, parentheses), under its label alone, with digits glued after it: "Phone number
+      // (202) 555-01234567", "Tel 202 555-0123150.00".
+      if (head === 0 && LOOSE_JOIN.test(g1) && LOOSE_JOIN.test(g2) && labeled(a)) return 'structure';
+      continue;
+    }
     const yearFirst = /^(?:19|20)[0-9]{2}$/u.test(a.digits) && /^(?:0[1-9]|1[0-2])$/u.test(b.digits) && /^(?:0[1-9]|[12][0-9]|3[01])/u.test(c.digits);
     if (yearFirst) continue;
-    const before = groups[i - 1];
-    const anothers = head >= 4 || inCurrency || (before !== undefined && TIGHT_JOIN.test(text.slice(before.end, a.start)));
-    if (head === 0 ? !inCurrency && !named(a) : anothers) return true;
+    if (labeled(a)) return 'structure';
+    const [before, after] = [groups[i - 1], groups[i + 3]];
+    const headAnothers = head > 0 && (inCurrency || (before !== undefined && TIGHT_JOIN.test(text.slice(before.end, a.start))));
+    const tailAnothers = tail > 0 && (AMOUNT_TAIL.test(text.slice(c.end, c.end + 24)) || (after !== undefined && TIGHT_JOIN.test(text.slice(c.end, after.start))));
+    // A noun names the whole joined number, from its first group ("Policy No. 01-23456-78-9012").
+    let first = i;
+    while (first > 0 && TIGHT_JOIN.test(text.slice(groups[first - 1]?.end ?? 0, groups[first]?.start ?? 0))) first -= 1;
+    if (headAnothers || tailAnothers) {
+      if (!named(groups[first] ?? a)) return 'structure';
+    } else if (!inCurrency && !named(a) && (head === 0 || head >= 4)) {
+      // No structure says whose the other digits are ("900-01-202012th", "2020900-12-3456"): a held letter refuses it.
+      shape = true;
+    }
   }
-  return false;
+  return shape ? 'shape' : null;
 }
 
 interface ScanGroup {
@@ -2432,16 +2555,23 @@ interface HeldScan {
 }
 
 /** A state's postal abbreviation, or ZIP and its connectors, before a ZIP code: what names a five, or a five and four, as one. */
-const STATE = '(?:A[LKZR]|C[AOT]|D[EC]|FL|GA|HI|I[DLNA]|K[SY]|LA|M[EDAINSOT]|N[EVHJMYCD]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[TA]|W[AVIY]|PR|GU|VI)';
+const STATE = '(?:A[LKZRSAEP]|C[AOT]|D[EC]|D\\.C\\.?|FL|GA|HI|I[DLNA]|K[SY]|LA|M[EDAINSOTP]|N[EVHJMYCD]|N\\.[YJCHMD]\\.?|O[HKR]|PA|RI|R\\.I\\.?|S[CD]|S\\.[CD]\\.?|T[NX]|UT|V[TA]|W[AVIY]|W\\.V\\.?|PR|GU|VI)';
 const STATE_NAME =
   '(?:ALABAMA|ALASKA|ARIZONA|ARKANSAS|CALIFORNIA|COLORADO|CONNECTICUT|DELAWARE|DISTRICT OF COLUMBIA|FLORIDA|GEORGIA|HAWAII|IDAHO|ILLINOIS|INDIANA|IOWA|KANSAS|KENTUCKY|LOUISIANA|MAINE|MARYLAND|MASSACHUSETTS|MICHIGAN|MINNESOTA|MISSISSIPPI|MISSOURI|MONTANA|NEBRASKA|NEVADA|NEW HAMPSHIRE|NEW JERSEY|NEW MEXICO|NEW YORK|NORTH CAROLINA|NORTH DAKOTA|OHIO|OKLAHOMA|OREGON|PENNSYLVANIA|PUERTO RICO|RHODE ISLAND|SOUTH CAROLINA|SOUTH DAKOTA|TENNESSEE|TEXAS|UTAH|VERMONT|VIRGINIA|WASHINGTON|WEST VIRGINIA|WISCONSIN|WYOMING)';
-const ZIP_BEFORE = new RegExp(`(?:(?<![\\p{L}\\p{N}])(?:${STATE}|${STATE_NAME})|(?<=[0-9])(?!ND)${STATE}|(?<!\\p{L})ZIP(?:[ \\t]?CODE)?[:#]?)[ \\t]{1,2}$`, 'u');
+const ZIP_BEFORE = new RegExp(`(?:(?<![\\p{L}\\p{N}])(?:${STATE}|${STATE_NAME})|(?<=[0-9])(?!ND)${STATE}|(?<!\\p{L})ZIP(?:[ \\t]?CODE)?[:#]?)[.,]?(?:[ \\t]{1,3}|[ \\t]{0,2}\\r?\\n[ \\t]{0,2})$`, 'u');
 /** A code word, glued to a digit before it or not, and the codes after it up to a position: "CODES 97110 97140 ". */
-const CODE_LIST_BEFORE = /(?<!\p{L})(?:CPT|HCPCS|CODES?|MODIFIERS?|REV(?:ENUE)?|ICD(?:[\p{Pd}− ]?10)?)[:#]?(?:[ \t]{1,3}[A-Z]?[0-9]{2,5}(?:[\p{Pd}−][A-Z0-9]{2})*,?)*[ \t]{1,3}$/u;
-const TAX_BEFORE = /(?<!\p{L})(?:F?EIN|TIN|TAX[ \t]?ID(?:ENTIFICATION)?)(?:[ \t]{0,3}(?:NO|NUMBER|NBR|NUM)\b\.?)?[ \t]{0,3}[:#]?[ \t]{0,3}$/u;
+const CODE_LIST_BEFORE = /(?<!\p{L})(?:CPT(?:[\p{Pd}− ]?4)?|HCPCS|CODES?|MODIFIERS?|REV(?:ENUE)?|ICD(?:[\p{Pd}− ]?10)?)(?:\(S\))?[®™]?[:#]?(?:[ \t]{1,3}[A-Z]?[0-9]{2,5}(?:[\p{Pd}−][A-Z0-9]{2})*,?)*(?:[ \t]{1,3}|[ \t]{0,2}\r?\n[ \t]{0,2})$/u;
+const TAX_BEFORE = /(?<!\p{L})(?:F?EIN|TIN|TAX(?:PAYER)?[ \t]?I\.?D\.?(?:ENTIFICATION)?)\)?(?:[ \t]{0,3}(?:NO|NUMBER|NBR|NUM)\b\.?)?(?:[ \t]{0,3}\((?:F?EIN|TIN)\))?[ \t]{0,3}[:#]{0,2}[ \t]{0,3}$/u;
 const LINE_BREAK_IN = new RegExp(LINE_BREAK, 'u');
 const TIGHT_JOIN = /^[\p{Pd}−⁃˗➖./()_|\\'‘’ʼʹˊ′‵`~·‧∙⋅・•]{1,2}$/u;
+/** A dash at a line's end and the next line's indentation: a number wrapped after its joiner ("900-12-\n3456150.00"). */
+const WRAPPED_JOIN = /^[\p{Pd}−][ \t]{0,16}(?:\r\n|[\n\r])[ \t]{0,16}$/u;
+/** What stands between a labeled number's groups in its usual writing: white space, a joiner or a parenthesis, on one line. */
+const LOOSE_JOIN = /^(?=.)[ \t]{0,2}[\p{Pd}−./()]{0,2}[ \t]{0,2}$/u;
 const ROW_GAP = /^[ \t]{1,16}$/u;
+/** A row's units written in parentheses: "97110 (2) 150.00". */
+const ROW_UNITS_OPEN = /^[ \t]{1,16}\($/u;
+const ROW_UNITS_CLOSE = /^\)[ \t]{1,16}$/u;
 /** A code's modifiers between it and its units on a row: up to four of two letters or digits ("97110 GP 59 2 150.00"). */
 const ROW_MODIFIERS = /^[ \t]{1,16}(?:[A-Z][A-Z0-9][ \t]{1,16}|[0-9][A-Z][ \t]{1,16}){1,4}$/u;
 /** What stands between two codes of one list: a space or two, or a comma and one. */
@@ -2513,6 +2643,9 @@ function heldStrict(scan: HeldScan): boolean {
     const next = groups[i + 1];
     const before = text.slice(Math.max(0, group.start - 64), group.start);
     if (currencyAt[group.start] === 1 || (group.blocked && dateAt[group.start] === 1) || taxOrNpi(group)) placed[i] = 1;
+    // a code's own digits after its one letter ("N235", "G0283"), and an ICD-10 code's after its point, an amount to the
+    // scan ("M54.50")
+    if (/(?<!\p{L})\p{L}(?:[0-9]{2}\.)?$/u.test(before)) placed[i] = 1;
     if (group.blocked) {
       inList = false;
       return;
@@ -2545,10 +2678,10 @@ function heldStrict(scan: HeldScan): boolean {
     }
     // a code, its units and an amount on one line: a service-line row
     if (length === 5 && /(?:^|[\s])$/u.test(before)) {
-      const units = nextFree !== undefined && nextFree.digits.length <= 2 && (ROW_GAP.test(between) || ROW_MODIFIERS.test(between)) ? nextFree : undefined;
+      const units = nextFree !== undefined && nextFree.digits.length <= 2 && (ROW_GAP.test(between) || ROW_MODIFIERS.test(between) || ROW_UNITS_OPEN.test(between)) ? nextFree : undefined;
       const amount = units === undefined ? next : groups[i + 2];
       const toAmount = amount === undefined ? '' : text.slice((units ?? group).end, amount.start);
-      if (amount !== undefined && amount.blocked && amountAt[amount.start] === 1 && ROW_GAP.test(toAmount)) {
+      if (amount !== undefined && amount.blocked && amountAt[amount.start] === 1 && (ROW_GAP.test(toAmount) || (units !== undefined && ROW_UNITS_CLOSE.test(toAmount)))) {
         placed[i] = 1;
         if (units !== undefined) placed[i + 1] = 1;
       }
@@ -2558,8 +2691,6 @@ function heldStrict(scan: HeldScan): boolean {
         placed[i + 1] = 1;
       }
     }
-    // a code's own digits after its one letter ("N235", "G0283")
-    if (/(?<!\p{L})\p{L}$/u.test(before)) placed[i] = 1;
   });
   const chained = (digits: string) => digits.length === 9 || digits.length === 10 || (digits.length === 11 && digits.startsWith('1'));
   // (4) chains
@@ -2669,10 +2800,34 @@ export function redactionForms(patient: PatientIdentifiers, claims: readonly Let
  */
 const unbracketed = (text: string) => text.normalize('NFKC').replace(/[[\]]/g, (bracket) => (bracket === '[' ? '(' : ')'));
 
+/**
+ * NFKC text with the checks' own marks (BARRIER, NAME_MARK, OWN_MARK) read as the control character each is to every
+ * other reader, one for one: a letter's own U+0001 ends no label's window and its own U+0003 is no placeholder of the
+ * call's identifier (the review of the build, B1-4). Matches are found on this reading and cut from the text as written.
+ */
+const unmarked = (normal: string) => normal.replace(PRIVATE_MARKS, '\u0004');
+
+/**
+ * The matches the letter reader's redaction applies to NFKC text (redactLetterForScreen, whose text is sent only when
+ * holdsIdentifier then finds nothing in it; redactLetter and redactionSpans apply every match). A match ef3e8d20 did not
+ * make that can change what the survivor scan chains (Found.fresh) is applied only where the scan as ef3e8d20 read it does
+ * not refuse the letter without it (chainLeft, not strict): where it does, ef3e8d20 refused the letter, and it stays
+ * refused with those numbers as written, by the check on that same text (the review of the build, B1-1 and B1-5: no test
+ * of what stands beside the number, which an invisible character defeats).
+ */
+function appliedMatches(normal: string, subject: Subject, claims: number): Found[] {
+  const found = matchesIn(unmarked(normal), subject);
+  if (!found.some((match) => match.fresh === true)) {
+    return found;
+  }
+  const settled = found.filter((match) => match.fresh !== true);
+  return chainLeft(written(normal, merge(settled)), subject, claims, false) ? settled : found;
+}
+
 /** The letter as NFKC text and the spans redaction replaces in it, in order, each with its placeholder: what redactLetter writes. */
 export function redactionSpans(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
   const normal = unbracketed(text);
-  return { text: normal, spans: merge(matchesIn(normal, letterSubject(patient, claims))) };
+  return { text: normal, spans: merge(matchesIn(unmarked(normal), letterSubject(patient, claims))) };
 }
 
 /** NFKC text with the spans replaced by their placeholders (those `replace` takes). */
@@ -2705,7 +2860,7 @@ export function redactLetter(text: string, patient: PatientIdentifiers, claims: 
 export function redactLetterForScreen(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
   const normal = unbracketed(text);
   const subject = letterSubject(patient, claims);
-  const found = matchesIn(normal, subject);
+  const found = appliedMatches(normal, subject, claims.length);
   const spans = merge(found);
   const sent = written(normal, spans);
   const own = new Set(formsOf(subject).flatMap((form) => (form.kind === 'claim' || form.kind === 'member' ? [form.compact] : [])));
@@ -2727,10 +2882,34 @@ export function redactLetterForScreen(text: string, patient: PatientIdentifiers,
  * claim's placeholder past the call's claims (all of them, for the screen, which knows no call) keeps its
  * digits between two barriers: a letter's own "[CLAIM_7654321]" still holds 7654321 for every check.
  */
-const masked = (text: string, claims = 0, name = BARRIER, own = BARRIER) =>
-  text.normalize('NFKC').replace(PLACEHOLDER, (placeholder, claim?: string) =>
+const masked = (text: string, claims = 0, name = BARRIER, own = BARRIER) => maskedOf(unmarked(text.normalize('NFKC')), claims, name, own);
+
+/** masked, of NFKC text that holds no mark of the checks but those its caller put there. */
+const maskedOf = (normal: string, claims = 0, name = BARRIER, own = BARRIER) =>
+  normal.replace(PLACEHOLDER, (placeholder, claim?: string) =>
     placeholder === PLACEHOLDERS.name ? name : placeholder === PLACEHOLDERS.ssn || placeholder === PLACEHOLDERS.phone ? BARRIER : claim === undefined || Number.parseInt(claim, 10) <= claims ? own : `${BARRIER}${claim}${BARRIER}`,
   );
+
+/**
+ * The part of the check that reads what the patterns and the identifiers' own patterns did not take: a chain of digits the
+ * survivor scan reads as a number, or one of the call's identifiers glued to what stands beside it. With `strict` false it
+ * leaves out every refusal co-001/redact-ssn-phone-leaks added (a label read through the call's own identifier or a list
+ * number, gluedShape, heldStrict, the masked SSN glued outside a held letter, the digit-for-letter forms glued, the
+ * unread date-of-birth writings, a placeholder read as a number): what
+ * ef3e8d20 refused, and no less, which is what decides whether a match it did not make is applied (appliedMatches).
+ */
+function chainLeft(text: string, subject: Subject, claims: number, strict = true): boolean {
+  const survivor = survivorLeft(masked(strict ? text.replace(CASE_GLUED_LABEL, ' ') : text, claims, OWN_MARK, OWN_MARK), strict);
+  if (survivor === 'survivor' || ownIdentifierGlued(masked(text, claims, NAME_MARK), subject, survivor === 'held', strict) || (survivor === 'held' && birthBesideItsPlaceholder(text, subject))) {
+    return true;
+  }
+  // A Social Security or phone number's placeholder is a number to what is glued to it: read once more with a digit in its place.
+  if (!strict || !PATTERN_PLACEHOLDER_GLUED.test(text)) {
+    return false;
+  }
+  const numbered = unmarked(text.normalize('NFKC')).replace(PATTERN_PLACEHOLDERS, (placeholder: string, at: number, whole: string) => `${LETTER_BEFORE.test(whole.slice(Math.max(0, at - 16), at)) ? '0' : ''}${BARRIER}${LETTER_AFTER.test(whole.slice(at + placeholder.length, at + placeholder.length + 16)) ? '0' : ''}`);
+  return ownIdentifierGlued(maskedOf(numbered, claims, NAME_MARK), subject, survivor === 'held');
+}
 
 /**
  * Whether any of the identifiers is still in the text, in any form redaction reads, or a Social Security or phone number
@@ -2746,16 +2925,7 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
     if (matchesIn(scanned, subject).length > 0) {
       return true;
     }
-    const survivor = survivorLeft(masked(text, claims.length, OWN_MARK, OWN_MARK));
-    if (survivor === 'survivor' || ownIdentifierGlued(masked(text, claims.length, NAME_MARK), subject, survivor === 'held') || (survivor === 'held' && birthBesideItsPlaceholder(text, subject))) {
-      return true;
-    }
-    // A Social Security or phone number's placeholder is a number to what is glued to it: read once more with a digit in its place.
-    if (!PATTERN_PLACEHOLDER_GLUED.test(text)) {
-      return false;
-    }
-    const numbered = text.normalize('NFKC').replace(PATTERN_PLACEHOLDERS, (placeholder: string, at: number, whole: string) => `${LETTER_BEFORE.test(whole.slice(Math.max(0, at - 16), at)) ? '0' : ''}${BARRIER}${LETTER_AFTER.test(whole.slice(at + placeholder.length, at + placeholder.length + 16)) ? '0' : ''}`);
-    return ownIdentifierGlued(masked(numbered, claims.length, NAME_MARK), subject, survivor === 'held');
+    return chainLeft(text, subject, claims.length);
   } finally {
     viewsOfCheck = null;
     datesOfCheck = null;
@@ -2763,13 +2933,16 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
 }
 
 /** A Social Security or phone number's placeholder with a letter against it. */
-const PATTERN_PLACEHOLDER_GLUED = /\p{L}[\p{Cf}\p{Default_Ignorable_Code_Point}]*\[(?:SSN|PHONE)\]|\[(?:SSN|PHONE)\][\p{Cf}\p{Default_Ignorable_Code_Point}]*\p{L}/u;
-const LETTER_BEFORE = /\p{L}[\p{Cf}\p{Default_Ignorable_Code_Point}]*$/u;
-const LETTER_AFTER = /^[\p{Cf}\p{Default_Ignorable_Code_Point}]*\p{L}/u;
+const PATTERN_PLACEHOLDER_GLUED = /\p{L}[\p{Cf}\p{Default_Ignorable_Code_Point}\p{M}]*\[(?:SSN|PHONE)\]|\[(?:SSN|PHONE)\][\p{Cf}\p{Default_Ignorable_Code_Point}\p{M}]*\p{L}/u;
+const LETTER_BEFORE = /\p{L}[\p{Cf}\p{Default_Ignorable_Code_Point}\p{M}]*$/u;
+const LETTER_AFTER = /^[\p{Cf}\p{Default_Ignorable_Code_Point}\p{M}]*\p{L}/u;
 const PATTERN_PLACEHOLDERS = /\[(?:SSN|PHONE)\]/gu;
 
 /** The patient's name placeholder as the glued check reads it (ownIdentifierGlued): no letter, digit or joiner, kept by the fold. */
 const NAME_MARK = '\u0002';
+
+/** The checks' own marks, wherever a letter itself writes one (unmarked). */
+const PRIVATE_MARKS = new RegExp(`[${BARRIER}${NAME_MARK}${OWN_MARK}]`, 'gu');
 
 /** What may stand between an initial and the name after it: up to three characters that are no letter, digit or placeholder ("J. ", "O•"). */
 const INITIAL_TO_NAME = new RegExp(`^[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}]{0,3}`, 'u');
@@ -2808,27 +2981,34 @@ const INITIAL_TO_NAME = new RegExp(`^[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}]{0,3}`
  *   "114-Mar-1980-150.00", "3/14/80150.00 - 01/01/2020"), or written compact with a letter beside it; none inside another
  *   date ("13-3-61" for 1961-03-03).
  */
-function ownIdentifierGlued(normal: string, subject: Subject, held: boolean): boolean {
+function ownIdentifierGlued(normal: string, subject: Subject, held: boolean, strict = true): boolean {
   const { inOtherDate } = datesOf(normal, subject);
   return (
     numberGlued(normal, subject) ||
     birthGlued(normal, subject, inOtherDate) ||
     nameGlued(normal, subject, inOtherDate, held) ||
     spacedNameGlued(normal, subject, inOtherDate, held) ||
-    MASKED_SSN_GLUED.test(viewOf(normal, 'drop', true).text) ||
-    (subject.patterns && confusedGlued(normal, subject)) ||
-    (held && (heldOwnIdentifier(normal, subject) || heldBirthUnread(normal, subject)))
+    (strict && MASKED_SSN_GLUED.test(viewOf(normal, 'drop', true).text)) ||
+    (held && HELD_MASKED_SSN_GLUED.test(viewOf(normal, 'drop', true).text)) ||
+    (strict && subject.patterns && confusedGlued(normal, subject)) ||
+    (held && (heldOwnIdentifier(normal, subject) || (strict && heldBirthUnread(normal, subject))))
   );
 }
 
 /**
- * A masked SSN glued to the word before it ("PaidXXX-XX-3456", "Paid***-**-3456"), read on the folded digits view: three
- * mask characters and two, or five, then four digits. In a letter whose chain only held barriers hold (cc3dd7f6 refused
- * it), the letter is refused; elsewhere it is the follow-on leak PR's class (docs/adr/0054).
+ * A masked SSN glued to a letter or a digit before it that is no mask character, read on the folded digits view. In every
+ * letter, the mask in an SSN's own shape: three mask characters, a gap the masked pattern reads (a dash with spaces around
+ * it too, white space, a period), two, such a gap and four digits, the four on the next line too ("PaidXXX-XX-3456",
+ * "2020***-**-3456", "PaidXXX - XX - 3456"), after a word that ends in a mask's letter as well ("FaxXXX-XX-3456": the review
+ * of the build, B1-7). In a letter whose chain only held barriers hold (cc3dd7f6 refused it), with a joiner missing too, or
+ * five mask characters and four digits: outside one that is as often a masked account number ("Acct#XXXX1234", "Acct
+ * No.XXXXX1234": the review of the build, B2-2).
  */
-const MASKED_SSN_GLUED = /(?![X*#_\u2022\u25CF])[\p{L}0-9]\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_\u2022\u25CF]{2}|[X*#_\u2022\u25CF]{5})[\p{Pd}\u2212 .]?[0-9]{4}(?![0-9])/u;
+const MASKED_SSN_GLUED = /(?![X*#_\u2022\u25CF])[\p{L}0-9]\.?[X*#_\u2022\u25CF]{3,5}(?:[ \t]{0,2}[\p{Pd}\u2212][ \t]{0,2}|[ \t]{1,3}|\.)[X*#_\u2022\u25CF]{2}(?:[ \t]{0,2}[\p{Pd}\u2212][ \t]{0,2}|[ \t]{1,3}|\.)(?:[ \t]{0,16}(?:\r\n|[\n\r])[ \t]{0,16})?[0-9]{4}(?![0-9])/u;
+const HELD_MASKED_SSN_GLUED = /(?![X*#_\u2022\u25CF])[\p{L}0-9]\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_\u2022\u25CF]{2}|[X*#_\u2022\u25CF]{5})[\p{Pd}\u2212 .]?[0-9]{4}(?![0-9])/u;
 
 const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
+const ORDINAL_WORDS = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH', 'EIGHTH', 'NINTH', 'TENTH', 'ELEVENTH', 'TWELFTH', 'THIRTEENTH', 'FOURTEENTH', 'FIFTEENTH', 'SIXTEENTH', 'SEVENTEENTH', 'EIGHTEENTH', 'NINETEENTH', 'TWENTIETH'];
 const ONES = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN'];
 const TENS = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY'];
 const WORD_GAP = '[\\s\\p{Pd}\\u2212]*';
@@ -2839,6 +3019,13 @@ function underHundredInWords(value: number): string | null {
   if (value < 20) return ONES[value] ?? null;
   const ones = ONES[value % 10] ?? '';
   return `${TENS[Math.floor(value / 10)] ?? ''}${ones === '' ? '' : `${WORD_GAP}${ones}`}`;
+}
+
+/** A day of the month as an ordinal's word, as a pattern: "FOURTEENTH", "TWENTY-FIRST", "THIRTIETH". */
+function dayInWords(day: number): string {
+  if (day <= 20) return ORDINAL_WORDS[day - 1] ?? 'FIRST';
+  if (day === 30) return 'THIRTIETH';
+  return `${day < 30 ? 'TWENTY' : 'THIRTY'}${WORD_GAP}${ORDINAL_WORDS[(day % 10) - 1] ?? 'FIRST'}`;
 }
 
 /** A year from 1900 to 2099 in words, as a pattern: "NINETEEN SEVENTY-FIVE", "NINETEEN HUNDRED AND SEVEN", "NINETEEN OH SEVEN", "TWO THOUSAND AND FIVE", "TWENTY TWELVE". */
@@ -2860,15 +3047,17 @@ function yearInWords(year: number): string | null {
 /**
  * Whether a held letter holds the date of birth in a writing no rule reads (ruling A' of 2026-11-07; cc3dd7f6 refused
  * every held letter), with no boundary asked for, as for every held reading: its month as a Roman numeral with its day and
- * year ("14-III-1980", "III/14/1980", "1980-III-14"); year, month and day with the CJK date characters ("1980年3月14日");
- * its year in words; its month's word with its day and no year ("Mar 14th", "14th of March"); and its two-digit year,
- * month and day run together in any order as four or five digits, at the start or the end of a run of digits ("80314",
- * "14380", "202080314"), but four digits that read as a year from 1900 to 2099.
+ * year, the year of two digits too ("14-III-1980", "III/14/1980", "1980-III-14", "14/III/80"); year, month and day with
+ * the CJK date characters, the year of two digits or left out too ("1980年3月14日", "80年3月14日", "3月14日"); its year in
+ * words; its month's word with its day, in digits or as an ordinal's word, and no year ("Mar 14th", "14th of March",
+ * "March fourteenth"); and its two-digit year, month and day run together as four or five digits in any order, or as six
+ * in an order a date is written in, at the start or the end of a run of digits ("80314", "14380", "202080314",
+ * "80031455"), but four digits that read as a year from 1900 to 2099.
  */
 function heldBirthUnread(normal: string, subject: Subject): boolean {
   const births = subject.datesOfBirth ?? [];
   if (births.length === 0) return false;
-  const text = viewOf(normal, 'drop', true).text;
+  const text = viewOf(normal, 'drop', true, true).text;
   const runs = text.match(/[0-9]{4,}/gu) ?? [];
   for (const birth of births) {
     const [yearText = '', monthText = '', dayText = ''] = birth.split('-');
@@ -2881,21 +3070,41 @@ function heldBirthUnread(normal: string, subject: Subject): boolean {
     const words = monthWords(month).toUpperCase();
     // With no year after it: a date of another year on the same day of the same month is a date of service, read as written.
     const noYear = `(?![\\s,.${APOSTROPHE}\\p{Pd}\\u2212]{0,3}[0-9]{2})`;
+    const yy = yearText.slice(2);
+    const anyYear = `(?:${yearText}|${yy})`;
+    const gap = '[\\s,.\\p{Pd}\\u2212]{0,3}';
+    // The day in digits, an ordinal's suffix on it too, or as an ordinal's word ("14", "14th", "fourteenth").
+    const dayDigits = `(?<![0-9])${dd}(?:ST|ND|RD|TH)?(?![0-9])`;
+    const dayWord = `(?<![A-Z])${dayInWords(day)}(?![A-Z])`;
+    const dayWritten = `(?:${dayDigits}|${dayWord})`;
+    // The month of May is a verb too ("Visits over 12 may require", "5. May include", "You may first call": the review of
+    // the build, B2-5): after a day it is the month only with an ordinal's suffix or "of" before it, or with no word after it
+    // on its line; before a day in words, only with no word after the day on its line; and its year in words is read only
+    // with its day right after it.
+    const may = month === 5;
+    const dayAfterMay = `(?:${dayDigits}|${dayWord}(?![ \\t]+[A-Z]))`;
+    const dayThenMonth = may
+      ? `(?:(?<![0-9])${dd}(?:ST|ND|RD|TH)${gap}(?:OF\\s+)?|(?:(?<![0-9])${dd}|(?<![A-Z])${dayInWords(day)})${gap}OF\\s+)MAY(?![A-Z])${noYear}|${dayWritten}${gap}MAY(?![A-Z])(?![ \\t]+[A-Z])${noYear}`
+      : `${dayWritten}${gap}(?:OF\\s+)?(?:${words})(?![A-Z])${noYear}`;
     const patterns = [
-      `${dd}${sep}${roman}${sep}${yearText}`,
-      `${roman}${sep}${dd}${sep}${yearText}`,
-      `${yearText}${sep}${roman}${sep}${dd}(?![0-9])`,
-      `${yearText}\\s?年\\s?${mm}\\s?月\\s?${dd}(?![0-9])`,
-      `(?<![A-Z])(?:${words})\\.?[\\s,.\\p{Pd}\\u2212]{0,3}(?:THE\\s+)?${dd}(?:ST|ND|RD|TH)?(?![0-9])${noYear}`,
-      `(?<![0-9])${dd}(?:ST|ND|RD|TH)?[\\s,.\\p{Pd}\\u2212]{0,3}(?:OF\\s+)?(?:${words})(?![A-Z])${noYear}`,
+      `${dd}${sep}${roman}${sep}${anyYear}(?![0-9])`,
+      `${roman}${sep}${dd}${sep}${anyYear}(?![0-9])`,
+      `${anyYear}${sep}${roman}${sep}${dd}(?![0-9])`,
+      `${anyYear}\\s?年\\s?${mm}\\s?月\\s?${dd}(?![0-9])`,
+      `(?<![0-9])${mm}\\s?月\\s?${dd}\\s?日`,
+      `(?<![A-Z])(?:${words})\\.?${gap}(?:THE\\s+)?${may ? dayAfterMay : dayWritten}${noYear}`,
+      dayThenMonth,
     ];
     const inWords = yearInWords(year);
     // The year in words within 48 characters after the month's word ("November second, nineteen seventy-five").
-    if (inWords !== null) patterns.push(`(?<![A-Z])(?:${words})(?![A-Z])[^0-9]{0,48}?(?<![A-Z])${inWords}(?![A-Z])`);
+    if (inWords !== null) {
+      patterns.push(may ? `(?<![A-Z])MAY(?![A-Z])${gap}(?:THE\\s+)?${dayAfterMay}[^0-9]{0,40}?(?<![A-Z])${inWords}(?![A-Z])` : `(?<![A-Z])(?:${words})(?![A-Z])[^0-9]{0,48}?(?<![A-Z])${inWords}(?![A-Z])`);
+    }
     if (new RegExp(patterns.join('|'), 'u').test(text)) return true;
-    const yy = yearText.slice(2);
+    const pad = (value: number) => String(value).padStart(2, '0');
     const parts = [[yy], [...new Set([String(month), monthText])], [...new Set([String(day), dayText])]];
-    const compacts = new Set<string>();
+    // Four or five digits (a part written with one digit), or six with both written with two ("800314", "031480", "140380").
+    const compacts = new Set<string>([`${yy}${pad(month)}${pad(day)}`, `${pad(month)}${pad(day)}${yy}`, `${pad(day)}${pad(month)}${yy}`]);
     for (const [a, b, c] of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]] as const) {
       for (const first of parts[a] ?? []) for (const second of parts[b] ?? []) for (const third of parts[c] ?? []) {
         const compact = `${first}${second}${third}`;
@@ -3118,7 +3327,7 @@ const yearAlone = (year: string) => new RegExp(`(?<![0-9]|[0-9][.,])${year}(?![0
  * form is read blind to separators: random digits of a letter's ICNs, TINs and amounts would hold one by chance.
  */
 function heldOwnIdentifier(normal: string, subject: Subject): boolean {
-  const view = viewOf(normal, 'drop', true);
+  const view = viewOf(normal, 'drop', true, true);
   const at: number[] = [];
   let stream = '';
   for (let i = 0; i < view.text.length; ) {
