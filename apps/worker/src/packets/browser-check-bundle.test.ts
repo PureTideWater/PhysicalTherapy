@@ -30,6 +30,7 @@ describe('the browser’s packet check, bundled', () => {
     const inputs = await inputsOf('verifier/index.ts', 'node');
     expect(inputs.filter((file) => SERVER_ONLY.test(file)).map((file) => file.replace(/^.*packages\//, 'packages/')).sort()).toEqual([
       'packages/packets/src/verifier/identifiers.ts',
+      'packages/redact/src/confusables.ts',
       'packages/redact/src/index.ts',
       'packages/redact/src/redact.ts',
     ]);
