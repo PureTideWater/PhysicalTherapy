@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import { tagline } from '@paidwhole/brand';
+import { databaseClient } from '@tp/db';
 import { loadRelease, withdrawRelease } from '@tp/rules/loader';
 import { SCREENING_WAIT_CODES } from '@tp/worker/runtime';
 import { SCREENING_REJECTION_CODES, encodeScreeningRows, screeningTokenHash } from '@tp/worker/screening';
@@ -14,6 +15,7 @@ import { RATE_LIMITS, rateSubjectHash } from '../http/rate-limit';
 import type { MutationResult, Outcome } from '../http/route';
 import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_LABELS_VERSION } from './labels';
+import { SCREENING_BUSY } from './messages';
 import {
   NO_PATIENT_INFORMATION,
   SCREENING_BOUNCE_BUDGET,
@@ -1324,6 +1326,35 @@ describe('SCR-21 and SCR-22 through the routes: the paused stream, readiness, th
       "UPDATE mail_stream SET paused_at = NULL, paused_reason = NULL, pause_sends = NULL, pause_bounces = NULL, pause_complaints = NULL, resumed_at = now(), window_starts_at = now(), ses_enabled_confirmed_at = now() WHERE stream = 'screening'",
     );
   const prospects = async (email: string) => (await world.owner.query('SELECT 1 FROM screening_prospect WHERE contact_email = $1', [email])).rowCount ?? 0;
+
+  it('refuses an upload that waits past the limit behind another of the same contact address, plainly, storing nothing; the next try is stored', async () => {
+    const email = 'second.upload@clinic-waits.synthetic.test';
+    // What an earlier upload of this address holds until it commits: submit_screening()'s lock on the contact address.
+    const first = databaseClient(world.database.url);
+    await first.connect();
+    const from = world.logLines.length;
+    try {
+      await first.query('BEGIN');
+      await first.query("SELECT pg_advisory_xact_lock(hashtextextended('screening_contact:' || lower(btrim($1)), 0))", [email]);
+      const started = Date.now();
+      expect(issuesOf(await submitted(submitInput({ contactEmail: email })))).toEqual([{ field: 'input', message: SCREENING_BUSY }]);
+      // Bounded: the web's three seconds a lock, not the first upload's length (which here has no end).
+      expect(Date.now() - started).toBeGreaterThanOrEqual(2_500);
+      expect(Date.now() - started).toBeLessThan(15_000);
+      expect(await prospects(email)).toBe(0);
+      const lines = world.logLines.slice(from).filter((line) => line.error_code === 'SCREENING_UPLOAD_BUSY');
+      expect(lines.length).toBe(1);
+      expect(JSON.stringify(world.logLines.slice(from))).not.toMatch(/second\.upload|clinic-waits/);
+      // Nothing waits on after the refusal: its transaction is over and its connection is back.
+      expect((await world.owner.query("SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted")).rowCount).toBe(0);
+    } finally {
+      await first.query('ROLLBACK');
+      await first.end();
+    }
+    expect((await submitted(submitInput({ contactEmail: email }))).status).toBe('ok');
+    expect(await prospects(email)).toBe(1);
+    expect(SCREENING_BUSY).not.toMatch(/practice|address|another|email/i);
+  }, 40_000);
 
   it('closes the page while the screening stream is paused, says so, and records nothing of an upload sent anyway', async () => {
     await pause();

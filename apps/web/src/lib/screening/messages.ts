@@ -227,6 +227,14 @@ export const SCREENING_PAUSED = {
 } as const;
 
 /**
+ * What the screening says when an upload could not be stored because it waited too long behind another (routes.ts,
+ * withBoundedLockWaits): nothing was stored, and what the person typed stays in the form. It says nothing of the other
+ * upload, whose practice or address it shares, so the sentence tells no one that a given practice or address is
+ * screening right now.
+ */
+export const SCREENING_BUSY = 'We could not store this screening just now, so nothing was sent. Wait a minute, then send it again.';
+
+/**
  * What the screening says when the client, or the email account it is counted under, has had 3 screening results that
  * could not be delivered in 7 days (the bounce budget; the founder's Q10 (a) of 2026-10-21): the recommended wording,
  * for counsel to confirm before the screening opens. The account is a work address's domain, or a free-mail address's
