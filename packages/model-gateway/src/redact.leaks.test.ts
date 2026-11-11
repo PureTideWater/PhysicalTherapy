@@ -1585,6 +1585,24 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     }
   });
 
+  // N-1, N-2 (the review of M-1's fix), recorded and pinned as offered today: an identifier of the call's own that stands
+  // inside a hidden number is the number's in the screen's second reading, so the screen is asked about it joined to what
+  // follows, or in another script's digits, where no tree before asked: more asked of the practice's own records, nothing
+  // more sent, and never the identifier's own compact form. Every tree asks the same where the number is sent as [PHONE].
+  it.each([
+    ['joined to what follows', 'ID 77 202-555-0123 88', 'ID [MEMBER_ID] 88', '555012388'],
+    ['written with another script’s digit', 'ID 77 202-555-\u0660123', 'ID [MEMBER_ID]', '555\u0660123'],
+  ] as const)('N-1, N-2, recorded: a member ID inside a hidden number, %s, is offered to the screen (%j)', (_row, letter, sent, offered) => {
+    const patient = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['77202', '5550123']);
+    const claims = claimsOf('SYNCLAIM0001');
+    const screened = redactLetterForScreen(letter, patient, claims);
+    expect(screened.text).toBe(sent);
+    expect(holdsIdentifier(screened.text, patient, claims)).toBe(false);
+    expect(screened.candidates).toContain(offered);
+    expect(screened.candidates).not.toContain('5550123');
+    expect(screened.candidates).not.toContain('77202');
+  });
+
   // The invariant behind B1-1 and C1-1: whatever redactLetterForScreen leaves as written that redactLetter replaces, the
   // check refuses.
   it('refuses every letter in which the letter reader left a match as written (property)', () => {
