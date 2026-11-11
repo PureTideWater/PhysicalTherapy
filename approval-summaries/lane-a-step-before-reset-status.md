@@ -2,45 +2,55 @@
 
 W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this item from 2026-11-11, taking it over from W8 in a fresh context (the orchestrator's assignment). It also holds password-changed-notice's merge step once W6 has posted its approval line.
 
-## RESUME-BLOCK: step-before-reset, W9, 2026-11-11 09:20 UTC (built and reviewed; waits for #140 to merge)
-- **Heads:** WIP ref `co-001/wip-step-before-reset` = **47c99ac7** (everything committed; the worktree is clean):
-  the build (f5d1c05e), review rounds one (79c98137), two (1a6b2e8b) and three (47c99ac7). Worktree
-  `/home/user/step-before-reset` (disposable), branch `co-001/step-before-reset`. No PR yet. Still stacked on ffa44ea9;
-  #140's head is 7da699b1 (one test-only commit more), taken with the base merge.
-- **The full local suite ran once, on 1a6b2e8b: every step exit 0** (typecheck, lint, lint:copy, lint:logs,
-  check:fixtures, synth, verify-content, domain model --check --strict; unit 13,376 passed and 4 skipped; infra;
-  golden; oracle; db in four shards 10,202 passed and 1 skipped; build; e2e 87 passed). After it, round three changed
-  three lines of `unlock_user()`, one console sentence, the runbook and one test: its three touched test files pass
-  (106), lint:copy passes. CI is the suite of record for the rest.
-- **Reviews** (`lane-a-wip/step-before-reset/`): the build, `build-review-security.md` (1 blocking, 4 should-fix) and
-  `build-review-database.md` (0, 2), rulings `build-rulings.md`; round one's delta, `fix-delta-review.md` (1 blocking:
-  the ordinary unlock undid the key lock; 4 should-fix), fixed in round two; round two's delta with the console's one
-  new sentence, `fix-delta-review-2.md` (1 blocking: `unlock_user()` read the hold before taking the row; 2
-  should-fix: the sentence, the runbook's clear), fixed in round three exactly as the review specified, with a
-  two-session test. Round three has no review of its own: three lines the review wrote, proven by that test.
-- **Next:** when #140 has merged: merge `claude/build-platform` into the branch, regenerate the domain model and
-  functions on a fresh database, the targeted checks, push `co-001/step-before-reset`, open the draft PR with
-  `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs list`, fill the template,
-  post the approval line as a suggestion on the document's last line (`gh api .../pulls/<n>/comments`), one line to
-  the orchestrator with the comment's link and the founder's decisions; merge after the founder's committed line and
-  green required checks; stand down.
-- **For the PR description (the founder reads these):** W8's three (the rule holds only once the Cognito client is
-  confidential, ADR 0088's second release; the deploy needs a moment with no reconcile queued or running; the
-  provider's behaviour on a repeated confirm is unproven without a pool); the migration also replaces `unlock_user()`
-  (a hold until the owner records `key_across_reset_cleared`) and adds `sign_in_lock_key_across_reset()`; a key not
-  removed locks the account and only the founder's break-glass clears it until Queues item 29; `tp_app` can place
-  that hold on any account that has reset (the same trust as ten `sign_in_failed`); a crossed account is now refused
-  at sign-in; one new sentence in the console; unverified without a pool: DeleteWebAuthnCredential after a global
-  sign-out, the confirm's error names.
-- **Handed on, for the orchestrator's queue:** W8's four (below); a job that records a reset whose transaction failed
-  twice until it commits; `PasswordHistoryPolicyViolationException` and `UserNotConfirmedException` on the confirm
-  still throw as the platform's failure; the other provider methods rethrow the SDK's error whole.
-- **#140's merge step:** subscribed; head 7da699b1 green but for `domain model` (the blank line) at 09:02 UTC; no
-  suggestion committed yet. A check-in is set for 09:53 UTC. Merge only after the founder's committed line and green
-  required checks, the base merged first if it moved; record it in `lane-a-auth-emails-status.md`; one line to the
-  orchestrator.
-- **Token rule from the orchestrator (09:01 UTC):** at most two subagents at a time, each with a named scope, about
-  20 tool calls and a report file.
+## RESUME-BLOCK: step-before-reset and #140, W9, 2026-11-11 09:25 UTC
+**#140 first (W9 holds it since W6 stood down; its block is in `lane-a-auth-emails-status.md`):**
+- Head **c82d2c99** (W9's one commit on abdc2192: CI's `unit` failed `tools/test/function-files.test.ts`, which still
+  expected a migration to carry no git attribute after abdc2192 marked migrations `text eol=lf`; the test now asserts
+  exactly those two; no schema change). CI on c82d2c99 is running; expect green but `domain model` and `all green`.
+- Done: the description is replaced with `lane-a-wip/pwnotice/pr/body-final.md` (the posted text equals it); the
+  document hash 6002e2afb2b830a519e6edc5de428f312ef3ada3591fa10b18f861cf83beea33 is confirmed on a fresh database at
+  abdc2192 (c82d2c99 changes one test file only); the approval line is line 7536, the last line.
+- **Next:** when CI on c82d2c99 is green but for those two: post the approval line as a suggestion (W6's step 3:
+  `gh api repos/PureTideWater/PhysicalTherapy/pulls/140/comments -f commit_id=<head> -f path=docs/product/domain-model.md
+  -f side=RIGHT -F line=7536 -f body=...`; `Approved by: Tyler Williams  Date: <today>  Document SHA-256: \`<hash>\``,
+  then the sentence that committing it accepts the description's trade-off, then the footer). If the session's
+  safety check refuses `gh api` for a write (it refused a PATCH of the description; the connector's
+  `update_pull_request` did that instead), tell the orchestrator in one line: the connector's review tools are
+  refused by `protect-github.sh`, so there is no second route. Then one line to the orchestrator
+  (session_019i9ifBCrxfV35CFDVHLTad) with the comment's link and the founder's decision sentence. Merge only after
+  the founder's commit of the line and green required checks (W6's steps 5 and 6). The description's Checks table
+  wants a row for c82d2c99 before the merge.
+**Item 28:**
+- WIP ref `co-001/wip-step-before-reset` = **5222fe59**, worktree clean (`/home/user/step-before-reset`, branch
+  `co-001/step-before-reset`; disposable). Commits: the build f5d1c05e; review rounds 79c98137, 1a6b2e8b, 47c99ac7;
+  case (d) 1ae2952e and its review fixes 5222fe59. No PR until #140 merges. Still stacked on ffa44ea9.
+- The full local suite ran once on 1a6b2e8b, all green (unit 13,376; db 10,202; e2e 87). Since then only targeted
+  runs: round three (106 tests, three files), case (d) (190 tests, six files). CI is the record for the rest.
+- Reviews, all in `lane-a-wip/step-before-reset/`: build (security 1 blocking, database 0), `build-rulings.md`;
+  `fix-delta-review.md` (1 blocking); `fix-delta-review-2.md` (1 blocking, fixed as specified, no review of its own);
+  case (d): `d-delta-review-database.md` (0 blocking, 2 should-fix, both fixed) and `d-delta-review-auth.md` (0
+  blocking, 2 should-fix: a factor enrolled before the reset is recorded, and a second reset after enrolling; NOT
+  built, by W9's decision recorded in ADR 0093 D10: both need the public client, which ADR 0088's second release
+  closes before the first customer invitation, and the closing rule would take the sentence from every new account
+  for good).
+- **Next:** after #140 merges: merge `claude/build-platform` into the branch (it brings abdc2192's ADR 0091 text, the
+  infra alarm and `.gitattributes`: expect conflicts in ADR 0091, `infra/lib/security-events.ts`,
+  `infra/test/monitoring.test.ts`, the runbooks, and add this migration to `tools/test/function-files.test.ts`'s
+  migration assertion only if it lists files), then ADR 0091's case (d) text says it is closed by this migration with
+  the two limits; regenerate the domain model and functions on a fresh database; targeted checks; push
+  `co-001/step-before-reset`; open the draft PR with
+  `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs list`; fill the template;
+  post the approval line; one line to the orchestrator; merge after the founder's committed line; stand down.
+- **For the PR description:** W8's three; the migration also replaces `unlock_user()`,
+  `audit_event_password_notice()` and `operator_password_notice_claim()` and adds
+  `sign_in_lock_key_across_reset()` and `password_notice.mfa_enrolled_at_reset`; four table locks at deploy; a key
+  not removed locks the account, cleared only by the founder's break-glass until Queues item 29; a crossed account is
+  refused at sign-in; one new console sentence; case (d)'s two limits; unverified without a pool:
+  DeleteWebAuthnCredential after a global sign-out, the confirm's error names.
+- **Handed on, for the orchestrator's queue:** W8's four; a job that records a reset whose transaction failed twice;
+  two confirm errors still thrown as the platform's failure; the other provider methods rethrow the SDK's error whole;
+  the "factor older than the reset" rule if ADR 0088's second release slips past launch.
+- Token rule (orchestrator, 09:01 UTC): at most two subagents at a time. This session's context is past about 300k.
 
 ## W8's RESUME-BLOCK (2026-11-11 07:25 UTC), kept for its notes
 
