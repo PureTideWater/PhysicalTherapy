@@ -1913,20 +1913,22 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
     return readings;
   };
   /** A match that is the call's own number takes its kind, over the token it is joined to (4.2, R6c): true when it was. */
-  const pushOwn = (view: View, readings: readonly { readonly compact: string; readonly from: number; readonly to: number }[]) => {
+  // `fresh`: the match was read under a label through the call's own identifier or a list number, so ef3e8d20 did not make
+  // it, whoever's number it turns out to be (the review of the fix round's fuzzer, a member ID after "SSN 1:").
+  const pushOwn = (view: View, readings: readonly { readonly compact: string; readonly from: number; readonly to: number }[], fresh = false) => {
     const mine = readings.find((reading) => own.has(reading.compact));
     const held = mine === undefined ? undefined : own.get(mine.compact);
     if (mine === undefined || held === undefined) {
       return false;
     }
     const reach = inNormal(view, mine.from, mine.to);
-    results.push({ ...reach, kind: held.kind, claim: held.claim });
+    results.push({ ...reach, kind: held.kind, claim: held.claim, ...(fresh ? { fresh: true } : {}) });
     cover(reach);
     return true;
   };
   const push = (view: View, start: number, end: number, kind: PatternKind, core: string, form: PatternForm, fresh = false) => {
     const readings = readingsOf(view, start, end, core);
-    if (pushOwn(view, readings)) {
+    if (pushOwn(view, readings, fresh)) {
       return;
     }
     const range = inNormal(view, start, end);
