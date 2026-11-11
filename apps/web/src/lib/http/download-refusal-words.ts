@@ -8,7 +8,7 @@
  */
 
 /** The refusals a page shows beside its download: the closed list refused= carries. */
-export const DOWNLOAD_REFUSALS = ['invalid', 'not_found', 'forbidden', 'rate_limited', 'suspended', 'duplicate', 'csrf_refused'] as const;
+export const DOWNLOAD_REFUSALS = ['invalid', 'not_found', 'forbidden', 'rate_limited', 'suspended', 'duplicate', 'csrf_refused', 'busy'] as const;
 
 export type DownloadRefusalStatus = (typeof DOWNLOAD_REFUSALS)[number];
 
@@ -103,6 +103,9 @@ export function downloadRefusalWords(refusal: RefusedDownload, surface: Download
     case 'duplicate':
     case 'csrf_refused':
       return { title: NOT_DOWNLOADED, body: 'This download could not be checked against your session. Try it again from this page.' };
+    case 'busy':
+      // No download takes the ledger lock today; the outcome is placed so the closed list stays whole (docs/adr/0092).
+      return { title: NOT_DOWNLOADED, body: 'The records in this file are being updated. Try again in a minute.' };
   }
 }
 

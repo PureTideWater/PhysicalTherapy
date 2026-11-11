@@ -27,6 +27,7 @@ const REFUSALS: Readonly<Record<RefusedDownload['status'], Exclude<Outcome<unkno
   suspended: { status: 'suspended', reason: 'the organization is suspended for nonpayment' },
   duplicate: { status: 'duplicate' },
   csrf_refused: { status: 'csrf_refused' },
+  busy: { status: 'busy' },
 };
 
 describe('a refused download read from its outcome', () => {

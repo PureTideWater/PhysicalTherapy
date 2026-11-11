@@ -392,6 +392,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/money/src/usd-plain.test.ts',
     'apps/web/src/components/packets/fact-render.browser.test.ts',
   ]),
+  // Acting Lane B (co-001/web-ledger-try-lock; docs/adr/0092): a person's ledger action takes the ledger lock only if it is free.
+  'CAS-56': none(8, 'The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding the lock: no file.', ['apps/web/src/lib/routes/reconciliation-routes.db.test.ts']),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },

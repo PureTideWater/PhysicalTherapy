@@ -17,6 +17,17 @@ export async function lockLedger(scope: Scope, practiceId: string): Promise<void
   await scope.client.query("SELECT pg_advisory_xact_lock(hashtextextended('ledger:' || $1::text, 0))", [practiceId]);
 }
 
+/**
+ * The same lock, taken only if it is free (docs/adr/0092): true when this transaction now holds it to its end, false
+ * when a reconcile pass or another person's action on the practice holds it. A person's request never waits for the
+ * ledger: a pass holds the lock for its whole transaction, minutes at real size, and a waiting request holds one of
+ * the web's few connections, which every practice shares. The caller refuses at once on false and writes nothing.
+ */
+export async function tryLockLedger(scope: Scope, practiceId: string): Promise<boolean> {
+  const { rows } = await scope.client.query<{ locked: boolean }>("SELECT pg_try_advisory_xact_lock(hashtextextended('ledger:' || $1::text, 0)) AS locked", [practiceId]);
+  return rows[0]?.locked === true;
+}
+
 /** The practice's ledger settings (proof level, posting template), from practice.settings. */
 export async function practiceLedgerSettings(scope: Scope, practiceId: string): Promise<LedgerSettings> {
   const { rows } = await scope.client.query<{ settings: unknown }>('SELECT settings FROM practice WHERE id = $1', [practiceId]);
