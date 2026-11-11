@@ -67,7 +67,25 @@ Started by the orchestrator session_019i9ifDAzQNA3kLHozjBoeS. Setup OK; worktree
   a practice-wide index under the tenant policy, once a step: slower (32.5 s against 21 s at 2,000 lines), bounded
   here, growing with the practice; the durable answer is the loader analyzing claim after a load (or these lookups made
   statistics-proof), measured at CAS-51's sizes.
-- **RESUME-BLOCK (#126), head the commit after b8b4ec0d (pushed 02:27 UTC):** (1) read CI on bf2fc44f (expected red: unit from MOD-16 until its base
+- **03:40 UTC: head 8a61c612 verified, then the final base merge ec606eff pushed.** CI on 8a61c612: every job green but
+  `domain model` (the blank line) and `all green` from it; `db (1/4)` 11.5 min; `mutation` green (run 42946014994; also
+  on e4ed0f0a, so the time limit was the fix); **CAS-42.5 passed on 8a61c612** (run 42947909182: 23 jobs on attempt 1;
+  working set 748.9 of 921.6 MiB; F's reconcile 270.0 s of 900 s; at most 51 advisory locks of 64; advisory: the windows
+  query 50,314 ms cold against its 5,000 ms budget, not judged). Body rewritten for rounds 3 to 6 and published (62,745
+  bytes, read back equal; builder in `lane-a-wip/interest-pr/body-build.py`). Fresh checkout of the head: line 7469
+  blank with `bb7662c6…6bf8`, no schema file changed since 64aa14d9. **ec606eff** = 8a61c612 + base ca504674 (#138,
+  #129; no conflict; no migration, function, ledger or reconcile file in it); typecheck and lint green; CAS-42.5
+  dispatched on it (03:41 UTC).
+- **A rule broken, not repairable without a forced push:** nine commits on the PR branch (da139247 to 8a61c612) and this
+  session's ops commits since 23:25 UTC carry a co-author trailer that names the model family and version (a harness
+  attribution note was followed over the brief's "no model identifier in a commit body"). From ec606eff on the trailer
+  names none. Told to the orchestrator.
+- **RESUME-BLOCK (#126), head ec606eff:** (1) read CI on ec606eff (expected red: `domain model`, `all green`) and the
+  release-capacity run dispatched at 03:41 UTC; (2) post ONE suggestion comment with the approval line on line 7469 of
+  docs/product/domain-model.md, commit_id ec606eff (`gh api repos/PureTideWater/PhysicalTherapy/pulls/126/comments`;
+  .claude/skills/new-migration); (3) send its link to the orchestrator, with D19's trade-off and the trailer note;
+  (4) end the turn and wait; merge only after the founder's committed line and green required checks, base an ancestor.
+- **Superseded steps (kept for the record), head the commit after b8b4ec0d:** (1) read CI on bf2fc44f (expected red: unit from MOD-16 until its base
   merge; the domain model's blank approval line); (2) dispatch `release-capacity.yml` (CAS-42.5) on the head;
   (3) body (`lane-a-wip/interest-pr/body-build.py`; add RVM5-1, RVM6-1, D19's trade-off for the founder, the #134 and
   #136 merges, the three owed items), read back; (4) fresh-clone verification reading CI; (5) one suggestion comment
