@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import pg from 'pg';
@@ -8,22 +9,25 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { recordAuditEvent, withActor, withJobScope } from './authz';
 import { catalogProblems } from './catalog';
 import { readDatabaseUrl } from './config';
-import { MIGRATIONS_DIR } from './migrate';
+import { MIGRATIONS_DIR, MigrationError, migrate, readMigrations } from './migrate';
 import { APP_DEV_LOGIN, APP_ROLE, BILLING_ROLE, ESIGN_ROLE, JOB_ROLE, OPERATOR_ROLE, OWNER_ROLE, SCREENING_ROLE, WORKER_DEV_LOGIN } from './roles';
 import { MAIL_KINDS, MAIL_STREAMS, MAIL_STREAM_KINDS, PASSWORD_NOTICE_CUTOFF_HOURS, PASSWORD_NOTICE_RETRY_MINUTES, PASSWORD_NOTICE_STALE_CODE, PASSWORD_NOTICE_STATES } from './schema';
-import { type MigratedDatabase, type TenantWorld, asOwner, createMigratedDatabase, createTenantWorld, createUser, endPool } from './testing';
+import { type MigratedDatabase, type ScratchDatabase, type TenantWorld, asOwner, createMigratedDatabase, createScratchDatabase, createTenantWorld, createUser, endPool } from './testing';
 
 /**
  * SGN-16's database rows (Schema PR 1; migration 20261111090000; docs/adr/0091): the password-changed notice's outbox.
  * What the database proves: the outbox is the owner's alone and no role reaches it but through the definer functions;
  * the database writes one pending notice in the reset's own transaction, only for the account's own
  * password_reset_completed (the guard: a person, acting on themselves); the address is read only by the claim of a
- * pending, due notice inside the 24-hour cutoff, checked again under the claim's lock; a notice is sent once, retried
- * after 1, 5, 15 and 60 minutes, failed at the fifth try, at once on a permanent error, or as stale past the cutoff;
- * a bounce, a suppression or a rejection makes it undelivered and reports it exactly once through the one helper's
- * four callers, a complaint changes nothing, and the end state is F of the final mail record in any order of the
- * send and its events, concurrent ones included (the message-ID lock, each side's position pinned); the record
- * function's seventh column; the kind on the transactional stream; the expiry; and the migration's lock loop.
+ * pending, due notice inside the 24-hour cutoff, checked again under the claim's lock, which also says whether the
+ * account has a second factor enrolled; a notice is sent once, retried after 1, 5, 15 and 60 minutes, failed at the
+ * fifth try, at once on a permanent error, or as stale past the cutoff; a bounce, a suppression or a rejection makes
+ * it undelivered and reports it exactly once through the one helper's four callers, a complaint changes nothing, and
+ * the end state is F of the final mail record in any order of the send and its events, concurrent ones included (the
+ * message-ID lock, each side's position pinned), read from a password_changed message's record alone; the record
+ * function's seventh column; the kind on the transactional stream; the expiry; the migration's lock loop, each refused
+ * try giving back all it took; and, on a database at the previous head, each of the preflight's refusals, what it
+ * compares whole, and that the whole file holds no table lock beyond the loop's three.
  * Synthetic data only: every address is @synthetic.test.
  */
 
@@ -45,6 +49,10 @@ const RECORD = 'SELECT * FROM operator_record_mail_event($1, $2, $3, $4, $5, $6,
 /** The previous platform image's call (apps/worker/src/platform/mail-events.ts before this change): its six columns by name. */
 const PREVIOUS_RECORD = `SELECT recorded, state, notice_undelivered, invoice_undelivered, invitation_undelivered, stream_paused
          FROM operator_record_mail_event($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`;
+/** The first key of the advisory locks the lock-loop test paces the loop with; the second is the pause's number. */
+const LOOP_PAUSES = 20261111;
+/** PostgreSQL's table lock modes as pg_locks names them, in its own order, weakest first. */
+const TABLE_LOCK_MODES = ['AccessShareLock', 'RowShareLock', 'RowExclusiveLock', 'ShareUpdateExclusiveLock', 'ShareLock', 'ShareRowExclusiveLock', 'ExclusiveLock', 'AccessExclusiveLock'];
 
 let database: MigratedDatabase;
 /** The superuser on the scratch database: seeds and reads past every policy. */
@@ -133,18 +141,6 @@ async function waitsOnAdvisoryLock(pid: number): Promise<boolean> {
   return false;
 }
 
-/** Resolves once backend `pid` waits on what `waits` names (pg_stat_activity), or throws after 15 s. */
-async function waitFor(pid: number, waits: { readonly type: string; readonly event?: string }): Promise<void> {
-  for (let tries = 0; tries < 1500; tries += 1) {
-    const { rows } = await owner.query<{ type: string | null; event: string | null }>('SELECT wait_event_type AS type, wait_event AS event FROM pg_stat_activity WHERE pid = $1', [pid]);
-    if (rows[0]?.type === waits.type && (waits.event === undefined || rows[0].event === waits.event)) {
-      return;
-    }
-    await pause(10);
-  }
-  throw new Error(`backend ${String(pid)} never waited on ${waits.type}`);
-}
-
 interface NoticeRow {
   readonly id: string;
   readonly user_id: string;
@@ -200,20 +196,25 @@ async function dueIds(among: readonly string[]): Promise<string[]> {
   return rows.map((row) => row.notice_id);
 }
 
+/** The claim's row, its four columns in the function's order: the account, its address, the change's time and whether a second factor is enrolled. */
 interface Claimed {
   readonly user_id: string;
   readonly email: string;
   readonly changed_at: Date;
+  readonly mfa_enrolled: boolean;
 }
 
+/** The claim as the platform's password_notices job reads it: its four columns by name. */
+const CLAIM = 'SELECT user_id, email, changed_at, mfa_enrolled FROM operator_password_notice_claim($1)';
+
 async function claim(notice: string): Promise<Claimed[]> {
-  return as<Claimed & pg.QueryResultRow>(OPERATOR_ROLE, 'SELECT user_id, email, changed_at FROM operator_password_notice_claim($1)', [notice]);
+  return as<Claimed & pg.QueryResultRow>(OPERATOR_ROLE, CLAIM, [notice]);
 }
 
 /** The job's step for one due notice: the claim and the record of the message SES accepted, in one transaction. */
 async function send(notice: string, message: string, requestId: string = request()): Promise<{ readonly claimed: Claimed | undefined; readonly undelivered: boolean }> {
   return inTransaction(OPERATOR_ROLE, async (client) => {
-    const claimed = (await client.query<Claimed>('SELECT user_id, email, changed_at FROM operator_password_notice_claim($1)', [notice])).rows[0];
+    const claimed = (await client.query<Claimed>(CLAIM, [notice])).rows[0];
     const sent = (await client.query<{ undelivered: boolean }>('SELECT operator_password_notice_sent($1, $2, $3) AS undelivered', [notice, message, requestId])).rows[0];
     return { claimed, undelivered: sent?.undelivered ?? false };
   });
@@ -587,8 +588,8 @@ describe('the job’s reads: due, and the claim, the address’s only reader (do
     // A second run cannot claim the notice the first holds.
     const first = await openSession();
     try {
-      const held = await first.client.query<Claimed>('SELECT user_id, email, changed_at FROM operator_password_notice_claim($1)', [due.notice]);
-      expect(held.rows).toEqual([{ user_id: due.user, email: `${due.user}@synthetic.test`, changed_at: (await noticeRow(due.notice))?.changed_at }]);
+      const held = await first.client.query<Claimed>(CLAIM, [due.notice]);
+      expect(held.rows).toEqual([{ user_id: due.user, email: `${due.user}@synthetic.test`, changed_at: (await noticeRow(due.notice))?.changed_at, mfa_enrolled: true }]);
       expect(await claim(due.notice)).toEqual([]);
     } finally {
       await close(first.client);
@@ -616,6 +617,42 @@ describe('the job’s reads: due, and the claim, the address’s only reader (do
       [listed, outside].map((made) => ({ notice_id: made.notice, user_id: made.user })).sort((a, b) => a.notice_id.localeCompare(b.notice_id)),
     );
     expect((await noticeRow(inside.notice))?.state).toBe('pending');
+  });
+
+  it('returns with the address whether the account has a second factor enrolled, from the account’s own row as the claim finds it, fourth and last (docs/adr/0091 D10; the review of 2026-11-11, SEC-03)', async () => {
+    // The email's second line says a second factor guards the account only when this is true.
+    const columns = await owner.query<{ name: string; type: string }>(
+      `SELECT a.name, format_type(a.type, NULL) AS type FROM pg_proc p, unnest(p.proargnames, p.proargmodes, p.proallargtypes) WITH ORDINALITY AS a (name, mode, type, n)
+        WHERE p.oid = 'operator_password_notice_claim(uuid)'::regprocedure AND a.mode = 't' ORDER BY a.n`,
+    );
+    expect(columns.rows).toEqual([
+      { name: 'user_id', type: 'uuid' },
+      { name: 'email', type: 'text' },
+      { name: 'changed_at', type: 'timestamp with time zone' },
+      { name: 'mfa_enrolled', type: 'boolean' },
+    ]);
+    const enrolled = await pendingNotice();
+    expect(await claim(enrolled.notice)).toEqual([
+      { user_id: enrolled.user, email: `${enrolled.user}@synthetic.test`, changed_at: (await noticeRow(enrolled.notice))?.changed_at, mfa_enrolled: true },
+    ]);
+    // An account with no second factor (an invitee who chose a password and stopped before the authenticator), its
+    // password reset all the same: the claim says so, and the job sends the second line without its second sentence.
+    const bare = await createUser(owner, { status: 'invited', mfaEnrolled: false });
+    await completeReset(bare);
+    const [notice] = await noticesOf(bare);
+    expect(notice).toMatchObject({ state: 'pending' });
+    const read = async () => (await as<Claimed & pg.QueryResultRow>(OPERATOR_ROLE, 'SELECT * FROM operator_password_notice_claim($1)', [notice?.id])).map((row) => Object.entries(row));
+    expect(await read()).toEqual([
+      [
+        ['user_id', bare],
+        ['email', `${bare}@synthetic.test`],
+        ['changed_at', notice?.changed_at],
+        ['mfa_enrolled', false],
+      ],
+    ]);
+    // Read when the notice is claimed, not when it was queued: one enrolled between the reset and the send is told so.
+    await asOwner(owner, [], () => owner.query('UPDATE "user" SET mfa_enrolled = true WHERE id = $1', [bare]));
+    expect((await read()).map((row) => row[3])).toEqual([['mfa_enrolled', true]]);
   });
 });
 
@@ -704,24 +741,27 @@ describe('sent, failed and stale (docs/adr/0091 D6 to D8)', () => {
     await age(sentOld.notice, `${String(PASSWORD_NOTICE_CUTOFF_HOURS + 1)} hours`);
     const young = await pendingNotice();
     await age(young.notice, `${String(PASSWORD_NOTICE_CUTOFF_HOURS - 1)} hours`);
-    // One a run claimed just inside the cutoff and still holds as it passes.
+    // One a run claimed just inside the cutoff and still holds as it passes: ten seconds inside, so that a stall between
+    // the statement that ages it and the claim leaves it inside; the wait below then lasts those ten seconds.
     const held = await pendingNotice();
-    await age(held.notice, `${String(PASSWORD_NOTICE_CUTOFF_HOURS)} hours`);
-    await owner.query("UPDATE password_notice SET changed_at = changed_at + interval '3 seconds', expires_at = expires_at + interval '3 seconds' WHERE id = $1", [held.notice]);
+    await age(held.notice, `${String(PASSWORD_NOTICE_CUTOFF_HOURS - 1)} hours 59 minutes 50 seconds`);
     const holder = await openSession();
     const ids = [old.notice, sentOld.notice, young.notice, held.notice];
     try {
       expect((await holder.client.query('SELECT user_id FROM operator_password_notice_claim($1)', [held.notice])).rows).toEqual([{ user_id: held.user }]);
-      for (let tries = 0; tries < 1000; tries += 1) {
+      let passed = false;
+      for (let tries = 0; tries < 2000 && !passed; tries += 1) {
         const { rows } = await owner.query<{ passed: boolean }>("SELECT clock_timestamp() > changed_at + make_interval(hours => $2) + interval '50 milliseconds' AS passed FROM password_notice WHERE id = $1", [
           held.notice,
           PASSWORD_NOTICE_CUTOFF_HOURS,
         ]);
-        if (rows[0]?.passed === true) {
-          break;
+        passed = rows[0]?.passed === true;
+        if (!passed) {
+          await pause(20);
         }
-        await pause(20);
       }
+      // The claimed notice is past the cutoff now, by the database's clock, and the sweep still leaves it to its claim.
+      expect(passed).toBe(true);
       expect(await staleAmong(ids)).toEqual([{ notice_id: old.notice, user_id: old.user }]);
       expect(await noticeRow(old.notice)).toMatchObject({ state: 'failed', error_code: PASSWORD_NOTICE_STALE_CODE, attempts: 0, ses_message_id: null });
       expect((await noticeRow(old.notice))?.undelivered_reported_at).toBeInstanceOf(Date);
@@ -740,7 +780,7 @@ describe('sent, failed and stale (docs/adr/0091 D6 to D8)', () => {
     expect(await staleAmong(ids)).toEqual([{ notice_id: held.notice, user_id: held.user }]);
     expect(await auditCount('password_notice_undelivered', held.user)).toBe(1);
     expect(await as(OPERATOR_ROLE, 'SELECT * FROM operator_password_notices_stale(0, $1)', [request()])).toEqual([]);
-  });
+  }, 120_000);
 });
 
 describe('undelivered, once, in any order (docs/adr/0091 D8; the message-ID lock, A-3)', () => {
@@ -765,6 +805,48 @@ describe('undelivered, once, in any order (docs/adr/0091 D8; the message-ID lock
       expect(await noticeRow(notice), events.join(',')).toMatchObject({ state, ses_message_id: message });
       expect(await auditCount('password_notice_sent', user), events.join(',')).toBe(1);
       expect(await auditCount('password_notice_undelivered', user), events.join(',')).toBe(state === 'undelivered' ? 1 : 0);
+    }
+  });
+
+  it('reads only a password_changed message’s record for the send: a notice recorded with the ID of another kind’s message, bounced, rejected or delivered, is sent, and reports nothing (the review of 2026-11-11, SEC-08)', async () => {
+    // Another kind's message on the same stream, as the mail_events job recorded it: a probe that bounced, a digest SES
+    // rejected, a digest delivered. None is the notice's message, whatever ID the send's record is given.
+    const others = [
+      { kind: 'probe', event: 'bounce', state: 'bounced' },
+      { kind: 'digest', event: 'reject', state: 'rejected' },
+      { kind: 'digest', event: 'delivery', state: 'delivered' },
+    ] as const;
+    for (const other of others) {
+      const label = `${other.kind} ${other.state}`;
+      const { user, notice } = await pendingNotice();
+      const message = messageId();
+      const event = (ses: string) => [
+        message,
+        'transactional',
+        ses,
+        new Date(),
+        new Date(),
+        null,
+        other.kind,
+        other.kind === 'probe' ? null : randomUUID(),
+        null,
+        null,
+        ses === 'bounce' ? 'permanent' : null,
+        ses === 'bounce' ? 'general' : null,
+        null,
+        request(),
+      ];
+      expect(await as<Recorded & pg.QueryResultRow>(OPERATOR_ROLE, RECORD, event(other.event)), label).toMatchObject([{ recorded: true, state: other.state, password_notice_undelivered: null }]);
+      expect((await send(notice, message)).undelivered, label).toBe(false);
+      expect(await noticeRow(notice), label).toMatchObject({ state: 'sent', ses_message_id: message, error_code: null, undelivered_reported_at: null });
+      expect(await auditCount('password_notice_sent', user), label).toBe(1);
+      expect(await auditCount('password_notice_undelivered', user), label).toBe(0);
+      // Nor does a later event of that message move the notice: the mirror reads the record's kind as well.
+      if (other.state === 'delivered') {
+        expect(await as<Recorded & pg.QueryResultRow>(OPERATOR_ROLE, RECORD, event('bounce')), label).toMatchObject([{ recorded: true, state: 'bounced', password_notice_undelivered: null }]);
+        expect(await noticeRow(notice), label).toMatchObject({ state: 'sent', undelivered_reported_at: null });
+        expect(await auditCount('password_notice_undelivered', user), label).toBe(0);
+      }
     }
   });
 
@@ -1061,18 +1143,25 @@ describe('expiry (docs/adr/0091 D14, A-4)', () => {
 });
 
 describe('the migration’s lock loop (docs/adr/0091 D11; docs/adr/0083’s pattern)', () => {
-  it('takes "user", audit_event and mail_send together without queueing: retries while a sign-in’s insert, a write of "user" or of mail_send is open, and takes all three once they end', async () => {
+  it('takes "user", audit_event and mail_send together without queueing: each try made while a write of "user", a sign-in’s insert or a write of mail_send is open gives back all it took, so a sign-in goes on, and the try after the last of them ends takes all three', async () => {
     const loop = lockLoop();
     expect(loop).toContain('LOCK TABLE "user" IN SHARE ROW EXCLUSIVE MODE NOWAIT;');
     expect(loop).toContain('LOCK TABLE audit_event IN ACCESS EXCLUSIVE MODE NOWAIT;');
     expect(loop).toContain('LOCK TABLE mail_send IN ACCESS EXCLUSIVE MODE NOWAIT;');
     expect(loop).toContain(`'"user", audit_event or mail_send stayed in use for five minutes; run the deploy again (docs/adr/0091)'`);
+    // Between tries it sleeps a second. A refused try leaves nothing to see from outside (that is its point), and a
+    // second's sleep seen twice proves a new try only by the clock. So the loop runs here as it stands in the file but
+    // for that one statement: each sleep is a wait this test ends, its n-th on an advisory key the test holds. A try
+    // then happens exactly when the test lets it, and the loop stands still where it would sleep, to be looked at.
+    expect(loop).toContain('PERFORM pg_sleep(1);');
+    const paced = loop.replaceAll('PERFORM pg_sleep(1);', 'PERFORM lock_loop_test.pause();');
     const user = await createUser(owner);
-    const signInHolder = new pg.Client({ connectionString: database.appUrl });
     const userHolder = new pg.Client({ connectionString: database.url });
+    const signInHolder = new pg.Client({ connectionString: database.appUrl });
     const mailHolder = new pg.Client({ connectionString: database.url });
+    const pacer = new pg.Client({ connectionString: database.url });
     const migration = new pg.Client({ connectionString: database.url });
-    for (const client of [signInHolder, userHolder, mailHolder, migration]) {
+    for (const client of [userHolder, signInHolder, mailHolder, pacer, migration]) {
       client.on('error', () => undefined);
       await client.connect();
       clients.push(client);
@@ -1092,21 +1181,64 @@ describe('the migration’s lock loop (docs/adr/0091 D11; docs/adr/0083’s patt
         await close(writer);
       }
     };
+    const migrationPid = (await migration.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid ?? 0;
+    let finished = false;
+    let done: Promise<string> = Promise.resolve('not started');
+    /** Resolves once the loop's backend stands in its n-th pause; throws if it waits for a table instead, ends, or never gets there. */
+    const pausedAt = async (n: number): Promise<void> => {
+      for (let tries = 0; tries < 1500; tries += 1) {
+        const { rows } = await owner.query<{ paused: boolean; queued: boolean }>(
+          `SELECT coalesce(bool_or(locktype = 'advisory' AND classid = $2::oid AND objid = $3::oid AND objsubid = 2), false) AS paused,
+                  coalesce(bool_or(locktype = 'relation'), false) AS queued
+             FROM pg_locks WHERE pid = $1 AND NOT granted`,
+          [migrationPid, LOOP_PAUSES, n],
+        );
+        if (rows[0]?.queued === true) {
+          throw new Error('the loop waits in a table’s lock queue');
+        }
+        if (rows[0]?.paused === true) {
+          return;
+        }
+        if (finished) {
+          throw new Error(`the loop ended before its pause ${String(n)}`);
+        }
+        await pause(10);
+      }
+      throw new Error(`the loop never reached its pause ${String(n)}`);
+    };
+    /** What the loop's backend holds or waits for on the three tables. */
+    const tableLocks = async () =>
+      (
+        await owner.query<{ relation: string; mode: string; granted: boolean }>(
+          `SELECT relation::regclass::text AS relation, mode, granted FROM pg_locks
+            WHERE pid = $1 AND locktype = 'relation' AND relation IN ('"user"'::regclass, 'audit_event'::regclass, 'mail_send'::regclass) ORDER BY 1, 2`,
+          [migrationPid],
+        )
+      ).rows;
     try {
-      // A sign-in's open insert of audit_event (its ROW EXCLUSIVE), a write of "user" and a write of mail_send.
+      // Three open transactions, in the order the loop takes its locks: a write of "user", a sign-in's open insert of
+      // audit_event (its ROW EXCLUSIVE) and a write of mail_send. As each ends, the next try gets one lock further
+      // before it is refused: none, then "user", then "user" and audit_event.
+      await userHolder.query('BEGIN');
+      await userHolder.query('LOCK TABLE "user" IN ROW EXCLUSIVE MODE');
       await signInHolder.query('BEGIN');
       await signInHolder.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', '{}', true)", [user]);
       await signInHolder.query("INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id) VALUES ($1, 'user', 'sign_in', 'user', $1)", [user]);
-      await userHolder.query('BEGIN');
-      await userHolder.query('LOCK TABLE "user" IN ROW EXCLUSIVE MODE');
       await mailHolder.query('BEGIN');
       await mailHolder.query("INSERT INTO mail_send (ses_message_id, stream, kind, subject_id, state, sent_at) VALUES ($1, 'transactional', 'digest', gen_random_uuid(), 'sent', now())", [messageId()]);
-      // The migration's transaction, as tp_owner, running the loop.
-      const migrationPid = (await migration.query<{ pid: number }>('SELECT pg_backend_pid() AS pid')).rows[0]?.pid ?? 0;
+      await pacer.query('SELECT pg_advisory_lock($1::integer, n) FROM generate_series(1, 8) AS n', [LOOP_PAUSES]);
+      // The migration's transaction, as tp_owner, running the loop. The pause is made in that transaction and gone with it.
       await migration.query('BEGIN');
+      await migration.query(
+        `CREATE SCHEMA lock_loop_test;
+         CREATE SEQUENCE lock_loop_test.pauses;
+         CREATE FUNCTION lock_loop_test.pause() RETURNS void LANGUAGE sql AS 'SELECT pg_advisory_xact_lock(${String(LOOP_PAUSES)}, nextval(''lock_loop_test.pauses'')::integer)';
+         GRANT USAGE ON SCHEMA lock_loop_test TO ${OWNER_ROLE};
+         GRANT USAGE ON SEQUENCE lock_loop_test.pauses TO ${OWNER_ROLE};
+         GRANT EXECUTE ON FUNCTION lock_loop_test.pause() TO ${OWNER_ROLE};`,
+      );
       await migration.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
-      let finished = false;
-      const done = migration.query(loop).then(
+      done = migration.query(paced).then(
         () => {
           finished = true;
           return 'accepted';
@@ -1116,36 +1248,255 @@ describe('the migration’s lock loop (docs/adr/0091 D11; docs/adr/0083’s patt
           return (error as { code?: string }).code ?? 'error';
         },
       );
-      // It sleeps between tries; it never waits in a lock queue, so a sign-in started meanwhile proceeds.
-      await waitFor(migrationPid, { type: 'Timeout', event: 'PgSleep' });
-      expect(await signIn()).toBe('accepted');
-      await signInHolder.query('COMMIT');
-      await waitFor(migrationPid, { type: 'Timeout', event: 'PgSleep' });
-      expect(await signIn()).toBe('accepted');
-      await userHolder.query('COMMIT');
-      await waitFor(migrationPid, { type: 'Timeout', event: 'PgSleep' });
-      expect(await signIn()).toBe('accepted');
-      const queued = await owner.query<{ n: number }>("SELECT count(*)::int AS n FROM pg_stat_activity WHERE pid = $1 AND wait_event_type = 'Lock'", [migrationPid]);
-      expect(queued.rows[0]?.n).toBe(0);
-      expect(finished).toBe(false);
-      await mailHolder.query('ROLLBACK');
+      const holders = [
+        { name: 'the write of "user"', client: userHolder, end: 'COMMIT' },
+        { name: 'the sign-in’s insert', client: signInHolder, end: 'COMMIT' },
+        { name: 'the write of mail_send', client: mailHolder, end: 'ROLLBACK' },
+      ];
+      for (const [index, holder] of holders.entries()) {
+        // A try made after the holder before this one ended (the first, with all three open) was refused, and the loop
+        // stands where it sleeps: it holds none of the three tables and waits for none. Only then the sign-in, which
+        // would wait behind a lock the try had kept; it never waits, so it goes on.
+        await pausedAt(index + 1);
+        expect(await tableLocks(), `refused while ${holder.name} is open`).toEqual([]);
+        expect(await signIn(), `while ${holder.name} is open`).toBe('accepted');
+        expect(finished, `while ${holder.name} is open`).toBe(false);
+        await holder.client.query(holder.end);
+        // The next try, after this holder ended.
+        expect((await pacer.query<{ released: boolean }>('SELECT pg_advisory_unlock($1::integer, $2::integer) AS released', [LOOP_PAUSES, index + 1])).rows).toEqual([{ released: true }]);
+      }
       expect(await done).toBe('accepted');
-      const locks = await owner.query<{ relation: string; mode: string }>(
-        `SELECT relation::regclass::text AS relation, mode FROM pg_locks
-          WHERE pid = $1 AND locktype = 'relation' AND relation IN ('"user"'::regclass, 'audit_event'::regclass, 'mail_send'::regclass) AND granted`,
-        [migrationPid],
-      );
-      expect([...locks.rows].sort((a, b) => (a.relation < b.relation ? -1 : 1))).toEqual([
-        { relation: '"user"', mode: 'ShareRowExclusiveLock' },
-        { relation: 'audit_event', mode: 'AccessExclusiveLock' },
-        { relation: 'mail_send', mode: 'AccessExclusiveLock' },
+      expect((await tableLocks()).sort((a, b) => (a.relation < b.relation ? -1 : 1))).toEqual([
+        { relation: '"user"', mode: 'ShareRowExclusiveLock', granted: true },
+        { relation: 'audit_event', mode: 'AccessExclusiveLock', granted: true },
+        { relation: 'mail_send', mode: 'AccessExclusiveLock', granted: true },
       ]);
     } finally {
-      for (const client of [signInHolder, userHolder, mailHolder, migration]) {
+      // The holders and the pacer first: with nothing left to refuse a try or hold a pause, the loop ends.
+      for (const client of [userHolder, signInHolder, mailHolder, pacer]) {
         await close(client);
       }
+      await done;
+      await close(migration);
     }
   }, 120_000);
+});
+
+describe('the migration on the previous head: its preflight, and what the whole file holds (docs/adr/0091 D11)', () => {
+  const RECORD_ARGUMENTS = 'text, text, text, timestamptz, timestamptz, text, text, uuid, uuid, uuid, text, text, text, text';
+  const RECORD_REFUSED = 'operator_record_mail_event() is not the body of migration 20261107090000 that migration 20261111090000 replaces; rebase this migration on its latest body';
+  const EXPIRY_REFUSED = 'operator_mail_expire(integer) is not the body of migration 20261107090000 that migration 20261111090000 replaces; rebase this migration on its latest body';
+  const POLICY_REFUSED = 'audit_event_record is not the policy of migration 20261108090000 that migration 20261111090000 replaces; rebase this migration on its latest text';
+  /** Every migration before this one, in a directory of their own. */
+  let previousDir = '';
+  /** A database the runner migrated to them: the previous head, where the deploy applies this file. */
+  let previous: ScratchDatabase;
+  let head: pg.Client;
+
+  beforeAll(async () => {
+    previousDir = mkdtempSync(path.join(tmpdir(), 'password-notice-previous-head-'));
+    for (const earlier of readMigrations(MIGRATIONS_DIR).filter((candidate) => candidate.name < MIGRATION)) {
+      copyFileSync(path.join(MIGRATIONS_DIR, earlier.name), path.join(previousDir, earlier.name));
+    }
+    previous = await createScratchDatabase(readDatabaseUrl());
+    await migrate({ databaseUrl: previous.url, migrationsDir: previousDir, devLogin: true });
+    head = new pg.Client({ connectionString: previous.url });
+    head.on('error', () => undefined);
+    await head.connect();
+  }, 120_000);
+
+  afterAll(async () => {
+    await head.end().catch(() => undefined);
+    await previous.drop();
+    rmSync(previousDir, { recursive: true, force: true });
+  });
+
+  const file = () => readFileSync(path.join(MIGRATIONS_DIR, MIGRATION), 'utf8');
+
+  /** One transaction on the previous head as the runner opens it for a file (as tp_owner), rolled back: the head stays where it was. */
+  async function onPreviousHead<T>(run: () => Promise<T>): Promise<T> {
+    await head.query('BEGIN');
+    try {
+      await head.query(`SET LOCAL ROLE ${OWNER_ROLE}`);
+      return await run();
+    } finally {
+      await head.query('ROLLBACK');
+    }
+  }
+
+  /** What the whole file answers on the previous head after `change`, the work of some migration before it: applied, or its refusal. */
+  const appliedAfter = (change: () => Promise<unknown>) =>
+    onPreviousHead(async () => {
+      await change();
+      return head.query(file()).then(
+        () => 'applied' as const,
+        (error: unknown) => ({ code: (error as { code?: string }).code, message: (error as Error).message }),
+      );
+    });
+
+  /** A function's definition as the catalog prints it, with `find`, which is in it once, replaced by `put`. */
+  const redefined = async (signature: string, find: string, put: string): Promise<string> => {
+    const definition = (await head.query<{ definition: string }>('SELECT pg_get_functiondef($1::regprocedure) AS definition', [signature])).rows[0]?.definition ?? '';
+    expect(definition.split(find), signature).toHaveLength(2);
+    return definition.replace(find, put);
+  };
+
+  /** The expiry with one more statement in its body, as a migration before this one might leave it. */
+  const expiryWithOneMoreStatement = () => redefined('operator_mail_expire(integer)', 'BEGIN\n  IF at_most IS NULL', 'BEGIN\n  PERFORM 1;\n  IF at_most IS NULL');
+
+  const refusals: readonly { readonly when: string; readonly change: () => Promise<unknown>; readonly message: string }[] = [
+    {
+      when: 'password_notice exists',
+      change: () => head.query('CREATE TABLE password_notice (id uuid PRIMARY KEY)'),
+      message: 'password_notice already exists; migration 20261111090000 creates it',
+    },
+    {
+      when: 'the trigger function exists',
+      change: () => head.query('CREATE FUNCTION audit_event_password_notice() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN RETURN NULL; END; $f$'),
+      message: 'audit_event_password_notice() already exists; migration 20261111090000 creates it',
+    },
+    {
+      when: 'the record function is gone',
+      change: () => head.query(`DROP FUNCTION operator_record_mail_event(${RECORD_ARGUMENTS})`),
+      message: 'operator_record_mail_event() of migration 20261107090000 does not exist; migration 20261111090000 recreates it',
+    },
+    {
+      when: 'the record function returns a seventh column, its body the same',
+      change: async () => {
+        const definition = await redefined(RECORD_SIGNATURE, 'stream_paused text)', 'stream_paused text, one_more uuid)');
+        await head.query(`DROP FUNCTION operator_record_mail_event(${RECORD_ARGUMENTS})`);
+        await head.query(definition);
+      },
+      message: RECORD_REFUSED,
+    },
+    {
+      when: 'the record function’s body has one more statement, its six columns the same',
+      change: async () => head.query(await redefined(RECORD_SIGNATURE, '  recorded := false;\n', '  recorded := false;\n  PERFORM 1;\n')),
+      message: RECORD_REFUSED,
+    },
+    {
+      when: 'the expiry’s body has one more statement',
+      change: async () => head.query(await expiryWithOneMoreStatement()),
+      message: EXPIRY_REFUSED,
+    },
+    {
+      when: 'the expiry is gone',
+      change: () => head.query('DROP FUNCTION operator_mail_expire(integer)'),
+      message: EXPIRY_REFUSED,
+    },
+    {
+      when: 'the policy reserves one more action',
+      change: async () => {
+        const reserved = "'organization_reinstated'::text]";
+        const { rows } = await head.query<{ expression: string }>(
+          "SELECT with_check AS expression FROM pg_policies WHERE schemaname = 'public' AND tablename = 'audit_event' AND policyname = 'audit_event_record'",
+        );
+        const expression = rows[0]?.expression ?? '';
+        expect(expression.split(reserved)).toHaveLength(2);
+        await head.query('DROP POLICY audit_event_record ON audit_event');
+        await head.query(
+          `CREATE POLICY audit_event_record ON audit_event FOR INSERT TO ${APP_ROLE} WITH CHECK (${expression.replace(reserved, "'organization_reinstated'::text, 'one_more_reserved'::text]")})`,
+        );
+      },
+      message: POLICY_REFUSED,
+    },
+    {
+      when: 'the policy is gone',
+      change: () => head.query('DROP POLICY audit_event_record ON audit_event'),
+      message: POLICY_REFUSED,
+    },
+    {
+      when: 'mail_send_kind already admits password_changed',
+      change: () => head.query(`ALTER TABLE mail_send DROP CONSTRAINT mail_send_kind, ADD CONSTRAINT mail_send_kind CHECK (kind IN (${MAIL_KINDS.map((kind) => `'${kind}'`).join(', ')}))`),
+      message: 'mail_send_kind already admits password_changed; migration 20261111090000 adds it',
+    },
+  ];
+
+  it.each(refusals)('refuses in its own words when $when', async ({ change, message }) => {
+    expect(await appliedAfter(change)).toEqual({ code: '55000', message });
+    // Rolled back with the change: the next case starts from the previous head too.
+    expect((await head.query("SELECT to_regclass('public.password_notice')::text AS made")).rows).toEqual([{ made: null }]);
+  });
+
+  it('compares what it replaces whole: its three values are the SHA-256 of the previous head’s two stored bodies, which are migration 20261107090000’s, and of its policy’s WITH CHECK', async () => {
+    const pinned = [...file().matchAll(/IS DISTINCT FROM '([0-9a-f]{64})'/g)].map((match) => match[1]);
+    const { rows } = await head.query<{ record: string; expiry: string; policy: string }>(
+      `SELECT (SELECT encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') FROM pg_proc p WHERE p.oid = $1::regprocedure) AS record,
+              (SELECT encode(sha256(convert_to(p.prosrc, 'UTF8')), 'hex') FROM pg_proc p WHERE p.oid = 'operator_mail_expire(integer)'::regprocedure) AS expiry,
+              (SELECT encode(sha256(convert_to(with_check, 'UTF8')), 'hex') FROM pg_policies
+                WHERE schemaname = 'public' AND tablename = 'audit_event' AND policyname = 'audit_event_record') AS policy`,
+      [RECORD_SIGNATURE],
+    );
+    expect(pinned).toEqual([rows[0]?.record, rows[0]?.expiry, rows[0]?.policy]);
+    // The bodies as migration 20261107090000 wrote them, hashed here from its own text.
+    const written = (name: string) => {
+      const statement = statementIn(MAIL_STREAMS_MIGRATION, name);
+      return createHash('sha256')
+        .update(statement.slice(statement.indexOf('AS $$') + 'AS $$'.length, statement.lastIndexOf('$$')), 'utf8')
+        .digest('hex');
+    };
+    expect(pinned.slice(0, 2)).toEqual([written('operator_record_mail_event'), written('operator_mail_expire')]);
+  });
+
+  it('holds at its end, of the relations that existed before it, the loop’s three tables in the loop’s modes and nothing stronger, and no other relation: no statement after the loop can wait in a lock queue', async () => {
+    // The loop's own statements, as pg_locks names their modes.
+    const taken = [...lockLoop().matchAll(/LOCK TABLE (\S+) IN ([A-Z ]+) MODE NOWAIT;/g)].map((match) => [
+      match[1] ?? '',
+      `${(match[2] ?? '')
+        .split(' ')
+        .map((word) => `${word.slice(0, 1)}${word.slice(1).toLowerCase()}`)
+        .join('')}Lock`,
+    ]);
+    expect(taken).toEqual([
+      ['"user"', 'ShareRowExclusiveLock'],
+      ['audit_event', 'AccessExclusiveLock'],
+      ['mail_send', 'AccessExclusiveLock'],
+    ]);
+    // The whole file in one transaction, as the runner applies it, and what that transaction holds before it ends.
+    const held = await onPreviousHead(async () => {
+      const existed = (await head.query<{ oid: string }>("SELECT oid::text AS oid FROM pg_class WHERE relnamespace = 'public'::regnamespace")).rows.map((row) => row.oid);
+      await head.query(file());
+      return (
+        await head.query<{ relation: string; mode: string; granted: boolean }>(
+          `SELECT l.relation::regclass::text AS relation, l.mode, l.granted FROM pg_locks l
+            WHERE l.pid = pg_backend_pid() AND l.locktype = 'relation' AND l.relation = ANY ($1::oid[]) ORDER BY 1, 2`,
+          [existed],
+        )
+      ).rows;
+    });
+    expect(held.filter((lock) => !lock.granted)).toEqual([]);
+    // A later statement's weaker lock on one of the three never waits: what could refuse it, the loop's lock already
+    // shut out. A stronger one, or any lock on another relation, could wait behind a transaction the loop never met.
+    const strongest = new Map<string, string>();
+    for (const lock of held) {
+      const now = strongest.get(lock.relation);
+      if (now === undefined || TABLE_LOCK_MODES.indexOf(lock.mode) > TABLE_LOCK_MODES.indexOf(now)) {
+        strongest.set(lock.relation, lock.mode);
+      }
+    }
+    expect(Object.fromEntries(strongest)).toEqual(Object.fromEntries(taken));
+  });
+
+  // The last case here: it moves the head.
+  it('fails the deploy’s run under its name and in its words, recording nothing, and applies once what it replaces is the previous head’s again', async () => {
+    const applied = () => head.query<{ filename: string }>('SELECT filename FROM schema_migrations WHERE filename >= $1 ORDER BY 1', [MIGRATION]);
+    const base = (await head.query<{ definition: string }>("SELECT pg_get_functiondef('operator_mail_expire(integer)'::regprocedure) AS definition")).rows[0]?.definition ?? '';
+    // Committed this time, as a migration before it would have left the expiry.
+    await head.query(await expiryWithOneMoreStatement());
+    const run = migrate({ databaseUrl: previous.url });
+    await expect(run).rejects.toThrow(MigrationError);
+    await expect(run).rejects.toThrow(`${MIGRATION} failed: ${EXPIRY_REFUSED}`);
+    expect((await applied()).rows).toEqual([]);
+    expect((await head.query("SELECT to_regclass('public.password_notice')::text AS made")).rows).toEqual([{ made: null }]);
+    // The previous head as it was: the run applies the file (and whatever follows it).
+    await head.query(base);
+    const following = readMigrations(MIGRATIONS_DIR)
+      .filter((candidate) => candidate.name >= MIGRATION)
+      .map((candidate) => candidate.name);
+    expect((await migrate({ databaseUrl: previous.url })).applied).toEqual(following);
+    expect((await applied()).rows.map((row) => row.filename)).toEqual(following);
+    expect((await head.query("SELECT to_regclass('public.password_notice')::text AS made")).rows).toEqual([{ made: 'password_notice' }]);
+  });
 });
 
 describe('the TypeScript constants (docs/adr/0091)', () => {
