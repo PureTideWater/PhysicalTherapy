@@ -1,31 +1,43 @@
 W6 (Lane A, https://claude.ai/code/session_019i9if9f2m3xyLBavfHUgui) holds part 2 (password-changed-notice, schema PR 1 of the queue) from 2026-11-11 04:26 UTC, assigned by the orchestrator (session_019i9ifDAzQNA3kLHozjBoeS).
 
-## RESUME-BLOCK: password-changed-notice (schema PR 1), W6, 2026-11-11 05:10 UTC
-- **Heads:** WIP ref `co-001/wip-pwnotice` = **f8560588**. The branch `co-001/password-changed-notice` is still f110efd9 on
-  origin and takes the one fix-round push. No PR (it opens after #126 merges).
-  - c0ced87f fast-forwarded; #126's head ec606eff (with the base ca504674) merged as bb8cc2e1: the deploy runbook keeps both
-    new sections in migration order, and the domain model is regenerated on a fresh database (49 migrations; the function
-    files needed no change).
-  - The base 4fe8bcca (#137) merged as f8560588: `reconciliation-routes.db.test.ts` keeps #126's and #137's imports. #126's
-    own head has this conflict with the base; the orchestrator was told (05:05 UTC).
-- **Built (2026-11-07, unchanged):** migration 20261111090000_password_changed_notice.sql (marker route), schema, 25 db tests
-  (T1-T22, T13b), grant pins; the worker's password_notices job (every minute), mail-events' seventh column, the operator
-  role's transactional send, the alarm; ADR 0091, SGN-16, the runbooks; the reset's own tests and e2e journey (c0ced87f).
-  Design addendum and the builders' notes: `approval-summaries/lane-a-wip/pwnotice/`.
-- **Checks on f8560588, all passing:** typecheck, lint, lint:copy, lint:logs, check:fixtures, synth --all (0 written),
-  watched.ts --write (unchanged), db:domain-model --check --strict, verify-content. The tests the change touches: db 11 files,
-  192 passed and 1 skipped (the restore drill's own skip); unit 146 files, 2,577 passed. The email rendered on #129's plate
-  (light, dark-preferred, dark-inverted at 600 and 390 px). Domain model hash at this head: 80d375ba…0cbe, provisional until
-  #126's final head and the base are merged.
-- **Running:** the three reviews as Agent subagents on f8560588 (security and sign-in; database, mail and deploy; UX and
-  brand with the renders). Their findings are copied to `approval-summaries/lane-a-wip/pwnotice/reviews/` when they return;
-  if that directory is absent, the reviews did not finish and run again.
-- **Left, in order:** verify every finding; the fix round; the full local suite once on the final tree (unit, golden, oracle,
-  db shards, build and e2e with the trigger-disabled red run, the affected Stryker shards and the gate, actions and
-  toolchain checks); a review of the fix round's delta; push the branch. After #126 merges: merge the base, regenerate the
-  domain model, open the draft PR with `pnpm db:domain-model --summary-since`, post the approval line as a suggestion,
-  one line to the orchestrator; merge after the founder's committed line and green required checks.
+## RESUME-BLOCK: password-changed-notice (schema PR 1), W6, 2026-11-11 06:40 UTC
+- **Heads:** branch `co-001/password-changed-notice` = WIP ref `co-001/wip-pwnotice` = **68895f0f** (pushed): #126's merged
+  base 2e26a416 is in (f750ff06; it changed no file here) and the domain model is regenerated on a fresh database
+  (provenance only; hash 80d375ba…0cbe, which the fix round's header edit will change). **No PR yet:** ADR 0091 D10 says its
+  gate is settled before the pull request opens (below), so the draft opens after the fix round.
+- **The three reviews of f8560588 are done** (the same tree as 68895f0f): security and sign-in 1 blocking, 3 should-fix,
+  5 notes; database, mail and deploy 0, 5, 6; UX and brand 0, 6, 7. All 33 findings were checked and are real. Findings and
+  the rulings: `approval-summaries/lane-a-wip/pwnotice/reviews/` (`security-findings.md`, `database-findings.md`,
+  `ux-findings.md`, `RULINGS.md`).
+- **The blocking one (SEC-01) is D10's own gate:** a sign-in step begun before a reset can still open a session after it, and
+  with a failed provider sign-out a key-registration step can still register a key. Ruling R1: the email's line stays; D10
+  says both cases; SGN-16 gains them as open residuals; the provider sign-out's failure is counted, alarmed and given a
+  runbook step; the real close (refuse a step begun before the account's latest completed reset) is its own change, required
+  before launch (the orchestrator was told at 06:05 UTC; it is SEC-N5's place in Schema PR 6 and needs no Cognito fact).
+  The description puts R1 to the founder with its exact alternative (hold this PR until the close is built into it).
+- **Running (06:40 UTC):** the fix round, four builders as Agent subagents with disjoint files, none commits: B1a worker,
+  mail and words; B1b the web's reset and console label; B2 the migration and packages/db; B3 the records and infra. Their
+  rules: the session's scratchpad `fix/BUILD.md`; their lists: `RULINGS.md`. If this session stops, the working tree of
+  `/home/user/pwnotice` is lost: restart the fix round from 68895f0f and `RULINGS.md`.
+- **Left, in order:** read the builders' diff and commit it; regenerate synth, the domain model and the function files; the
+  full local suite once on that tree (unit, golden, oracle, db shards, build and e2e with the trigger-disabled red run; the
+  18 affected Stryker shards are left to CI's `mutation` job, the suite of record); a review of the fix round's delta (two
+  reviewers: database and worker; sign-in, words and records); push; open the draft PR with
+  `pnpm db:domain-model --summary-since origin/claude/build-platform --function-diffs list` and the template; after green CI
+  on that head, post the approval line as a suggestion and send the orchestrator its link with R1's trade-off; merge after
+  the founder's committed line and green required checks.
+- **Trailer:** from f750ff06 on, `Co-Authored-By: Claude <noreply@anthropic.com>` and this session's line (STATE.md's ruling).
 - **Does not ride:** SS-01 D11 and ADR 0081 A6.
+
+### Follow-ups (deferred by the rulings; none is in a queue yet)
+- The close of SEC-01: refuse to open a session or register a key from a step begun before the account's latest completed
+  reset. **Required before launch.** Design note: the step's sealed `startedAt` or a reset counter on `"user"` stamped by the
+  reset's trigger; no fact about Cognito's `auth_time` is needed, so SEC-N5's staging precondition falls away.
+- UX-01 (2): a withheld support ticket that names the notice it answers (the support inbox's PHI screen, ADR 0055).
+- UX-05 (b): the console shows a member's and a ticket requester's user ID. UX-06's alternative: a console control that
+  disables a user (today: End membership, or the founder's break-glass).
+- UX-07 and UX-11: the shared email template keeps a date whole and wraps a long support address.
+- UX-09: the notice's age beside its UTC time (with the baseline's UX-027).
 
 ## 2026-11-07 02:20 UTC (acting Lane A, S2): part 2 building
 - Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 1 (its decisions refine the design: 24-hour cutoff;
