@@ -6,20 +6,26 @@ orchestrator session_019i9ifDAzQNA3kLHozjBoeS; built by W3, session_019i9ifE6JAC
 Reserved: test-matrix CAS-57; a dated amendment to ADR 0092.
 
 ## Now
-**2026-11-11 01:50 UTC: FIX ROUND 1 (W4).** The three reviews of 59eb9e9d are in and recorded under "Reviews" below:
-no blocker, eleven findings confirmed and two refuted. The words half of the fix round is committed and pushed as the
-WIP ref `co-001/wip-web-lock-timeout` = 709fe620 (one commit on 59eb9e9d). The server half is being built. The
-container restarted once at 01:46 UTC; nothing was lost. The machine was ready at start (the environment's setup
-script: its log ended OK, and `/tmp/setup-container.sh` equals `tools/setup-container.sh` at 52ea8bcf).
+**2026-11-11 02:10 UTC: FIX ROUND 1 BUILT, ITS DELTA REVIEWS RUNNING (W4).** Every confirmed finding of round 1 is
+fixed in the WIP ref `co-001/wip-web-lock-timeout` = f3dc3ee6 (three commits on 59eb9e9d; the PR branch on origin is
+still 59eb9e9d, so CI has not run on the fixes). Checked on f3dc3ee6: typecheck, lint, lint:copy, lint:logs,
+check:fixtures, synth --all, the watched list; unit suites around every touched file (639 passed); db
+`reconciliation-routes.db.test.ts` (18) and `web-pool.db.test.ts` (2); each new guard seen to fail without its code.
+Three delta reviews of `59eb9e9d..f3dc3ee6` were launched at 02:08 UTC. The container restarted once at 01:46 UTC;
+nothing was lost. The machine was ready at start (the environment's setup script).
 
 ### RESUME-BLOCK (a fresh session builds from this; nothing else is needed)
 - **Where it is:** branch `co-001/web-lock-timeout` = 59eb9e9d on origin (one commit on the base 06cde5eb), draft PR
   #137 with its description filled from the template (the review table says Pending). Review round 1 is DONE (three
-  reviews of 59eb9e9d, "Reviews" below: do not run them again). The fix round is in hand: start from the WIP ref
-  `co-001/wip-web-lock-timeout` (`git fetch origin co-001/wip-web-lock-timeout && git merge --ff-only FETCH_HEAD` in
-  the worktree), build what "Reviews" marks TO DO, then run a review of the fix round's delta only
-  (`git diff 59eb9e9d..HEAD`): two adversarial (auth and tenancy; database) and one ux-brand, each with a budget of
-  about 18 tool calls and its report asked for by name.
+  reviews of 59eb9e9d, "Reviews" below: do not run them again). Fix round 1 is BUILT: the WIP ref
+  `co-001/wip-web-lock-timeout` = f3dc3ee6 holds it (`git fetch origin co-001/wip-web-lock-timeout && git merge
+  --ff-only FETCH_HEAD` in the worktree). Its delta reviews (`git diff 59eb9e9d..f3dc3ee6`: two adversarial, auth
+  and tenancy and database, and one ux-brand) count only once their findings are under "Reviews, round 2" below; if
+  that heading is missing, run them again, each with a budget of about 18 tool calls and its report asked for by
+  name. Then: verify and fix what they find (a further review only of a further delta that is more than words),
+  the full local suite once, the base merged right before the last push (06cde5eb is still the base's head at
+  02:08 UTC), the description's review table and checks, push to `co-001/web-lock-timeout`, CI, the up-to-date
+  check, merge with a merge commit, record, tell the orchestrator.
 - **CI on 59eb9e9d:** `unit` failed, everything else passed (`mutation`, `screening-capacity gate`, `capacity`,
   `approval-of-record`, db 1 to 4, e2e 1 and 2, static, lint, build, images). The failure is this change's:
   `tools/screening-capacity/watched.test.ts` (twice), because the committed watched list lacks
@@ -95,7 +101,7 @@ sentence, fixes, the full local suite once, the base merged before the last push
 ## Reviews
 
 ### Round 1, on 59eb9e9d (2026-11-11 01:26 to 01:44 UTC; every finding checked against the code by W4)
-No blocker. DONE = fixed in the WIP ref 709fe620; TO DO = confirmed, fix not yet committed.
+No blocker. Every confirmed finding is fixed in the WIP ref f3dc3ee6 ("TO DO" below was the state at 01:50 UTC; all are DONE).
 
 **Security (auth and tenancy), `security-reviewer`:**
 - S1, should fix, CONFIRMED, TO DO: three paths answer a lock timeout as a server error, and pg's error object reaches
@@ -162,6 +168,7 @@ No blocker. DONE = fixed in the WIP ref 709fe620; TO DO = confirmed, fix not yet
   "Already sent"), then says the earlier send is still being processed: truer than "nothing was saved".
 
 ## Log
+- 2026-11-11 02:10 UTC: fix round 1 built and pushed as WIP f3dc3ee6 (words, one mapping for every route, the queue's pool, the same key in flight, a page's error state, the URL guard, a log line by code); three delta reviews launched.
 - 2026-11-11 01:50 UTC: review round 1 recorded; the words half of the fix round pushed as WIP 709fe620; the container restarted once (01:46 UTC), nothing lost.
 - 2026-11-11 01:28 UTC: W4 took the claim over; the machine was ready at start; CI on 59eb9e9d read (`unit` red: the watched list); the three reviews launched again (01:26 UTC).
 - 2026-11-11 01:10 UTC: held on the orchestrator's stand-down; draft #137 at 59eb9e9d; the three reviews stopped unfinished; RESUME-BLOCK written.
