@@ -7,7 +7,6 @@ import {
   type PaymentEvent,
   type PostedClaim,
   type ReversalTakeBack,
-  allocateByWeight,
   batchMatches,
   checkPosting,
   correctedEntry,
@@ -21,7 +20,6 @@ import {
   postsLine,
   preferredCandidates,
   reversalTakeBack,
-  takeInOrder,
 } from '@tp/ledger';
 import { type Cents, ZERO_CENTS, cents, negateCents, parseCents } from '@tp/money';
 
@@ -47,6 +45,7 @@ import {
   claimLines,
   everMatched,
   paidLine,
+  providerAdjustments,
   recordReprocessing,
 } from '../remittances';
 import { acceptedResponses, approveFromResponses, recordReprocessedNoChange } from '../responses';
@@ -59,14 +58,16 @@ import { REOPEN_NOTES, type StageSync, manualRecoupments, notifyRecoupments } fr
  * stages.ts: syncLineStages with insertStage; postings.ts: matchPostings, matchDeposits, postingDecision,
  * claimsWithReference and settleMatches with its prefix filter), as the base it merges into has it, each calling the
  * copies, never the new functions. The private helpers those functions call are copied with them, unchanged, because a
- * copy cannot reach a module's private function (reversalRule, moveBackNote, shares, recoupReversals, providerAdjustments,
- * claimInterest and the rest), and so is reconcileRemittances, whose text SUITE-CAP-3 keeps but which calls matchClaims
- * and lineChain. Every function the item does not change and a module exports is imported, not copied.
+ * copy cannot reach a module's private function (reversalRule, moveBackNote, shares, recoupReversals and the rest), and
+ * so is reconcileRemittances, whose text SUITE-CAP-3 keeps but which calls matchClaims and lineChain. Every function the
+ * item does not change and a module exports is imported, not copied: the interest step among them (providerAdjustments,
+ * docs/adr/0084), which calls none of the functions SUITE-CAP-3 changes and which remittances.ts exports for this
+ * reference alone, so interest is credited by one text in both passes and the two can differ only in what the item changed.
  *
  * referencePass is reconcilePractice (pass.ts) with these copies in its order: what CAS-49 runs on one clone of a
  * generated practice while the shipped pass runs on the other. Only tests import this module: eslint.config.js refuses it
- * in any other file (per-line-import.test.ts). Once the interest fix (pull request 126) is on the base, the copies are taken again from
- * the merged base's text, so the reference is always the base this item merges into.
+ * in any other file (per-line-import.test.ts). The interest fix (pull request 126) merged after this item: reconcileRemittances
+ * and Counts below are its text, and its interest step is imported as above.
  */
 
 /** A loaded reversal as the chain context holds it (remittances.ts keeps the interface to itself). */
@@ -231,6 +232,8 @@ interface Counts {
   noChange: number;
   recoupments: number;
   interest: number;
+  interestTakenBack: number;
+  interestWalks: number;
 }
 
 interface Recouped {
@@ -390,177 +393,10 @@ async function recoupReversals(scope: Scope, practiceId: string, lines: readonly
   }
 }
 
-interface AdjustmentRow {
-  readonly id: string;
-  readonly remittance_id: string;
-  readonly reference: string;
-  readonly amount_cents: string;
-  readonly paid_on: string;
-  readonly category: 'recoupment' | 'interest';
-}
-
-/** The case lines a claim control number names: by the line's own claim or a claim matched to it with an approval. */
-function namedLines(hash: string, lines: readonly CaseLine[], claimHashes: ReadonlyMap<string, string>, matches: readonly StoredMatch[], approvedOnly: boolean): CaseLine[] {
-  return lines.filter(
-    (line) =>
-      (!approvedOnly && line.claimHash === hash) ||
-      matches.some((match) => match.kind === 'claim' && match.standing && match.outcome === 'approved' && match.serviceLineId === line.serviceLineId && claimHashes.get(match.claimId as string) === hash),
-  );
-}
-
-/** PLB WO and L6 naming a claim of a case line: recoupments (in line order, at most what each has approved) and interest (split by the lines' approvals). */
-async function providerAdjustments(
-  scope: Scope,
-  cipher: PracticeCipher,
-  practiceId: string,
-  lines: readonly CaseLine[],
-  ledgers: Map<string, LineLedger>,
-  matches: readonly StoredMatch[],
-  counts: Counts,
-  recouped: Recouped[],
-): Promise<void> {
-  const { rows } = await scope.client.query<AdjustmentRow>(
-    `SELECT a.id, a.remittance_id, a.reference, a.amount_cents::text AS amount_cents, r.bpr16_date::text AS paid_on, a.category
-       FROM provider_adjustment a JOIN remittance r ON r.id = a.remittance_id
-      WHERE a.practice_id = $1 AND r.status = 'loaded' AND a.category IN ('recoupment', 'interest') AND a.reference IS NOT NULL
-      ORDER BY r.bpr16_date, a.created_at, a.position`,
-    [practiceId],
-  );
-  if (rows.length === 0) {
-    return;
-  }
-  const claimHashes = await hashesOf(scope, matches);
-  for (const adjustment of rows) {
-    const hash = cipher.lookupHash('claim.payer_claim_control_number', adjustment.reference);
-    const amount = parseCents(adjustment.amount_cents);
-    if (adjustment.category === 'recoupment') {
-      const named = namedLines(hash, lines, claimHashes, matches, false).filter((line) => !everMatched(matches, 'recoupment', adjustment.id, line.serviceLineId));
-      const takenBefore = cents(-sumEntries(await entriesOfEvidence(scope, practiceId, adjustment.id)));
-      const left = cents(amount - takenBefore);
-      if (named.length === 0 || left <= ZERO_CENTS) {
-        continue;
-      }
-      const { parts } = takeInOrder(left, named.map((line) => approvedRemaining(ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER)));
-      for (const [index, line] of named.entries()) {
-        const part = parts[index] as Cents;
-        if (part <= ZERO_CENTS) {
-          continue;
-        }
-        const matchId = await insertMatch(scope, practiceId, { kind: 'recoupment', providerAdjustmentId: adjustment.id, remittanceId: adjustment.remittance_id, serviceLineId: line.serviceLineId, matchedBy: null });
-        if (matchId === null) {
-          continue;
-        }
-        const entryAmount = negateCents(part);
-        const entryId = await insertEntry(scope, practiceId, {
-          caseId: line.caseId,
-          serviceLineId: line.serviceLineId,
-          stage: 'recouped',
-          amountCents: entryAmount,
-          evidenceKind: 'provider_adjustment',
-          evidenceId: adjustment.id,
-          matchId,
-          effectiveOn: adjustment.paid_on,
-          createdBy: null,
-        });
-        ledgers.set(line.serviceLineId, after(ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER, 'recouped', entryAmount, matchId));
-        counts.recoupments += 1;
-        recouped.push({ caseId: line.caseId, entryId: entryId as string, serviceLineId: line.serviceLineId, amountCents: entryAmount });
-      }
-      continue;
-    }
-    // L6: a negative adjustment pays the provider; the interest is its opposite.
-    const interest = negateCents(amount);
-    const named = namedLines(hash, lines, claimHashes, matches, true);
-    await recordInterest(scope, practiceId, matches, named, ledgers, interest, { kind: 'provider_adjustment', id: adjustment.id, remittanceId: adjustment.remittance_id, paidOn: adjustment.paid_on }, counts);
-  }
-}
-
-/** A claim's own interest (AMT I), for the lines it approved. */
-async function claimInterest(scope: Scope, practiceId: string, lines: readonly CaseLine[], ledgers: Map<string, LineLedger>, matches: readonly StoredMatch[], counts: Counts): Promise<void> {
-  const approving = matches.filter((match) => match.kind === 'claim' && match.standing && match.outcome === 'approved');
-  if (approving.length === 0) {
-    return;
-  }
-  const { rows } = await scope.client.query<{ id: string; remittance_id: string; interest_cents: string; paid_on: string }>(
-    `SELECT c.id, c.remittance_id, c.interest_cents::text AS interest_cents, r.bpr16_date::text AS paid_on
-       FROM claim c JOIN remittance r ON r.id = c.remittance_id
-      WHERE c.practice_id = $1 AND c.id = ANY ($2::uuid[]) AND c.interest_cents > 0 ORDER BY r.bpr16_date, c.id`,
-    [practiceId, [...new Set(approving.map((match) => match.claimId as string))]],
-  );
-  for (const claim of rows) {
-    const named = lines.filter((line) => approving.some((match) => match.claimId === claim.id && match.serviceLineId === line.serviceLineId));
-    await recordInterest(scope, practiceId, matches, named, ledgers, parseCents(claim.interest_cents), { kind: 'claim', id: claim.id, remittanceId: claim.remittance_id, paidOn: claim.paid_on }, counts);
-  }
-}
-
-/** Interest across the lines it covers, split by their approvals and flagged allocated when it covers more than one. */
-async function recordInterest(
-  scope: Scope,
-  practiceId: string,
-  matches: readonly StoredMatch[],
-  named: readonly CaseLine[],
-  ledgers: ReadonlyMap<string, LineLedger>,
-  interest: Cents,
-  evidence: { readonly kind: 'provider_adjustment' | 'claim'; readonly id: string; readonly remittanceId: string; readonly paidOn: string },
-  counts: Counts,
-): Promise<void> {
-  const weights = named.map((line) => approvedRemaining(ledgers.get(line.serviceLineId) ?? EMPTY_LINE_LEDGER));
-  if (interest <= ZERO_CENTS || !weights.some((weight) => weight > ZERO_CENTS)) {
-    return;
-  }
-  const parts = allocateByWeight(interest, weights);
-  const allocated = named.length > 1;
-  for (const [index, line] of named.entries()) {
-    const part = parts[index] as Cents;
-    if (part <= ZERO_CENTS || everMatched(matches, 'interest', evidence.id, line.serviceLineId)) {
-      continue;
-    }
-    const matchId = await insertMatch(scope, practiceId, {
-      kind: 'interest',
-      ...(evidence.kind === 'claim' ? { claimId: evidence.id } : { providerAdjustmentId: evidence.id }),
-      remittanceId: evidence.remittanceId,
-      serviceLineId: line.serviceLineId,
-      allocated,
-      matchedBy: null,
-    });
-    if (matchId === null) {
-      continue;
-    }
-    await insertEntry(scope, practiceId, {
-      caseId: line.caseId,
-      serviceLineId: line.serviceLineId,
-      stage: 'interest',
-      amountCents: part,
-      evidenceKind: evidence.kind,
-      evidenceId: evidence.id,
-      matchId,
-      allocated,
-      effectiveOn: evidence.paidOn,
-      createdBy: null,
-    });
-    counts.interest += 1;
-  }
-}
-
-async function entriesOfEvidence(scope: Scope, practiceId: string, evidenceId: string): Promise<Cents[]> {
-  const { rows } = await scope.client.query<{ amount_cents: string }>('SELECT amount_cents::text AS amount_cents FROM ledger_entry WHERE practice_id = $1 AND evidence_id = $2', [practiceId, evidenceId]);
-  return rows.map((row) => parseCents(row.amount_cents));
-}
-
-function sumEntries(amounts: readonly Cents[]): bigint {
-  return amounts.reduce((sum, amount) => sum + amount, 0n);
-}
-
-async function hashesOf(scope: Scope, matches: readonly StoredMatch[]): Promise<Map<string, string>> {
-  const ids = [...new Set(matches.filter((match) => match.kind === 'claim').map((match) => match.claimId as string))];
-  const { rows } = await scope.client.query<{ id: string; hash: string }>('SELECT id, payer_claim_control_number_hash AS hash FROM claim WHERE id = ANY ($1::uuid[])', [ids]);
-  return new Map(rows.map((row) => [row.id, row.hash]));
-}
-
-/** Step 1, recoupments and interest, for the practice (inside the reconcile step's locked transaction). */
+/** Step 1, recoupments and interest (credited from each PLB L6 only, docs/adr/0084), for the practice (inside the reconcile step's locked transaction). */
 export async function reconcileRemittances(scope: Scope, cipher: PracticeCipher, practiceId: string, recordNoChange: RecordReprocessedNoChange): Promise<RemittanceOutcome> {
   const lines = await caseLines(scope, cipher, practiceId);
-  const counts: Counts = { approved: 0, confirmed: 0, noPaymentIncrease: 0, decreased: 0, decreasedNoEntry: 0, noChange: 0, recoupments: 0, interest: 0 };
+  const counts: Counts = { approved: 0, confirmed: 0, noPaymentIncrease: 0, decreased: 0, decreasedNoEntry: 0, noChange: 0, recoupments: 0, interest: 0, interestTakenBack: 0, interestWalks: 0 };
   const recouped: Recouped[] = [];
   if (lines.length === 0) {
     return { ...counts, recouped };
@@ -570,7 +406,6 @@ export async function reconcileRemittances(scope: Scope, cipher: PracticeCipher,
   const matches = await ledgerMatches(scope, practiceId);
   await recoupReversals(scope, practiceId, lines, ledgers, matches, counts, recouped);
   await providerAdjustments(scope, cipher, practiceId, lines, ledgers, await ledgerMatches(scope, practiceId), counts, recouped);
-  await claimInterest(scope, practiceId, lines, ledgers, await ledgerMatches(scope, practiceId), counts);
   return { ...counts, recouped };
 }
 

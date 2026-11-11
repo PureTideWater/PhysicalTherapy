@@ -117,7 +117,7 @@ export default async function RoiStatementPage(props: Props) {
         practiceId={practiceId}
         empty={NO_RECOVERED_CASH[detail.proofLevel]}
       />
-      <RoiFigure id="interest" label="Interest, net" note="Interest the payer paid in the period, shown apart from principal." figure={detail.interest} practiceId={practiceId} empty="No interest was paid in the period." />
+      <RoiFigure id="interest" label="Interest, net" note="Interest the payer paid in the period, less any it took back, shown apart from principal." figure={detail.interest} practiceId={practiceId} empty="No interest was paid in the period." />
       <RoiFigure
         id="approved-unposted"
         label="Payer approved, not yet at the proof level"
