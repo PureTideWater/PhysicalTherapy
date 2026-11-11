@@ -11,11 +11,12 @@ import { LedgerWorld, ledSettings } from './test-support/ledger-world';
  * The ledger's two lookups (migration 20261113090000; docs/adr/0087, the note of 2026-11-11): `ledger_line_net` reads
  * one line's entries, and `ledger_entry_rules` reads an entry's one match. The founder's ledger freeze exception of
  * 2026-11-06 lets their bodies change only if every answer and every refusal stays what it was, so each case here is
- * true of the bodies before the migration and of the bodies after it, except the last group, which is what the
- * migration is for: on a ledger the planner has no statistics for, each lookup reads through the index that finds its
- * row. Every practice is a SYNTHETIC LED-04 world: its original payment priced and triaged into a case, the adjusted
- * remittance approving the line, and the posting export posting it, so the ledger holds a claim match and a posting
- * match with an entry from each.
+ * true of the bodies before the migration and of the bodies after it, except the first group, which is what the
+ * migration is for: on the ledger a first reconcile pass finds (empty or nearly so, with no statistics, as it stays
+ * for the planner through the pass's own transaction) each lookup reads through the index that finds its row. Every
+ * practice is a SYNTHETIC LED-04 world: its original payment priced and triaged into a case, the adjusted remittance
+ * approving the line, and the posting export posting it, so the ledger holds a claim match and a posting match with
+ * an entry from each.
  */
 
 let w: LedgerWorld;
@@ -102,6 +103,176 @@ function specialistAdjusts(of: Posted, matchId: string) {
 
 const reverse = (of: Posted) => w.manual(of.practice, (context) => reverseMatch(context, { practiceId: of.practice.practiceId, matchId: of.matchId, reason: 'SYNTHETIC wrong check' }));
 
+// ----------------------------------------------------------------------------------------------------------------
+// The plan guard
+// ----------------------------------------------------------------------------------------------------------------
+
+type PlanNode = { readonly 'Node Type': string; readonly 'Relation Name'?: string; readonly Alias?: string; readonly 'Index Name'?: string; readonly 'Index Cond'?: string; readonly Plans?: readonly PlanNode[] };
+
+/** Every node of a plan that reads a table, under its alias. */
+function scans(node: PlanNode, found: PlanNode[] = []): PlanNode[] {
+  if (node['Relation Name'] !== undefined) {
+    found.push(node);
+  }
+  for (const child of node.Plans ?? []) {
+    scans(child, found);
+  }
+  return found;
+}
+
+/** `text` with every string literal's and line comment's characters blanked, so a bracket or a semicolon in one is never read as code. */
+function codeOnly(text: string): string {
+  return text.replace(/'(?:[^']|'')*'|--[^\n]*/g, (quoted) => ' '.repeat(quoted.length));
+}
+
+/**
+ * Each statement of a function body that reads `table` (FROM or JOIN, with or without its schema), as the body writes
+ * it: the innermost bracketed query that holds the read, or the whole plpgsql statement when no bracket does (its INTO target taken out).
+ */
+function readsOf(body: string, table: string): string[] {
+  const code = codeOnly(body);
+  const statements: string[] = [];
+  for (const read of code.matchAll(new RegExp(`\\b(?:FROM|JOIN)\\s+(?:public\\.)?${table}\\b`, 'gi'))) {
+    let open = -1;
+    for (let at = read.index, depth = 0; at >= 0 && open < 0; at -= 1) {
+      const character = code[at];
+      if (character === ')') {
+        depth += 1;
+      } else if (character === '(') {
+        if (depth === 0) {
+          open = at;
+        }
+        depth -= 1;
+      } else if (character === ';' && depth === 0) {
+        break;
+      }
+    }
+    if (open < 0) {
+      statements.push(body.slice(code.lastIndexOf(';', read.index) + 1, code.indexOf(';', read.index)).replace(/\bINTO\s+\w+\s+/, ''));
+      continue;
+    }
+    let close = open;
+    for (let depth = 0; close < code.length; close += 1) {
+      depth += code[close] === '(' ? 1 : code[close] === ')' ? -1 : 0;
+      if (depth === 0) {
+        break;
+      }
+    }
+    statements.push(body.slice(open + 1, close));
+  }
+  return statements.map((statement) => statement.trim());
+}
+
+/** A statement with each of the function's own values (a trigger's NEW columns, or its named arguments) written as a parameter, in the order they appear. */
+function parameterized(statement: string, names: readonly string[]): string {
+  const numbers = new Map<string, number>();
+  const pattern = new RegExp(`(?<![.\\w])(?:NEW\\.\\w+${names.map((name) => `|${name}`).join('')})(?!\\w)`, 'g');
+  return statement.replace(pattern, (name) => {
+    const number = numbers.get(name) ?? numbers.size + 1;
+    numbers.set(name, number);
+    return `$${String(number)}`;
+  });
+}
+
+describe('the plans of the ledger’s lookups on a ledger with no statistics, as a first reconcile pass finds it (the reason for migration 20261113090000)', () => {
+  /**
+   * What this group holds, and what it does not. A function's plan is made when a session first calls it and is kept;
+   * a reconcile pass first calls these on the ledger as it stands when the pass begins, and the planner learns nothing
+   * of the rows the pass then writes. So the state that matters is the ledger a pass starts on with no statistics:
+   * empty (a new deployment), or holding its first rows. There, each lookup must read through the index that finds
+   * its row. It does not hold for every never-analyzed ledger: measured on PostgreSQL 18.4, with a few hundred to
+   * some tens of thousands of never-analyzed entries the planner reads a line's entries through ledger_entry_by_date
+   * again (docs/adr/0087, the note of 2026-11-11); automatic analysis ends that state within about a minute of the
+   * first fifty committed entries, and with statistics the line index is taken. The match lookups hold in every
+   * state: only the primary key fits them.
+   */
+  let scope: Practice;
+
+  /** The body the database holds for a function (the text between its dollar quotes) and its argument names. */
+  async function installed(signature: string): Promise<{ readonly body: string; readonly names: readonly string[] }> {
+    const { rows } = await w.owner.query<{ body: string; names: string[] | null }>('SELECT prosrc AS body, proargnames AS names FROM pg_proc WHERE oid = $1::regprocedure', [signature]);
+    expect(rows, signature).toHaveLength(1);
+    return { body: rows[0]?.body ?? '', names: rows[0]?.names ?? [] };
+  }
+
+  /** The generic plan of a statement as the trigger's caller plans it: the application role, in a job's scope of the practice. */
+  async function planned(statement: string): Promise<PlanNode[]> {
+    return withJobScope(w.app, { jobId: randomUUID(), practiceId: scope.practiceId }, async (job) => {
+      const { rows } = await job.client.query<{ 'QUERY PLAN': readonly { readonly Plan: PlanNode }[] }>(`EXPLAIN (GENERIC_PLAN, FORMAT JSON) ${statement}`);
+      const plan = rows[0]?.['QUERY PLAN'][0]?.Plan;
+      if (plan === undefined) {
+        throw new Error('EXPLAIN returned no plan');
+      }
+      return scans(plan);
+    });
+  }
+
+  /** The two ledger tables were never analyzed or vacuumed, by hand or automatically; returns the entries the ledger holds. */
+  async function neverAnalyzed(): Promise<number> {
+    const { rows } = await w.owner.query<{ relname: string; reltuples: number; maintained: number }>(
+      `SELECT c.relname, c.reltuples::float8 AS reltuples, num_nonnulls(s.last_analyze, s.last_autoanalyze, s.last_vacuum, s.last_autovacuum) AS maintained
+         FROM pg_class c JOIN pg_stat_user_tables s ON s.relid = c.oid
+        WHERE c.oid IN ('ledger_entry'::regclass, 'ledger_match'::regclass) ORDER BY 1`,
+    );
+    expect(rows).toEqual([
+      { relname: 'ledger_entry', reltuples: -1, maintained: 0 },
+      { relname: 'ledger_match', reltuples: -1, maintained: 0 },
+    ]);
+    const held = await w.owner.query<{ entries: number; matches: number }>('SELECT (SELECT count(*)::int FROM ledger_entry) AS entries, (SELECT count(*)::int FROM ledger_match) AS matches');
+    expect(held.rows[0]?.matches === 0).toBe(held.rows[0]?.entries === 0);
+    return held.rows[0]?.entries ?? -1;
+  }
+
+  /** ledger_line_net as installed: a line's entries through the line index, by the line's practice and the line; a correction's target by its primary key. */
+  async function lineNetReadsThroughTheLineIndex(): Promise<void> {
+    const { body, names } = await installed('ledger_line_net(uuid, text)');
+    expect(names).toEqual(['line', 'counted']);
+    const byAlias = new Map((await planned(parameterized(body, names))).map((scan) => [scan.Alias, scan]));
+    const entries = byAlias.get('e');
+    expect(entries?.['Relation Name']).toBe('ledger_entry');
+    expect(entries?.['Node Type']).toBe('Index Scan');
+    expect(entries?.['Index Name']).toBe('ledger_entry_by_line');
+    expect(entries?.['Index Cond']).toMatch(/\bpractice_id = \(/);
+    expect(entries?.['Index Cond']).toMatch(/\bservice_line_id = \$1/);
+    for (const alias of ['t', 'r']) {
+      expect(byAlias.get(alias)?.['Relation Name'], alias).toBe('ledger_entry');
+      expect(byAlias.get(alias)?.['Index Name'], alias).toBe('ledger_entry_pkey');
+    }
+  }
+
+  /** ledger_entry_rules as installed: an entry's match and a correction's match by the match's primary key alone. */
+  async function matchReadsThroughThePrimaryKey(): Promise<void> {
+    const { body } = await installed('ledger_entry_rules()');
+    const reads = readsOf(body, 'ledger_match');
+    // The correction's match and the entry's match. A third read of ledger_match in this function needs its plan read here too.
+    expect(reads).toHaveLength(2);
+    for (const read of reads) {
+      const statement = parameterized(read, []);
+      expect(statement, read).not.toMatch(/\bNEW\b/);
+      const matches = (await planned(statement)).filter((scan) => scan['Relation Name'] === 'ledger_match');
+      expect(matches, read).toHaveLength(1);
+      expect(matches[0]?.['Node Type'], read).toBe('Index Scan');
+      expect(matches[0]?.['Index Name'], read).toBe('ledger_match_pkey');
+      expect(matches[0]?.['Index Cond'], read).toMatch(/^\(id = \$1\)$/);
+    }
+  }
+
+  // This group is the file's first, so its first case plans before the file's first ledger row.
+  it('reads through the line index and the match’s primary key on an empty ledger that was never analyzed', async () => {
+    scope = await w.practice(`plans ${randomUUID().slice(0, 8)}`, ledSettings('posted'));
+    expect(await neverAnalyzed()).toBe(0);
+    await lineNetReadsThroughTheLineIndex();
+    await matchReadsThroughThePrimaryKey();
+  });
+
+  it('and on the same ledger once it holds its first rows, still never analyzed', async () => {
+    scope = (await posted('plans, first rows')).practice;
+    expect(await neverAnalyzed()).toBeGreaterThan(0);
+    await lineNetReadsThroughTheLineIndex();
+    await matchReadsThroughThePrimaryKey();
+  });
+});
+
 describe('an entry’s match, as ledger_entry_rules reads it: the same entries refused with the same error', () => {
   it('refuses an entry that names no match, or a match that is no row', async () => {
     const a = await posted('no match');
@@ -176,6 +347,14 @@ describe('a line’s net, as ledger_line_net gives it to the application role', 
     }
     const none = await withJobScope(w.app, { jobId: randomUUID(), practiceId: a.practice.practiceId }, async (scope) => (await scope.client.query<{ net: string }>("SELECT ledger_line_net(NULL, 'posted')::text AS net")).rows[0]?.net);
     expect(none).toBe('0');
+    // With both practices in scope, the other one first: each line's sum is its own practice's entries, whichever
+    // practice the scope lists first (a scope no job opens; it is how a wrong practice in the read would show).
+    const both = await withJobScope(w.app, { jobId: randomUUID(), practiceId: a.practice.practiceId }, async (scope) => {
+      await scope.client.query("SELECT set_config('app.practice_ids', $1::uuid[]::text, true)", [[b.practice.practiceId, a.practice.practiceId]]);
+      const { rows } = await scope.client.query<{ own: string; other: string }>("SELECT ledger_line_net($1, 'posted')::text AS own, ledger_line_net($2, 'approved')::text AS other", [a.serviceLineId, b.serviceLineId]);
+      return rows[0];
+    });
+    expect(both).toEqual({ own: a.amountCents, other: b.amountCents });
   });
 
   it('counts a reversal and an adjustment as the stage of the entry each finally corrects, and nothing for another stage', async () => {
@@ -189,151 +368,19 @@ describe('a line’s net, as ledger_line_net gives it to the application role', 
     expect(await net(a.practice, a.serviceLineId, 'approved')).toBe(a.amountCents);
     expect(await net(a.practice, a.serviceLineId, 'reversed')).toBe('0');
     expect(await net(a.practice, a.serviceLineId, 'adjusted')).toBe('0');
-  });
-});
-
-// ----------------------------------------------------------------------------------------------------------------
-// The plan guard
-// ----------------------------------------------------------------------------------------------------------------
-
-type PlanNode = { readonly 'Node Type': string; readonly 'Relation Name'?: string; readonly Alias?: string; readonly 'Index Name'?: string; readonly 'Index Cond'?: string; readonly Plans?: readonly PlanNode[] };
-
-/** Every node of a plan that reads a table, under its alias. */
-function scans(node: PlanNode, found: PlanNode[] = []): PlanNode[] {
-  if (node['Relation Name'] !== undefined) {
-    found.push(node);
-  }
-  for (const child of node.Plans ?? []) {
-    scans(child, found);
-  }
-  return found;
-}
-
-/** `text` with every string literal's and line comment's characters blanked, so a bracket or a semicolon in one is never read as code. */
-function codeOnly(text: string): string {
-  return text.replace(/'(?:[^']|'')*'|--[^\n]*/g, (quoted) => ' '.repeat(quoted.length));
-}
-
-/**
- * Each statement of a function body that reads `table`, as the body writes it: the innermost bracketed query that
- * holds the read, or the whole plpgsql statement when no bracket does (its INTO target taken out).
- */
-function readsOf(body: string, table: string): string[] {
-  const code = codeOnly(body);
-  const statements: string[] = [];
-  for (const read of code.matchAll(new RegExp(`\\bFROM ${table}\\b`, 'g'))) {
-    let open = -1;
-    for (let at = read.index, depth = 0; at >= 0 && open < 0; at -= 1) {
-      const character = code[at];
-      if (character === ')') {
-        depth += 1;
-      } else if (character === '(') {
-        if (depth === 0) {
-          open = at;
-        }
-        depth -= 1;
-      } else if (character === ';' && depth === 0) {
-        break;
-      }
-    }
-    if (open < 0) {
-      statements.push(body.slice(code.lastIndexOf(';', read.index) + 1, code.indexOf(';', read.index)).replace(/\bINTO\s+\w+\s+/, ''));
-      continue;
-    }
-    let close = open;
-    for (let depth = 0; close < code.length; close += 1) {
-      depth += code[close] === '(' ? 1 : code[close] === ')' ? -1 : 0;
-      if (depth === 0) {
-        break;
-      }
-    }
-    statements.push(body.slice(open + 1, close));
-  }
-  return statements.map((statement) => statement.trim());
-}
-
-/** A statement with each of the function's own values (a trigger's NEW columns, or its named arguments) written as a parameter, in the order they appear. */
-function parameterized(statement: string, names: readonly string[]): string {
-  const numbers = new Map<string, number>();
-  const pattern = new RegExp(`(?<![.\\w])(?:NEW\\.\\w+${names.map((name) => `|${name}`).join('')})(?!\\w)`, 'g');
-  return statement.replace(pattern, (name) => {
-    const number = numbers.get(name) ?? numbers.size + 1;
-    numbers.set(name, number);
-    return `$${String(number)}`;
-  });
-}
-
-describe('the plans of the ledger’s lookups on a ledger with rows and no statistics (the reason for migration 20261113090000)', () => {
-  let a: Posted;
-
-  /** The body the database holds for a function (the text between its dollar quotes) and its argument names. */
-  async function installed(signature: string): Promise<{ readonly body: string; readonly names: readonly string[] }> {
-    const { rows } = await w.owner.query<{ body: string; names: string[] | null }>('SELECT prosrc AS body, proargnames AS names FROM pg_proc WHERE oid = $1::regprocedure', [signature]);
-    expect(rows, signature).toHaveLength(1);
-    return { body: rows[0]?.body ?? '', names: rows[0]?.names ?? [] };
-  }
-
-  /** The generic plan of a statement as the trigger's caller plans it: the application role, in a job's scope of the practice. */
-  async function planned(statement: string): Promise<PlanNode[]> {
-    return withJobScope(w.app, { jobId: randomUUID(), practiceId: a.practice.practiceId }, async (scope) => {
-      const { rows } = await scope.client.query<{ 'QUERY PLAN': readonly { readonly Plan: PlanNode }[] }>(`EXPLAIN (GENERIC_PLAN, FORMAT JSON) ${statement}`);
-      const plan = rows[0]?.['QUERY PLAN'][0]?.Plan;
-      if (plan === undefined) {
-        throw new Error('EXPLAIN returned no plan');
-      }
-      return scans(plan);
-    });
-  }
-
-  beforeAll(async () => {
-    a = await posted('plans');
-  }, 60_000);
-
-  it('plans on a ledger that holds rows and was never analyzed or vacuumed', async () => {
-    const { rows } = await w.owner.query<{ relname: string; reltuples: number; n: number; maintained: number }>(
-      `SELECT c.relname, c.reltuples::float8 AS reltuples, s.n_live_tup::int AS n,
-              num_nonnulls(s.last_analyze, s.last_autoanalyze, s.last_vacuum, s.last_autovacuum) AS maintained
-         FROM pg_class c JOIN pg_stat_user_tables s ON s.relid = c.oid
-        WHERE c.oid IN ('ledger_entry'::regclass, 'ledger_match'::regclass) ORDER BY 1`,
-    );
-    expect(rows.map(({ relname, reltuples, maintained }) => ({ relname, reltuples, maintained }))).toEqual([
-      { relname: 'ledger_entry', reltuples: -1, maintained: 0 },
-      { relname: 'ledger_match', reltuples: -1, maintained: 0 },
-    ]);
-    const held = await w.owner.query<{ entries: number; matches: number }>('SELECT (SELECT count(*)::int FROM ledger_entry) AS entries, (SELECT count(*)::int FROM ledger_match) AS matches');
-    expect(held.rows[0]?.entries).toBeGreaterThan(0);
-    expect(held.rows[0]?.matches).toBeGreaterThan(0);
-  });
-
-  it('reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key (ledger_line_net as installed)', async () => {
-    const { body, names } = await installed('ledger_line_net(uuid, text)');
-    expect(names).toEqual(['line', 'counted']);
-    const byAlias = new Map((await planned(parameterized(body, names))).map((scan) => [scan.Alias, scan]));
-    const entries = byAlias.get('e');
-    expect(entries?.['Relation Name']).toBe('ledger_entry');
-    expect(entries?.['Node Type']).toBe('Index Scan');
-    expect(entries?.['Index Name']).toBe('ledger_entry_by_line');
-    expect(entries?.['Index Cond']).toMatch(/\bpractice_id = \(/);
-    expect(entries?.['Index Cond']).toMatch(/\bservice_line_id = \$1/);
-    for (const alias of ['t', 'r']) {
-      expect(byAlias.get(alias)?.['Relation Name'], alias).toBe('ledger_entry');
-      expect(byAlias.get(alias)?.['Index Name'], alias).toBe('ledger_entry_pkey');
-    }
-  });
-
-  it('reads an entry’s match and a correction’s match by the match’s primary key alone (ledger_entry_rules as installed)', async () => {
-    const { body } = await installed('ledger_entry_rules()');
-    const reads = readsOf(body, 'ledger_match');
-    // The correction's match and the entry's match. A third read of ledger_match in this function needs its plan read here too.
-    expect(reads).toHaveLength(2);
-    for (const read of reads) {
-      const statement = parameterized(read, []);
-      expect(statement, read).not.toMatch(/\bNEW\b/);
-      const matches = (await planned(statement)).filter((scan) => scan['Relation Name'] === 'ledger_match');
-      expect(matches, read).toHaveLength(1);
-      expect(matches[0]?.['Node Type'], read).toBe('Index Scan');
-      expect(matches[0]?.['Index Name'], read).toBe('ledger_match_pkey');
-      expect(matches[0]?.['Index Cond'], read).toMatch(/^\(id = \$1\)$/);
-    }
+    // States only a superuser can store (the rules refuse a correction whose target is no entry): a reversal whose
+    // target is no row, an adjustment whose target is no row, and an adjustment of that adjustment. Each counts as
+    // nothing, in every stage.
+    const STAGES = ['approved', 'posted', 'deposited', 'recouped', 'interest', 'reversed', 'adjusted'];
+    const before = await Promise.all(STAGES.map((counted) => net(a.practice, a.serviceLineId, counted)));
+    const orphan = randomUUID();
+    const reason = a.practice.cipher.encrypt('ledger_entry.reason', 'SYNTHETIC');
+    const CORRECTION =
+      "INSERT INTO ledger_entry (id, practice_id, case_id, service_line_id, stage, amount_cents, evidence_kind, evidence_id, effective_on, reason) VALUES ($1, $2, $3, $4, $5, $6, 'ledger_entry', $7, '2026-06-11', $8)";
+    await w.superuser(CORRECTION, [randomUUID(), a.practice.practiceId, a.caseId, a.serviceLineId, 'reversed', 700, randomUUID(), reason]);
+    await w.superuser(CORRECTION, [orphan, a.practice.practiceId, a.caseId, a.serviceLineId, 'adjusted', 1100, randomUUID(), reason]);
+    await w.superuser(CORRECTION, [randomUUID(), a.practice.practiceId, a.caseId, a.serviceLineId, 'adjusted', 900, orphan, reason]);
+    expect(await Promise.all(STAGES.map((counted) => net(a.practice, a.serviceLineId, counted)))).toEqual(before);
+    expect(before).toEqual([a.amountCents, '0', '0', '0', '0', '0', '0']);
   });
 });
