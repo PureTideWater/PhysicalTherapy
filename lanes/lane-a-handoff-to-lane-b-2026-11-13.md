@@ -1,6 +1,6 @@
 # Lane A's handoff to Lane B, 2026-11-13
 
-Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 05:45 UTC.
+Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 05:55 UTC.
 
 Read `lanes/STATE.md` first: it is the current state. This file adds only what STATE.md does not hold.
 
@@ -24,7 +24,7 @@ kept current instead. If STATE.md is newer than this file, trust STATE.md and th
 - `LANES.md` Queues item 27 (new on 2026-11-11): four items #126's reviews left owed; its (d) is a migration for Lane A.
 
 ## Lane A keeps
-- The schema chain (STATE.md items 6 and 7). Its own #126 (interest credited once) merged as 2e26a416 on 2026-11-11 at 05:37 UTC, with the founder's line.
+- The schema chain (STATE.md items 6 and 7, with `LANES.md` Queues item 28 as its next PR). Its own #126 (interest credited once) merged as 2e26a416 on 2026-11-11 at 05:37 UTC, with the founder's line.
 - **If Lane A's account is stopped when the founder commits a schema PR's approval line,** Lane B's orchestrator may run
   that PR's merge step as acting Lane A, from the PR's status file, under the same merge rule (the founder's committed
   line and green required checks). Nothing else of the chain moves without Lane A.

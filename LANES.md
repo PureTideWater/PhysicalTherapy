@@ -194,6 +194,10 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
     - **(b) CAS-50 and CAS-51 seeded with PLB L6s,** and the interest statements bounded at real size.
     - **(c) The settle entries compared row for row,** in place of the set comparison (ADR 0087).
     - **(d) A composite foreign key (practice, link) on a claim's reversal and correction links.** A migration: it goes to Lane A's schema queue, one schema PR at a time, with the founder's line.
+28. **A sign-in step begun before a password reset is refused after it** (auth; **required before launch**; queued 2026-11-11 05:50 UTC by Lane A's orchestrator, from password-changed-notice's security review, its SEC-01 against ADR 0091 D10; W8, the next schema PR after password-changed-notice, ahead of the schema plan's PR 2). On the base a sign-in step begun before a reset can still open a session after it, and with a failed provider sign-out a key-registration step can still register a key (ADR 0081, Not covered; the plan's SEC-N5 in Schema PR 6).
+    - **Fix:** a reset time on the account, stamped where `password_reset_completed` is recorded, and every step begun before it refused, read from the app's own step start. It needs no Cognito `auth_time` fact, so the plan's staging precondition for SEC-N5 falls away.
+    - **Meanwhile:** password-changed-notice keeps its line, pages an operator when the provider sign-out fails, and records both cases under SGN-16; the founder reads the trade-off in its description and may hold that PR until this close is in it.
+    - **Reviews:** two adversarial on the design and on the build (sign-in and session security; database). A migration: the founder's line.
 
 ## Claims
 

@@ -1,6 +1,6 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-11 05:45 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-11 05:55 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
@@ -11,8 +11,9 @@ own status file and `CLAUDE.md`, not the long history files.
   - **W3** session_019i9ifE6JAC24yB5654GXcV: merged #134 and #136, then stood down on 2026-11-11 (its context had passed 500k tokens). It holds nothing.
   - **W4** session_019i9ifAM5Y3ftqx7i6Cx8Gk: merged #137, then stood down on 2026-11-11 04:26 UTC (its context had passed 300k tokens). It holds nothing.
   - **W5** session_019i9ifC8ouxG6CLPdZtgAcJ (acting Lane B), from 2026-11-11 02:37 UTC, at the highest effort: item 3, the SSN and phone leaks PR.
-  - **W6** session_019i9if9f2m3xyLBavfHUgui (Lane A), from 2026-11-11 04:26 UTC, at the highest effort: the schema chain. Item 6 now, then item 7 as assigned.
+  - **W6** session_019i9if9f2m3xyLBavfHUgui (Lane A), from 2026-11-11 04:26 UTC, at the highest effort: item 6 only (its context is past 300k tokens). After it posts the approval line it keeps the merge step, then stands down.
   - **W7** session_019i9ifCb8Sa7jHnu6j4af8F (acting Lane B), from 2026-11-11 04:31 UTC, at the highest effort: item 8, the packets verifier identifier fold.
+  - **W8** session_019i9ifE7teUhX79iAZKaxt5 (Lane A), from 2026-11-11 05:48 UTC, at the highest effort: `LANES.md` Queues item 28, the next schema PR after item 6; then item 7 by fresh sessions.
 - **Lane A** (this account): the weekly allowance reset on 2026-11-10 at about 14:00 UTC; the next reset is Tue 2026-11-17 14:00 UTC. **Its weekly limit showed the warning level at about 00:30 UTC on 2026-11-11**, 11 hours into the week; sessions cannot see the percentage, only the co-founder can.
 - **Usage (the co-founder's reading, 2026-11-11 01:30 UTC):** 34% of the week on all models, 32% on the build's model. From the sessions' records, 1% is about 5 dollars of API-equivalent usage, so three builds use roughly 4 to 7% an hour and the limit would arrive between about 11:00 and 19:00 UTC on 2026-11-11 unless the co-founder resets it. Sessions cannot see the percentage. When the limit stops them the orchestrator stops too; the co-founder's next message after a reset restarts them from their RESUME-BLOCKs.
 - **Lane B:** capped until Fri 2026-11-13 19:00 UTC. Until then Lane A runs Lane B's urgent items as acting Lane B, and hands them back at 18:30 UTC that day.
@@ -46,8 +47,8 @@ own status file and `CLAUDE.md`, not the long history files.
 | 3 | **SSN and phone leaks** (`co-001/redact-ssn-phone-leaks`; MOD-21, MOD-22) | `lane-b-redact-ssn-phone-leaks-status.md` | B (acting), **W5** | **Must land before any real PHI is processed.** Design reviewed and fixed; build next. It also takes the middle dot and the hyphenation point as name joiners. Two reviews. **After it: `LANES.md` Queues item 26 (MOD-23), two name forms still sent in clear, also before any real PHI; not assigned.** |
 | 4 | #134, SUITE-CAP-3: **merged as 994ee303** (2026-11-10) | `lane-b-suite-cap-3-status.md` | B (acting) | Done. No `ledger_line_net` change. |
 | 5 | #129, email plate: **merged as ca504674** (2026-11-11) | `lane-a-email-lockup-plate-status.md` | B (acting) | Done. |
-| 6 | **password-changed-notice** (schema PR 1; ADR 0091, SGN-16) | `co-001/password-changed-notice`; WIP `co-001/wip-pwnotice`; `approval-summaries/lane-a-auth-emails-status.md` | A, **W6** | #126 merged, so W6 opens the PR now, then posts the suggested approval line. **Founder's line next.** |
-| 7 | The schema batching plan, PRs 2 to 10 | `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` | A | One schema PR at a time. |
+| 6 | **password-changed-notice** (schema PR 1; ADR 0091, SGN-16) | `co-001/password-changed-notice` 68895f0f (the base 2e26a416 merged); `approval-summaries/lane-a-auth-emails-status.md` | A, **W6** | Its three reviews found 1 blocking, 14 should-fix and 18 notes; the fix round runs to about 09:00 UTC, then the draft PR and the suggested line. The blocking finding (a step begun before a reset can finish after it) is recorded under SGN-16 here and closed by Queues item 28. **Founder's line next,** with that trade-off in the description. |
+| 7 | **Queues item 28 first** (a step begun before a password reset is refused; required before launch; **W8**, design now, stacked on item 6), then the schema batching plan's PRs 2 to 10 | `LANES.md` Queues item 28; `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` | A | One schema PR open at a time; the next one is always in build while the current one waits for the founder. |
 | 8 | Packets verifier identifier fold (MOD-19, MOD-20) | `lane-b-packets-verifier-identifier-fold-status.md` | B (acting), **W7** | Design in review. It moves `redact.ts` whole to `packages/redact` (`@tp/redact`); whichever of it and item 3 merges second takes the base merge (git follows the rename; new files beside it move by hand). Never at the same time as the verifier /3 migration. |
 | 9 | The queue: `LANES.md` Queues item 25, seven follow-ups from #137's reviews (first the web's transaction scope, which does not read COMMIT's answer); then Queues item 27, four items #126's reviews left owed; then the Stryker static-mutant timeouts; the Dependabot replacement PR; P2 Trivy version; dark-mode-ship; the UX queue | `LANES.md` Queues; Lane B's handoff §2 | B | **Not assigned:** three builds run (W5, W6, W7). The next free build takes Queues item 25 (a). #136 and #137 (ADR 0092, CAS-56, CAS-57) are merged. |
 
@@ -59,7 +60,7 @@ own status file and `CLAUDE.md`, not the long history files.
   - F1 to F5 and ruling 16, before Cognito PR 2;
   - #125's smoke checks;
   - Gmail iOS and Outlook.com dark renders.
-- Launch: #42's actions 2 to 7, counsel's reading of the legal text, O9 (#41), runbook 3i, PRD section 19's RDS cost line.
+- Launch: #42's actions 2 to 7, counsel's reading of the legal text, O9 (#41), runbook 3i, PRD section 19's RDS cost line. **Also before launch: `LANES.md` Queues item 28** (a sign-in step begun before a password reset is refused), and before any real PHI: item 3 and Queues item 26.
 
 ## Never
 - Sign or approve as the founder, or write the approval line or `approvers.json`.
