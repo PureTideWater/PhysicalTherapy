@@ -4,7 +4,7 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
 `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 2. Grant: `approval-summaries/founder-asks-2026-10-27.md`,
 "Decided 2026-11-06"; the granted text: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` at 38123394.
 
-## RESUME-BLOCK (current at 2026-11-11 11:52 UTC)
+## RESUME-BLOCK (current at 2026-11-11 12:40 UTC)
 - **State:** building on a WIP ref; **BLOCKED on one step**: the migration file is not in `packages/db/migrations`.
   This session's permission classifier refused the new-migration marker route (the one shell command that sets
   `.claude/.allow-protected-edit`, writes the file and removes the marker in a trap). Per `lanes/acting-lane-a-brief.md`:26
@@ -16,6 +16,18 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
   written by `mk-draft.sh` beside it (comments from the script, the two statements cut byte for byte from the ask's SQL
   blocks). To place it (whoever is permitted), one command from the checkout's root, then check the marker is gone:
   `touch .claude/.allow-protected-edit; trap 'rm -f .claude/.allow-protected-edit' EXIT; cp /home/user/ops/approval-summaries/lane-a-wip/schema-pr2/migration-draft-20261113090000_ledger_lookups.sql packages/db/migrations/20261113090000_ledger_lookups.sql`
+- **Done on the WIP ref (5 commits on edab4d4d):** both test files, reconciliation-001's freeze-list entry, ADR 0087's
+  dated note (figures, the plan-state table, the middle-state measurement). typecheck, lint (the two files), lint:copy,
+  lint:logs and check:fixtures pass. The worker test on the base: the 4 plan cases fail as required, 7 pass. The
+  `packages/db` test has never run (it reads the migration file). The PR description's draft:
+  `lane-a-wip/schema-pr2/pr-description-draft.md`. The every-state body is a candidate for schema PR 5's ask (the
+  orchestrator logged it, 11:50 UTC).
+- **Measurement kit:** `lane-a-wip/schema-pr2/probe/` (cluster.sh, queue.sh, run.sh, run-fill.sh, dump.py, compare.py)
+  plus SUITE-CAP-3's `probe/common.mts, pass.mts, seed.mts` and `probe-rev/seedF.mts`, copied into one scratch folder;
+  private cluster on port 5494 at /root/pr2-pg (`cluster.sh up /root/pr2-pg`); queue: `S=<scratch> TP_REPO=<checkout>
+  DRAFT=<the migration's text> queue.sh "seedR 2000" "run cap3_r_2000_seed none w1" "run cap3_r_2000_seed pr2 w1"
+  "cmp cap3_r_2000 w1" "seedF 10000" … "seedF 30795" …` (about 50 minutes; A's month before is 30 of them).
+  For the run of record, seed from a checkout WITHOUT the migration (the base), state `pr2` applies the placed file.
 - **Next steps, in order:** (1) the migration placed; (2) `pnpm test:db` files `apps/worker/src/reconcile/ledger-lookups.db.test.ts`
   and `packages/db/src/ledger-lookups.db.test.ts` green; (3) ADR 0087's dated note with the re-measured figures;
   (4) the two adversarial reviews: round 1 done on the draft (below); a delta review once the migration is placed; (5) wait for #142's merge (W10 tells the orchestrator); (6) base merge,
@@ -80,7 +92,10 @@ Each finding was checked before any change.
 | --- | ---: | ---: | ---: | ---: | --- |
 | spread R, 2,000 lines | 53.7 s | 19.0 s | 36.2 s to 3.1 s | 2.0 s to 1.3 s | IDENTICAL row for row, in order, `seq` included (20,635 rows) |
 | F, 10,000 lines | 220.9 s | 79.2 s | 92.1 s to 2.2 s | 52.2 s to 4.0 s | IDENTICAL row for row, in order, `seq` included (102,907 rows) |
-| A's month (F's shape, 30,795 lines) | running | running | | | |
+| A's month (F's shape, 30,795 lines) | 1,770.2 s | 317.1 s | 863.3 s to 7.1 s | 589.4 s to 15.0 s | IDENTICAL row for row, in order, `seq` included (316,770 rows); 30,795 approved, posted and recovered, 494,780,000 cents posted, in both |
+| **the middle state:** F 10,000 on a ledger pre-filled with 20,000 never-analyzed entries of another tenant | 132.0 s | 168.5 s | 2.0 s to 90.8 s | 52.2 s to 4.1 s | same approved and posted cents (161,270,000 each); rows not dumped |
+
+These are the first run, on the WIP tree. **The run of record is on the tree the PR merges onto (after #142).**
 
 ## Open
 - The marker refusal (above).
