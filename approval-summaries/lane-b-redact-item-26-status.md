@@ -2,7 +2,26 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9m
 
 # Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
 
-## RESUME-BLOCK, current (W18 at its token limit, 2026-11-11 about 21:50 UTC; fix round 1 is built and green, NOT yet reviewed on its delta; no PR is open)
+## RESUME-BLOCK, current (W20, session_019i9ifCRAB5iyShfYuBtnA3, 2026-11-11 about 23:00 UTC; part A is a draft PR waiting on CI; part B not started)
+
+- **Part A (the time bound, its own PR):** branch `co-001/time-budget-bound` at **cce22926** on 356914e2, draft PR open
+  (see the next line of this block once numbered), W20 subscribed. Merge on green required checks, then one line to
+  the orchestrator. The helper was REBUILT after review T-1 (W18's build let a 3.4 to 3.8 s reader pass): first run
+  against the budget itself; only over-budget work is rerun beside a calibration (fastest of five, 150 passes,
+  allocation-free, reference 144 ms on Node 24, counted above 5 %); 60 s hang guard on the four blocks; its own tests
+  in `test-support/time-budget.test.ts`. Review and scripts: `designs/time-budget-bound/`. Run tests with
+  `PATH=/opt/node24/bin:$PATH` (the container's default node is 22; CI is 24).
+- **Part B, when A has merged:** W18's block below stands, with these changes: item 26's WIP (b29e611a) carries W18's
+  OLD helper and call sites; on merging the base, take the base's `time-budget.ts`, `time-budget.test.ts` and call-site
+  shape (`timed(BUDGET_MS, ...)` is the same signature; `attempts` is gone; add `{ timeout: HANG_GUARD_MS }` to any
+  timed block item 26 adds), and make item 26's ADR amendment cite the `co-001/time-budget-bound` amendment instead
+  of its own "How the budget is proved" paragraph. Then B-5's letters must be re-measured against the plain 3 s (no
+  20 to 30 % hidden allowance any more): W18's 2.2 to 2.5 s was Node 22; if a row is over 3 s on Node 24 in-suite,
+  stop and tell the orchestrator.
+- Told to the orchestrator with the merge line: the container's default node is 22; one untimed property test in
+  denial-letter.test.ts ran past vitest's 5 s default under a load of eight on four cores.
+
+## RESUME-BLOCK, earlier (W18 at its token limit, 2026-11-11 about 21:50 UTC; fix round 1 is built and green, NOT yet reviewed on its delta; no PR is open)
 
 - **WIP ref:** `co-001/wip-redact-item-26` at **b29e611a** (on f3f5a642). Local branch name `co-001/redact-item-26`.
   Reviews A and B: `designs/lane-b-redact-item-26/reviews/review-a.md`, `review-b.md` (scripts beside them; rerun
