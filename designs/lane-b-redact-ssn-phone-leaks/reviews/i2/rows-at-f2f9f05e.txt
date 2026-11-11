@@ -1,0 +1,230 @@
+"IMPORTANT NOTICE\n____________________________________________\nClaim Number: 20260112345.01" 
+    head: same | before: same | base: same
+"Claim\n#\n20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Claim\n#:\n12345678901234.01" 
+    head: same | before: REFUSED | base: same
+"| Claim |\n|:------|\n| 20260112345.01 |" 
+    head: same | before: REFUSED | base: same
+"| Invoice |\n|:--------|\n| 802-45-678901.50 |" 
+    head: same | before: REFUSED | base: same
+"Statement\n#########\n802-45-678901.50" 
+    head: same | before: REFUSED | base: same
+"| Claim |\n|-------|\n| 20260112345.01 |" 
+    head: same | before: same | base: same
+"| Claim # |\n|:--------|\n| 20260112345.01 |" 
+    head: same | before: same | base: same
+"Service 01/01/2020-150.00 Paid\nClaim\n#\n802-456-78901" 
+    head: same | before: REFUSED | base: same
+"Seq 900-12-345601Jan 2020" 
+    head: REFUSED | before: REFUSED | base: same
+"Seq 90012345601Jan 2020" 
+    head: REFUSED | before: same | base: same
+"Seq 90012345601Jan, 2020" 
+    head: REFUSED | before: same | base: same
+"Seq 90012345601-Jan 2020" 
+    head: REFUSED | before: same | base: same
+"Seq 202-555-012301Jan 2020" 
+    head: REFUSED | before: REFUSED | base: same
+"Seq 202555012301Jan 2020" 
+    head: REFUSED | before: same | base: same
+"Seq 90012345601Jan2020" 
+    head: REFUSED | before: REFUSED | base: same
+"Member\nID\nNumber\n20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Remittance\nAdvice\nNumber\n12345678901234.01" 
+    head: same | before: REFUSED | base: same
+"Account\nID\nNo.\n20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Member\nID Number\n20260112345.01" 
+    head: same | before: same | base: same
+"Invoice\n-------\nNo. 20260112345.01" 
+    head: same | before: REFUSED | base: same
+"STATEMENT\n---------\nID: 12345678901234.01" 
+    head: same | before: REFUSED | base: same
+"│ Claim Number │\n├──────────────┤\n│ 20260112345.01 │" 
+    head: same | before: REFUSED | base: same
+"Claim Number\n────────────\n20260112345.01" 
+    head: same | before: same | base: same
+"Claim Number\n_ _ _ _ _ _\n20260112345.01" 
+    head: REFUSED | before: REFUSED | base: same
+"Acct.\n-----\n802-45-678901.50" 
+    head: same | before: REFUSED | base: same
+"Acct\n-----\n802-45-678901.50" 
+    head: same | before: same | base: same
+"Claim:20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Row 366-535-16935Nov 2000.00" 
+    head: same | before: REFUSED | base: same
+"Unit 398-272-12393MAY 1999 units" 
+    head: REFUSED | before: REFUSED | base: same
+"Medicare rate 110 32.744201Jan 2026" 
+    head: REFUSED | before: REFUSED | base: same
+"Medicare rate 110 32.74420 Jan 2026" 
+    head: same | before: same | base: same
+"Lot 802-45-678931-September., 2026" 
+    head: REFUSED | before: REFUSED | base: same
+"1651.90. Medicare 917 16.2677535.06-17-AUG-23" 
+    head: REFUSED | before: same | base: same
+":Call900 77.3283150.00" 
+    head: REFUSED | before: same | base: same
+"2nd: Fax\n( 900 28.5633150.00" 
+    head: REFUSED | before: same | base: same
+"Soc. Sec. and Medicare 110 32.74420" 
+    head: REFUSED | before: same | base: same
+"Medicare rate 110 32.74420" 
+    head: same | before: same | base: same
+"Contact: Billing 250 75.123456" 
+    head: same | before: same | base: same
+"Medicare 110 32.74420" 
+    head: REFUSED | before: same | base: same
+"Fax 250 75.123456" 
+    head: REFUSED | before: same | base: same
+"STATEMENT\n#\n900-12-3456150.00" 
+    head: same | before: REFUSED | base: same
+"SSN: 90012345601Jan 2020" 
+    head: REFUSED | before: same | base: same
+"Seq 12345678901Jan 2000.00" 
+    head: same | before: same | base: same
+"Claim Number\n\n\n20260112345.01" 
+    head: REFUSED | before: REFUSED | base: same
+"Invoice\n\nNo. 20260112345.01" 
+    head: REFUSED | before: REFUSED | base: same
+"Claim Number │ 20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Provider: +1-202-555-0123150.00" 
+    head: REFUSED | before: same | base: same
+"Provider +12025550123150.00" 
+    head: REFUSED | before: same | base: same
+"Facility +1(202)555-0123150.00" 
+    head: REFUSED | before: same | base: same
+"Location: +1.202.555.0123150.00" 
+    head: REFUSED | before: same | base: same
+"Member +1-202-555-012301/02/2020" 
+    head: REFUSED | before: same | base: same
+"Account +1 202-555-0123150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Provider: +1-202-555-0123" 
+    head: "Provider: [PHONE]" | before: "Provider: [PHONE]" | base: "Provider: [PHONE]"
+"Provider: +12025550123" 
+    head: "Provider: [PHONE]" | before: "Provider: [PHONE]" | base: "Provider: [PHONE]"
+"Provider + 202-555-0123150.00" 
+    head: REFUSED | before: same | base: same
+"Phone: Provider +1-202-555-0123150.00" 
+    head: REFUSED | before: same | base: same
+"Provider Phone +1-202-555-0123150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Claim + 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"SSN Account + 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN + 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN ____ 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Phone ____ 202-555-0123150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Member SSN\n─────\n900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN / Member ID\n─────\n900-12-3456150.00" 
+    head: same | before: same | base: same
+"SSN / Member ID\n-----\n900-12-3456150.00" 
+    head: same | before: same | base: same
+"| Member SSN |\n|-----|\n| 900-12-3456150.00 |" 
+    head: REFUSED | before: REFUSED | base: same
+"| Phone |\n|-----|\n| 202-555-0123150.00 |" 
+    head: REFUSED | before: REFUSED | base: same
+"Phone on\nfile: 202-555-0123150.00" 
+    head: same | before: same | base: same
+"SSN on\nfile: 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN\non\nfile: 900-12-3456150.00" 
+    head: same | before: same | base: same
+"The Social Security number that we have on\nfile: 900-12-3456150.00" 
+    head: same | before: same | base: same
+"The Social Security number that we have on file: 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Phone on\ffile: 202-555-0123150.00" 
+    head: same | before: same | base: same
+"SSN/Medicare ID 900 12.3456150.00" 
+    head: REFUSED | before: same | base: same
+"Medicare/SSN 900 12.3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"900-12-345601Jan\n2020" 
+    head: same | before: same | base: same
+"900-12-345601Jan\t2020" 
+    head: same | before: same | base: same
+"900-12-345601Jan '20" 
+    head: same | before: same | base: same
+"90012345601/02/2020150 00" 
+    head: same | before: same | base: same
+"90012345601/02/202012:30" 
+    head: same | before: same | base: same
+"MemberSSN 8 1234567893.1" 
+    head: same | before: same | base: same
+"Total\u0002for45.00 and 9 0 0 1 2 3 4 5 6" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"Zeph\u0002yra Total for45.00 and 9 0 0 1 2 3 4 5 6" 
+    head: REFUSED | before: REFUSED | base: same
+"Jane\u0001Zephyra Total for45.00 and 9 0 0 1 2 3 4 5 6" 
+    head: REFUSED | before: REFUSED | base: "[PATIENT_NAME]\u0001[PATIENT_NAME] Total for45.00 and 9 0 0 1 2 3 4 5 6"
+"Total for45.00 and 9 0 0 1 2 3 4 5 6" 
+    head: same | before: same | base: same
+"90012345601Jan, 2020" 
+    head: REFUSED | before: same | base: same
+"SSN: 900-12-345601Jan 2020" 
+    head: REFUSED | before: REFUSED | base: same
+"900-12-345601/02/2020150.00" 
+    head: same | before: same | base: same
+"900-12-345601/02/20201,250.00" 
+    head: same | before: same | base: same
+"202-555-012301/02/2020150.00" 
+    head: same | before: same | base: same
+"90012345601/02/2020150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"900-12-345601⁃02⁃2020" 
+    head: same | before: same | base: same
+"90012345601⁃02⁃2020" 
+    head: REFUSED | before: REFUSED | base: same
+"900-12-345601Jan,  2020" 
+    head: same | before: same | base: same
+"Provider: 1-202-555-0123150.00" 
+    head: same | before: same | base: same
+"Provider: 202-555-0123150.00" 
+    head: same | before: same | base: same
+"Provider line +1-202-555-0123150.00" 
+    head: REFUSED | before: same | base: same
+"SSN (Zephyra Zephyra. 2020-01-02 900 12 3456900-12-3456" 
+    head: "SSN ([PATIENT_NAME] [PATIENT_NAME]. 2020-01-02 900 12 3456900-12-3456" | before: "SSN ([PATIENT_NAME] [PATIENT_NAME]. 2020-01-02 900 12 3456900-12-3456" | base: "SSN ([PATIENT_NAME] [PATIENT_NAME]. 2020-01-02 900 12 3456900-12-3456"
+"SSN 2020-01-02 900 12 3456900-12-3456" 
+    head: same | before: same | base: same
+"SSN (Zephyra. 2020-01-02 900 12 3456900-12-3456-PatientSSN 8 1234567893.1\n$10-900.12" 
+    head: "SSN ([PATIENT_NAME]. 2020-01-02 900 12 3456900-12-3456-PatientSSN 8 1234567893.1\n$10-900.12" | before: "SSN ([PATIENT_NAME]. 2020-01-02 900 12 3456900-12-3456-PatientSSN 8 1234567893.1\n$10-900.12" | base: "SSN ([PATIENT_NAME]. 2020-01-02 900 12 3456900-12-3456-PatientSSN 8 1234567893.1\n$10-900.12"
+"SSN (Zephyra. 2020-01-02 900 12 3456900-12-3456\n$10-900.12" 
+    head: "SSN ([PATIENT_NAME]. 2020-01-02 900 12 3456900-12-3456\n$10-900.12" | before: "SSN ([PATIENT_NAME]. 2020-01-02 900 12 3456900-12-3456\n$10-900.12" | base: "SSN ([PATIENT_NAME]. 2020-01-02 900 12 3456900-12-3456\n$10-900.12"
+"PatientSSN 1) 7886924.4" 
+    head: REFUSED | before: REFUSED | base: same
+"PatientSSN 900123456.50" 
+    head: REFUSED | before: REFUSED | base: same
+"PatientSSN 900 12 3456" 
+    head: "PatientSSN [SSN]" | before: "PatientSSN [SSN]" | base: "PatientSSN [SSN]"
+"PatientSSN Zephy∙ra 900123456" 
+    head: "PatientSSN [PATIENT_NAME] [SSN]" | before: "PatientSSN [PATIENT_NAME] [SSN]" | base: "PatientSSN Zephy∙ra [SSN]"
+"PatientSSN Account\n─────\n900-12-3456150.00" 
+    head: same | before: same | base: same
+"PatientSSN Account\n-----\n900-12-3456150.00" 
+    head: same | before: same | base: same
+"SSN on\n\nfile: 900-12-3456150.00" 
+    head: same | before: same | base: same
+"SSN 01/01/2020 900 12 3456150.00" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"SSN 2020-01-02 900 12 3456150.00" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"SSN 01/01/2020 900 12 3456" 
+    head: "SSN 01/01/2020 [SSN]" | before: "SSN 01/01/2020 [SSN]" | base: "SSN 01/01/2020 [SSN]"
+"on file: PatientSSN No. - ΖEPHYRA­Ref: 12/9001 23456: 1,250.00: PatientSSN No.-900" 
+    head: "on file: PatientSSN No. - [PATIENT_NAME]­Ref: 12/9001 23456: 1,250.00: PatientSSN No.-900" | before: "on file: PatientSSN No. - [PATIENT_NAME]­Ref: 12/9001 23456: 1,250.00: PatientSSN No.-900" | base: same
+"PatientSocialSecurityNumber-SYNCLAIMOOO1. 00123456\t97110 x" 
+    head: "PatientSocialSecurityNumber-[CLAIM_1]. 00123456\t97110 x" | before: "PatientSocialSecurityNumber-[CLAIM_1]. 00123456\t97110 x" | base: same
+"Member ID: ________________________________________________\nPlease complete and return. Reference 2026-0115-123-4567" 
+    head: same | before: same | base: same

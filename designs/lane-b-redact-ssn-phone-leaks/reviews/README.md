@@ -63,3 +63,16 @@ The scripts carry the absolute paths of the session that wrote them (`/home/user
   in 24ad1075 with H2-1 and H2-8; H2-2 (a header row over its rows) and H2-5 are recorded costs (`rows-at-24ad1075.txt`).
 - `brief-i1.md`, `brief-i2.md`, `recorded-for-the-sixth-review.md`: the briefs and the recorded list given to the two
   reviewers of the delta a66fee45 to 24ad1075 (I1 PHI, I2 must-stay).
+- `i1/`: the PHI review of that delta, which ran to its report: no letter the base or the tree before refused or redacted
+  is sent outside the recorded give-backs (89,106 and 31,050 generated letters, the audit copy silent). I1-1, not a
+  leak: the check did not return on a long rule of underscores or box lines between a noun and a number (the round had
+  put a repeated run inside a repeated group). Five lines of residuals (`hand1.txt` to `hand3.txt`; `glue.mts`,
+  `glue2.mts`, `ivshapes.mts`, `marks.mts`, `marks2.mts`, `fam.mts` are its generators, `redos*.mts` its timings).
+- `i2/`: the must-stay review of the same delta, which ran to its report: I2-1 (the same backtracking, measured: times
+  1.47 for each character of the rule), I2-2 (a `#` or a colon alone under a label, a table's alignment row), I2-3 (the
+  month's word after a bare run read one way and after a shape another), I2-4 to I2-6 (`letters.txt` holds the letters
+  of both reports as the builder re-ran them; `main.mts`, `forms.mts`, `a1.mts`, `time.mts`, `trig.mts`, `eq.mts`).
+  Fixed in f2f9f05e (`rows-at-f2f9f05e.txt`), with one letter the gate's replay showed (a Medicare number written with
+  a point).
+- `brief-j.md`, `recorded-for-the-seventh-review.md`: the brief and the recorded list given to the one reviewer of the
+  delta 24ad1075 to f2f9f05e (105 diff lines; one reviewer with three lenses: what is sent, what must stay, logic and time).

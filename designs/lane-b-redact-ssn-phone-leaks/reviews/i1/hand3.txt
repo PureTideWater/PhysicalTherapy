@@ -1,0 +1,6 @@
+"SSN 01/01/2020 900 12 3456150.00"
+"SSN 2020-01-02 900 12 3456150.00"
+"SSN 01/01/2020 900 12 3456"
+"on file: PatientSSN No. - ΖEPHYRA­Ref: 12/9001 23456: 1,250.00: PatientSSN No.-900"
+"PatientSocialSecurityNumber-SYNCLAIMOOO1. 00123456\t97110 x"
+"Member ID: ________________________________________________\nPlease complete and return. Reference 2026-0115-123-4567"
