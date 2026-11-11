@@ -4,13 +4,19 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
 `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 2. Grant: `approval-summaries/founder-asks-2026-10-27.md`,
 "Decided 2026-11-06"; the granted text: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` at 38123394.
 
-## RESUME-BLOCK (current at 2026-11-11 15:05 UTC)
+## RESUME-BLOCK (current at 2026-11-11 15:55 UTC)
 - **State: draft PR #143 is OPEN** (https://github.com/PureTideWater/PhysicalTherapy/pull/143), head **c4272c33** on
   `co-001/ledger-function-bodies` (= `co-001/wip-ledger-function-bodies`), base 3bff4fd6. W11 is subscribed. Its
   description is `lane-a-wip/schema-pr2/pr-description.md`.
 - **The full local suite ran once on c4272c33, all green** (`lane-a-wip/schema-pr2/suite-summary.txt`): only
   `--check --require-approval` fails, on the blank approval line. Unit 13,500; infra 815; golden 381; oracle 738;
   database 10,220 (1 skipped); e2e 87. Mutation left to CI.
+- **CI, attempt 1 (run 43043707704, 14:58 UTC):** static, lint, build, images, capacity, `screening-capacity gate`,
+  `mutation` and `approval-of-record` green; `domain model` red on the blank approval line alone (its log: the document
+  and the function files match the schema on CI's PostgreSQL 18.6). `unit`, `db 1-4` and `e2e 1-2` failed BEFORE any
+  test: the runner could not resolve Ubuntu's archive hosts while `playwright install --with-deps chromium` fetched
+  system packages (not this PR's). **Failed jobs re-run once at 15:53 UTC** (W11); a second failure of a test job is
+  real and gets read. Check-in set for 16:38 UTC. The container restarted again about 15:50 UTC (checkout intact).
 - **Next, in order:** (1) CI on c4272c33: every check green but `domain model` and `all green` (the blank line); a red
   check otherwise: reproduce, fix, show it passing, push; (2) then post the suggested approval line as ONE
   pull-request comment: `gh api repos/PureTideWater/PhysicalTherapy/pulls/143/comments -f commit_id=<head sha>
