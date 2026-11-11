@@ -1,6 +1,6 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-11 01:30 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-11 01:35 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
@@ -11,6 +11,7 @@ own status file and `CLAUDE.md`, not the long history files.
   - **W3** session_019i9ifE6JAC24yB5654GXcV: merged #134 and #136, then stood down on 2026-11-11 (its context had passed 500k tokens). It holds nothing.
   - **W4** session_019i9ifAM5Y3ftqx7i6Cx8Gk (acting Lane B), from 2026-11-11 01:20 UTC: draft #137, then the rest of item 9.
 - **Lane A** (this account): the weekly allowance reset on 2026-11-10 at about 14:00 UTC; the next reset is Tue 2026-11-17 14:00 UTC. **Its weekly limit showed the warning level at about 00:30 UTC on 2026-11-11**, 11 hours into the week; sessions cannot see the percentage, only the co-founder can.
+- **Usage (the co-founder's reading, 2026-11-11 01:30 UTC):** 34% of the week on all models, 32% on the build's model. From the sessions' records, 1% is about 5 dollars of API-equivalent usage, so three builds use roughly 4 to 7% an hour and the limit would arrive between about 11:00 and 19:00 UTC on 2026-11-11 unless the co-founder resets it. Sessions cannot see the percentage. When the limit stops them the orchestrator stops too; the co-founder's next message after a reset restarts them from their RESUME-BLOCKs.
 - **Lane B:** capped until Fri 2026-11-13 19:00 UTC. Until then Lane A runs Lane B's urgent items as acting Lane B, and hands them back at 18:30 UTC that day.
 - **Environment:** the Default environment has a guarded setup script since 2026-11-10 (it runs `tools/setup-container.sh` from `claude/build-ops`; log in `/tmp/setup-container.log`). Unproven on a fresh container: a new session still runs the script once and reads its summary.
 - **Pace (the co-founder, 2026-11-11 01:15 UTC):** weekly usage is under 40% and the co-founder can reset the limit, so three builds run again beside the orchestrator. A session started for database, money, PHI and redaction, auth, security or CI-permissions work runs at the highest effort setting (the co-founder: the same model throughout, the highest effort where it is needed). Two rules stay. Every session pushes its WIP ref and keeps its RESUME-BLOCK current at every clean point, so a hard stop strands nothing. A session whose context passes about 300k tokens finishes its item and stands down; the next item starts in a fresh session. If the account stops, this page and `lanes/lane-a-handoff-to-lane-b-2026-11-13.md` are the handoff.
