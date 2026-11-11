@@ -374,7 +374,7 @@ const DECIMAL_DIGIT = /^\p{Nd}$/u;
  * scan read (docs/adr/0054, amendment of 2026-11-04, R3). With `alike`, another script's look-alike is the ASCII letter or
  * digit it reads as (fold): the views the call's own identifiers are matched on, never the patterns' or the scan's.
  */
-function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = false, alike = !digits): View {
+function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = false, alike = !digits && ownFold === 'alike'): View {
   if (viewsOfCheck === null) {
     return buildView(normal, invisible, digits, alike);
   }
@@ -386,6 +386,45 @@ function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = f
   const view = buildView(normal, invisible, digits, alike);
   viewsOfCheck.push({ normal, key, view });
   return view;
+}
+
+/**
+ * Which fold the call's own identifiers are being read on. 'plain' is the fold of cc3dd7f6 and ef3e8d20, and what every
+ * caller but the letter reader gets. The letter reader reads its own identifiers on both (matchesIn, ownIdentifierGlued):
+ * what the plain fold finds is what ef3e8d20 found, and the look-alike fold only adds to it. One fold for both lost
+ * refusals ef3e8d20 made, where a look-alike beside a name became a digit to the glued checks ("Zephyra\u3007", "Zephyra
+ * \uA76E00-12-3456" in a held letter: the review of the fix round, C1-3 and C1-4).
+ */
+let ownFold: 'plain' | 'alike' = 'plain';
+
+function onFold<T>(fold: 'plain' | 'alike', read: () => T): T {
+  const before = ownFold;
+  ownFold = fold;
+  try {
+    return read();
+  } finally {
+    ownFold = before;
+  }
+}
+
+/** Whether NFKC text holds a letter or a digit the look-alike fold reads otherwise than the plain fold does. */
+function holdsLookAlike(normal: string): boolean {
+  for (const codePoint of normal) {
+    if (codePoint.charCodeAt(0) >= 0x80 && fold(codePoint) !== foldPlain(codePoint)) return true;
+  }
+  return false;
+}
+
+const subjectsAlike = new WeakMap<Subject, boolean>();
+
+/** Whether the look-alike reading can find what the plain one does not: a look-alike in the text, or in the call's own identifiers. */
+function alikeReads(normal: string, subject: Subject): boolean {
+  let own = subjectsAlike.get(subject);
+  if (own === undefined) {
+    own = [...subject.names, ...subject.memberIds, ...subject.claims.flat()].some((value) => holdsLookAlike(value.normalize('NFKC')));
+    subjectsAlike.set(subject, own);
+  }
+  return own || holdsLookAlike(normal);
 }
 
 /**
@@ -848,7 +887,7 @@ function datesOf(normal: string, subject: Subject): DatesOf {
   if (datesOfCheck === null) {
     return readDatesOf(normal, subject);
   }
-  const key = JSON.stringify(subject.datesOfBirth);
+  const key = `${ownFold}${JSON.stringify(subject.datesOfBirth)}`;
   const known = datesOfCheck.find((each) => each.key === key && each.normal === normal);
   if (known !== undefined) {
     return known.dates;
@@ -934,7 +973,7 @@ function birthFormsIn(normal: string, subject: Subject): (range: Range) => boole
 /** A month's word anywhere: only then can a name lie in a written date of birth. */
 const MONTH_IN = new RegExp(MONTH_WORD, 'iu');
 
-function matchesIn(normal: string, subject: Subject): Found[] {
+function ownMatchesIn(normal: string, subject: Subject): Found[] {
   const { births, inWholeDate, inDateAsRead } = datesOf(normal, subject);
   const inBirthForm = birthFormsIn(normal, subject);
   const found: Found[] = births.map((range) => ({ ...range, kind: 'birth' as const, claim: 0 }));
@@ -953,11 +992,6 @@ function matchesIn(normal: string, subject: Subject): Found[] {
           continue;
         }
         if (inWholeDate(range)) {
-          continue;
-        }
-        // A part of two or three letters written wholly in another script's letters is that script's word ("\u043D\u0430" in a
-        // Russian notice is no HA, "\u03BA\u03B1\u03B9" no KAI: the review of the build, B2-7); with an ASCII letter among them it is the name.
-        if ([...form.compact].length < 4 && !/[A-Za-z]/u.test(normal.slice(range.start, range.end).normalize('NFD'))) {
           continue;
         }
         names.push({ start, end });
@@ -1010,26 +1044,52 @@ function matchesIn(normal: string, subject: Subject): Found[] {
     const match = found[i];
     if (match !== undefined && match.kind !== 'birth' && inBirthForm(match)) found.splice(i, 1);
   }
-  if (subject.patterns) {
-    // A member ID or claim number with a letter or a digit outside ASCII in it is a form ef3e8d20 did not read (Found.fresh).
-    found.forEach((match, at) => {
-      if (match.kind !== 'name' && match.kind !== 'birth' && NOT_ASCII_WORD.test(normal.slice(match.start, match.end).normalize('NFD').replace(MARKS, '').replace(NUMBER_JOINER, ''))) found[at] = { ...match, fresh: true };
-    });
-    // The call's own identifiers written with a scan's look-alikes, as words of their own (ruling A').
-    const tokens = writtenTokens(normal);
-    found.push(...confusedMatchesIn(tokens, subject, normal));
-    // Last, so a bare number's label window ends at every match already found (section 3.4); never inside a run that holds
-    // one of the call's identifiers glued in a look-alike form, which the check refuses whole.
-    const glued = confusedGluedIn(tokens, subject);
-    found.push(...patternMatchesIn(normal, found, subject).filter((match) => (match.kind !== 'ssn' && match.kind !== 'phone') || !glued.some((range) => match.start < range.end && range.start < match.end)));
-  }
   return found;
 }
 
-/** A letter or a digit outside ASCII: a member ID or claim number written with one is a form ef3e8d20 did not read. */
-const NOT_ASCII_WORD = /(?!\p{ASCII})[\p{L}\p{N}]/u;
-/** One of a number's joiners (some are modifier letters: no part of the number). */
-const NUMBER_JOINER = new RegExp(`[${NUMBER_JOINERS}]`, 'gu');
+/** A name joiner ef3e8d20 did not read: a name written with one is a match it did not make. */
+const NEW_NAME_JOINER = /[\u00B7\u2027\u2219\u22C5\u2022]/u;
+
+/**
+ * Every match in NFKC text. For the letter reader (subject.patterns): the call's own identifiers as ef3e8d20 read them (the
+ * plain fold); then what only this reading reads, each marked fresh (Found.fresh): a name written with a joiner ef3e8d20
+ * did not read, an identifier found on the look-alike fold alone (another script's letters or digits), and the
+ * digit-for-letter forms; then the Social Security and phone patterns, read with the settled matches alone as what stands
+ * found, so a match ef3e8d20 did not make ends no label's window and is no item of a list ("Claim Zephy\u2219ra, 900123456"
+ * keeps no number: the review of the fix round, C1-2). `marked`, where the check gives it, is the same text with the
+ * call's own placeholders as OWN_MARK: the patterns read it, so a label reads through a placeholder as it read through the
+ * identifier.
+ */
+function matchesIn(normal: string, subject: Subject, marked: string = normal): Found[] {
+  const plain = ownMatchesIn(normal, subject);
+  if (!subject.patterns) {
+    return plain;
+  }
+  const found: Found[] = plain.map((match) => (match.kind === 'name' && NEW_NAME_JOINER.test(normal.slice(match.start, match.end)) ? { ...match, fresh: true } : match));
+  if (alikeReads(normal, subject)) {
+    onFold('alike', () => {
+      for (const match of ownMatchesIn(normal, subject)) {
+        if (plain.some((known) => known.start <= match.start && match.end <= known.end)) continue;
+        // A name part of two or three letters written wholly in another script's letters is that script's word ("\u043D\u0430"
+        // in a Russian notice is no HA, "\u03BA\u03B1\u03B9" no KAI: the review of the build, B2-7).
+        const written = normal.slice(match.start, match.end).normalize('NFD');
+        if (match.kind === 'name' && (written.match(/\p{L}/gu) ?? []).length < 4 && !/[A-Za-z]/u.test(written)) continue;
+        found.push({ ...match, fresh: true });
+      }
+    });
+  }
+  // The call's own identifiers written with a scan's look-alikes, as words of their own (ruling A').
+  const tokens = writtenTokens(normal);
+  const glued = onFold('alike', () => {
+    found.push(...confusedMatchesIn(tokens, subject, normal));
+    return confusedGluedIn(tokens, subject);
+  });
+  // Last, so a bare number's label window ends at every settled match (section 3.4); never inside a run that holds one of
+  // the call's identifiers glued in a look-alike form, which the check refuses whole.
+  const settled = found.filter((match) => match.fresh !== true);
+  found.push(...patternMatchesIn(marked, settled, subject).filter((match) => (match.kind !== 'ssn' && match.kind !== 'phone') || !glued.some((range) => match.start < range.end && range.start < match.end)));
+  return found;
+}
 
 /**
  * What a letter or digit, as written, may stand for where a scan or an eye takes a digit for a letter or a letter for a
@@ -1203,8 +1263,8 @@ function confusedMatchesIn(tokens: readonly WrittenToken[], subject: Subject, no
       // small upsilon).
       const read = confusedAs(token, 0, units);
       if ((read === 'crossed' && !dateToken(token)) || (pieces === 'one' && read === 'same' && token.likened)) {
-        // A digit-for-letter form holds digits the scan chained as ef3e8d20 read it, a name's too ("VANTR3E"): fresh.
-        found.push({ start: token.starts[0] ?? 0, end: token.ends[token.ends.length - 1] ?? 0, kind: form.kind, claim: form.claim, ...(form.kind !== 'name' || read === 'crossed' ? { fresh: true } : {}) });
+        // A match ef3e8d20 did not make: fresh.
+        found.push({ start: token.starts[0] ?? 0, end: token.ends[token.ends.length - 1] ?? 0, kind: form.kind, claim: form.claim, fresh: true });
         return true;
       }
     }
@@ -1257,7 +1317,7 @@ function confusedGluedIn(tokens: readonly WrittenToken[], subject: Subject): Ran
   return ranges;
 }
 
-const confusedGlued = (normal: string, subject: Subject): boolean => confusedGluedIn(writtenTokens(normal), subject).length > 0;
+const confusedGlued = (normal: string, subject: Subject): boolean => onFold('alike', () => confusedGluedIn(writtenTokens(normal), subject).length > 0);
 
 /** What may lie between an initial and the name it belongs to: white space, apostrophes, dashes, "_" and VANISHED (after the name, a comma too). */
 const INITIAL_GAP = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD]*$/u;
@@ -2917,7 +2977,14 @@ const maskedOf = (normal: string, claims = 0, name = BARRIER, own = BARRIER) =>
  * ef3e8d20 refused, and no less, which is what decides whether a match it did not make is applied (appliedMatches).
  */
 function chainLeft(text: string, subject: Subject, claims: number, strict = true): boolean {
-  const survivor = survivorLeft(masked(strict ? text.replace(CASE_GLUED_LABEL, ' ') : text, claims, OWN_MARK, OWN_MARK), strict);
+  // The text as written, and (strict) with a Social Security label a change of case sets apart read as a word of its own:
+  // the worse of the two, so the second reading only adds (as a replacement it lost labels and chains of the first: the
+  // review of the fix round, C1-1).
+  const apart = strict ? text.replace(CASE_GLUED_LABEL, ' ') : text;
+  let survivor = survivorLeft(masked(text, claims, OWN_MARK, OWN_MARK), strict);
+  if (survivor !== 'survivor' && apart !== text) {
+    survivor = survivorLeft(masked(apart, claims, OWN_MARK, OWN_MARK), strict) ?? survivor;
+  }
   if (survivor === 'survivor' || ownIdentifierGlued(masked(text, claims, NAME_MARK), subject, survivor === 'held', strict) || (survivor === 'held' && birthBesideItsPlaceholder(text, subject))) {
     return true;
   }
@@ -2940,7 +3007,10 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
   try {
     const scanned = masked(text, claims.length);
     const subject = letterSubject(patient, claims);
-    if (matchesIn(scanned, subject).length > 0) {
+    // The patterns read the same text with the call's own placeholders as OWN_MARK, so a number a label names through a
+    // placeholder is found here as redaction found it through the identifier: what redaction left as written, because
+    // the letter is refused without it (appliedMatches), is found again and the letter refused.
+    if (matchesIn(scanned, subject, masked(text, claims.length, OWN_MARK, OWN_MARK)).length > 0) {
       return true;
     }
     return chainLeft(text, subject, claims.length);
@@ -3000,16 +3070,24 @@ const INITIAL_TO_NAME = new RegExp(`^[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}]{0,3}`
  *   date ("13-3-61" for 1961-03-03).
  */
 function ownIdentifierGlued(normal: string, subject: Subject, held: boolean, strict = true): boolean {
-  const { inOtherDate } = datesOf(normal, subject);
+  // The call's own identifiers, on the fold ef3e8d20 read and (strict), where a look-alike stands, on the look-alike fold
+  // too: the reading that decides whether a match ef3e8d20 did not make is applied is ef3e8d20's own, and no more.
+  const own = () => {
+    const { inOtherDate } = datesOf(normal, subject);
+    return (
+      numberGlued(normal, subject) ||
+      birthGlued(normal, subject, inOtherDate) ||
+      nameGlued(normal, subject, inOtherDate, held) ||
+      spacedNameGlued(normal, subject, inOtherDate, held) ||
+      (held && (heldOwnIdentifier(normal, subject) || (strict && heldBirthUnread(normal, subject))))
+    );
+  };
   return (
-    numberGlued(normal, subject) ||
-    birthGlued(normal, subject, inOtherDate) ||
-    nameGlued(normal, subject, inOtherDate, held) ||
-    spacedNameGlued(normal, subject, inOtherDate, held) ||
+    own() ||
+    (strict && subject.patterns && alikeReads(normal, subject) && onFold('alike', own)) ||
     (strict && MASKED_SSN_GLUED.test(viewOf(normal, 'drop', true).text)) ||
     (held && HELD_MASKED_SSN_GLUED.test(viewOf(normal, 'drop', true).text)) ||
-    (strict && subject.patterns && confusedGlued(normal, subject)) ||
-    (held && (heldOwnIdentifier(normal, subject) || (strict && heldBirthUnread(normal, subject))))
+    (strict && subject.patterns && confusedGlued(normal, subject))
   );
 }
 
@@ -3075,7 +3153,7 @@ function yearInWords(year: number): string | null {
 function heldBirthUnread(normal: string, subject: Subject): boolean {
   const births = subject.datesOfBirth ?? [];
   if (births.length === 0) return false;
-  const text = viewOf(normal, 'drop', true, true).text;
+  const text = viewOf(normal, 'drop', true, ownFold === 'alike').text;
   const runs = text.match(/[0-9]{4,}/gu) ?? [];
   for (const birth of births) {
     const [yearText = '', monthText = '', dayText = ''] = birth.split('-');
@@ -3345,7 +3423,7 @@ const yearAlone = (year: string) => new RegExp(`(?<![0-9]|[0-9][.,])${year}(?![0
  * form is read blind to separators: random digits of a letter's ICNs, TINs and amounts would hold one by chance.
  */
 function heldOwnIdentifier(normal: string, subject: Subject): boolean {
-  const view = viewOf(normal, 'drop', true, true);
+  const view = viewOf(normal, 'drop', true, ownFold === 'alike');
   const at: number[] = [];
   let stream = '';
   for (let i = 0; i < view.text.length; ) {
