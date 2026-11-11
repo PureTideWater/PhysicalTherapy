@@ -80,6 +80,12 @@ const refuses = (refused: () => unknown, message: string): void => {
   expect(refused).toThrow(message);
 };
 
+/**
+ * The longest properties' own limit: about a second each alone and several times that under the mutation run's
+ * instrumentation on a shared runner, too near the default 5 s, where a test failed by time reads as a mutant killed.
+ */
+const PROPERTY_TIMEOUT_MS = 60_000;
+
 describe('whom a PLB L6 names (D2)', () => {
   it('tries the whole reference, then each identifier in it, in order and without repeats', () => {
     expect(referenceCandidates('SYNCCNLED160004')).toEqual(['SYNCCNLED160004']);
@@ -1181,7 +1187,7 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
       }),
       { numRuns: 1000 },
     );
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('writes the same whichever is uploaded first when two PLB L6s pay the chain a third takes back from, the third uploaded between them or with the second, or a fourth paying the chain dated after the third and uploaded after it or with it, and never above the cash (PR 126 review R2M2-1, RV-DB2-1, RVM3-2)', () => {
     const lineSpecs = fc.uniqueArray(
@@ -1294,7 +1300,7 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
       ),
       { numRuns: 1000 },
     );
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('never writes interest above the cash when two PLB L6s each net a take-back of one chain against a payment of another, whatever order they and the PLB L6s paying the chain are dated and uploaded in, after every reconcile, each walking the PLB L6s until a walk writes nothing (PR 126 review RVM3-3; the per-reconcile bound)', () => {
     const someLines = fc.uniqueArray(fc.record({ line: fc.constantFrom<string>(...LINES), weight: fc.bigInt({ min: 0n, max: 3000n }) }), { selector: (item) => item.line, maxLength: 3 });
@@ -1406,7 +1412,7 @@ describe('interestWrites, over any sequence of reconciles (properties)', () => {
         ],
       },
     );
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('never writes interest above the cash when the chain a PLB L6 takes back from comes to a case line only after the L6 wrote its payments, a person matching it by hand (mayYetHold false, then true; PR 126 review MONEY-R4-1), after every reconcile, whichever is walked first, each walking the PLB L6s until a walk writes nothing (PR 126 review RVM5-2)', () => {
     const someLines = fc.uniqueArray(fc.record({ line: fc.constantFrom<string>(...LINES), weight: fc.bigInt({ min: 0n, max: 3000n }) }), { selector: (item) => item.line, maxLength: 4 });
@@ -1570,7 +1576,7 @@ describe('interest over any uploads, matches by hand and reconciles, as the reco
       }),
       { numRuns: 2000 },
     );
-  });
+  }, PROPERTY_TIMEOUT_MS);
 
   it('keeps a payment off a line holding another chain’s interest, so a PLB L6 taking both chains’ interest back finds each on a line of its own: never 2 against the cash of 1 (PR 126 review RVM5-1)', () => {
     // P0 pays b on L3 (and a through A2, on no line); P2 pays a, whose only line is L3; P1 takes both back.
