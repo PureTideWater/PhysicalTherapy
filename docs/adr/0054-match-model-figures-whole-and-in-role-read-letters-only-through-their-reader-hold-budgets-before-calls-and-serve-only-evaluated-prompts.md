@@ -1137,16 +1137,32 @@ unchanged can be checked byte for byte. The gateway's modules import it from `@t
 the gateway, since they need the gateway's functions. `@tp/redact` is under the money-syntax lint rule the file was
 under, and in the web app's `transpilePackages`.
 
-**The narrative's reading has one function, `nameOrNumberMatches`**, which returns each match as a range and whether
-a name or a number matched. `holdsNameOrNumber` (the drafter's check of its facts) is now
-`nameOrNumberMatches(masked(text), …).length > 0`, and the packet verifier reads through the same function, so the
-two cannot come to read different forms; what a later amendment adds to this reading reaches both.
+**The narrative's reading has one subject (`narrativeSubject`) and is asked two ways.** `holdsNameOrNumber` (the
+drafter's check of its facts) asks it plainly: every identifier, every form, over the text with the gateway's
+placeholders masked. `nameOrNumberMatches` asks where, for the packet verifier: each match as a range of the text as
+given. It differs from the plain check in two ways only, each held by a test of `packages/redact/src/narrative.test.ts`:
 
-**Each number is read as a member ID and as a claim number there.** The narrative's check is told only that a value
-is a number. The kind decides one thing: a digits-only number written as a calendar date is the number only after a
-label of its kind. Read as both, `Claim 2026-03-05` and `Member ID 2026-03-05` are both the number 20260305. The
-drafter's check read numbers as member IDs only, so it is wider by that one case; nothing it read before is lost
-(a member ID's form has no amount exclusion, and a match of either kind counts).
+- it reads an identifier only if the text holds the letters and digits of one of its forms in order with nothing else
+  between them. No form can match otherwise (a form's gaps hold no letter or digit), so the answer is the plain
+  check's, and a case of thousands of identifiers costs a narrative that holds none of them a search each, not a
+  pattern each (17 ms for 10,000 identifiers, where the unfiltered reading took seconds);
+- a caller may ask that a part of a name's word count by itself only from a given number of letters
+  (`shortestPart`; ADR 0047's amendment says why the verifier asks for four). The default is every form, as the plain
+  check reads.
+
+What a later amendment adds to the matcher reaches both.
+
+**Each number is read as a member ID, and one of digits alone as a claim number too.** The narrative's check is told
+only that a value is a number. The kind decides one thing, and only for a number of digits alone: its digits written
+as a calendar date are the number only after a label of its kind. Read as both, `Claim 2026-03-05` and `Member ID
+2026-03-05` are both the number 20260305. The drafter's check read numbers as member IDs only, so it is wider by that
+one case; nothing it read before is lost (a member ID's form has no amount exclusion, and a match of either kind
+counts). `NarrativeInput` gains `numbers` beside `names`, which the worker fills from the records' columns.
+
+**The drafter's check still takes every part of a name from two letters**, so it refuses to draft for a case whose
+patient's name has such a part that is a word of the facts ("in" of HYE-IN): what it checks is sent to a model, and
+the floor that suits a narrative's verifier is not this change's to give it. It is recorded for the letter reader's
+next change.
 
 **Scope is unchanged**: the narrative's reading takes no date of birth, no initial and no Social Security or phone
 number by pattern (amendment of 2026-11-04).

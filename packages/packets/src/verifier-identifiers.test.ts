@@ -10,7 +10,7 @@ import { readableText } from './readable';
 import { scanText } from './scan';
 import { assemblyInput } from './test-support';
 import { type CaseIdentifiers, NO_CASE_IDENTIFIERS, identifierReader, readsNoIdentifier, verifyNarrative, verifyTemplate } from './verifier';
-import { joinedSpans } from './verifier/identifiers';
+import { SHORTEST_PART, joinedSpans } from './verifier/identifiers';
 import { DATED, type IdentifierSkip, identifierForms, identifierSpans } from './verifier/mismatches';
 
 /**
@@ -67,8 +67,11 @@ describe('MOD-19: a narrative that writes one of the case’s identifiers in a f
     ['a minus sign', 'VAN-TREEBY', 'Van−Treeby'],
     ['the dash left out', 'VAN-TREEBY', 'VanTreeby'],
     ['a space for the dash', 'VAN-TREEBY', 'Van Treeby'],
-    ['the second half alone', 'VAN-TREEBY', 'Treeby'],
-    ['the first half alone', 'VAN-TREEBY', 'Van'],
+    ['a part of four letters or more alone', 'VAN-TREEBY', 'Treeby'],
+    ['a part of exactly four letters alone', 'JEAN-LUC', 'Jean'],
+    ['a word of two letters alone', 'JO QUARRINGTON', 'Jo'],
+    ['its short parts together', 'HYE-IN', 'Hye In'],
+    ['its short parts together in lower case with their dash', 'HYE-IN', 'hye-in'],
     ['a dash the records do not hold', 'VANTREEBY', 'Van-Treeby'],
     ['capitalized pieces', 'JOANNQUILL', 'Jo Annquill'],
     ['its words as the records order them, with a comma', 'ZOË QUARRINGTON', 'Zoe, Quarrington'],
@@ -245,6 +248,30 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
     expect(read(text, numbers('0520260306'), { tokens: [], dated: [] })).toEqual(['05 2026-03-06']);
   });
 
+  it('reads no part of a name’s word under four letters by itself: the words no narrative is written without', () => {
+    expect(SHORTEST_PART).toBe(4);
+    // "in", "on", "the", "to", "van", "de" and "la" are each a part of one of these names, and words of the draft.
+    const identifiers = names('HYE-IN', 'ON-YU', 'THE-ANH', 'TO-UYEN', 'VAN-TREEBY', 'DE-LA-QUILL', "O'QUILL", 'J.R.');
+    expect(draft).toMatch(/\bin\b/);
+    expect(draft).toMatch(/\bto\b/);
+    expect(draft).toMatch(/\bThe\b/);
+    expect(mismatches(draft, identifiers)).toEqual([]);
+    expect(flagged(`${draft} The plan paid on a van in de la Hye to Yu and Anh [3].`, identifiers)).toEqual([]);
+    // The whole name still fails in every form, its short parts within it, and so does a part of four letters or more.
+    expect(flagged(telling('Hye-In and to uyen and The Anh'), identifiers)).toEqual(['Hye-In', 'to uyen', 'The Anh']);
+    expect(flagged(telling('Treeby, Uyen and Quill'), identifiers)).toEqual(['Treeby', 'Uyen', 'Quill']);
+    expect(flagged(telling('Hy[1]e-In'), identifiers)).toEqual(['Hy[1]e-In']);
+  });
+
+  it('still fails a word a name is, at any length and in any form: a name that folds to a word of the text (docs/adr/0047, the person rephrases)', () => {
+    // A whole name or a whole word of one counts from two letters, so a patient named To, or Thế, fails "to" and "the";
+    // a part of four letters or more that is a word of the text fails it too.
+    expect(flagged(draft, names('TO')).length).toBeGreaterThan(0);
+    expect(flagged(draft, names('THẾ')).length).toBeGreaterThan(0);
+    expect(flagged(draft, names('TO UYEN')).length).toBeGreaterThan(0);
+    expect(flagged(telling('page 2'), names('PAGE-SMITH'))).toEqual(['page']);
+  });
+
   it('reads nothing in a placeholder or a citation marker, and everything right against one', () => {
     const tokens = `${draft} For {{patient_name:1}} and {{member_id:2}} the plan paid short [3].`;
     expect(flagged(tokens, { names: ['PATIENT', 'NÁME', 'MEMBER'], numbers: ['ID2', '3'] })).toEqual([]);
@@ -270,8 +297,10 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
     ];
     const identifiers: CaseIdentifiers = { names: ['QUARRINGTON'], numbers: ['1234'] };
     expect(read(text, identifiers, { tokens, dated: [] })).toEqual(['Quar[1]rington', '12[2]34']);
-    // A name over a dated figure is dropped; a number stays only when it holds the whole figure.
-    expect(read(text, identifiers, { tokens, dated: [{ start: 0, end: 4 }] })).toEqual(['12[2]34']);
+    // A match stays over a dated figure only when it holds the whole figure, a name's as a number's.
+    expect(read(text, identifiers, { tokens, dated: [{ start: 0, end: 4 }] })).toEqual(['Quar[1]rington', '12[2]34']);
+    expect(read(text, identifiers, { tokens, dated: [{ start: 2, end: 16 }] })).toEqual(['12[2]34']);
+    expect(read(text, identifiers, { tokens, dated: [{ start: 0, end: 15 }] })).toEqual(['12[2]34']);
     expect(read(text, identifiers, { tokens, dated: [{ start: 19, end: 21 }] })).toEqual(['Quar[1]rington', '12[2]34']);
     expect(read(text, identifiers, { tokens, dated: [{ start: 19, end: 26 }] })).toEqual(['Quar[1]rington', '12[2]34']);
     expect(read(text, identifiers, { tokens, dated: [{ start: 18, end: 21 }] })).toEqual(['Quar[1]rington']);
@@ -319,15 +348,18 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
   });
 
   // The differential: the verifier's reading against the two it is made of, each asked directly. Whatever the letter
-  // reader's matcher comes to read, the verifier reads, and it reads nothing neither of them does.
+  // reader's matcher comes to read, the verifier reads, and it reads nothing neither of them does. The matcher is
+  // asked plainly here (holdsNameOrNumber, the drafter's check: every identifier, every form), while the verifier asks
+  // where, of the identifiers the text can hold; no name of these cases has a part under SHORTEST_PART letters, the
+  // one thing the verifier leaves the plain check.
   const PIECES = [
-    ...['Zoe', 'ZOË', 'Zoey', 'Van–Treeby', 'Treeby', 'Treebys', 'O’Quill', 'OQuill', 'Quill', 'Jo Ann', 'jo ann', 'in a'],
+    ...['Zoe', 'ZOË', 'Zoey', 'Vann–Treeby', 'Vann', 'Treeby', 'Treebys', 'O’Quill', 'OQuill', 'Quill', 'Jo Ann', 'jo ann', 'in a'],
     ...['ZZ-123-4567', 'ZZ 1234567', 'ZZ-123-4568', 'SYN.CCN.0001', 'ICNSYNCCN0001', 'SYN.CCN.0002', '13', '1 3', '63'],
     ...['$70.00', '97110', '2 units', '80%', '1234567893', 'SYNPLAN-63', 'page 2', '{{patient_name:1}}', '{{claim_control_number:2}}', '{{member_id:1}}', '[1]', '[13]', '[2, 3]'],
     ...[' ', ' ', ', ', '. ', ': ', '#', '-', ' the payer told ', ' was paid ', ' Claim ', ' Member ID ', '\n', 'Tree', 'by', 'ZZ', '1234567', 'Quar', 'rington'],
   ];
   const CASES: readonly CaseIdentifiers[] = [
-    { names: ['ZOË', 'VAN-TREEBY', "O'QUILL", 'JOANN', 'QUARRINGTON'], numbers: ['ZZ1234567', 'SYNCCN0001'] },
+    { names: ['ZOË', 'VANN-TREEBY', "O'QUILL", 'JOANN', 'QUARRINGTON'], numbers: ['ZZ1234567', 'SYNCCN0001'] },
     { names: ['PATIENT', 'NAME', 'INA'], numbers: ['13', '63', 'ID1'] },
     { names: ['QUILL'], numbers: ['INA', '1234567893'] },
   ];

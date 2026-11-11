@@ -189,8 +189,8 @@ Overlapping spans are joined into one. The report holds positions only, as befor
 **What the matcher's reading adds**, each as redaction reads it:
 
 - a name with its marks, case, apostrophes and dashes written any way (`Zoe`, `STRAUSS` for Strauß, `O’Quill`, `OQuill`,
-  `Van–Treeby`, `Van Treeby`), each part of it alone (`Treeby`), a part hyphenated at the end of a line, and a part in
-  capitalized pieces (`Jo Ann`);
+  `Van–Treeby`, `Van Treeby`), a part of it of four letters or more alone (`Treeby`), a part hyphenated at the end of a
+  line, and a part in capitalized pieces (`Jo Ann`);
 - a member ID or claim number with its characters joined any way (`ZZ-123-4567`, `ZZ 1234567`, `SYN.CCN.0001`), glued
   to a label (`ICNSYNCCN0001`), and its digits written as a calendar date after a label that says they are the number
   (`Claim 2026-03-05` for 20260305).
@@ -198,20 +198,28 @@ Overlapping spans are joined into one. The report holds positions only, as befor
 No Social Security or phone number is read by its pattern (ADR 0054, amendment of 2026-11-04, Scope): every digit of a
 narrative is a figure the inputs must hold, and a payer's phone number quoted from a contract is one of them.
 
+**A part of a name's word fails a narrative by itself only from four letters** (`SHORTEST_PART`; a part is what a
+dash, an apostrophe, a period or an underscore sets off inside a word). The letter reader's redaction takes every part
+of two letters or more, which costs a letter a word or two. A narrative it would cost everything: "in" is a part of
+HYE-IN, "to" of TO-UYEN, "the" of THE-ANH and "van" of VAN-TREEBY, and the code's own draft uses each (the second
+design review's finding: one such name failed every draft, and the gateway already refuses to draft for it, so no
+packet could be approved). Four is the letter path's own floor for a part read by itself (`ownIdentifierGlued`). The
+whole name, each whole word of it (as the whole-word reading splits words) and each number still count at any length
+and in every form: `Hye-In`, `hye in` and `HyeIn` fail, and so does `Zoe` for ZOË.
+
 **Which of the matcher's matches are kept.** The whole-word reading skips placeholders, citation markers and dated
 figures as it always has. Of the matcher's:
 
 - none that touches a token (an identifier placeholder, a citation marker, and at format /3 a fact token or stray
   braces): nothing there is the narrative's own words;
-- no name in a dated figure (a month's name in a date is the date, as above);
-- a number in a dated figure only when it holds the whole figure. The matcher reads a whole written date as a number
-  of the case only after a label that says so, so `Claim 2026-03-05` fails for 20260305, while `2026` or `03-05` inside
-  `2026-03-05` is the date.
+- one that overlaps a dated figure only when it holds the whole figure. A month's name in a date is the date, as
+  above, and so is a part of a date (`2026` or `03-05` inside `2026-03-05`). The matcher reads a whole written date as
+  a number of the case only after a label that says so, so `Claim 2026-03-05` fails for 20260305.
 
 **An identifier written across a token is read too** (the first design review's finding: `Quar[1]rington` passed). A
 letter holds no token, so the matcher alone never reads across one. The reading takes the matcher over the text a
 second time with each token as one invisible character, which redaction reads across, and keeps from it only a match
-that holds a token, under the same two rules for dated figures; its span holds the token. The words around a token
+that holds a token, under the same rule for dated figures; its span holds the token. The words around a token
 are otherwise read as written: a label is no number's label through a placeholder (`Member ID {{member_id:1}}
 2026-03-05` is a date).
 
@@ -219,7 +227,9 @@ are otherwise read as written: a label is no number's label through a placeholde
 `verifyNarrative`, `verifyTemplate` and `verifyAtFormat`; a flat list no longer type-checks). The two are read
 differently: a space joins a number's characters anywhere, a name's only between capitalized pieces, so a patient
 named INA is not "in a". Every caller knows: the worker reads each from its own column (`ScheduleIdentifiers.numbers`
-beside `names`), and the gateway's drafter has `identifierKinds`. A value in both lists is read both ways.
+beside `names`) and gives the gateway's drafter both lists (`NarrativeInput.numbers` beside `names`), so a draft is
+verified with the split its version will be written with. A value in both lists is read both ways. Only a caller with
+no records (an evaluation case) leaves the lists out, and `identifierKinds` then reads a value with no digit as a name.
 
 **The matcher never reaches the browser, and the browser's check has no identifier to read for.**
 `verifier/mismatches.ts` and `verifier/template.ts` take the reading as a function; `check.ts` passes
@@ -240,6 +250,10 @@ browser and reads the bundle's inputs (the worker's `browser-check-bundle.test.t
   caller knows, so the verifier does not guess.
 - *Each token masked so nothing matches across it* (as the gateway masks its own placeholders). That is the first
   reading; alone it passes `Quar[1]rington`.
+- *Every part of a name from two letters, as a letter's redaction takes them.* See above: it leaves a patient named
+  Hye-In no narrative that passes. *A list of common words, or a rule on capitals* ("in" is the word, "In" the name)
+  was not taken either: a sentence starts with a capital, and a list is a second place to keep right. A length is the
+  matcher's own rule, already written down.
 
 ### Consequences
 
@@ -258,8 +272,14 @@ browser and reads the bundle's inputs (the worker's `browser-check-bundle.test.t
   narratives alike. A look-alike letter inside a name fails as a `hidden_character`, and a name glued to digits as a
   figure. The check is for what a person or a keyboard writes without meaning to; a second person approves every
   packet, and reads the narrative.
-- The matcher's reading costs about a millisecond for a narrative of a few hundred characters and a dozen identifiers,
-  and about 0.1 s for 1,600 identifiers (measured on the build's machine); a screen's check, with no identifier, runs
-  none of it.
+- **A name that is, or folds to, a word of the narrative still fails it, at any length**: a patient named To or The
+  did before this change, and one named Thế or Tô does now, since the mark is folded; so does a part of four letters
+  or more that is a word (`page` for PAGE-SMITH). This is the Consequences' "patient named May" case, and for "to" and
+  "the" no rephrasing avoids the word. It is not new with this change except for names with marks, and it is recorded
+  for a ruling of its own (the build's queue): the fold does not decide it.
+- The matcher's reading reads only the identifiers the text can hold (it first looks for each one's letters and
+  digits in the text's), so it adds about 20 ms for a case of 10,000 identifiers that the narrative holds none of
+  (measured on the build's machine). The whole-word reading's own cost at that size, a pattern compiled for each form
+  (about 3 s on a case's first check), is as it was. A screen's check, with no identifier, runs neither.
 - Test matrix MOD-19 (every written form fails; the generator of the forms is the oracle) and MOD-20 (what a narrative
   is meant to say is never read as an identifier; the verifier against the two readings it is made of).

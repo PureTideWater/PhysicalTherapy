@@ -30,6 +30,7 @@ import {
   exportsAwaitingAttestation,
   followUpsDue,
   logSubmission,
+  packetDraftInputs,
   packetOfCase,
   packetVersionOf,
   recordPayerResponse,
@@ -580,6 +581,14 @@ describe('MOD-19: the verifier reads a narrative for the records’ identifiers 
     // The report says where, never what.
     expect(JSON.stringify(version.verifier).toLowerCase()).not.toMatch(/zoe|quarrington|syn-ccn|synccncas08/);
     expect((await refusal(approve(setup, setup.second, version.versionId, version.contentSha256))).message).toBe('a packet version the verifier failed cannot be approved');
+    // The drafter is given the same two lists, each value from its own column, and no value in neither.
+    const inputs = await w.as(setup.practice, setup.practice.manager, (scope) =>
+      packetDraftInputs(scope, w.keys, { practiceId: setup.practice.practiceId, caseId: setup.caseId, promptPayState: null, attachedDocumentIds: [], requestId: 'test-draft-inputs' }),
+    );
+    expect(inputs.names).toContain('ZOË-QUARRINGTON');
+    expect(inputs.numbers).toEqual(expect.arrayContaining(['SYNCCNCAS080001', 'SYNPCNCAS08001']));
+    expect(inputs.names.filter((name) => inputs.numbers.includes(name))).toEqual([]);
+    expect([...inputs.names, ...inputs.numbers].sort()).toEqual([...inputs.identifiers].sort());
   });
 
   it('refuses the export of a stored pass once the record is corrected to a name the narrative holds without its mark', async () => {

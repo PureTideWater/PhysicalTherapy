@@ -44,6 +44,12 @@ export interface NarrativeInput {
    * value with no digit is read as a name.
    */
   readonly names?: readonly string[];
+  /**
+   * Which of the identifiers are numbers (member IDs and claim numbers), as the records' columns say: the worker
+   * gives both lists, so the drafter's checks read each value exactly as the packet verifier will when the version is
+   * written. Absent, every identifier that is not a name.
+   */
+  readonly numbers?: readonly string[];
 }
 
 export interface NarrativeProposal {
@@ -101,10 +107,14 @@ export function narrativeInputs(content: PacketContent) {
   };
 }
 
-/** The case's identifiers as names and numbers (member IDs and claim numbers), as the check before the call reads them. */
-export function identifierKinds(input: Pick<NarrativeInput, 'identifiers' | 'names'>): { readonly names: readonly string[]; readonly numbers: readonly string[] } {
+/**
+ * The case's identifiers as names and numbers (member IDs and claim numbers), as the check before the call and the
+ * verifier of the draft read them: the two lists as given, or, for a caller that does not know which is which (an
+ * evaluation case), a value with no digit as a name and the rest as numbers.
+ */
+export function identifierKinds(input: Pick<NarrativeInput, 'identifiers' | 'names' | 'numbers'>): { readonly names: readonly string[]; readonly numbers: readonly string[] } {
   const names = new Set(input.names ?? input.identifiers.filter((value) => !/\p{N}/u.test(value)));
-  return { names: [...names], numbers: input.identifiers.filter((value) => !names.has(value)) };
+  return { names: [...names], numbers: input.numbers ?? input.identifiers.filter((value) => !names.has(value)) };
 }
 
 /**

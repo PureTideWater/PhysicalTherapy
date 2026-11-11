@@ -177,6 +177,8 @@ export interface DraftInputs {
   readonly identifiers: readonly string[];
   /** Which of the identifiers are names, so the drafter's check reads each as a name and the rest as numbers. */
   readonly names: readonly string[];
+  /** Which are numbers (member IDs and claim numbers), each from its own column: what the verifier reads as numbers. */
+  readonly numbers: readonly string[];
 }
 
 /**
@@ -187,7 +189,7 @@ export interface DraftInputs {
  */
 export async function packetDraftInputs(scope: PracticeScope<ScopeClient>, keys: KeyProvider, input: DraftInputsRequest): Promise<DraftInputs> {
   const { content, identifiers } = await assembleVersion(scope, keys, input);
-  return { content, identifiers: identifiers.all, names: identifiers.names };
+  return { content, identifiers: identifiers.all, names: identifiers.names, numbers: identifiers.numbers };
 }
 
 export interface PacketVersionDetail {
