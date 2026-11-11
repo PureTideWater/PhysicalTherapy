@@ -1,35 +1,31 @@
-ACTING (Lane A's account, https://claude.ai/code/session_019i9ifCJSbPYXpafL86Rm6J) holds this item from 2026-11-05T07:40Z; Lane B: read lanes/lane-b.md's latest entries before resuming.
+ACTING (Lane A's account, W7, https://claude.ai/code/session_019i9ifCb8Sa7jHnu6j4af8F) holds this item from 2026-11-11T04:30Z, assigned by the orchestrator (session_019i9ifDAzQNA3kLHozjBoeS); hand-back to Lane B at 2026-11-13 18:30 UTC if it is not merged.
 
 # Lane B: packets-verifier-identifier-fold (`co-001/packets-verifier-identifier-fold`): status
 
-Session: session_019i9ifCJSbPYXpafL86Rm6J (acting Lane B S1, on Lane A's account), assigned by Lane A's orchestrator (session_01TrKDxeLbxVo7t7zwRXFzrg) on 2026-11-05 at 07:37 UTC. Reserved: test-matrix MOD-19 and MOD-20; synth entries the same as MOD-13 if needed (module 9, `none(10, …)`, no fixture); no ADR number (an amendment to an existing ADR; a COUNTER REQUEST if a new one is needed). Follow-on, if time remains before 2026-11-06 18:30 UTC: SUITE-CAP-3's worker-side fixes only, from WIP `co-001/wip-suite-cap-3` (956b32ef). The `ledger_line_net` rewrite stays out because it needs a founder exception.
+Reserved: test-matrix MOD-19 and MOD-20; synth entries the same as MOD-13 if needed (module 9, `none(10, …)`, no fixture); no ADR number (amendments to 0047, 0054 and 0066). New counters only from the orchestrator.
 
 ## The item
-`packages/packets/src/verifier/mismatches.ts`'s `identifierSpans` checks a model's narrative for the patient's identifiers. It has the character gaps #80 closed in the gateway: diacritics, typographic apostrophes and dashes, hyphenated halves, invisible characters, #115's label boundary, and #127's SSN and phone patterns where they apply. So a narrative that writes an identifier in one of those forms passes the verifier. It was proposed in `lane-b-redact-placeholders-status.md` (Proposals) and never built.
+`packages/packets/src/verifier/mismatches.ts`'s `identifierSpans` checks a narrative for the case's identifiers as whole words, without regard to case, and nothing more. It lacks the forms the gateway's letter reader reads (#80: diacritics, typographic apostrophes and dashes, hyphenated halves, a word hyphenated at a line break, spaced or dashed numbers; #115: label boundaries and glued labels). A narrative that writes a name as `Zoe` for `ZOË`, `O’Quill` for `O'QUILL` or `Treeby` for `VAN-TREEBY` passes the verifier today. `verifier/template.ts` (format /3, slice 2) calls the same function.
 
-**The fix:** reuse the gateway's fold and matcher (#80, #115, #127) if the package boundary allows. Otherwise extract the shared fold into a small package both import. Add a differential property test against the gateway's matcher, so the two never drift. No over-redaction of amounts, dates, claim numbers or NPIs. This is PHI and money work in `packages/packets`, so it gets two adversarial reviews: security, then correctness with the redaction oracle.
+## RESUME-BLOCK (W7; current at 2026-11-11 04:45 UTC by the container's clock)
+- **Branch:** `co-001/packets-verifier-identifier-fold`, cut from claude/build-platform **4fe8bcca**, worktree `/home/user/fold` (dependencies installed). **No commits yet, not on origin, no WIP ref.**
+- **PR:** none. **CI:** none. **Counters used:** none yet (MOD-19 and MOD-20 reserved).
+- **Done:** the three scouts (2026-11-05, in `lane-b-packets-verifier-identifier-fold-wip/`), re-checked against 4fe8bcca. What changed since they ran: `packages/model-gateway/src/redact.ts` is 3,451 lines (MOD-16's glued checks), and slice 2 added `verifier/template.ts`, which calls `identifierSpans` too.
+- **Design direction (the design file is next: `designs/lane-b-packets-verifier-identifier-fold.md`):**
+  1. `redact.ts` has no imports. It moves whole, by `git mv`, into a new pure package `packages/redact` (`@tp/redact`); the gateway imports it from there (no stub at the old path, so git's rename detection carries a concurrent edit of the file). Its tests stay in the gateway (they need the gateway's functions).
+  2. One added export there, `nameOrNumberMatches(normal, {names, numbers})`: the narrative reading's matches as ranges with a kind; `holdsNameOrNumber` is written through it, so the drafter's check and the verifier cannot drift.
+  3. A new server-only file `packages/packets/src/verifier/identifiers.ts` reads a narrative through it and keeps today's whole-word check beside it (the union, so nothing caught today is lost). `mismatches.ts` and `template.ts` take the reader as an argument; `check.ts` (the browser) passes one that finds nothing, so the matcher never ships to the browser.
+  4. Skip rules: a match that overlaps a placeholder, a citation marker or a fact token is dropped; a name inside a dated figure is dropped (a month's name); a number that overlaps a dated figure stays only if it covers the whole figure (a labeled date that is the number).
+  5. `verifyNarrative`, `verifyTemplate` and `verifyAtFormat` take `{names, numbers}`; the worker and the gateway already know which values are names.
+  6. Tests: MOD-19 (every written form of an identifier fails, the generator as the oracle) and MOD-20 (the verifier agrees with the gateway's narrative reading, and flags no amount, date, code, NPI, marker or placeholder).
+- **Coordination:** the SSN and phone leaks item (W5) edits `redact.ts` heavily and adds `confusables.ts` beside it. Whichever merges second: git follows the rename for `redact.ts`; a new file `redact.ts` imports is moved by hand into `packages/redact/src/`, and a test's import of `./redact` becomes `@tp/redact`.
+- **Exact next step:** commit 1 is the mechanical move only (the package, the `git mv`, the import paths, the lockfile, `transpilePackages`, `MONEY_PACKAGES`, the watched paths); then the design file and its two adversarial reviews; then the build.
+- **Findings open or fixed:** none yet.
 
 ## Log (UTC)
-- 2026-11-05 07:40: branch `co-001/packets-verifier-identifier-fold` cut from **23b25ad0**; worktree `/home/user/packets-verifier-identifier-fold`. No design existed, so the full pipeline runs in one workflow: scouts, design, an adversarial design review, revision, build, the two reviews with a skeptic each, fixes, the full suite once, and a critic. No push yet.
-
-- 2026-11-05 07:39: workflow **wf_54232b96-397** running (script archived). Check-in 12:49 UTC (trig_01RuUDJr8rB63gheGqWd4jU9).
+- 2026-11-05 07:40: branch cut from 23b25ad0 by Lane A's S1 (session_019i9ifCJSbPYXpafL86Rm6J); workflow wf_54232b96-397 ran its three scouts.
+- 2026-11-05 07:55: stood down on the orchestrator's order (the account's weekly usage); the designer had written nothing.
+- 2026-11-11 04:30: W7 took the claim over; branch cut afresh from 4fe8bcca into `/home/user/fold`. No Workflow fan-out this time (the token rules): the design and build run in the session, reviews as subagents.
 
 ## Waiting on someone
 Nothing.
-
-## Next step
-The workflow, then the push, a draft PR, CI, a fresh-clone verification, ready, and the merge.
-
-- 2026-11-05 07:55 UTC: **Stood down** on Lane A's orchestrator's order (this account at 99% of its weekly usage; Lane B takes over from 2026-11-06 19:00 UTC, `lanes/lane-a-handoff-to-lane-b-2026-11-05.md`). wf_54232b96-397 was stopped at its first save point: the three scouts were done, and the designer had only just started and wrote nothing. Its check-in was cancelled.
-
-## RESUME-BLOCK (for Lane B)
-- **Branch:** `co-001/packets-verifier-identifier-fold`, cut locally from claude/build-platform **23b25ad0**. It has **no commits and is not on origin**; no WIP ref exists, because there is no code. Cut it afresh from the current base.
-- **PR:** none. **CI:** none. **Counters used:** none. MOD-19 and MOD-20 are reserved and unused; no ADR number was taken.
-- **Done:** three design scouts. Their reports are in `approval-summaries/lane-b-packets-verifier-identifier-fold-wip/`:
-  - `scout-verifier.md`: identifierSpans today, with each gap class probed;
-  - `scout-gateway.md`: redact.ts's fold and matcher and their exports;
-  - `scout-boundary.md`: which packages may import which, and what a new shared package needs.
-- **Not done:** the design (`designs/lane-b-packets-verifier-identifier-fold.md` does not exist), its review, the build, the two reviews (security, then correctness with the redaction oracle), the fixes, the suite, the critic, the push, the PR, the verification and the merge.
-- **Exact next step:** re-run the workflow script `workflow-scripts/lane-b-packets-verifier-identifier-fold-wf_54232b96-397.js` from its Design phase. It is written for this session's scratchpad paths, so copy the three scout reports into its `SP/fix/` first, or change SP and skip the Scout phase. Then follow it through to a push-ready branch.
-- **Findings open or fixed:** none yet.
-- **Follow-on (unstarted):** SUITE-CAP-3's worker-side fixes only, from WIP `co-001/wip-suite-cap-3` (956b32ef). The `ledger_line_net` rewrite needs a founder exception.
