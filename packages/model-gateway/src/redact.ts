@@ -1135,9 +1135,8 @@ function confusedMatchesIn(normal: string, subject: Subject): Found[] {
 }
 
 /**
- * Whether one of the call's own identifiers stands so written inside a longer run of letters and digits, where no boundary
- * can be read ("2020S1MONE", "PaidVANTR3E"): with a digit for a letter or a letter for a digit in every letter, and with
- * a letter for a letter too (l for I) in a held letter.
+ * Whether one of the call's own identifiers stands so written, with a digit for a letter or a letter for a digit, inside a
+ * longer run of letters and digits, where no boundary can be read ("2020S1MONE", "PaidVANTR3E"): the letter is refused.
  */
 function confusedGlued(normal: string, subject: Subject): boolean {
   const forms = confusableForms(subject);
@@ -1811,16 +1810,13 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
           continue;
         }
         const plainly = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core);
-        let decision = plainly;
-        if (plainly === 'none') {
-          // A label read through the call's own identifier or its list number ("Call Zephyra at 555-0123", "Phone 1:
-          // 555-0100") takes the number only where ef3e8d20 refused nothing for it: written on one line (a number wrapped
-          // across a line break is a chain to the scan) and standing alone (no digit joined to it as a chain joins, a list
-          // number before ")" among them: "TTY 11) 555 0123" is nine digits in one chain). Elsewhere it is left as it was,
-          // for the survivor scan to refuse under that label.
-          const through = wrapped ? plainly : decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core, true, own);
-          if ((through === 'ssn' || through === 'phone') && standsAlone(view.text, start, end, own)) decision = through;
-        }
+        // A label read through the call's own identifier or its list number ("Call Zephyra at 555-0123", "Phone 1:
+        // 555-0100") takes a number its own words say nothing of, and only where ef3e8d20 refused nothing for it: written on
+        // one line (a number wrapped across a line break is a chain to the scan) and standing alone (no digit joined to it
+        // as a chain joins, a list number before ")" among them: "TTY 11) 555 0123" is nine digits in one chain). Elsewhere
+        // it is left as it was, for the survivor scan to refuse under that label; a number a noun names stays named.
+        const through = plainly === 'none' && !wrapped ? decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core, true, own) : plainly;
+        const decision = plainly === 'none' && (through === 'ssn' || through === 'phone') && standsAlone(view.text, start, end, own) ? through : plainly;
         const labeled = decision === 'ssn' || decision === 'phone';
         let taken: PatternKind | null;
         if (wrapped) {
@@ -2421,9 +2417,6 @@ interface HeldScan {
   readonly labeledAt: (start: number, glued?: boolean) => ScanLabel;
 }
 
-/** PROTOTYPE: the last strict reason (debug). */
-export let lastStrictReason = '';
-
 /** A state's postal abbreviation, or ZIP and its connectors, before a ZIP code: what names a five, or a five and four, as one. */
 const STATE = '(?:A[LKZR]|C[AOT]|D[EC]|FL|GA|HI|I[DLNA]|K[SY]|LA|M[EDAINSOT]|N[EVHJMYCD]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[TA]|W[AVIY]|PR|GU|VI)';
 const STATE_NAME =
@@ -2441,14 +2434,27 @@ const ROW_MODIFIERS = /^[ \t]{1,16}(?:[A-Z][A-Z0-9][ \t]{1,16}|[0-9][A-Z][ \t]{1
 const CODE_LIST_GAP = /^(?:[ \t]{1,3}|,[ \t]{0,2})(?:[A-Z][0-9]{4}(?:[ \t]{1,3}|,[ \t]{0,2}))*$/u;
 
 /**
- * The strict reading of a held letter (survivorIn's 'held'): PROTOTYPE.
+ * Whether a held letter (survivorIn's 'held': a chain that only the range fix's barriers hold, in a letter cc3dd7f6 refused)
+ * holds a number that could be a person's, read with nothing taken on trust but what its structure places (docs/adr/0054,
+ * the amendment of co-001/redact-ssn-phone-leaks; the orchestrator's ruling A of 2026-11-07). In a letter with no held
+ * range these shapes stay what the scan reads them as (R1's "150.00 1234", a code column, a local number with no label):
+ * 1. an amount, with or without a currency sign, a dash and a date as one range holds nothing ("1499.90-07/14/2021St");
+ * 2. beside a held range: a number no barrier holds, or one a noun names, joined to its end by a joiner alone ("Ref
+ *    5900481017(April 3, 2025-7125.74"); a number no barrier holds before its first end across white space ("34569
+ *    01-12-1985-150.00"); a word glued to its end and then a bare nine or ten ("302.23.Ref 5900335398"); and a number of
+ *    seven digits or more, one or two letters and a date with nothing between ("2025550122th10-28-2026");
+ * 3. chains read again with unsigned amounts and groups of five to seven digits as parts of a chain, twelve groups at
+ *    most, after what must stay is placed by its structure (a currency amount; a standing date; a nine or ten that NPI,
+ *    TIN or EIN names; a ZIP or ZIP+4 after a state or ZIP; two five-digit codes joined by a dash or a slash; a TIN written
+ *    two and seven; the codes of a list a code word begins; a service-line row's code and units before its amount, modifiers
+ *    between them too; a code and the next line's count; a code's digits after its one letter): nine or ten digits, eleven
+ *    starting with 1, or a local number of three and four, holding one group no barrier holds; under an SSN or phone label,
+ *    nine digits or more of groups no barrier holds. A year beside an amount stays ("150.00 2026", "2026 150.00"), and a
+ *    local number's shape inside a longer token ("SYN-APL-123-4567") or after a currency amount;
+ * 4. a date written two, two and four with dashes and a lone digit across white space beside it ("9 01-12-1985"), never a
+ *    time after it.
  */
 function heldStrict(scan: HeldScan): boolean {
-  lastStrictReason = strictReason(scan) ?? '';
-  return lastStrictReason !== '';
-}
-
-function strictReason(scan: HeldScan): string | null {
   const { text, groups, currencyAt, dateAt, amountAt, amountStarts, rangeSpans, rangeEnds, labeledAt } = scan;
   const amountFirstOf = new Map<number, boolean>();
   const amountFirst = (range: number): boolean => {
@@ -2465,7 +2471,7 @@ function strictReason(scan: HeldScan): string | null {
   const gap = (a: ScanGroup, b: ScanGroup) => text.slice(a.end, b.start);
   const sameAmount = (a: ScanGroup, b: ScanGroup) => amountAt[a.start] === 1 && amountAt[b.start] === 1 && amountStarts[a.start] === amountStarts[b.start];
   // (1) an amount, then a date, as one range holds nothing here
-  if (groups.some((group) => group.blocked && amountFirst(group.range))) return 'amount-first';
+  if (groups.some((group) => group.blocked && amountFirst(group.range))) return true;
   // (2) beside a held range
   for (const [range, end] of rangeEnds) {
     const before = firstIndex(groups, (group) => group.start >= range) - 1;
@@ -2475,15 +2481,15 @@ function strictReason(scan: HeldScan): string | null {
     const right = groups[after];
     const leftGap = left === undefined ? '' : text.slice(left.end, range);
     const rightGap = right === undefined ? '' : text.slice(end, right.start);
-    if (left !== undefined && (!left.blocked || left.named) && /^[^\s\p{L}\p{N}]+$/u.test(leftGap) && SCAN_LABELED_GAP.test(leftGap)) return 'tight-left';
-    if (right !== undefined && (!right.blocked || right.named) && /^[^\s\p{L}\p{N}]+$/u.test(rightGap) && SCAN_LABELED_GAP.test(rightGap)) return 'tight-right';
-    if (left !== undefined && left.range !== range && !left.blocked && SCAN_GAP.test(leftGap)) return 'free-left';
-    if (right !== undefined && (right.digits.length === 9 || right.digits.length === 10) && /^\.?\p{L}+[.:#]?(?:[ \t]{1,3}(?:NO|NUMBER|NBR|NUM|ID)\b[.:#]?)?[ \t]{0,3}$/u.test(rightGap)) return 'glued-noun';
+    if (left !== undefined && (!left.blocked || left.named) && /^[^\s\p{L}\p{N}]+$/u.test(leftGap) && SCAN_LABELED_GAP.test(leftGap)) return true;
+    if (right !== undefined && (!right.blocked || right.named) && /^[^\s\p{L}\p{N}]+$/u.test(rightGap) && SCAN_LABELED_GAP.test(rightGap)) return true;
+    if (left !== undefined && left.range !== range && !left.blocked && SCAN_GAP.test(leftGap)) return true;
+    if (right !== undefined && (right.digits.length === 9 || right.digits.length === 10) && /^\.?\p{L}+[.:#]?(?:[ \t]{1,3}(?:NO|NUMBER|NBR|NUM|ID)\b[.:#]?)?[ \t]{0,3}$/u.test(rightGap)) return true;
   }
   // a number, one or two letters and a date, nothing between: "2025550122th10-28-2026"
   for (let i = 0; i + 1 < groups.length; i += 1) {
     const [a, b] = [groups[i], groups[i + 1]];
-    if (a !== undefined && b !== undefined && !a.blocked && a.digits.length >= 7 && b.blocked && dateAt[b.start] === 1 && /^\p{L}{1,2}$/u.test(gap(a, b))) return 'glued-touch';
+    if (a !== undefined && b !== undefined && !a.blocked && a.digits.length >= 7 && b.blocked && dateAt[b.start] === 1 && /^\p{L}{1,2}$/u.test(gap(a, b))) return true;
   }
   // what is placed by its structure: never a part of a chain
   const placed = new Uint8Array(groups.length);
@@ -2556,7 +2562,7 @@ function strictReason(scan: HeldScan): string | null {
       if (!group.blocked) free += 1;
       const run = groups.slice(first, first + count);
       // under a label the number may be glued to more digits
-      if (label !== null && count >= 2 && digits.length >= 9 && !chained(digits) && run.every((each) => !each.blocked)) return 'labeled-long';
+      if (label !== null && count >= 2 && digits.length >= 9 && !chained(digits) && run.every((each) => !each.blocked)) return true;
       if (digits.length > 11) break;
       const local = count === 2 && run[0]?.digits.length === 3 && run[1]?.digits.length === 4 && !run[0].blocked && !run[1].blocked;
       if (count < 2 || free === 0 || !(chained(digits) || local)) continue;
@@ -2569,7 +2575,7 @@ function strictReason(scan: HeldScan): string | null {
       if (!firstGroup.blocked && /^(?:19|20)[0-9]{2}$/u.test(firstGroup.digits) && run.slice(1).every((each) => each.blocked && amountAt[each.start] === 1)) continue;
       // a local number's shape inside a longer token, or after a currency amount
       if (local && (/\p{L}[\p{Pd}−]$/u.test(before) || /\p{Sc}[ \t]?[0-9][0-9,]*(?:\.[0-9]{1,2})?[ \t]{1,3}$/u.test(before))) continue;
-      return `chain:${run.map((each) => each.digits.length).join(',')}${local ? ':local' : ''}`;
+      return true;
     }
   }
   // (5) a date written two, two and four with a lone digit beside it
@@ -2581,10 +2587,10 @@ function strictReason(scan: HeldScan): string | null {
     const space = (each: string | undefined) => /^[ \t]{1,3}$/u.test(each ?? '');
     const last = run[3];
     const time = last !== undefined && /^:[0-9]/u.test(text.slice(last.end, last.end + 2));
-    if (lengths === '1,2,2,4' && space(gaps[0]) && dash(gaps[1]) && dash(gaps[2]) && run.some((each) => !each.blocked)) return 'date-shaped';
-    if (lengths === '2,2,4,1' && dash(gaps[0]) && dash(gaps[1]) && space(gaps[2]) && !time && run.some((each) => !each.blocked)) return 'date-shaped';
+    if (lengths === '1,2,2,4' && space(gaps[0]) && dash(gaps[1]) && dash(gaps[2]) && run.some((each) => !each.blocked)) return true;
+    if (lengths === '2,2,4,1' && dash(gaps[0]) && dash(gaps[1]) && space(gaps[2]) && !time && run.some((each) => !each.blocked)) return true;
   }
-  return null;
+  return false;
 }
 
 // ---------------------------------------------------------------------------------------------------
