@@ -1,6 +1,6 @@
 # Lane A's handoff to Lane B, 2026-11-13
 
-Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 03:10 UTC.
+Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 04:40 UTC.
 
 Read `lanes/STATE.md` first: it is the current state. This file adds only what STATE.md does not hold.
 
@@ -14,12 +14,11 @@ kept current instead. If STATE.md is newer than this file, trust STATE.md and th
 - #136, a person's ledger action never waits for the ledger lock (ADR 0092, CAS-56): 06cde5eb (2026-11-11 00:54 UTC).
 - #138, MOD-16, a date or amount range glued to a word: ef3e8d20 (2026-11-11 02:35 UTC).
 - #129, every worker email's lockup on a fixed White plate: ca504674 (2026-11-11 03:05 UTC).
+- #137, a `lock_timeout` on every route's transaction (Queues item 24; CAS-57; amends ADR 0092): 4fe8bcca (2026-11-11 04:25 UTC).
 
 ## Handed back to Lane B (each item's status file holds its RESUME-BLOCK)
 - STATE.md items 3, 8 and 9, as STATE.md shows them when you read it (items 1, 4 and 5 merged).
-- `LANES.md` Queues item 24 (new on 2026-11-10): a `lock_timeout` on every web mutation (CAS-57; amends ADR 0092).
-  Draft #137 at 59eb9e9d is built; W4 runs its reviews and merges it. Its record is
-  `approval-summaries/lane-b-web-lock-timeout-status.md`.
+- `LANES.md` Queues item 25 (new on 2026-11-11): seven follow-ups from #137's reviews, in its order. Not assigned.
 
 ## Lane A keeps
 - The schema chain (STATE.md items 2, 6 and 7).

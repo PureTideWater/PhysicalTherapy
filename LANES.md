@@ -180,6 +180,12 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
     - **Reviews:** two adversarial (database, auth); ux-brand if the refusal's words change.
     - **Why it goes before the other item 9 work:** the pool is shared by every practice, so one practice's pass can stall the others' requests at real size; W3 holds the context.
     - **Why no migration:** a setting on the web's own transactions, not on the role.
+25. **Seven follow-ups from #137's reviews** (queued 2026-11-11 04:35 UTC by Lane A's orchestrator, from the end of the Reviews section of `approval-summaries/lane-b-web-lock-timeout-status.md`; none blocked #137; not assigned; numbers are allocated at the claim). In this order, ahead of the rest of the earlier queue, because (a) can report a rolled-back write as saved:
+    - **(a) The web's transaction scope:** it does not read COMMIT's answer; a handler's queue send commits by itself (make the sends transactional or move them after the commit); and the signed-in handlers' services are typed with the application pool, so a second connection can be taken (R4-S2). One PR; database and auth: two adversarial reviews.
+    - **(b) A second free-screening upload waits for the first without limit.** A public route; security: two adversarial reviews.
+    - **(c) `packages/db/src/migrate.ts` sets no `lock_timeout`,** so a migration queued behind a long job blocks every reader. Before the first production deploy; database: two adversarial reviews.
+    - **(d) The session's end and its audit event are two transactions** (`auth/sessions.ts`). Auth: two adversarial reviews.
+    - **(e) A page's busy state is the generic error state.** To the UX queue.
 
 ## Claims
 
