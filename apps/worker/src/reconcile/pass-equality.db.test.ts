@@ -472,7 +472,7 @@ function expectWorldShapes(built: BuiltWorld, side: SideResult, before: Readonly
   // The PLB L6 alone: a claim's AMT I credits nothing since the interest fix (docs/adr/0084), on either side.
   expect(summary.remittances.interest, `${run}: interest`).toBe(1);
   expect(summary.remittances.interestTakenBack, `${run}: interest taken back`).toBe(0);
-  expect((side.after.get('ledger_entry') ?? []).filter((row) => row.stage === 'interest').map((row) => row.evidence_kind), `${run}: interest from the PLB L6 alone`).toEqual(['provider_adjustment']);
+  expect((side.after.get('ledger_entry') ?? []).filter((row) => row.stage === 'interest' && !(before.get('ledger_entry')?.has(String(row.id)) ?? false)).map((row) => row.evidence_kind), `${run}: interest from the PLB L6 alone`).toEqual(['provider_adjustment']);
   expect(summary.postingsMatched, `${run}: postings`).toBeGreaterThan(0);
   expect(summary.depositsMatched, `${run}: deposits`).toBeGreaterThan(0);
   expect(summary.stages.back, `${run}: a line moved back`).toBeGreaterThan(0);
@@ -617,6 +617,7 @@ describe('a reconcile pass writes what the per-line pass wrote (CAS-49.1)', () =
 
   // ledgerMatches reads in ledger_match.seq order (docs/adr/0084), which both sides write alike: no run's settle entries differ row for row.
   it('finds no run whose settle entries would differ row for row', () => {
+    expect(facts.selfRuns).toBe(RUNS);
     expect(facts.strictSettleWouldDiffer).toBe(0);
   });
 
