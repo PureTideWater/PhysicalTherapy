@@ -112,13 +112,28 @@ describe('MOD-21: a Social Security or phone number glued to another number, beh
     expectOutcome(letter, sent);
   });
 
-  // G1 (b) and (c): digits glued before the shape's first group, where they are another number's: joined to a group
-  // before them, a currency amount's, or four of them or more; and digits glued on both sides.
+  // G1 (b) and (c): digits glued before the shape's first group, where structure says they are another number's: a
+  // currency amount's, an amount's cents after its point, or a date's end, its four-digit year after its month and day
+  // too; and digits glued on both sides.
   it.each([
     refused('01/01/2020900-12-3456'),
-    refused('2020900-12-3456'),
+    refused('Seen Jan 1, 2020900-12-3456 today'),
+    refused('Seen 1 January 2020900-12-3456 today'),
+    refused('June 18, 2026423.435-4454'),
+    refused('01/02/20900-12-3456'),
+    refused('2020-01-01900-12-3456'),
     refused('Paid 150.00900-12-3456'),
     refused('150.00900-12-3456150.00'),
+    // With no date before it a year is as often a reference's own first digits, and so is any longer run and a cell of a
+    // row: sent, as at ef3e8d20 (the review of the fix round's delta, D2-1, D2-2 and D2-4).
+    unchanged('2020900-12-3456'),
+    unchanged('Claim W20260115-12-3456'),
+    unchanged('Ref 20260115-12-3456 today'),
+    unchanged('NPI|POS|CPT|Units|Billed\n1234567893|11|97110|2|150.00'),
+    unchanged('NPI|TIN\n1234567893|12-3456789\n1098765432|98-7654321'),
+    unchanged('remit_20260115_01_0001.pdf'),
+    unchanged('Line,Group,Billed\n1,00123-456-7890,150.00'),
+    unchanged('Total 1,20345-67-8901'),
     // A first group one to three digits longer, with nothing joined before it, is a reference's own.
     unchanged('29 CFR 2590.715-2719'),
     // A date written year first with an amount glued after its day is read as cc3dd7f6 read it.
@@ -415,10 +430,11 @@ describe('MOD-21: a Social Security or phone number glued to another number, beh
     fc.assert(
       fc.property(
         fc.record({
-          glue: fc.constantFrom('amount after', 'date after', 'number after', 'amount before', 'date before', 'number before', 'amounts on both sides', 'bare, an amount after'),
+          glue: fc.constantFrom('amount after', 'amounts after', 'date after', 'number after', 'amount before', 'date before', 'number before', 'amounts on both sides', 'bare, an amount after', 'bare, amounts after'),
+          // A phone's area code in parentheses, a space after it: the shape with no label too.
+          parentheses: fc.boolean(),
           twin: fc.oneof(ssnTwin, phoneTwin),
           second: fc.oneof(ssnTwin, phoneTwin),
-          secondBare: fc.boolean(),
           first: fc.constantFrom(...TIGHT_JOINS),
           last: fc.constantFrom(...TIGHT_JOINS),
           amount: gluedAmount,
@@ -428,19 +444,23 @@ describe('MOD-21: a Social Security or phone number glued to another number, beh
           before: fc.constantFrom('', 'Paid ', 'Seen ', 'Billed ', 'Item ', 'Noted '),
           after: fc.constantFrom('', '.', ' today', ' Paid'),
         }),
-        ({ glue, twin, second, secondBare, first, last, amount, amountAfter, date, before, after }) => {
+        ({ glue, parentheses, twin, second, first, last, amount, amountAfter, date, before, after }) => {
           // A period after an SSN's first group and a dash after its second would write an amount and a dash, "993.96-8300":
           // an amount-shaped number, ADR 0054's recorded residual and no shape of G1. The second joiner is then the first again.
-          const own = glue === 'bare, an amount after' ? twin : shaped(twin, first, twin.length === 9 && first === '.' ? first : last);
+          const joined = shaped(twin, first, twin.length === 9 && first === '.' ? first : last);
+          const own = glue.startsWith('bare') ? twin : parentheses && twin.length === 10 ? `(${twin.slice(0, 3)}) ${twin.slice(3, 6)}${last}${twin.slice(6)}` : joined;
           const other = shaped(second, '-', '-');
           const [left, right] = {
             'amount after': ['', amount],
+            'amounts after': ['', `${amount}-${amountAfter}`],
             'bare, an amount after': ['', amount],
+            'bare, amounts after': ['', `${amount}-${amountAfter}`],
             'date after': ['', date],
             'number after': ['', other],
             'amount before': [amount, ''],
             'date before': [date, ''],
-            'number before': [secondBare ? second : other, ''],
+            // A bare number glued before the shape is as often a reference's own first digits ("20260115-12-3456"): not read.
+            'number before': [other, ''],
             'amounts on both sides': [amount, amountAfter],
           }[glue];
           const letter = `${before}${left ?? ''}${own}${right ?? ''}${after}`;
@@ -862,7 +882,7 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     refused('$900-12-3456150.00'),
     refused('202-555-012301/02/2020'),
     refused('01/02/20900-12-3456'),
-    refused('2020900-12-3456'),
+    refused('01/01/2020900-12-3456'),
     refused('June 18, 2026423.435-4454'),
     unchanged('Case No. A123-45-678901'),
     unchanged('Confirmation code 802-91-69413'),
@@ -879,6 +899,20 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     unchanged('Contact: Billing 250.75 123456'),
     unchanged('Telephone visit 250.00   1234567'),
     unchanged('Contact us about March 7, 2024−671.422026-03-12−March 3, 2023.'),
+    // The gate's replay of the fix round: a range of amounts after the cents; a date glued after the usual writing
+    // under its label, a point in it too; the area code in parentheses with no label.
+    refused('On 900-12-3456150.00-120.00 today'),
+    refused('SSN 900123456150.00-120.00'),
+    refused('Call 1: 5550123456150.00-120.00Paid'),
+    unchanged('On 20260112345.01-05-2026 today'),
+    unchanged('Claim 20260112345.50-120.00 today'),
+    refused('SSN 900.12 345601/01/2020'),
+    refused('SSN: 996.94 936404/18/2024'),
+    refused('Phone 962 75.374902–09–2026'),
+    refused('Service (555) 012-345601.01.2020'),
+    refused('Service (555) 012-3456150.00'),
+    unchanged('Claim (123) 456-78901.50 applies'),
+    unchanged('Service (555) 012-34567 today'),
   ])('B1-8, B2-3, B2-4, B2-6, C2-2, C2-3, C2-4: digits glued to an SSN’s or a phone’s shape refuse the letter where structure or a label says whose they are; a reference stays: %j %s', (letter, _outcome, sent) => {
     expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
   });
@@ -889,13 +923,89 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     sentAs('Phone (1): 555-0100', 'Phone (1): [PHONE]'),
     sentAs('Phone 1 (home): 555-0100', 'Phone 1 (home): [PHONE]'),
     sentAs('Contact 1: 8005550118 Contact 2: 8005550175', 'Contact 1: [PHONE] Contact 2: [PHONE]'),
-    // In parentheses it is a list number only before a colon.
-    unchanged('SSN (2). 150.00 120.00 30.00'),
-    unchanged('TTY users call (2), 2,403.99; Paid 150.00 2026'),
+    // In parentheses right after its label it is a list number whatever follows: the label redacts what it redacts
+    // without it and refuses what ef3e8d20 refuses without it ("SSN. 150.00 120.00 30.00", "TTY users call, 2,403.99;
+    // Paid 150.00 2026", "Cell is 933.67 4536"): the gate's replay of the fix round.
+    sentAs('Phone (2) 555-0100', 'Phone (2) [PHONE]'),
+    sentAs('Phone (2), 555-0100', 'Phone (2), [PHONE]'),
+    refused('Re: Cell (2) is 933.67 4536.'),
+    refused('SSN (2). 150.00 120.00 30.00'),
+    refused('TTY users call (2), 2,403.99; Paid 150.00 2026'),
+    // No list number: more than a number in the parentheses, or parentheses not right after the label.
+    unchanged('Fax (2 pages) 150.00 120.00 30.00'),
+    unchanged('Telephone visit (2) 150.00 120.00 30.00'),
     // The recorded cost: what ef3e8d20 refuses after the label, it now refuses after the label's list number too.
     refused('Contact: Springfield, IL 62701-1234'),
     refused('Contact 1: Springfield, IL 62701-1234'),
-  ])('B1-9, C2-7: a label is read through its list number, after an abbreviation’s full stop or in parentheses before a colon too: %j %s', (letter, _outcome, sent) => {
+  ])('B1-9, C2-7: a label is read through its list number, after an abbreviation’s full stop or in parentheses too: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // The review of the fix round's delta, D1-1 (PHI): what is read only beside a name written with a new joiner is a match
+  // ef3e8d20 did not make either. ef3e8d20 refuses each letter here (its scan reads the "ph" between the dots as a phone
+  // label); the head of the fix round sent the nine digits in clear.
+  it.each([
+    refused('Ze\u00B7ph\u00B7yra J 900 12 34, 56'),
+    refused('Ze\u00B7ph\u00B7yra, J. 900 12 34, 56'),
+    refused('Ze\u00B7ph\u00B7yra J 20 25 55 01 23'),
+    refused('Ze\u2022ph\u2022yra J. 900,12 3456'),
+    refused('Re: Ze\u00B7ph\u00B7yra J\n900 12 34, 56 is on file.'),
+    // The controls: with no initial, and with the name written plainly (ef3e8d20 sends it so, its recorded residual).
+    refused('Ze\u00B7ph\u00B7yra 900 12 34, 56'),
+    sentAs('Zephyra J 900 12 34, 56', '[PATIENT_NAME] [PATIENT_NAME] 900 12 34, 56'),
+    sentAs('Dear Zeph\u00B7yra J, hello', 'Dear [PATIENT_NAME] [PATIENT_NAME], hello'),
+  ])('D1-1: an initial read only beside a name ef3e8d20 did not read is no settled match: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // D1's note: where no check follows, a pattern's match inside a run that holds an identifier glued in a look-alike form
+  // is applied, as ef3e8d20 applied it; the letter reader, which a check follows, leaves the run whole and it is refused.
+  it.each([
+    ['900-12-3456Z3PHYRA', '[SSN]Z3PHYRA'],
+    ['Tel 555-0123Z3phyra', 'Tel [PHONE]Z3phyra'],
+  ])('D1: redactLetter redacts the number of %j as ef3e8d20 did, and the letter reader refuses the letter', (letter, redacted) => {
+    expect(redactLetter(letter, JANE, JANE_CLAIMS).text).toBe(redacted);
+    expect(outcome(letter)).toBe(REFUSED);
+  });
+
+  // The review of the fix round's delta, D2-1 to D2-5 and D2-7 (must-stay), each on both sides.
+  it.each([
+    // D2-3: a reference's noun nearer the number than a phone word or "Medicare" names it; with no noun the label holds,
+    // and an SSN label right before the noun makes the noun its own word.
+    unchanged('Medicare Summary Notice 802-45-678901'),
+    unchanged('Medicare Advantage Member ID 802-45-678901'),
+    unchanged('Fax confirmation number 802-456-78901.50'),
+    unchanged('Contact us regarding account 802-456-789012.'),
+    unchanged('This is not a Medicare plan. Policy 802-456-78901.'),
+    unchanged('Customer Service\nPhone\nPolicy 802-456-78901'),
+    refused('Medicare ID 900-12-345678'),
+    refused('Member Phone 202-555-01234567'),
+    refused('Social Security Account Number 900-12-345678'),
+    refused('SSN Record 900-12-345678'),
+    // "Medicare" is a label over an SSN's shape, never over a phone's.
+    refused('Medicare 802-45-678901'),
+    unchanged('Medicare 802-456-78901'),
+    // D2-1: more writings of a noun before its number, and a form's column of spaces between them.
+    unchanged('Claim number(s): 802-45-678901.50'),
+    unchanged('Remittance Advice Number 802-45-678901.50'),
+    unchanged(`Claim Number:${' '.repeat(40)}802-45-678901.50`),
+    // Recorded: a letter glued before a reference's digits is no part of it (a lost space glues a word there as often).
+    refused('Claim W2026008123456.01'),
+    refused('Claim for900-12-3456150.00'),
+    // D2-5: in a held letter the noun names the whole joined number too.
+    unchanged(`${HELD}Policy No. 01-802-45-678901`),
+    unchanged(`${HELD}Tracking # 4-802-456-78901`),
+    refused(`${HELD}Web ID 802-456-78901`),
+    // D2-7: a digit before the mask is another number's only where structure says so; underscores after a word are a blank.
+    unchanged('Acct 4XXX-XX-1234'),
+    unchanged('Item 3___ __ 2026'),
+    unchanged('Initials___ __ 2026'),
+    refused('Seen 01/02/2020XXX-XX-3456 today'),
+    refused('Paid 150.00XXX-XX-3456 today'),
+    unchanged(`${HELD}Account 0XXXXX1234`),
+    unchanged(`${HELD}Loan 12*****1234`),
+    refused(`${HELD}Paid___-__-3456`),
+  ])('D2-1, D2-3, D2-5, D2-7: a noun nearer than a label names the number; a masked account number’s own digits stay: %j %s', (letter, _outcome, sent) => {
     expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
   });
 
@@ -969,7 +1079,19 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     expect(outcome(`${HELD}ID 80031455`, born('1980-03-14'), claims)).toBe(REFUSED);
     expect(outcome(`${held}Born May 12th`, born('1980-05-12'), claims)).toBe(REFUSED);
     expect(outcome(`${held}the 12th of May`, born('1980-05-12'), claims)).toBe(REFUSED);
-    for (const line of ['Visits over 12 may require prior authorization.', 'Visits after the 12th may require prior authorization.', 'Visits over 12 may\nrequire prior authorization.', 'You may 12) call us.']) {
+    expect(outcome(`${held}Born 12 May.`, born('1980-05-12'), claims)).toBe(REFUSED);
+    expect(outcome(`${held}Born May 12, as stated`, born('1980-05-12'), claims)).toBe(REFUSED);
+    // D2-6: the verb before punctuation, and at a line's end with a list's number on the next.
+    for (const line of [
+      'Visits over 12 may require prior authorization.',
+      'Visits after the 12th may require prior authorization.',
+      'Visits over 12 may\nrequire prior authorization.',
+      'You may 12) call us.',
+      'Up to 12 may, at our discretion, be approved.',
+      'Visits over 12 may; see policy.',
+      'Of the 20 visits, 12 may: (a) be denied',
+      'You may\n12. Appeal within 180 days',
+    ]) {
       expect(outcome(`${held}${line}`, born('1980-05-12'), claims), line).toBe(`${held}${line}`);
     }
     // Recorded: a day written as an ordinal's word is not read.
