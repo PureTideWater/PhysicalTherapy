@@ -64,7 +64,11 @@ const EMAIL_LOCKUP_HEIGHT = 62;
 export const EMAIL_PROSPECT_LOCKUP_PATH = '/brand/paidwhole-lockup-horizontal-email-plate-1380w.png';
 const EMAIL_PROSPECT_LOCKUP_HEIGHT = 53;
 
-/** The footer each reader sees: a customer signs in for the details; a prospect is told why the message came. */
+/**
+ * The footer each reader sees: a customer signs in for the details; a prospect is told why the message came; an account
+ * holder reads the user pool's own sentence. Every variant's HTML ends with its footer; the account variant's text
+ * alternative ends with it too (mail.ts, mailBody).
+ */
 export const MAIL_FOOTERS: Readonly<Record<MailVariant, string>> = {
   customer: 'This message carries links only; sign in to see the details.',
   prospect: 'This message carries a link only, and no patient information. It was sent because this address was given on the PaidWhole screening page; if that was not you, ignore it.',

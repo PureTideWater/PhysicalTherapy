@@ -251,6 +251,8 @@ export interface PlatformConfig {
   readonly staticAssetOrigin: string | null;
   /** The mail_events job's queue (or local directory) and whether probes go. */
   readonly mailEvents: MailEventsConfig;
+  /** The support address the password-changed email says to write to, and its Reply-To (SUPPORT_EMAIL; docs/adr/0091). */
+  readonly supportEmail: string;
 }
 
 const IN_PRODUCTION = 'when NODE_ENV is production';
@@ -265,7 +267,9 @@ const IN_PRODUCTION = 'when NODE_ENV is production';
  * in development, to a local outbox directory (MAIL_OUTBOX_DIR), and link to APP_ORIGIN. Support mail is
  * read from the bucket SES writes it to (SUPPORT_MAIL_BUCKET) or, in development, a directory of .eml
  * files (SUPPORT_MAIL_DIR, by default under the system's temporary directory), whose senders nothing
- * verifies.
+ * verifies. The password-changed email names the support address and is sent with it as its Reply-To (SUPPORT_EMAIL;
+ * docs/adr/0091), the web's own setting: required in production, and in development support@synthetic.test, the web's
+ * development default, so a local worker that runs every job still starts.
  *
  * With NODE_ENV=production every local implementation is refused and nothing falls back to one: S3,
  * RDS, SES and an https APP_ORIGIN are required (house rules: local implementations in development and
@@ -337,7 +341,7 @@ export function readPlatformConfig(env: Env = process.env): PlatformConfig | nul
     // The platform probes every stream, the screening's from its own sender.
     throw new WorkerConfigError('SCREENING_MAIL_FROM and SCREENING_REPLY_TO are required when MAIL_FROM is set on a platform worker (its probes)');
   }
-  return { operatorDatabaseUrl, auditStore, restoreDrill, supportInbox, ...notifications, mailEvents: readMailEventsConfig(env, notifications.mail) };
+  return { operatorDatabaseUrl, auditStore, restoreDrill, supportInbox, ...notifications, mailEvents: readMailEventsConfig(env, notifications.mail), supportEmail: readSupportEmail(env) };
 }
 
 /**
@@ -363,6 +367,18 @@ function readMailEventsConfig(env: Env, mail: MailConfig): MailEventsConfig {
 }
 
 const ADDRESS = /^[^@\s]+@[^@\s]+$/;
+
+/** The web's development default (apps/web/src/lib/server/config.ts), which the password-changed email names in development. */
+const DEVELOPMENT_SUPPORT_EMAIL = 'support@synthetic.test';
+
+/** SUPPORT_EMAIL: required in production, defaulted in development; refused unless an address, never echoed. */
+function readSupportEmail(env: Env): string {
+  const support = isProduction(env) ? required(env, 'SUPPORT_EMAIL', IN_PRODUCTION) : (value(env, 'SUPPORT_EMAIL') ?? DEVELOPMENT_SUPPORT_EMAIL);
+  if (!ADDRESS.test(support)) {
+    throw new WorkerConfigError('SUPPORT_EMAIL is an email address');
+  }
+  return support;
+}
 
 /**
  * The screening stream's sender (the founder's Q12 ruling of 2026-10-21): SCREENING_MAIL_FROM, results@screening.<domain>

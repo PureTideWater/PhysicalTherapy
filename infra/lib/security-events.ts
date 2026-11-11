@@ -23,7 +23,10 @@ export const SECURITY_ALARM_PERIOD_SECONDS = 300;
  * web log group counts each, and its alarm tells the operator. An undelivered request is split by its code: the codes
  * that mean the app and Cognito disagree or mail is broken alarm at one (only an active, enrolled account reaches the
  * send), the throttle codes at three in an hour (one account's throttling is expected under a flood, which the
- * per-user alarm shows; a pool quota shows here).
+ * per-user alarm shows; a pool quota shows here). And two lines of a completed reset: one whose sessions were not ended
+ * (docs/adr/0091, D15), which queues no password-changed email, so its line pages instead; and one whose sign-out at the
+ * provider failed (docs/adr/0091, D10), after which a key-registration step begun before the reset can still register a
+ * hardware key, so its line pages too.
  */
 export const PASSWORD_RESET_NOT_DELIVERED_MESSAGE = 'password reset request not delivered';
 export const PASSWORD_RESET_NOT_DELIVERED_CONFIG_CODES = ['UserNotFoundException', 'NotAuthorizedException', 'InvalidParameterException', 'CodeDeliveryFailureException'] as const;
@@ -43,6 +46,25 @@ export const CLIENT_CREDENTIAL_REFUSED_MESSAGE = 'security event: client credent
  * and this is the one line that names the cause.
  */
 export const CREDENTIAL_PROBE_REFUSED_MESSAGE = 'cognito probe refused';
+/**
+ * A completed reset whose app sessions were not ended (docs/adr/0091, D15; docs/adr/0081, A5; review R-3): Cognito holds
+ * the new password, but the one transaction that ends the app's sessions and records the reset failed twice
+ * (apps/web/src/lib/auth/sign-in.ts), so no password-changed email was queued. The web logs it at error with the user's
+ * ID and the request's ID only. One alarms: the operator ends the account's sessions and tells the person another way.
+ */
+export const PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE = 'security event: password reset sessions not ended';
+/**
+ * A completed reset whose sign-out at the provider failed (docs/adr/0091, D10; review SEC-01 of 2026-11-11): the web
+ * calls the provider's global sign-out after every completed reset of an account, whether or not the app's sessions
+ * ended, and logs its failure at error with the user's ID, the request's ID and the error's name only
+ * (apps/web/src/lib/auth/sign-in.ts, confirmPasswordReset); the reset still lands. The provider's grant of a
+ * key-registration step begun before the reset then still works for the step's 15 minutes, so a hardware key can be
+ * registered after the reset. Only an account that must sign in with a hardware key and has none is ever in that step:
+ * one of PaidWhole's own, never a customer's. One alarms: the operator reads the audit log for a key registered by that
+ * user since the reset, the one row the failed sign-out makes possible; a sign-in by authenticator code after it is the
+ * person's own (docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed").
+ */
+export const PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE = 'security event: password reset provider sign-out failed';
 
 /** One counted line: its metric (in SIGN_IN_BURST_METRIC's namespace), its message, the codes it is narrowed to (none: every one), and its alarm. */
 export interface SecurityEventCount {
@@ -61,6 +83,8 @@ export const RESET_AND_ENROLMENT_COUNTS = [
   { metricName: 'ClientCredentialRefused', message: CLIENT_CREDENTIAL_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'ClientCredentialProbeRefused', message: CREDENTIAL_PROBE_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'PasswordResetRequestOverFloor', message: PASSWORD_RESET_OVER_FLOOR_MESSAGE, errorCodes: [], threshold: 3, periodSeconds: 3600 },
+  { metricName: 'PasswordResetSessionsNotEnded', message: PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
+  { metricName: 'PasswordResetProviderSignOutFailed', message: PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
 ] as const satisfies readonly SecurityEventCount[];
 
 export type ResetAndEnrolmentMetricName = (typeof RESET_AND_ENROLMENT_COUNTS)[number]['metricName'];

@@ -6,6 +6,8 @@ import { type Page, expect, test } from '@playwright/test';
 import { SYNTHETIC_PRACTICES, personaEmail, personaPassword } from '../scripts/synthetic-personas';
 import { E2E_DEV_AUTH_DIR } from './env';
 import { enterPassword, practiceId, refusal, signInWithTotp, withDatabase } from './helpers';
+import { E2E_SUPPORT_EMAIL, sendPasswordNoticesOnce } from './mail';
+import { type OutboxMessage, outboxFor } from './outbox';
 
 /**
  * Sign-in and sessions in the browser (PRD 6 and 7; docs/product/sessions.md; test matrix SEC-15):
@@ -151,11 +153,19 @@ function arrival(page: Page) {
   return page.locator('[data-slot="arrival-focus"]');
 }
 
-test('a forgotten password is reset by emailed code, and the second factor is still asked (SGN-05, SGN-06, SGN-07)', async ({ page }) => {
+/** The password-changed emails the platform sent an address, oldest first (docs/adr/0091; SGN-16). SYNTHETIC accounts only. */
+function passwordChangedFor(email: string): OutboxMessage[] {
+  return outboxFor(email).filter((message) => message.subject === 'Your password was changed | PaidWhole');
+}
+
+test('a forgotten password is reset by emailed code, the account’s address is told, and the second factor is still asked (SGN-05, SGN-06, SGN-07, SGN-16)', async ({ page }) => {
   const email = personaEmail('reset');
   const chosen = 'Synthetic-reset-Chosen-Pass-2026!';
   const urls: string[] = [];
   page.on('framenavigated', (frame) => urls.push(frame.url()));
+  // Whatever an earlier try of this test left queued goes first, so the reset below is told exactly once.
+  await sendPasswordNoticesOnce();
+  const told = passwordChangedFor(email).length;
   await requestReset(page, email);
   await expect(arrival(page)).toBeFocused();
   await expect(arrival(page)).toHaveText(/^Check your email.*If an account uses the address you typed, we sent it a six-digit code\./);
@@ -176,6 +186,25 @@ test('a forgotten password is reset by emailed code, and the second factor is st
   await expect(arrival(page)).toBeFocused();
   await expect(arrival(page)).toContainText('Your email is filled in: sign in with your new password and the code from your authenticator app.');
   await expect(page.getByLabel('Email')).toHaveValue(email);
+  // The reset queued one password-changed email in its own transaction; the platform's job sends it to the account's
+  // own address: the change's minute in UTC; that every session ended and, the persona having a second factor enrolled,
+  // that signing in still asks for it; to ignore it if they made the change; if not, the support address to write to
+  // from the address they sign in with, and their organization's administrator to tell; a reply goes to that support
+  // address too; and no link (SGN-16; docs/adr/0091).
+  expect((await sendPasswordNoticesOnce()).sent).toBeGreaterThanOrEqual(1);
+  expect(passwordChangedFor(email)).toHaveLength(told + 1);
+  const notice = passwordChangedFor(email).at(-1);
+  expect(notice?.to).toEqual([email]);
+  expect(notice?.body).toMatch(/The password for your PaidWhole account was changed at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC, with a code sent to this address\./);
+  expect(notice?.body).toContain('Every session of this account has ended. Signing in still asks for your authenticator code or hardware key.');
+  expect(notice?.body).toContain('If you changed it, ignore this email.');
+  expect(notice?.body).toContain(`If you did not, write to ${E2E_SUPPORT_EMAIL} now from the address you sign in with, and tell your organization’s administrator. We will help you secure the account.`);
+  expect(notice?.replyTo).toBe(E2E_SUPPORT_EMAIL);
+  expect(notice?.body).not.toMatch(/https?:/);
+  expect(notice?.html).not.toMatch(/<a[\s>]|href=/i);
+  // A second run sends nothing more.
+  await sendPasswordNoticesOnce();
+  expect(passwordChangedFor(email)).toHaveLength(told + 1);
   // The old password no longer opens the account.
   await page.getByLabel('Password', { exact: true }).fill(personaPassword('reset'));
   await page.getByRole('button', { name: 'Continue' }).click();

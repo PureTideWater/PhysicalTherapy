@@ -10,8 +10,8 @@ import { badgeText, descriptor, independenceClaim, sealLabel, sealText, tagline,
  * It reads the words a person sees, never the code around them: every string literal, template literal and
  * JSX text in the web app's source, in the report templates (the audit report, the ROI statement, the coverage
  * report, the monthly summary and the frame and packet templates they print in), in the email the worker sends
- * (the digest, dunning, support notices and support mail, the screening emails, and the mail template), in the
- * screening's upload refusals, and in the packages whose
+ * (the digest, dunning, support notices and support mail, the password-changed notice's job, the screening emails,
+ * and the mail template), in the screening's upload refusals, and in the packages whose
  * words the web app shows (the UI states, triage's labels and pattern words, the packet's narrative and
  * refusals, the contract calendar), parsed with the TypeScript compiler, so comments, identifiers and object
  * keys are never read. In an HTML template it reads the text and the attributes a person reads (aria-label,
@@ -64,16 +64,19 @@ export const COPY_ROOTS = [
 
 /**
  * The copy outside those directories: the ROI statement, which prints in the report frame; the notes a line's
- * stage keeps when the ledger moves it back; the dunning, support-notice and support-mail emails; the
- * contract calendar's labels; the pricing location's status sentences (Pricing settings, Coverage, Getting
- * started, a run's refusal and the console read them); the worker's release reader, so any sentence placed there is
- * read; and the content calendar's family titles, which the Releases page and the console show (docs/adr/0071).
+ * stage keeps when the ledger moves it back; the dunning, support-notice and support-mail emails; the job that builds
+ * the password-changed email (its words are packages/auth-mail's, read above; docs/adr/0091), so any sentence placed
+ * there is read; the contract calendar's labels; the pricing location's status sentences (Pricing settings, Coverage,
+ * Getting started, a run's refusal and the console read them); the worker's release reader, so any sentence placed
+ * there is read; and the content calendar's family titles, which the Releases page and the console show
+ * (docs/adr/0071).
  */
 export const COPY_FILES = [
   'apps/worker/src/reconcile/statement-html.ts',
   'apps/worker/src/reconcile/stages.ts',
   'apps/worker/src/billing/dunning.ts',
   'apps/worker/src/platform/support-notices.ts',
+  'apps/worker/src/platform/password-notices.ts',
   'apps/worker/src/support/support-mail.ts',
   'packages/contracts/src/calendar.ts',
   'packages/contracts/src/location.ts',

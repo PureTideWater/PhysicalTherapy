@@ -353,6 +353,7 @@ describe('support-grant notices', () => {
       restorer: { restoreLatest: () => Promise.reject(new Error('unused')) },
       mail,
       appOrigin: ORIGIN,
+      supportEmail: 'support@synthetic.test',
     });
     const jobId = randomUUID();
     await supportGrant(world.practiceId, 0);

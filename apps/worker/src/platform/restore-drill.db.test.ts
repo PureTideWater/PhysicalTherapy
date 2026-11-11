@@ -137,6 +137,7 @@ describe('the restore_drill job handler', () => {
         restorer: { restoreLatest: () => Promise.resolve({ snapshotRef: 'synthetic', targetRef: `database:${copy.name}`, databaseUrl: copy.url, destroy: () => copy.drop() }) },
         mail: new MemoryMailSender(),
         appOrigin: 'http://localhost:3000',
+        supportEmail: 'support@synthetic.test',
       });
       const jobId = randomUUID();
       await handlers.restore_drill({}, { jobId, logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }) });

@@ -4,13 +4,14 @@ import { MAIL_STREAM_KINDS, type MailKind, type MailStream } from '@tp/db/runtim
  * The mail streams (audit #76; docs/adr/0065; migration 20261107090000): every message goes through exactly one SES
  * configuration set, one per stream, named `<prefix>-<stream>` (MAIL_STREAM_PREFIX, `tp-<environment>`):
  *
- * - transactional: Cognito's invitations and codes (untagged: kind `cognito`) and the monthly digests;
+ * - transactional: Cognito's invitations and codes (untagged: kind `cognito`), the monthly digests, and the
+ *   password-changed notice, one message from a recorded outbox for each completed reset (docs/adr/0091);
  * - notices: the support-access (break-glass) notices and dunning, one message per recipient from a recorded outbox;
  * - screening: the free screening's result and failure emails, from its own sender with Reply-To the support address
  *   (the founder's Q12 ruling of 2026-10-21). It alone pauses (the cut-off, Q9), and SES keeps no suppression list for it.
  *
  * Each message has one recipient and carries its identity as SES message tags, never an address: tp_kind, tp_subject
- * (the notice row, digest, invoice or screening run), tp_practice (support notices only) and tp_recipient (the user,
+ * (the notice row, digest, invoice, screening run or password notice), tp_practice (support notices only) and tp_recipient (the user,
  * customer streams only). Every value is an opaque ID or a code; one that fails MAIL_TAG_VALUE throws before sending.
  * SES returns the tags on each of the message's events, and the platform's mail_events job records them by message
  * (platform/mail-events.ts). The infrastructure holds its alarm codes, set names and simulator addresses equal to these.
@@ -43,7 +44,9 @@ export const MAIL_PROBE_RECIPIENTS = { delivered: `success@${MAIL_SIMULATOR_DOMA
 /**
  * The codes the platform logs for the operator's alarms (infra/lib/mail.ts holds its metric filters equal to these):
  * the screening stream paused, a notice not delivered to every recipient, a notice with no recipient, an invitation not
- * delivered, and a stream with no probe back in 26 hours. MAIL_EVENT_UNREADABLE is a warning the DLQ alarm covers.
+ * delivered, a stream with no probe back in 26 hours, and a password-changed email not delivered or not sent within 24
+ * hours (docs/adr/0091, D9: it pages, since the email is the account holder's warning of a reset they did not make).
+ * MAIL_EVENT_UNREADABLE is a warning the DLQ alarm covers.
  */
 export const MAIL_LOG_CODES = {
   streamPaused: 'MAIL_STREAM_PAUSED',
@@ -52,6 +55,7 @@ export const MAIL_LOG_CODES = {
   invitationUndelivered: 'INVITATION_UNDELIVERED',
   probeMissed: 'MAIL_PROBE_MISSED',
   eventUnreadable: 'MAIL_EVENT_UNREADABLE',
+  passwordNoticeUndelivered: 'PASSWORD_NOTICE_UNDELIVERED',
 } as const;
 
 /**
@@ -73,7 +77,7 @@ export const SENDING_PAUSED_ERROR = 'SendingPausedException';
 export interface MailIdentity {
   readonly stream: MailStream;
   readonly kind: MailKind;
-  /** The notice row, digest, invoice or screening run (a UUID); none for a probe or Cognito's. */
+  /** The notice row, digest, invoice, screening run or password notice (a UUID); none for a probe or Cognito's. */
   readonly subjectId?: string;
   /** The practice a support notice is about (its practice scope when its events are recorded). */
   readonly practiceId?: string;

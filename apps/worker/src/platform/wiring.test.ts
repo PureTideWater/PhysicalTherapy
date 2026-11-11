@@ -19,6 +19,7 @@ const local: PlatformConfig = {
   appOrigin: 'http://localhost:3000',
   staticAssetOrigin: null,
   mailEvents: { kind: 'local', dir: '/tmp/tp-mail-events', identitiesVerified: true },
+  supportEmail: 'support@synthetic.test',
 };
 
 const deployed: PlatformConfig = {
@@ -37,6 +38,7 @@ const deployed: PlatformConfig = {
   appOrigin: 'https://app.synthetic.test',
   staticAssetOrigin: 'https://static.synthetic.test',
   mailEvents: { kind: 'sqs', queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789012/tp-production-mail-events', identitiesVerified: false },
+  supportEmail: 'support@synthetic.test',
 };
 
 describe('platform wiring', () => {
@@ -111,6 +113,8 @@ describe('platform wiring', () => {
       'mail_events',
       'mail_expiry',
       'monitoring_schedule',
+      // The password-changed notices (docs/adr/0091).
+      'password_notices',
       'restore_drill',
       // The screening's pricing is the consumer's since PR 6b-3 (jobs/screening.ts); its expiry stays here.
       'screening_expiry',

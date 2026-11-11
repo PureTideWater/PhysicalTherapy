@@ -404,7 +404,10 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       RESTORE_DRILL_INSTANCE_CLASS: `db.${settings.database.instanceType.toString()}`,
       RESTORE_DRILL_SECURITY_GROUPS: getAtt(logicalIdOf(stack, stack.database.securityGroup), 'GroupId'),
       MAIL_FROM: ref(PARAMETER_NAMES.mailFromAddress),
+      // The support address the password-changed email names (docs/adr/0091), the web's own parameter.
+      SUPPORT_EMAIL: ref(PARAMETER_NAMES.supportEmail),
     });
+    expect(environmentOf(definitions.platform).SUPPORT_EMAIL).toEqual(environmentOf(definitions.web).SUPPORT_EMAIL);
     expect(environmentOf(definitions.platform).DOCUMENTS_BUCKET).toBeUndefined();
     expect(environmentOf(definitions.worker)).toMatchObject({ MAIL_FROM: ref(PARAMETER_NAMES.mailFromAddress), DOCUMENTS_BUCKET: ref(logicalIdOf(stack, stack.storage.documents)) });
     expect(environmentOf(definitions.worker).AUDIT_COPY_BUCKET).toBeUndefined();
