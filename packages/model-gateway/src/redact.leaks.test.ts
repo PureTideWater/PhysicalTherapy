@@ -1081,16 +1081,16 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     refused('SSN: 90012345601\\02\\2020 ok.'),
     refused('SSN: 90012345601/02/202001/31/2020 ok.'),
     unchanged('On 12345678901/02/20261234 today'),
-    // G2-3: a label wrapped over two lines is one label; a rule under it, or a blank line after a label that ends as one
-    // does, stands between it and its number; a heading two lines up names nothing.
+    // G2-3: a label wrapped over two lines is one label; a heading two lines up names nothing. A rule under the label
+    // and a blank line after it were read as the label's until the review J; they are the recorded cost since.
     unchanged('Claim\nNumber\n20260112345.01'),
-    unchanged('ICN\n-----------------\n12345678901234.01'),
-    unchanged('Reference Number\n================\n20260112345.01'),
-    unchanged('Claim No. | Reference\n----------|----------\n20260112345.01 | 20260112346'),
-    unchanged('Claim Number:\n\n20260112345.01'),
-    unchanged('Your reference number is\n\n20260112345.01 and it was paid.'),
+    refused('ICN\n-----------------\n12345678901234.01'),
+    refused('Reference Number\n================\n20260112345.01'),
+    refused('Claim No. | Reference\n----------|----------\n20260112345.01 | 20260112346'),
+    refused('Claim Number:\n\n20260112345.01'),
+    refused('Your reference number is\n\n20260112345.01 and it was paid.'),
     unchanged('Remittance\nAdvice No. 20260112345.01'),
-    unchanged(`${HELD}Member ID:\n\n802-45-678901`),
+    refused(`${HELD}Member ID:\n\n802-45-678901`),
     refused('Claim Number:\n\n\n20260112345.01'),
     refused('STATEMENT\n\n900-12-3456150.00'),
     // G2-4, H2-6: "on file" names nothing as one phrase on one line; "on" at a line's end is no part of a label that
@@ -1148,12 +1148,13 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     refused('STATEMENT\n-  \n900-12-3456150.00'),
     refused('STATEMENT\n...\n900-12-3456150.00'),
     refused('STATEMENT\n--\n802-45-678901.50'),
-    // H2-1: a rule of underscores, tildes or box-drawing lines, a table's corners and bars around it, a form's blank.
-    unchanged('ICN\n_____\n12345678901234.01'),
-    unchanged('Claim Number\n~~~~~~~~~~~~\n20260112345.01'),
-    unchanged('Claim Number\n+------------+\n20260112345.01'),
-    unchanged('Claim Number\n\u2500\u2500\u2500\u2500\u2500\u2500\n20260112345.01'),
-    unchanged('| Claim |\n|-------|\n| 20260112345.01 |'),
+    // H2-1: a form's blank between a label and its number, on one line. A rule of underscores, tildes or box-drawing
+    // lines under the label, a table's corners and bars around it, is the recorded cost since the review J.
+    refused('ICN\n_____\n12345678901234.01'),
+    refused('Claim Number\n~~~~~~~~~~~~\n20260112345.01'),
+    refused('Claim Number\n+------------+\n20260112345.01'),
+    refused('Claim Number\n\u2500\u2500\u2500\u2500\u2500\u2500\n20260112345.01'),
+    refused('| Claim |\n|-------|\n| 20260112345.01 |'),
     unchanged('Claim Number: ______ 20260112345.01'),
     // H2-3: the Social Security label must be the number's own label: under Medicare with the Act named before it, the
     // writing stays an amount and a number.
@@ -1181,27 +1182,29 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     }
   });
   it.each([
-    // I2-2: what ends a label may stand alone on the line under it ("#", a table's alignment row, a rule of "#"); on
-    // the number's own line it is the number's (H1-5).
-    unchanged('Claim\n#\n20260112345.01'),
-    unchanged('Claim\n#:\n12345678901234.01'),
-    unchanged('| Claim |\n|:------|\n| 20260112345.01 |'),
-    unchanged('Statement\n#########\n802-45-678901.50'),
-    unchanged(`${HELD}Claim\n#\n802-456-78901`),
+    // I2-2: what ends a label on a line of its own under it ("#", a table's alignment row, a rule of "#") was read as
+    // the label's until the review J; the recorded cost since. On the number's own line it is the number's (H1-5).
+    refused('Claim\n#\n20260112345.01'),
+    refused('Claim\n#:\n12345678901234.01'),
+    refused('| Claim |\n|:------|\n| 20260112345.01 |'),
+    refused('Statement\n#########\n802-45-678901.50'),
+    refused(`${HELD}Claim\n#\n802-456-78901`),
     refused('REMITTANCE ADVICE\n\n#900-12-3456150.00'),
     // I2-3, I1-2: the month's word after a bare nine or ten with its year after a space or a comma, as after a shape.
     refused('Seq 90012345601Jan 2020'),
     refused('Seq 90012345601Jan, 2020'),
     refused('Seq 202555012301Jan 2020'),
     refused('SSN: 90012345601Jan 2020'),
-    // I2-4: a label of three lines, a rule inside a label; never a blank line inside one.
-    unchanged('Member\nID\nNumber\n20260112345.01'),
-    unchanged('Remittance\nAdvice\nNumber\n12345678901234.01'),
-    unchanged('Invoice\n-------\nNo. 20260112345.01'),
+    // I2-4: a label of three lines and a rule inside a label, read until the review J, are the recorded cost since;
+    // never a blank line inside one.
+    refused('Member\nID\nNumber\n20260112345.01'),
+    refused('Remittance\nAdvice\nNumber\n12345678901234.01'),
+    refused('Invoice\n-------\nNo. 20260112345.01'),
     refused('Invoice\n\nNo. 20260112345.01'),
-    // I2-5: a cell drawn with box lines, a label's own full stop before its rule, the line break U+0085.
-    unchanged('\u2502 Claim Number \u2502\n\u251C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502 20260112345.01 \u2502'),
-    unchanged('Acct.\n-----\n802-45-678901.50'),
+    // I2-5: the line break U+0085. A cell drawn with box lines and a label's own full stop before its rule, read until
+    // the review J, are the recorded cost since.
+    refused('\u2502 Claim Number \u2502\n\u251C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502 20260112345.01 \u2502'),
+    refused('Acct.\n-----\n802-45-678901.50'),
     unchanged('Claim:\u008520260112345.01'),
     // I2-6: an amount that begins as a year does is no year after a month's word.
     unchanged('Row 366-535-16935Nov 2000.00'),
@@ -1213,12 +1216,79 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     refused('SSN/Medicare ID 900 12.3456150.00'),
     unchanged('Medicare rate 110 32.74420'),
     unchanged('Contact: Billing 250 75.123456'),
-    // A "+" before a digit is a phone's own sign, a table's corner beside a dash a connector.
+    // A "+" is a phone's own sign and no connector; a table's corner beside a dash was one until the review J (J-5).
     refused('Provider: +1-202-555-0123150.00'),
     refused('Claim + 900-12-3456150.00'),
-    unchanged('+--------------+\n| Claim Number |\n+--------------+\n| 20260112345.01 |'),
+    refused('+--------------+\n| Claim Number |\n+--------------+\n| 20260112345.01 |'),
   ])('I1-2, I2-2 to I2-6 and the gate\u2019s replay: %j %s', (letter, _outcome, sent) => {
     expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // The review of the next delta, J (one reviewer, three lenses), each finding on both sides. The layouts read between a
+  // label and its number over the four rounds before (a rule, a blank line, a third line, a mark alone on its line) are
+  // read no more: one line break at most inside the label and one at most before the number. What that refuses is ADR
+  // 0054's recorded cost.
+  it.each([
+    // J-3: a line break written CR LF is one line break.
+    unchanged('Claim\r\nNumber: 20260112345.01'),
+    unchanged('Please refer to claim\r\nnumber 20260112345.01 when you call.'),
+    unchanged('Reference\r\nNo. 802-45-678901.50'),
+    unchanged('Remittance\r\nAdvice No. 20260112345.01'),
+    unchanged('Claim Number:\r\n20260112345.01'),
+    unchanged('Claim\r\nNumber:\r\n20260112345.01'),
+    unchanged(`${HELD}Member ID:\r\n802-45-678901`),
+    refused('Claim Number:\r\n\r\n20260112345.01'),
+    refused('Member\r\nID\r\nNumber\r\n20260112345.01'),
+    refused('STATEMENT\r\n\r\n900-12-3456150.00'),
+    refused(`${HELD}Member ID:\r\n\r\n802-45-678901`),
+    // J-2, J-4: a mark, an empty cell or a rule on a line of its own between a heading and the number's line, whatever
+    // the number's indentation or its cell's width; a cell beside its label, or under it with no rule, is named.
+    refused('STATEMENT\n.\nNo. 900-12-3456150.00'),
+    refused("STATEMENT\n'\nNo. 900-12-3456150.00"),
+    refused('STATEMENT\n|\nNo. 900-12-3456150.00'),
+    refused('| STATEMENT             |\n|                       |\n| No. 900-12-3456150.00 |'),
+    refused('STATEMENT\n,\nID: 202-555-0123150.00'),
+    refused('Claim\n-----\n         20260112345.01'),
+    refused('| Claim          |\n|----------------|\n| 20260112345.01 |'),
+    refused('Reference           \n--------------------\n20260112345.01'),
+    unchanged('| Claim | 20260112345.01 |'),
+    unchanged('| Claim No. |\n| 20260112345.01 |'),
+    unchanged('Claim Number\n20260112345.01'),
+    unchanged('ICN:\n12345678901234.01'),
+    // J-1: after the year that follows a space or a comma, an amount's cents alone make it an amount; a comma ends the
+    // date, and a point with one digit or three is no cents.
+    refused('900-12-345601Jan 2020,150.00'),
+    refused('900-12-345615-Mar, 2021,2022'),
+    refused('(202) 555-012301Jan 2020,150.00'),
+    refused('202-555-012305MAY 2026,1 unit'),
+    refused('Tel 250.75 123401Jan 2020,150.00'),
+    refused('SSN: 90012345601Jan 2020,150.00'),
+    refused('Seq 90012345601Jan 2020,150.00'),
+    refused('Row 366-535-16935Nov 2000.5'),
+    unchanged('Row 366-535-169012-September, 2000.00'),
+    unchanged('Row 366-535-169012-September., 2000.00'),
+    unchanged('Row 366-535-16935Nov 2000.00.'),
+    // The label right before the number in its usual writings: two number words, two signs; no other word.
+    refused('Phone #: 900 77.3283150.00'),
+    refused('Medicare ID No. 900 12.3456150.00'),
+    unchanged('Medicare ID No. rate 110 32.74420'),
+    // Recorded, sent as ef3e8d20 sends them: the label and a column of blanks, or U+0085, before the writing with a point.
+    unchanged('Phone:    900 77.3283150.00'),
+    unchanged('Phone\u0085900 77.3283150.00'),
+    // J-5: "+" is no connector, beside a dash or not; a blank's underscores cut by a box line are no blank (recorded).
+    refused('Provider -+1-202-555-0123150.00'),
+    refused('Claim -+- 20260112345.01'),
+    refused('Claim __│__ 20260112345.01'),
+  ])('J-1 to J-5: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+  it.each(['-+', '+-', '=+', '_~', '─_', '+ ', '(S)', 'NO ', '# ', '| '])('J-5: %j repeated between a noun and a number is read in time linear in its count', (pair) => {
+    for (const count of [24, 28, 50, 2500]) {
+      const letter = `Claim ${pair.repeat(count)} Total 20260112345.01`;
+      const started = performance.now();
+      expect(outcome(letter)).toBe(REFUSED);
+      expect(performance.now() - started, `${String(count)} of them`).toBeLessThan(1000);
+    }
   });
 
   // ef3e8d20's reading stands where the strict reading leaves a group out of its chains (the fuzzers on the round after E1

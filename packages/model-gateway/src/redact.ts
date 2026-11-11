@@ -1741,8 +1741,8 @@ function decideBare(window: string, length: number, digits: string): Decision {
 
 /** What the call's own identifier's placeholder becomes for the survivor scan: a BARRIER to every reader but the label window, which reads through it. */
 const OWN_MARK = '\u0003';
-/** An SSN, phone or Medicare label right before a number: a number word, a sign or one line break between them too, and an opening parenthesis; no other word. */
-const LABEL_RIGHT_BEFORE = new RegExp(`(?:${SSN_LABEL.source}|${PHONE_LABEL.source}|${MEDICARE_LABEL.source})\\.?(?:[ \\t]{0,2}(?:NOS?|NUMBERS?|NBR|NUM|ID)\\b\\.?)?[ \\t]{0,2}[:#\\p{Pd}\\u2212]?[ \\t]{0,2}(?:(?:\\r\\n|[\\n\\r])[ \\t]{0,2})?(?:\\([ \\t]?)?$`, 'u');
+/** An SSN, phone or Medicare label right before a number: a number word or two, a sign or two or one line break between them too ("Phone #:", "Medicare ID No."), and an opening parenthesis; no other word. */
+const LABEL_RIGHT_BEFORE = new RegExp(`(?:${SSN_LABEL.source}|${PHONE_LABEL.source}|${MEDICARE_LABEL.source})\\.?(?:[ \\t]{0,2}(?:NOS?|NUMBERS?|NBR|NUM|ID)\\b\\.?){0,2}[ \\t]{0,2}[:#\\p{Pd}\\u2212]{0,2}[ \\t]{0,2}(?:(?:\\r\\n|[\\n\\r])[ \\t]{0,2})?(?:\\([ \\t]?)?$`, 'u');
 /** After a label's own list number: ":" or ")", an ordinal's suffix or a space before it too ("1:", "2)", "1st:", "1 :"). */
 const LIST_NUMBER_AFTER = /^(?:ST|ND|RD|TH)?[ \t]?(?:\([^()\r\n]{1,16}\)[ \t]?)?[:)]/u;
 /** An SSN or phone label right before its own list number: a number word, a sign or one line break between them too, and an opening parenthesis. */
@@ -2685,33 +2685,19 @@ const MONTH_FOLDED = '(?:JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JU
  * 12345678901234.01", "Case No. 123-45-678901-02", "Policy No. 01-23456-78-9012"). No other word does ("Patient #
  * 900-12-3456150.00", "Paid-975-20-18460.00" are refused), and an SSN, phone or Medicare label names no reference:
  * gluedShape asks the scan's label first ("SSN No. 900-12-3456150.00").
- * Between the noun and the number stand its connectors alone: white space, signs, number words, a rule's characters
- * (a run of three underscores or tildes or more, taken whole: cut into pieces it made the search exponential, the
- * reviews of the last delta, I1-1 and I2-1; a table's bar, a box-drawing line, and a table's corner "+" beside a dash).
- * A "+" before a digit is a phone's own sign and no connector ("Provider: +1-202-555-0123150.00").
+ * Between the noun and the number stand its connectors alone: white space, signs, a table's bar or box-drawing line,
+ * number words, and a form's blank, a run of three underscores or tildes or more taken whole. No two connectors read the
+ * same character, so the search is linear in the text (a run cut into pieces, then a table's corner "+" read two ways,
+ * each made it exponential: the reviews of the last three deltas, I1-1, I2-1 and J-5). A "+" is a phone's own sign and
+ * no connector ("Provider: +1-202-555-0123150.00", "Provider -+1-202-555-0123150.00").
  */
-const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|(?<!(?<![\\p{L}\\p{N}])ON[ \\t\\p{Pd}]{1,3})FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION|TCN|CCN|MRN|PCN|NDC|RX|PAYMENT|REFERRAL|RECEIPT|PRECERT(?:IFICATION)?|PRE[\\p{Pd} ]?AUTH(?:ORIZATION)?|CERTIFICATION|SESSION|CUSTOMER|VOUCHER|DOCKET|STATEMENT|REMIT(?:TANCE)?(?:\\s{1,3}ADVICE)?|EMPLOYER|PAYER|LOAN|RECONSIDERATION|REDETERMINATION|COMPLAINT)(?!\\p{L}))(?:\\(S\\)|[\\s\\u0085:#.*=()\\p{Pd}\\u2212|\\u2500-\\u257F,/"\u201C\u201D']|[_~]{3,}(?![_~])|\\+(?=[\\p{Pd}=])|(?<=[\\p{Pd}=])\\+|(?<![\\p{L}\\p{N}])(?:NO|NOS|NUMBERS?|NBR|NUM|ID|IS|LINE|CODE)(?!\\p{L}))*$`, 'u');
+const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|(?<!(?<![\\p{L}\\p{N}])ON[ \\t\\p{Pd}]{1,3})FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION|TCN|CCN|MRN|PCN|NDC|RX|PAYMENT|REFERRAL|RECEIPT|PRECERT(?:IFICATION)?|PRE[\\p{Pd} ]?AUTH(?:ORIZATION)?|CERTIFICATION|SESSION|CUSTOMER|VOUCHER|DOCKET|STATEMENT|REMIT(?:TANCE)?(?:\\s{1,3}ADVICE)?|EMPLOYER|PAYER|LOAN|RECONSIDERATION|REDETERMINATION|COMPLAINT)(?!\\p{L}))(?:\\(S\\)|[\\s\\u0085:#.*=()\\p{Pd}\\u2212|\\u2500-\\u257F,/"\u201C\u201D']|(?<![_~])[_~]{3,}(?![_~])|(?<![\\p{L}\\p{N}])(?:NO|NOS|NUMBERS?|NBR|NUM|ID|IS|LINE|CODE)(?!\\p{L}))*$`, 'u');
 /** How far back a reference's noun is looked for: a form's column of spaces between the noun and its number too. */
 const NAMED_REACH = 120;
 /** An SSN label right before a reference's noun: the noun is the label's own word ("Social Security Account Number"). */
 const SSN_LABEL_THEN = new RegExp(`(?:${SSN_LABEL.source})[ \\t]*$`, 'u');
-/** The line breaks of a text. */
-const LINE_BREAKS = new RegExp(LINE_BREAK, 'gu');
 /** What stands between a label's last word and its number. */
 const LABEL_TAIL = /[^\p{L}\p{N}]*$/u;
-/** A label's last word that says a number follows: a number word, or a number's own name. */
-const NUMBER_LABEL_END = /(?<![\p{L}\p{N}])(?:NO|NOS|NUMBERS?|NBR|NUM|ID|IS|ICN|DCN|TCN|CCN|PCN|MRN)$/u;
-/** A rule's characters: dashes, equals signs, underscores, tildes, asterisks, the box-drawing lines (points are an ellipsis as often). */
-const RULE_CHARACTER = '[\\p{Pd}=_~*\\u2500-\\u257F]';
-/**
- * A rule drawn under a label, alone on its line: three or more of its characters, a table's bars and corners among them
- * and at the ends of the label's line and the number's, the label's own closing marks before it ("ICN" over "-----",
- * "Acct." over "-----", "| Claim |" over "|-------|", a cell drawn with box lines). Blanks and bars are no rule by
- * themselves.
- */
-const RULE_LINE = new RegExp(`^[ \\t|.:#*),\\u2500-\\u257F]{0,8}${LINE_BREAK}[ \\t|+]*(?:${RULE_CHARACTER}[ \\t|+]*){3,}${LINE_BREAK}[ \\t|\\u2500-\\u257F]{0,8}$`, 'u');
-/** A blank line: two line breaks with nothing but blanks between them. */
-const BLANK_LINE = new RegExp(`${LINE_BREAK}[ \\t]*${LINE_BREAK}`, 'u');
 /** What stands between a date's parts written with its month's word: white space (a line break too), a comma, a point, a dash or a slash, four at most. */
 const WORD_DATE_GAP = '[\\s,.\\p{Pd}\\u2212/]{0,4}';
 /**
@@ -2761,7 +2747,7 @@ const bareDateAfter = (join: string, end: string) =>
     `^(?:${[
       `(?:0?[1-9]|[12][0-9]|3[01])${join}(?:0?[1-9]|[12][0-9]|3[01])${join}(?:19|20)[0-9]{2}`,
       `(?:0?[1-9]|[12][0-9]|3[01])${join}?${MONTH_FOLDED}\\.?${join}?(?:19|20)[0-9]{2}`,
-      `(?:0?[1-9]|[12][0-9]|3[01])${join}?${MONTH_FOLDED}\\.?(?:${join}|[ ,]){1,2}(?:19|20)[0-9]{2}(?![.,][0-9])`,
+      `(?:0?[1-9]|[12][0-9]|3[01])${join}?${MONTH_FOLDED}\\.?(?:${join}|[ ,]){1,2}(?:19|20)[0-9]{2}(?!\\.[0-9]{2}(?![0-9]))`,
       `(?:19|20)[0-9]{2}${join}(?:0?[1-9]|1[0-2])${join}(?:0?[1-9]|[12][0-9]|3[01])`,
     ].join('|')})${end}`,
     'u',
@@ -2815,10 +2801,11 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labelOf: (group:
   // is whatever noun follows the label: the scan's label for the number ("SSN on file: 900-12-345678", "SSN/Member ID:
   // 900-12-3456150.00"), or the label right before the noun, however far the number stands after it ("Social Security
   // Account Number" and a column of spaces, "SSN Account 01-900-12-3456150.00": the review of the last round's delta, G1-3).
-  // Between the label's last word and the number stands one line break at most; a blank line or a rule drawn under the
-  // label too where the label ends as one does, in a number word, a number's own name, a colon or "#" ("Claim Number:" and a
-  // blank line, "ICN" over a rule; a label wrapped over two lines is one label: G2-3). A heading two lines up names
-  // nothing ("REMITTANCE ADVICE", a blank line and "900-12-3456150.00": E1-7).
+  // The label may wrap once and the number may stand on the line under it: one line break at most inside the label and
+  // one at most between its last word and the number ("Claim" over "Number: 20260112345.01", "ICN:" over its number).
+  // More than that is a heading and no label: a blank line, a rule drawn under the label, a third line ("REMITTANCE
+  // ADVICE", a blank line and "900-12-3456150.00": E1-7). Reading those layouts was tried over four rounds and every
+  // reading named a number it should not have (H2-4, I2-2, I2-4, J-2 to J-4); the one rule's cost is in ADR 0054.
   const ssnLabeled = (group: ScanGroup) => labelOf(group) === 'person' && ssnLabel(group);
   const named = (group: ScanGroup) => {
     if (ssnLabeled(group)) return false;
@@ -2828,17 +2815,7 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labelOf: (group:
     if (noun === null || SSN_LABEL_THEN.test(before.slice(0, noun.index))) return false;
     const tail = LABEL_TAIL.exec(before)?.[0] ?? '';
     const label = before.slice(noun.index, before.length - tail.length);
-    // A label wrapped over two or three lines is one label ("Member", "ID", "Number"), a rule drawn inside it too
-    // ("Invoice", a rule, "No."); with a blank line inside it, it is a heading and a word on the number's own line
-    // ("REMITTANCE ADVICE", blank lines and "No. 900-12-3456150.00": the reviews of the last two deltas, H2-4 and I2-4).
-    if ((label.match(LINE_BREAKS) ?? []).length > 2 || BLANK_LINE.test(label)) return false;
-    const lines = tail.split(LINE_BREAK_IN);
-    if (lines.length <= 2) return true;
-    if (lines.length > 3) return false;
-    // What ends the label stands on the label's own line or alone on the line under it ("Claim" over "#", a table's
-    // alignment row "|:------|"); on the number's own line a colon or "#" is the number's ("STATEMENT", a blank line and
-    // "#900-12-3456150.00": H1-5, I2-2).
-    return /[:#]/u.test(`${lines[0] ?? ''}${lines[1] ?? ''}`) || RULE_LINE.test(tail) || NUMBER_LABEL_END.test(label);
+    return label.split(LINE_BREAK_IN).length <= 2 && tail.split(LINE_BREAK_IN).length <= 2;
   };
   // A person's label over a shape: an SSN or phone label, or "Medicare" over an SSN's shape (its middle group of two).
   const labeled = (group: ScanGroup, middle = 2) => {
@@ -2884,7 +2861,7 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labelOf: (group:
       // The label right before the number, no other word between them, is the number's label as a Social Security label
       // is ("Medicare 917 16.2677535.06" against "Medicare rate 110 32.74420": the gate's replay after the round that
       // gave the second back).
-      const own = !g1.includes('.') && (ssnLabeled(a) || LABEL_RIGHT_BEFORE.test(text.slice(Math.max(0, a.start - 48), a.start)));
+      const own = !g1.includes('.') && (ssnLabeled(a) || LABEL_RIGHT_BEFORE.test(text.slice(Math.max(0, a.start - 56), a.start)));
       if (head === 0 && LOOSE_JOIN.test(g1) && LOOSE_JOIN.test(g2) && (b.digits.length === 3 || !pointed || dated || own) && labeled(a, b.digits.length) && !named(a)) return 'structure';
       // A phone with its area code in parentheses is a phone's own shape with no label too: what is glued after it is read
       // as after a shape joined with no white space ("(202) 555-012301/02/2020", "(202) 555-0123150.00").
@@ -2969,9 +2946,10 @@ const DATE_GLUED_AFTER = new RegExp(
     '(?:19|20)[0-9]{2}[/.\\p{Pd}\\u2212](?:0?[1-9]|1[0-2])[/.\\p{Pd}\\u2212](?:0?[1-9]|[12][0-9]|3[01])',
     // its month as a word after its day, joined to it as a date's parts are or not at all ("01-JAN-2020", "01JAN20"), a
     // four-digit year after a space or a comma too ("01JAN 2020", "01-JAN, 2020": H1-2), never an amount that begins as
-    // a year does ("NOV 2000.00": I2-6); across a space before it the word begins a date of its own ("802-45-678901 JAN
+    // a year does, its cents after it ("NOV 2000.00": I2-6; a comma after the year ends the date and no more, "01JAN
+    // 2020,150.00": J-1); across a space before it the word begins a date of its own ("802-45-678901 JAN
     // 15, 2026": G2-1), and so do two digits after a space ("01JAN 15")
-    `(?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212]?${MONTH_FOLDED}\\.?(?:[/.\\p{Pd}\\u2212]?(?:(?:19|20)[0-9]{2}|[0-9]{2})|[/.\\p{Pd}\\u2212 ,]{1,2}(?:19|20)[0-9]{2}(?![.,][0-9]))`,
+    `(?:0?[1-9]|[12][0-9]|3[01])[/.\\p{Pd}\\u2212]?${MONTH_FOLDED}\\.?(?:[/.\\p{Pd}\\u2212]?(?:(?:19|20)[0-9]{2}|[0-9]{2})|[/.\\p{Pd}\\u2212 ,]{1,2}(?:19|20)[0-9]{2}(?!\\.[0-9]{2}(?![0-9])))`,
   ].join('|')})(?![0-9])`,
   'u',
 );
@@ -2982,7 +2960,7 @@ const LOOSE_JOIN = /^(?=.)[ \t]{0,2}[\p{Pd}−./()]{0,2}[ \t]{0,2}$/u;
 /** After a phone's area code in parentheses: the closing parenthesis, then spaces, a dash or a point, or the line's end and the next line's indentation. */
 const PAREN_JOIN = /^[ \t]?\)(?:[ \t]{0,2}[\p{Pd}\u2212.]?[ \t]{0,2}|[ \t]{0,16}(?:\r\n|[\n\r])[ \t]{0,16})$/u;
 /** How far past a number's last four DATE_GLUED_AFTER reads. */
-const DATE_AFTER_REACH = 24;
+const DATE_AFTER_REACH = 32;
 const ROW_GAP = /^[ \t]{1,16}$/u;
 /** A row's units written in parentheses: "97110 (2) 150.00". */
 const ROW_UNITS_OPEN = /^[ \t]{1,16}\($/u;
