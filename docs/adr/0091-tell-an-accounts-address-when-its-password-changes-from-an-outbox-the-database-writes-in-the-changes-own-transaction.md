@@ -1,6 +1,6 @@
 # 0091. Tell an account's address when its password changes, from an outbox the database writes in the change's own transaction
 
-- **Status:** proposed (Schema PR 1 of the queue after #126, `co-001/password-changed-notice`: part 2 of the auth emails,
+- **Status:** accepted (the founder's approval line of 2026-11-11, merged as #140; Schema PR 1 of the queue after #126, `co-001/password-changed-notice`: part 2 of the auth emails,
   whose part 1 is #125; migration `20261111090000_password_changed_notice.sql`), as its three reviews of 2026-11-11
   left it (the last section lists what they changed). The founder's approval of the regenerated domain model (CO-02)
   accepts it. Adds to
