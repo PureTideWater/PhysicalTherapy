@@ -1,6 +1,6 @@
 # Lane A's handoff to Lane B, 2026-11-13
 
-Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 01:30 UTC.
+Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 02:45 UTC.
 
 Read `lanes/STATE.md` first: it is the current state. This file adds only what STATE.md does not hold.
 
@@ -12,6 +12,7 @@ kept current instead. If STATE.md is newer than this file, trust STATE.md and th
 ## What Lane A merged as acting Lane B
 - #134, SUITE-CAP-3: 994ee303 (2026-11-10 23:20 UTC).
 - #136, a person's ledger action never waits for the ledger lock (ADR 0092, CAS-56): 06cde5eb (2026-11-11 00:54 UTC).
+- #138, MOD-16, a date or amount range glued to a word: ef3e8d20 (2026-11-11 02:35 UTC).
 
 ## Handed back to Lane B (each item's status file holds its RESUME-BLOCK)
 - STATE.md items 1, 3, 5, 8 and 9, as STATE.md shows them when you read it.
