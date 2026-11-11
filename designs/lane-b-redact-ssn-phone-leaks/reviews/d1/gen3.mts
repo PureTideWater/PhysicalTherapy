@@ -1,0 +1,81 @@
+// D1 review generator, second round (synthetic data only): case-glued labels, numbers glued to dates, amounts, masks and
+// letters, the call's identifiers glued to numbers, held letters, and (ph) redacted texts written with placeholders.
+import { VOCAB, XA, XD, XE, XM, XN } from './gen2.mts';
+type X = any;
+const { NJ, PERSON, KEEP, NAMED, CODES, ZIPS, TAIL, LISTSUF, MID, LISTJ, NUMS, EXTRA, GLUE, HELD, WORDS, SCRIPTS, CROSS, INVIS, JOIN, INV } = VOCAB as any;
+const GLUEDL = ['PatientSSN', 'PATIENTSSN', 'PatientSS#', 'PatientSS No', 'PatientHIC', 'PaidSSN', 'PatientPhone', 'PatientSocialSecurityNumber', 'memberSS#', 'theHICN', 'FaxSSN', 'acctSS #', 'idHIC', 'PatientTel', 'MemberPhone', 'PtSSN', 'PaidSoc Sec'];
+const NUMS3 = [...NUMS, '01/01/2020900-12-3456', '$150.00900-12-3456', '150.00900123456', '2020-01-02150.00', '01/02/20900-12-3456', '202-555-012301/02/2020', '900-12-3456-01/02/2020', 'PaidXXX-XX-3456', 'Acct#XXXX-XX-1234', 'FaxXXX-XX-3456', 'XXX XX 3456', '●●●-●●-3456', 'xxx.xx.3456', '***-**-\n3456', 'XXX-XX-3456A', '2020***-**-3456', '900-12-3456A', 'A900-12-3456', 'Paid900-12-3456', '900123456A', 'x5550123', '555-0123x', '#900123456', 'No900123456', '900-12-3456th', '(900) 12-3456', '900 (12) 3456', '(555) 0123', '555-(0123)', '900-12-3456.', '900-12-3456,', '900-12-3456;78', '555-0123:45', '900‑12‑3456', '900−12−3456', '900 12 3456', '9​00-12-3456', '900-1­2-3456', '900--12--3456', '900- 12 -3456', '900 -12- 3456', '900/12-3456', '900-12/3456', '900.12-3456', '555/0123', '555_0123', '555 - 0123', '202 - 555 - 0123', '(202)-555-0123', '202-555.0123', '202.555-0123', '202 555-0123', '202-555 0123', '1 202 555 0123', '1-202-5550123', '12025550123', '+12025550123', '001 202 555 0123'];
+export function makeGen3(seed0: number, opts: { ph?: boolean } = {}) {
+  const ph = opts.ph === true;
+  let seed = seed0;
+  const rnd = () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const pick = <T,>(a: readonly T[]): T => a[Math.floor(rnd() * a.length)]!;
+  const chance = (p: number) => rnd() < p;
+  const D = () => String(Math.floor(rnd() * 10));
+  const randomNumber = () => { const groups = Array.from({ length: 1 + Math.floor(rnd() * 4) }, () => Array.from({ length: 1 + Math.floor(rnd() * 5) }, D).join('')); return groups.map((gr, i) => (i === 0 ? gr : pick(['-', ' ', '.', '\n', '', '/', ')', '-\n', ', ', '(', ' - ', ',', '•', '·']) + gr)).join(''); };
+  const od = (all: boolean) => (s: string) => { const z = pick(SCRIPTS) as number; return s.replace(/[0-9]/g, (d) => (all || chance(0.5) ? String.fromCodePoint(z + Number(d)) : d)); };
+  const alike = (all: boolean) => (s: string) => [...s].map((c) => { const o = /[A-Za-z]/.test(c) ? INV[c.toUpperCase()] : undefined; return o && (all || chance(0.3)) ? pick(o) : c; }).join('');
+  const lookdigit = (s: string) => { const a = [...s]; const idx = a.map((c, i) => (/[0-9]/.test(c) && INV[c] ? i : -1)).filter((i) => i >= 0); if (idx.length === 0) return s; const i = pick(idx); a[i] = pick(INV[a[i]!]!); return a.join(''); };
+  const crossed = (s: string) => { const a = [...s]; const idx = a.map((c, i) => (CROSS[c.toUpperCase()] ? i : -1)).filter((i) => i >= 0); if (idx.length === 0) return s; const k = 1 + Math.floor(rnd() * Math.min(2, idx.length)); for (let j = 0; j < k; j += 1) { const i = pick(idx); a[i] = pick(CROSS[a[i]!.toUpperCase()] ?? [a[i]!]); } return a.join(''); };
+  const invis = (s: string) => { const a = [...s]; a.splice(Math.floor(rnd() * (a.length + 1)), 0, pick(INVIS)); return a.join(''); };
+  const nj = (s: string) => { const a = [...s]; const seps = a.map((c, i) => (/[ \-,.]/.test(c) && i > 0 && i < a.length - 1 ? i : -1)).filter((i) => i >= 0); const j = pick(NJ) as string; if (seps.length > 0 && chance(0.5)) { const i = pick(seps); a.splice(i, a[i + 1] === ' ' ? 2 : 1, j); } else a.splice(1 + Math.floor(rnd() * Math.max(1, a.length - 1)), 0, j); return a.join(''); };
+  const wrap = (s: string) => { const a = [...s]; const seps = a.map((c, i) => (/[ \-]/.test(c) && i > 0 && i < a.length - 1 ? i : -1)).filter((i) => i >= 0); if (seps.length > 0 && chance(0.75)) { const i = pick(seps); a[i] = a[i] === '-' ? pick(['-\n', '-\r\n', '-\n  ', '-\n\t']) : pick(['\n', '\r\n', ' \n', '\n ', '\n\n']); } else a.splice(1 + Math.floor(rnd() * Math.max(1, a.length - 1)), 0, pick(['-\n', '\n', '-\n ', '­\n'])); return a.join(''); };
+  const joiner = (s: string) => { const a = [...s]; const seps = a.map((c, i) => (/[ \-.,/]/.test(c) ? i : -1)).filter((i) => i >= 0); if (seps.length > 0 && chance(0.6)) a[pick(seps)] = pick(JOIN); else a.splice(1 + Math.floor(rnd() * Math.max(1, a.length - 1)), 0, pick(JOIN)); return a.join(''); };
+  const recase = (s: string) => pick([s.toUpperCase(), s.toLowerCase(), s]);
+  const MUT_NAME = [nj, nj, nj, alike(false), alike(true), crossed, crossed, invis, wrap, joiner, recase];
+  const MUT_ID = [od(false), od(true), lookdigit, lookdigit, crossed, crossed, alike(false), invis, wrap, joiner, joiner];
+  const MUT_NUM = [od(false), od(true), invis, joiner, wrap, lookdigit];
+  const mut = (list: ((s: string) => string)[], s: string, p: number) => { let out = s; if (chance(p)) { out = pick(list)(out); if (chance(0.25)) out = pick(list)(out); } return out; };
+  const nameOf = (x: X, p = 0.5): string => (ph && chance(0.85) ? '[PATIENT_NAME]' : mut(MUT_NAME, pick(x.names), p));
+  const idOf = (x: X, p = 0.5): string => (ph && chance(0.85) ? pick(['[MEMBER_ID]', '[CLAIM_1]']) : mut(MUT_ID, pick(x.ids), p));
+  const dobOf = (x: X, p = 0.3): string => (ph && chance(0.85) ? '[DATE_OF_BIRTH]' : mut(MUT_NUM, pick(x.dobs), p));
+  const ownOf = (x: X, p = 0.5) => { const r = rnd(); return r < 0.5 ? nameOf(x, p) : r < 0.85 ? idOf(x, p) : dobOf(x, p); };
+  const num = (p = 0.12): string => (ph && chance(0.2) ? pick(['[SSN]', '[PHONE]']) : chance(0.85) ? mut(MUT_NUM, pick(NUMS3), p) : randomNumber());
+  const label = () => { const r = rnd(); return (r < 0.55 ? pick(PERSON) : r < 0.62 ? pick(GLUEDL) : r < 0.8 ? pick(KEEP) : r < 0.92 ? pick(NAMED) : r < 0.96 ? pick(CODES) : pick(ZIPS)) + pick(TAIL); };
+  const fill = () => { const k = Math.floor(rnd() * 5); let s = ''; for (let i = 0; i < k; i += 1) s += ` ${pick(WORDS)}`; return s + pick([' ', ': ', ' ', ') ', ', ', '\n', ' - ']); };
+  const listNo = () => ` ${1 + Math.floor(rnd() * 12)}${pick(LISTSUF)}`;
+  const seg1 = (x: X) => {
+    const lab = label(); const k = rnd(); let through = '';
+    if (k < 0.3) through = pick(MID) + nameOf(x, 0.5);
+    else if (k < 0.42) through = pick(MID) + ownOf(x, 0.4);
+    else if (k < 0.55) through = listNo();
+    else if (k < 0.63) through = pick(MID) + ownOf(x, 0.4) + listNo();
+    else if (k < 0.7) through = listNo() + pick(MID) + ownOf(x, 0.4);
+    else if (k < 0.8) through = pick(MID) + ownOf(x, 0.4) + pick(MID) + ownOf(x, 0.4);
+    else if (k < 0.9) through = fill();
+    const number = num();
+    let body = `${lab}${through}${pick(MID)}${number}`; const e = rnd();
+    if (e < 0.35) body = `${body}${pick(GLUE)}${chance(0.8) ? pick(EXTRA) : randomNumber()}`;
+    else if (e < 0.5) body = `${lab}${through}${pick(MID)}${pick(EXTRA)}${pick(GLUE)}${number}`;
+    else if (e < 0.6) body = `${pick(EXTRA)}${pick(GLUE)}${body}`;
+    else if (e < 0.72) body = `${body}${pick(GLUE)}${label()}${pick(MID)}${num()}`;
+    else if (e < 0.8) body = `${body}${pick(LISTJ)}${num()}`;
+    return body;
+  };
+  const seg2 = (x: X) => { const own = ownOf(x, 0.75); const left = pick([num(), pick(EXTRA), randomNumber(), label(), '']); const right = pick([num(), pick(EXTRA), randomNumber(), '']); return `${chance(0.35) ? `${label()} ` : ''}${left}${pick(GLUE)}${own}${pick(GLUE)}${right}`; };
+  const seg3 = (x: X) => { const k = 3 + Math.floor(rnd() * 5); let s = ''; for (let i = 0; i < k; i += 1) { const c = rnd(); const atom = c < 0.25 ? label() : c < 0.45 ? num(0.1) : c < 0.6 ? pick(EXTRA) : c < 0.9 ? ownOf(x, 0.45) : randomNumber(); s += (i === 0 ? '' : pick(GLUE)) + atom; } return s; };
+  const seg4 = (x: X) => {
+    const cl = idOf(x, 0.25); const k = rnd();
+    if (k < 0.3) return `${pick(KEEP)}${pick(TAIL)} ${cl}${pick(LISTJ)}${num()}${chance(0.4) ? pick(LISTJ) + num() : ''}`;
+    if (k < 0.5) return `${pick(PERSON)}${pick(TAIL)} ${cl}${pick(MID)}${num()}${chance(0.4) ? pick(GLUE) + pick(EXTRA) : ''}`;
+    if (k < 0.7) return `${cl}${pick(GLUE)}${num()}${pick(GLUE)}${nameOf(x, 0.6)}`;
+    if (k < 0.85) return `${num()}${pick(GLUE)}${cl}${pick(GLUE)}${num()}`;
+    return `${pick(PERSON)} ${nameOf(x, 0.3)}${pick(LISTJ)}${cl}${pick(LISTJ)}${num()}`;
+  };
+  const seg5 = (x: X) => { const lab = pick(PERSON) + pick(TAIL); const o = ph ? ownOf(x, 0) : wrap(chance(0.6) ? pick(x.names) : pick(x.ids)); const nm = chance(0.5) ? wrap(pick(NUMS3)) : num(); const br = () => pick(['\n', '\r\n', ' \n', '\n ', '\n\n', ' ']); return `${lab}${br()}${chance(0.8) ? o : ''}${br()}${nm}${chance(0.3) ? br() + pick(EXTRA) : ''}`; };
+  const seg6 = (x: X) => { const a = `${pick(PERSON)}${listNo()} ${chance(0.6) ? idOf(x, 0.4) : num()}`; const b = `${pick(PERSON)}${pick(MID)}${nameOf(x, 0.4)}${pick(MID)}${num()}`; const sep = pick(['\n', '. ', '; ', ' ']); return chance(0.5) ? `${a}${sep}${b}` : `${b}${sep}${a}`; };
+  const seg7 = (x: X) => { const id = ph ? idOf(x, 0) : pick([od(false), od(true), lookdigit, (s: string) => lookdigit(lookdigit(s)), crossed, alike(false)])(pick(x.ids)); return `${pick(['Member ID', 'Member', 'ID', 'Subscriber ID', 'Claim', 'Claim #', 'SSN', 'Phone', 'Medicare', 'HICN', 'Member #', 'ID No.', 'Tel', 'Call'])}${pick(TAIL)} ${id}${chance(0.6) ? pick(MID) + num() : ''}${chance(0.3) ? pick(GLUE) + pick(EXTRA) : ''}`; };
+  const seg8 = (x: X) => { const o = ownOf(x, 0.3); const z = pick(['', '', '​', '́', '­', '.', '-', '/', '#', ':']); const nmb = num(0.05); const core = chance(0.5) ? `${o}${z}${nmb}` : `${nmb}${z}${o}`; return `${chance(0.5) ? label() + pick(MID) : ''}${core}${chance(0.3) ? pick(GLUE) + pick(EXTRA) : ''}`; };
+  const seg9 = (x: X) => `${pick(HELD)}${chance(0.5) ? label() + pick(MID) : ''}${chance(0.5) ? ownOf(x, 0.5) + pick(GLUE) : ''}${num()}${chance(0.5) ? pick(GLUE) + ownOf(x, 0.5) : ''}${chance(0.4) ? pick(GLUE) + pick(EXTRA) : ''}`;
+  const SEGS = [seg1, seg1, seg1, seg2, seg2, seg3, seg4, seg4, seg5, seg6, seg7, seg8, seg8, seg9];
+  const letter = () => {
+    const r0 = rnd(); const x = ph ? (r0 < 0.5 ? XD : XA) : r0 < 0.42 ? XA : r0 < 0.62 ? XE : r0 < 0.8 ? XN : r0 < 0.83 ? XM : XD;
+    const n = 1 + (chance(0.4) ? 1 : 0) + (chance(0.12) ? 1 : 0); const segs: string[] = [];
+    for (let i = 0; i < n; i += 1) segs.push(pick(SEGS)(x));
+    const nm = () => (ph ? '[PATIENT_NAME]' : pick(x.names) as string); const idp = () => (ph ? '[CLAIM_1]' : pick(x.ids) as string);
+    const prefix = chance(0.2) ? pick(HELD) : pick(['', '', '', '', 'Paid $10.00. ', `Dear ${nm()},\n`, '150.00 ', `Claim ${idp()} `, `Re: ${nm()}\n`]);
+    const suffix = pick(['', '', '', '', '.', ' Paid $1.00', '150.00', ` ${nm()}`, 'th', ' ext 12', '-1', '\n150.00', ' 2020', 'A', ` ${idp()}`, ', 12', ',5']);
+    return { t: `${prefix}${segs.join(pick(['\n', '. ', ' ', '.\n', '; ', '\n\n']))}${suffix}`, P: x.P, C: x.C, who: x.who as string, own: x.own as string[] };
+  };
+  return { letter, rnd, pick };
+}

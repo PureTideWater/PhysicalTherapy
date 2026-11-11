@@ -21,43 +21,64 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
   - *ef3e8d20's reading stands, and this one only adds.* The call's own identifiers are read first as ef3e8d20 read them.
     What only this reading reads is a fresh match (`Found.fresh`): a number a label names only through the call's own
     identifier or a list number (the call's own number found so too); a name written with a joiner ef3e8d20 did not
-    read; an identifier found only on the look-alike fold; a digit-for-letter form. The Social Security and phone
+    read, and what is read only beside it (an initial next to that name: ef3e8d20's own matches are taken on the text
+    with each new joiner written as the katakana middle dot, which every list of ef3e8d20 holds beside them and which
+    joins no name); an identifier found only on the look-alike fold; a digit-for-letter form. The Social Security and phone
     patterns read the settled matches alone as what stands found, so a fresh match ends no label's window and is no item
     of a list. `redactLetterForScreen` applies the fresh matches only in a letter that the scan and the glued checks, read
     as ef3e8d20 read them (`chainLeft` with `strict` false), do not refuse without them (`appliedMatches`). Where they do,
     ef3e8d20 refused the letter: the fresh matches are left as written, and `holdsIdentifier`, whose patterns read through
     the call's own placeholders as redaction read through the identifiers, finds them again and refuses that text (`Call
     Zephyra at 555-0123/555-0124`, an invisible character between the two numbers or not; `ID SYNMEMBERO042 555-0123`).
-    `redactLetter` and `redactionSpans`, which no check follows, apply every match. The first build tested instead whether
-    the number stood alone, and read one look-alike fold everywhere; the reviews of the build found an invisible character
-    that defeated the test (B1-1) and refusals of ef3e8d20 lost to the fold (B1-3, B1-14, C1-3, C1-4).
+    `redactLetter` and `redactionSpans`, which no check follows, apply every match, a pattern's match inside a run that
+    holds an identifier glued in a look-alike form too (`900-12-3456Z3PHYRA` is `[SSN]Z3PHYRA` there, as at ef3e8d20; the
+    letter reader leaves the run whole and its check refuses it). The first build tested instead whether the number stood
+    alone, and read one look-alike fold everywhere; the reviews found an invisible character that defeated the test
+    (B1-1), refusals of ef3e8d20 lost to the fold (B1-3, B1-14, C1-3, C1-4) and an initial beside a name written with a
+    new joiner that stood as settled (D1-1: `Ze·ph·yra J 900 12 34, 56`, which ef3e8d20 refuses, was sent with its nine
+    digits).
 - **In every letter.**
   - *Another number's digits glued to an SSN's or a phone's own shape* (`gluedShape`, in the survivor scan): three groups
     joined by joiners with no white space (a dash at a line's end and the next line too), the middle one of two digits
     (three for a phone; a slash only for a phone), the first of three digits or more and the last of four or more, one of
-    them longer. Refused where structure says whose the other digits are. Before the shape: a currency amount's digits,
-    four digits or more, an amount's cents joined by a point to the group before, or the end of a date (`$150.00900-12-3456`,
-    `$514451/293-6215`, `2020900-12-3456`, `01/01/2020900-12-3456`, `150.00900-12-3456`, `01/02/20900-12-3456`). After a
-    shape that starts at its group's start: cents after a point, a second shape begun in its last group, or a date
-    (`900-12-3456150.00`, `202-555-0123202-555-0124`, `202-555-012301/02/2020`). A reference's noun and what stands between
-    it and its number name the whole joined number, and the letter keeps it (`Case No. 123-45-678901.00`, `Claim #
-    20260115-12-3456`, `Policy No. 01-23456-78-9012`); no other word names one (`Patient # 900-12-3456150.00` is refused).
-    Under an SSN, phone or Medicare label the shape is the person's number whatever is glued after it, in the number's
-    usual writing too (`SSN No. 900-12-345678`, `Phone number (202) 555-01234567`, `Medicare ID 900-12-345678`). With no
-    structure and no label, a longer group is as often a reference's (`Tracking 123-456-78901`, `Referral #
-    123-45-67890-01`, `2026-0115-123-4567`, `29 CFR 2590.715-2719`): sent as at cc3dd7f6, and refused in a held letter
-    only (`900-01-202012th`).
+    them longer; a phone with its area code in parentheses and a space after it is the shape too (`(202) 555-0123`).
+    Refused where structure says whose the other digits are. Before the shape: a currency amount's digits, an amount's
+    cents joined by a point to the group before, or the end of a date: its two-digit year or its day, or its four-digit
+    year after its month and day, in digits or with the month's word (`$150.00900-12-3456`, `$514451/293-6215`,
+    `150.00900-12-3456`, `01/02/20900-12-3456`, `2020-01-01900-12-3456`, `01/01/2020900-12-3456`, `Jan 1,
+    2020900-12-3456`). After a shape that starts at its group's start: cents after a point, a range after them too (a
+    dash and a second amount or a date), a second shape begun in its last group, or a date (`900-12-3456150.00`,
+    `900-12-3456150.00-120.00`, `202-555-0123202-555-0124`, `202-555-012301/02/2020`, `(202) 555-012301.02.2020`). A
+    reference's noun and what stands between it and its number name the whole joined number, from the first of its
+    joined groups, and the letter keeps it (`Case No. 123-45-678901.00`, `Claim # 20260115-12-3456`, `Policy No.
+    01-23456-78-9012`), under a phone word or Medicare too where the noun stands nearer the number (`Medicare Summary
+    Notice 802-45-678901`, `Fax confirmation number 802-456-78901.50`, `Contact us regarding account 802-456-789012`);
+    no other word names one (`Patient # 900-12-3456150.00` is refused), and an SSN label right before the noun keeps the
+    noun the label's own (`Social Security Account Number 900-12-345678` is refused). Under an SSN or phone label, or
+    Medicare over an SSN's shape, with no such noun, the shape is the person's number whatever is glued after it, in the
+    number's usual writing too (`SSN No. 900-12-345678`, `Phone number (202) 555-01234567`, `Medicare ID 900-12-345678`),
+    with a point between its first groups only where a date is glued after its last four (`SSN 900.12 345601/01/2020`;
+    `Contact: Billing 250.75 123456` is an amount and a number). With no structure and no label, a longer group is as
+    often a reference's (`Tracking 123-456-78901`, `Referral # 123-45-67890-01`, `2026-0115-123-4567`, `29 CFR
+    2590.715-2719`), and so are digits before the shape that no date, amount or currency sign places: a year or a longer
+    run (`20260115-12-3456`, `2020900-12-3456`), the cells of a row joined by a bar (`1234567893|11|97110|2|150.00`), a
+    file's name (`remit_20260115_01_0001.pdf`), a field after a comma (`1,00123-456-7890`). Each is sent as at cc3dd7f6
+    (the review of the fix round's delta, D2-1, D2-2 and D2-4), and a longer last group that nothing names is refused in a
+    held letter only (`900-01-202012th`).
   - *A number glued to an amount's digits*: a run of nine digits or more before a point is no amount, so the scan reads
-    the run; a run of eleven or more with cents after a point is refused (`900123456150.00`) unless a noun names it (`ICN
-    12345678901234.01`); and an amount's cents with a nine or a ten right after them (`150.00900123456`,
-    `$150.002025550123`). A comma after a long number is as often the next field of a row (`20260112345,01/05/2026`, `ICN
+    the run; a run of eleven or more with cents after a point is refused (`900123456150.00`, `900123456150.00-120.00`)
+    unless a noun names it (`ICN 12345678901234.01`); and an amount's cents with a nine or a ten right after them
+    (`150.00900123456`, `$150.002025550123`). A comma after a long number is as often the next field of a row (`20260112345,01/05/2026`, `ICN
     12345678901,12345678902`) and is read as ef3e8d20 read it.
-  - *A masked SSN glued* to a letter or a digit before it that is no mask character, the mask in an SSN's own shape: three
-    mask characters (a word's own final `x` before them too), a gap the masked pattern reads, two, such a gap and four
-    digits, the four on the next line too (`PaidXXX-XX-3456`, `2020***-**-3456`, `PaidXXX - XX - 3456`, `FaxXXX-XX-3456`).
-    Five mask characters and four digits, a gap missing, or four after `#` is as often a masked account number
-    (`Acct#XXXX1234`, `Acct No.XXXXX1234`, `Acct#XXXX-XX-1234`): each is read as ef3e8d20 read it, sent in a letter with no
-    held range and refused in a held one.
+  - *A masked SSN glued* to a word before it, or to another number's digits where structure says they are another's (a
+    year, a date's end, an amount's cents), the mask in an SSN's own shape: three mask characters (a word's own final `x`
+    before them too), a gap the masked pattern reads, two, such a gap and four digits, the four on the next line too
+    (`PaidXXX-XX-3456`, `2020***-**-3456`, `PaidXXX - XX - 3456`, `FaxXXX-XX-3456`, `150.00XXX-XX-3456`). A digit or two
+    with no such structure are the masked number's own first digits (`Acct 4XXX-XX-1234`), and underscores after a word
+    are a form's blank (`Initials___ __ 2026`). Five mask characters and four digits, a gap missing, or four after `#`
+    is as often a masked account number (`Acct#XXXX1234`, `Acct No.XXXXX1234`, `Acct#XXXX-XX-1234`): each is read as
+    ef3e8d20 read it, sent in a letter with no held range and refused in a held one, where a digit or two before five
+    mask characters are the account's own too (`Account 0XXXXX1234`).
   - *A Social Security label glued to the word before it*: `SSN`, `SOC SEC` and `HICN` in any case (`PatientSSN 900.12
     3456`, `PATIENTSSN`, `PatientSocialSecurityNumber`, `PatientHICN`; never `Assn` or `ISSN`), and `SS#`, `SS No` and
     `HIC` where a change of case sets them apart (`PatientSS# 900.12 3456`), read by the survivor scan only, so a refusal
@@ -72,10 +93,15 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
     never one wrapped across a line break; a number a noun names stays named (`Phone call with Jane Zephyra regarding
     claim 230957851`).
   - *A label's list number*: one or two digits right after an SSN or phone label (`No.`, `#`, a full stop, a dash or a
-    colon between them too) and before `:` or `)` (an ordinal's suffix, a space or a word in parentheses before it too),
-    or in parentheses before a colon, are read through on the same terms: `Phone 1: 555-0100` is `Phone 1: [PHONE]`, and
-    so `Tel. 1:`, `Phone (1):`, `Phone 1 (home):` and `Tel 1)`; `TTY 1: 7,439.10 942.77 3098` is refused as ef3e8d20
-    refuses it without the list number; `SSN (2). 150.00 120.00 30.00` holds no list number.
+    colon between them too), in parentheses, or before `:` or `)` (an ordinal's suffix, a space or a word in parentheses
+    before it too), are read through on the same terms: `Phone 1: 555-0100` is `Phone 1: [PHONE]`, and so `Tel. 1:`,
+    `Phone (1):`, `Phone 1 (home):`, `Tel 1)` and `Phone (2) 555-0100`; `TTY 1: 7,439.10 942.77 3098` is refused as
+    ef3e8d20 refuses it without the list number, and so are `Cell (2) is 933.67 4536` and `SSN (2). 150.00 120.00 30.00`.
+    The number in parentheses was first read only before a colon; the gate replayed both ways decided it: of the letters
+    that turn on it, @@PAREN_LEAK@@ hold a number written as an SSN or a phone and @@PAREN_KEEP@@ hold amounts, and
+    ef3e8d20 refuses every one of the second with the number in parentheses taken out. With no parentheses, colon or
+    closing parenthesis, a digit and a space are as often the number's own first digit (`Phone 1 800 555 0199`): no list
+    number.
   - *A pattern's placeholder is a number to what is glued to it*: where `[SSN]` or `[PHONE]` has a letter against it
     (invisible characters or a mark between them too), the glued own-identifier check runs once more with a digit on that
     side, so a name glued to a number is refused whether or not the number was redacted first.
@@ -132,9 +158,10 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
     word; its month's word (no part of a longer word) with its day in digits and no year after it (`Mar 14th`, `March the
     14th`, `14th of March`); its two-digit year, month and day run together as four or five digits, or six in an order a
     date is written in, at the start or end of a run of digits (not four digits that read as a year 1900 to 2099). The
-    month of May is a verb too: before its day it is the month only where the day carries an ordinal's suffix or ends its
-    phrase, and after its day only with "of" between them or where it ends its phrase (`Visits over 12 may require` and
-    `the 12th may require` are no date of birth).
+    month of May is a verb too: before its day, on the same line, it is the month only where the day carries an ordinal's
+    suffix or ends its phrase, and after its day only with "of" between them or where a full stop or the text's end
+    follows it (`Visits over 12 may require`, `the 12th may require`, `Up to 12 may, at our discretion,` and `You may`
+    before `12.` on the next line are no date of birth).
 @@MEASURED@@
 - **Where the build departs from the ruling's words, and why.** Ruling A' names NFKC, a TR39-style skeleton and five
   digit pairs. The views were NFKC already, so the table holds only what NFKC leaves. It is no whole skeleton: one

@@ -18,3 +18,15 @@ The scripts carry the absolute paths of the session that wrote them (`/home/user
   (`repro-at-19454724.txt`: 7 of 102 rows still differ from the base, the recorded costs C2-7 and C2-8's member IDs).
 - `c1/withheld.mts`: over `c1/gen.mts`'s letters, a letter whose sent text differs from `redactLetter`'s (a match left as
   written) and that the check does not refuse. It must print `SENT_WITHHELD 0`.
+- `d1/`: the PHI review of the fix round's delta (aea2852d to 0ddfa078), which ran to its report: one finding, D1-1 (an
+  initial read only beside a name written with a new joiner stood as a settled match; `probe4.mts`), and a note on
+  `redactLetter` (`probe2.mts`). `fz.mts`, `fz3.mts` and `canary.mts` are its fuzzers over `gen2.mts` and `gen3.mts`, and
+  the `.txt` files their summaries on 0ddfa078. They read `/home/user/review-d1/d1/inst/redact.ts`, a copy of the head with
+  one line appended: `export const __t = { unbracketed, letterSubject, matchesIn, unmarked, written, merge, chainLeft,
+  masked, survivorLeft };`. Fixed in cf5094a0.
+- `d2/`: the must-stay review of the same delta, which ran to its report: D2-1 to D2-7 (`probe1.mts` to `probe4.mts`;
+  `probe3.mts` and `probe4.mts` read the generator `gen.mts` kept in `b2/`'s folder of the session, `/home/user/work/d2p6`).
+  Fixed in cf5094a0 but what is recorded as a cost (`recorded-for-the-third-review.md`).
+- `recorded-for-the-third-review.md`: what the round after D1 and D2 gives back, adds and leaves, as the reviewers of
+  its delta were given it.
+

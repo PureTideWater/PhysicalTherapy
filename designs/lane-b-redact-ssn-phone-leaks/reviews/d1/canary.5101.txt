@@ -1,0 +1,2 @@
+canary seed 5101 in 150 s {"letters":54176,"headSent":46703,"flips":0} distinct 0
+CANARY-FLIP where the base sends the context alone: 0 distinct

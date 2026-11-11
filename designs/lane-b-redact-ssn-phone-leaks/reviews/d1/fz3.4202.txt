@@ -1,0 +1,1 @@
+fz3 chk seed 4202 in 190 s inst=true {"letters":175296,"headSent":0,"flip":0,"withheldRefused":0,"baseRef":106604,"headRef":121973}
