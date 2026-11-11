@@ -4,9 +4,9 @@ Must land before any real PHI is processed (ruling A, 2026-11-07 10:53 UTC; the 
 Counters MOD-21 and MOD-22 are allocated (2026-11-06 21:03 UTC); no new ADR is expected (an ADR 0054 amendment). Any other
 counter comes from the orchestrator.
 
-## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 06:00 UTC)
-- **State:** the design is reviewed and fixed; the rules are settled at **5d10e0de** = WIP `co-001/wip-redact-ssn-phone-leaks`
-  on origin (typecheck and lint clean; worktree `/home/user/leaks`, branch `co-001/redact-ssn-phone-leaks`, not on origin; no
+## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 06:05 UTC)
+- **State:** the design is reviewed and fixed; the rules are settled at **aea2852d** = WIP `co-001/wip-redact-ssn-phone-leaks`
+  on origin (5d10e0de and one rule more, below; typecheck and lint clean; worktree `/home/user/leaks`, branch `co-001/redact-ssn-phone-leaks`, not on origin; no
   PR). A test-builder subagent is writing the tests in that worktree (uncommitted so far: the regenerated residual table and
   its test, `confusables.test.ts`). Not yet written: ADR 0054's amendment, the test-matrix rows MOD-21 and MOD-22.
 - **What 5d10e0de changed, and why (found by comparing two gate runs, 2026-11-11 05:40 UTC):** the commit before it
@@ -25,14 +25,26 @@ counter comes from the orchestrator.
     that label. The reviewer's fuzzers found 0 after the fix; they run again on 5d10e0de.
   - Must-stay damage and logic: three blocking (the glued-shape rule refused citations such as `29 CFR 2590.715-2719`; the
     fold mapped look-alikes before folding case; the read-through overrode a number a noun names) and six lesser. All fixed.
-- **Gate (975,489 letters):** on 04c2d4a5, against cc3dd7f6: no PHI class (SSN 0, phone 0, name 0); dates changed 298
-  (ruling B); refused that cc3dd7f6 sent: 657 clean, 7,074 after an SSN or phone word, 1,163 with identifiers; unplaced
-  386; slowest 680 ms (cc3dd7f6 458 ms). Against ef3e8d20: no PHI class; dates changed 308; refused that ef3e8d20 sent:
-  3,443 clean (about 3,400 an amount, a dash and a date as one range), 197 after an SSN or phone word, 2,159 with
-  identifiers; sent that ef3e8d20 refused: 48, each with every identifier redacted. **The gate on 5d10e0de is still to
-  run** (expected near the earlier build f7da95fe: with identifiers 3,092, after an SSN or phone word 318; leaks ef3e8d20
-  sent, closed: SSN 13,479, phone 9,060, name 12,293). Outputs in `/home/user/gate-out/p4-*`, `p5-*` (not kept).
-- **Pinned rows on 5d10e0de:** ruling A 697 of 697 (634 refused, 63 redacted), ruling A' 406 of 406 (200 redacted, 206
+- **aea2852d, one rule more:** an SSN's or a phone's shape that starts inside a currency amount (`$150.00900-12-3456`,
+  `$514451/293-6215`) is refused in every letter. The design said so and the build did not do it (a currency amount is a
+  barrier, so the glued-shape rule never read it); found by running the ADR's recorded residual forms on the head. On the
+  gate's corpus it changes 111 letters, each a reviewer's leak form now refused; MOD-16's old generator reads the same 359
+  of 20,000 before and after. Its recorded cost: `$1500-12-2026` and `$1000/250/5000` are refused.
+- **Gate (975,489 letters) on 5d10e0de:** against cc3dd7f6: no PHI class (SSN 0, phone 0, name 0); dates changed 298
+  (ruling B); refused that cc3dd7f6 sent: 659 clean, 7,195 after an SSN or phone word, 2,096 with identifiers; unplaced
+  386; slowest 727 ms (cc3dd7f6 438 ms; budget 3,000 ms). Against ef3e8d20: no PHI class; dates changed 308; refused that
+  ef3e8d20 sent: 3,445 clean (about 3,400 an amount, a dash and a date as one range), 318 after an SSN or phone word,
+  3,092 with identifiers; sent that ef3e8d20 refused: 48, each with every identifier redacted; leaks ef3e8d20 sent, now
+  refused or redacted: SSN 13,479, phone 9,060, name 12,293, initials 669, date of birth 22. Letter for letter the same
+  as the build f7da95fe. The narrowed build 04c2d4a5 had read 2,159 with identifiers and 197 after a word, and SSN 9,499,
+  phone 6,419, name 12,107. **The final gate, on the PR's last code, is still to run.** Outputs in
+  `/home/user/gate-out/p4-*`, `p5-*`, `p6-*` (not kept).
+- **Fuzzers on 5d10e0de:** the PHI reviewer's two (a letter ef3e8d20 refused, now sent with a number in clear or digits
+  beside a placeholder): 0 of 10,000 on each of three seeds. The must-stay reviewer's 12,000 ordinary letters: 72 newly
+  refused, 71 of them one form (`Contact <name>, <city>, IL <ZIP+4>`) and one a row that begins with the call's identifiers
+  after a line ending `(TTY: 711).`; ef3e8d20 refuses each with the identifiers taken out. 6 changed (a ten after `Phone
+  1:` is `[PHONE]`).
+- **Pinned rows on aea2852d:** ruling A 697 of 697 (634 refused, 63 redacted), ruling A' 406 of 406 (200 redacted, 206
   refused), ruling B 5 of 5 (the month word redacted as the name); the 938 lone-initial rows and 243 fail-safe rows as recorded.
 - **MOD-16's generator** changes in three places, each pinned on both sides: no unlabeled local number in a letter with a
   held range (about 320 per 20,000), no word glued to a held range's end before a bare nine or ten (about 20), no run of
@@ -44,7 +56,7 @@ counter comes from the orchestrator.
 - **The packets verifier's fold (W7)** moves `packages/model-gateway/src/redact.ts` whole to `packages/redact/src/redact.ts`
   (`@tp/redact`). Whichever PR merges second takes the base merge: git follows the rename; `confusables.ts` and this PR's new
   test files move by hand beside it, and a test's `./redact` import becomes `@tp/redact`.
-- **Next:** the fuzzers and the gate on 5d10e0de; the builder's tests verified (six files; MOD-16's five seeds and ten
+- **Next:** the builder's tests verified (six files; MOD-16's five seeds and ten
   fresh); ADR 0054's amendment and the test matrix; a review of the design fixes' delta with the two adversarial reviews
   of the build; the full suite once; the base merged; the push; the draft PR; CI; the merge.
 - **Container paths (not kept):** `/home/user/gate` (a copy of the kept gate), `/home/user/gate-out`, `/home/user/tree-cc3`,
@@ -118,4 +130,5 @@ counter comes from the orchestrator.
 - 2026-11-11T03:22Z (W5): prototype pushed as WIP; ruling A and B rows flip; the gate run on both trees; ruling A' next.
 - 2026-11-11T03:34Z (W5): the fold built (ruling A' rows flip); the design written; two design reviews and the gate running. The orchestrator: finish the item in this session.
 - 2026-11-11T04:53Z (W5): both design reviews delivered and fixed; the gate on f7da95fe reads no PHI class against either tree.
-- 2026-11-11T06:00Z (W5): the gate on 04c2d4a5 read no PHI class but closed fewer leaks than f7da95fe; the narrowing withdrawn and two naming faults fixed in 5d10e0de; MOD-23 pinned; a builder writes the tests. (The four entries above first carried clock times that were estimates and wrong; they now carry their commits' times.)
+- 2026-11-11T05:47Z (W5): the gate on 04c2d4a5 read no PHI class but closed fewer leaks than f7da95fe; the narrowing withdrawn and two naming faults fixed in 5d10e0de; MOD-23 pinned; a builder writes the tests. (The four entries above first carried clock times that were estimates and wrong; they now carry their commits' times.)
+- 2026-11-11T06:05Z (W5): the gate on 5d10e0de reads no PHI class against either tree, letter for letter as f7da95fe; a currency amount glued to a shape closed in aea2852d (111 gate letters). The builder still writes the tests.
