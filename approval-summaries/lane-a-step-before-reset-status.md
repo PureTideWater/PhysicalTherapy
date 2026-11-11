@@ -2,7 +2,28 @@
 
 W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this item from 2026-11-11, taking it over from W8 in a fresh context (the orchestrator's assignment). It also holds password-changed-notice's merge step once W6 has posted its approval line.
 
-## RESUME-BLOCK: W10 (session_019i9ifDEoMdpgEBKLKNbUEq), current at 2026-11-11 09:50 UTC
+## RESUME-BLOCK: W10 (session_019i9ifDEoMdpgEBKLKNbUEq), current at 2026-11-11 10:25 UTC
+- **Part 1 is done: #140 MERGED as 342d6144** (10:06 UTC) with the founder's committed line (7e05e0c6, exactly the
+  suggested one; `--check --strict --require-approval` passed on a fresh database; every check green). The orchestrator
+  has its line. ADR 0091's Status reads accepted in item 28's branch. #140's description never got the "On c82d2c99"
+  Checks row; the merge commit's message carries that record.
+- **Part 2: draft #142**, https://github.com/PureTideWater/PhysicalTherapy/pull/142, branch `co-001/step-before-reset`
+  = WIP ref = **69c6f4bb** (the base 342d6144 merged; only the domain model's last line conflicted; regenerated).
+  Document hash **8943735cce8983b651d83e86a15a6fb3e8712686a6db070e494a1c52025af259**; the approval line is the last
+  line of `docs/product/domain-model.md`. The description equals `lane-a-wip/step-before-reset/pr/body-v1.md` (checked
+  by diff; GitHub rewrote only the footer). W10 is subscribed to #142.
+- **Running:** the full local suite once on 69c6f4bb (W10's scratchpad; typecheck passed so far). CI on 69c6f4bb.
+- **Next:** when CI is green but for `domain model` and `all green`, and the local suite passed: replace the two
+  Checks rows ("The full local suite on 69c6f4bb", "CI on 69c6f4bb") in the description (connector's
+  `update_pull_request`, whole body); post the approval line as one suggested-change comment on the document's last
+  line (`gh api .../pulls/142/comments`, the skill's form: `Approved by: Tyler Williams  Date: <day posted>  Document
+  SHA-256: \`8943735c...f259\``), with one sentence and the footer; send the orchestrator the comment's link with the
+  one fact: the rule holds for an account only once the Cognito client is confidential (Cognito PR 2, which waits on
+  F1 to F5 and ruling 16). Then wait for the founder's commit, check it, merge on green with a merge commit, one line
+  to the orchestrator, ADR 0093's Status (accepted) rides in the next PR or a records commit as the orchestrator rules.
+- The earlier block's notes on the trial merge still describe 01746e21, now an ancestor of 69c6f4bb.
+
+## W10's earlier block (09:50 UTC), kept for its notes
 W10 (Lane A, medium effort) holds both parts from W9's block below, which stays true except where this says otherwise.
 - **Part 1, #140:** head still c82d2c99, draft; W10 is subscribed to its activity and waits for the founder's
   "Commit suggestion" (discussion_r4536232884). CI on c82d2c99: every check passed but `domain model` and `all green`
