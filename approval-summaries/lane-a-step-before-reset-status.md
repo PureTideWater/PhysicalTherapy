@@ -2,28 +2,28 @@
 
 W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this item from 2026-11-11, taking it over from W8 in a fresh context (the orchestrator's assignment). It also holds password-changed-notice's merge step once W6 has posted its approval line.
 
-## RESUME-BLOCK: step-before-reset, W9, 2026-11-11 (the fix round running)
-- **Heads:** WIP ref `co-001/wip-step-before-reset` = **f5d1c05e**: the whole build committed (migration, flow, both
-  providers, 31 database tests, infra's three lines, ADR 0093 and the records, the domain model regenerated). Worktree
+## RESUME-BLOCK: step-before-reset, W9, 2026-11-11 (second review round committed; the suite and its delta review run)
+- **Heads:** WIP ref `co-001/wip-step-before-reset` = **1a6b2e8b** (everything committed; the worktree is clean):
+  the build (f5d1c05e), the first review round (79c98137), the second (1a6b2e8b). Worktree
   `/home/user/step-before-reset` (disposable), branch `co-001/step-before-reset`. No PR.
-- **Reviews of f5d1c05e, both returned:** `lane-a-wip/step-before-reset/build-review-security.md` (1 blocking, 4
-  should-fix, 8 notes) and `build-review-database.md` (0, 2, 8). Rulings: `build-rulings.md` beside them. No wording
-  review: no new words on a screen.
-- **Uncommitted in the worktree (lost on a hard stop; redo from the rulings):** my revision of the migration
-  (`sign_in_step_refused` answers the reason and records once per account, step and mark; new
-  `sign_in_lock_key_across_reset`; the preflight accepts either spelling); fork F1 (flow fixes: B1 lock on a key not
-  removed, the crossed state refused, never-sent confirms, try/finally, `began` required); fork F2 (database tests,
-  infra, ADR 0093, runbooks, registry); fork E (the e2e case in `apps/web/e2e/sign-in.spec.ts`).
-- **Next, in order:** commit the round; regenerate the domain model and functions; one review of the round's delta;
-  the full local suite once. Then, after #140 merges: merge the base, regenerate, open the draft PR with
+- **Reviews:** of the build, `lane-a-wip/step-before-reset/build-review-security.md` (1 blocking, 4 should-fix) and
+  `build-review-database.md` (0, 2), rulings `build-rulings.md`; of the first round's delta, `fix-delta-review.md`
+  (1 blocking: the ordinary unlock undid the key lock; 4 should-fix), all fixed in 1a6b2e8b. The migration now also
+  replaces `unlock_user()` (a hold until `key_across_reset_cleared`) and adds `sign_in_lock_key_across_reset()`.
+- **Running:** the full local suite once on 1a6b2e8b (the session's scratchpad `suite/summary.txt`); one review of the
+  second round's delta with the one new sentence a person sees (the console's `KEY_HOLD_REFUSAL`), report
+  `fix-delta-review-2.md`. If either finds something: fix, targeted tests, no second full suite.
+- **Next:** after #140 merges: merge the base, regenerate the domain model, open the draft PR with
   `pnpm db:domain-model --summary-since`, post the approval line as a suggestion, one line to the orchestrator; merge
   after the founder's committed line and green required checks.
-- **#140's merge step:** subscribed (2026-11-11 07:20 UTC); head 7da699b1 green but for `domain model` (the blank
-  line). Waiting for W6's suggestion and the founder's commit of it. A check-in is scheduled.
-- **The log lines (web and infra):** `security event: sign-in step refused after a password reset` (only for a start
-  at or before the mark); `security event: hardware key registered across a password reset` (`removed`,
-  `not_removed`, `not_removed_not_locked`); `security event: password reset outcome unknown`; `security event:
-  sign-in refused for a crossed account`.
+- **For the PR description, beside W8's three:** the replaced `unlock_user()` and its hold; `tp_app` can place the
+  hold on an account that has reset (the same trust as ten `sign_in_failed`); clearing a hold is the owner's SQL
+  until Queues item 29; the provider facts unverified without a pool (DeleteWebAuthnCredential after a global
+  sign-out; the confirm's error names).
+- **#140's merge step:** subscribed; head 7da699b1 green but for `domain model` (the blank line). Waiting for W6's
+  suggestion and the founder's commit of it.
+- **Log lines (web and infra):** step refused (only `before_reset`); key registered across a reset (`removed`,
+  `not_removed`, `not_removed_not_locked`); reset outcome unknown; crossed account.
 
 ## W8's RESUME-BLOCK (2026-11-11 07:25 UTC), kept for its notes
 
