@@ -968,6 +968,96 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
   });
 
+  // The two reviews of the last round's delta, E1 (PHI) and E2 (must-stay), each finding on both sides.
+  it.each([
+    // E1-1: a Social Security label's number is the person's whatever noun follows the label; a phone word or Medicare
+    // yields to a reference's noun (D2-3), and "on file" names nothing.
+    refused('SSN/Member ID: 900-12-3456150.00'),
+    refused('SSN on file: 900-12-345678'),
+    refused('Soc. Sec. Acct. No. 900-12-345678'),
+    refused('Social Security\nAccount Number 900-12-345678'),
+    refused('Social Security No. on file 900123456150.00'),
+    refused('SSN (Member ID): 900-12-3456150.00'),
+    refused('Phone on file: 202-555-0123150.00'),
+    unchanged('SSN on file. Claim 802-45-678901.50'),
+    unchanged('File No. 802-45-678901.50'),
+    // E1-7: "advice" names a number only as "remittance advice", and a noun names across one line break at most.
+    refused('Seen Please seek advice. 900-12-3456150.00 today.'),
+    refused('REMITTANCE ADVICE\n\n900-12-3456150.00 01/02/2020'),
+    unchanged('Remittance Advice Number 802-45-678901.50'),
+    // E1-2, E2-3: three digits or more before an SSN's masked shape, a currency amount, a date's day.
+    refused('Paid $150XXX-XX-3456'),
+    refused('CPT 97110XXX-XX-3456'),
+    refused('DOS 2020-01-02XXX-XX-3456'),
+    refused('Paid 150.00___-__-3456'),
+    refused(`${HELD}DOS 2020-01-02XXXXX3456`),
+    unchanged('Acct 4XXX-XX-1234'),
+    unchanged(`${HELD}Account 0XXXXX1234`),
+    // E1-3, E2-2: the date before a year glued to a shape, in more of its writings.
+    refused('DOS 01-Jan-2020900-12-3456'),
+    refused('Seen Jan 1,2020900-12-3456 today.'),
+    refused('Seen January 2020900-12-3456 today.'),
+    refused('Seen 01/2020202-555-0123 today.'),
+    refused('Seen 01Jan2020202-555-0123 today.'),
+    refused('Seen January 1,\n2020900-12-3456 today.'),
+    unchanged('Seen 2020900-12-3456 today.'),
+    // E1-4: a date after a bare nine or ten with more glued after it, with its month's word, with other joiners; one
+    // digit of a date only with slashes.
+    refused('SSN: 90012345601/02/2020150.00 ok.'),
+    refused('SSN: 9001234562020-01-02150.00 ok.'),
+    refused('SSN: 90012345601-Jan-2020 ok.'),
+    refused('SSN: 90012345601\u00B702\u00B72020 ok.'),
+    refused('Phone 20255501239/9/2020 ok.'),
+    unchanged('On 20260112345-01-2026 today'),
+    // E1-5, E2-5: the area code in parentheses, written more loosely; with nothing glued after it no shape in a held letter.
+    refused('Service ( 202 ) 555-0123150.00 on file.'),
+    refused('Service (202) - 555-0123150.00 on file.'),
+    refused('Service (202)\n555-0123150.00 on file.'),
+    refused('Service (202) 555-012301-Jan-2020 on file.'),
+    unchanged(`${HELD}Line (001) 420-97110`),
+    // E2-4: a point between the second and third groups keeps the usual writing an amount and a number.
+    unchanged('Medicare rate 110 32.74420'),
+    unchanged('Contact: Billing 250 75.123456'),
+  ])('E1-1 to E1-5, E1-7, E2-2 to E2-5: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // E2-1: a label's list number is no digit of the number the label names: the line reads as it reads without it.
+  it.each([
+    'Telephone call (2) 30.00 60.00',
+    'Calls (3) 25.00 75.00',
+    'Fax (10) 1.00 10.00',
+    'Records fee: fax (10) 1.00 10.00, copies (25) 0.25 6.25',
+    'Telephone call (2)\n30.00 60.00',
+    'SSN (2) 15.00 30.00',
+    'Fax 2) 15.00 30.00',
+  ])('E2-1: %j is sent unchanged, as the same line is with its list number taken out', (letter) => {
+    expect(outcome(letter)).toBe(letter);
+    const without = letter.replace(/ ?\(?[0-9]{1,2}\)/u, '');
+    expect(outcome(without)).toBe(without);
+  });
+
+  // E1-6: the list number in parentheses with a space inside them, an ordinal's suffix, a plural label, a line break
+  // before it; nine digits with it stay refused, as ef3e8d20 refuses them.
+  it.each([
+    sentAs('Phone ( 2 ) 555-0100', 'Phone ( 2 ) [PHONE]'),
+    sentAs('Phone (2nd) 555-0100', 'Phone (2nd) [PHONE]'),
+    sentAs('Phone numbers (2) 555-0100', 'Phone numbers (2) [PHONE]'),
+    sentAs('Phone\n(2) 555-0100', 'Phone\n(2) [PHONE]'),
+    refused('Phone (12) 555-0100'),
+    refused('Call (2) 150.00 120.00 30.00'),
+  ])('E1-6: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // E1-8: the month of May at a line's end and its day with an ordinal's suffix on the next, in a held letter.
+  it('E1-8: reads May and its day with a suffix across a line break, never a list number there', () => {
+    const born = patientOf(['JANE Q ZEPHYRA'], ['1980-05-14']);
+    const claims = claimsOf('SYNCLAIM0001');
+    expect(outcome(`${HELD}The member turns 46 on May\n14th this year.`, born, claims)).toBe(REFUSED);
+    expect(outcome(`${HELD}You may\n14. Appeal within 180 days`, born, claims)).toBe(`${HELD}You may\n14. Appeal within 180 days`);
+  });
+
   // The new name joiners are the letter reader's. The narrative's check, which the packet verifier shares, reads a name as
   // ef3e8d20 read it: which stored narratives fail is the verifier's to change.
   it('reads a name written with a new joiner in a letter, and leaves the narrative’s reading as it was', () => {
