@@ -47,8 +47,8 @@ const INTERNAL_ROLES = ['platform_admin', 'contract_specialist', 'reviewer', 'su
 /**
  * The jobs that carry work a person starts (test matrix BIL-07; docs/adr/0080, D18): a route whose ok call queues one is
  * in RUN_STARTING_ROUTES, so the wrapper asks Postgres before anything is queued, or in CONTINUES_STARTED_WORK, which
- * carries on work a gated route already started. pg-boss enqueues on its own connection, so nothing later in the
- * request could take the job back.
+ * carries on work a gated route already started. A job is committed to the queue with its request
+ * (http/request-sends.ts), and nothing after that takes it back.
  */
 const PERSON_STARTED_JOBS: ReadonlySet<string> = new Set(['triage', 'packet_export', 'intake', 'price', 'audit_report', 'report_document', 'roi_statement']);
 

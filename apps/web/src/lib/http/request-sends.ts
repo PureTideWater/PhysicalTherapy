@@ -9,7 +9,7 @@ const DIRECT_ATTEMPTS = 3;
 
 /**
  * The jobs one signed-in request queues, committed in step with the request (Queues item 25 (a); docs/adr/0092's
- * follow-ups). A handler's `services.queue` is this. Until now a handler's send committed by itself on the queue's
+ * follow-ups). A handler's `services.queue` is this one's door(). Until now a handler's send committed by itself on the queue's
  * connection while the request's transaction was open: a worker could take the job before the request committed and
  * find nothing, and a request that rolled back left its job behind.
  *
@@ -29,7 +29,7 @@ const DIRECT_ATTEMPTS = 3;
  * (CommitOutcomeUnknownError), the queue's transaction is committed: a job that finds nothing committed does nothing,
  * and a job lost for a saved record is the worse error.
  */
-export class RequestSends implements RequestQueue {
+export class RequestSends {
   private state: 'open' | 'held' | 'committed' | 'ended' = 'open';
   private readonly pending: PendingSend[] = [];
   private held: HeldSends | undefined;
@@ -50,6 +50,14 @@ export class RequestSends implements RequestQueue {
       throw new Error('the request has ended: nothing more is queued with it');
     }
     this.pending.push({ type, payload: parsePayload(type, payload) } as PendingSend);
+  }
+
+  /**
+   * What a handler is given as its queue: enqueue and nothing else, on a frozen object of its own, so code in a
+   * handler cannot hold or settle the request's jobs, by type or at run time.
+   */
+  door(): RequestQueue {
+    return Object.freeze({ enqueue: <T extends JobType>(type: T, payload: JobPayload<T>) => this.enqueue(type, payload) });
   }
 
   /** Step 2: called once, inside the request's transaction, when everything else in it is done. */

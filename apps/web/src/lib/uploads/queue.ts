@@ -138,7 +138,7 @@ export class PgBossQueue implements JobQueue {
       commit: async () => {
         try {
           // The answer is read, as the request's own is (pg-boss's commit() takes any answer for a commit).
-          await committed({ query: (text) => transaction.db.executeSql(text) as Promise<{ readonly command?: unknown }> });
+          await committed({ query: (text) => transaction.db.executeSql(text) });
         } finally {
           // Releases the connection: after a commit it changes nothing, and after a failed one it is the rollback.
           await transaction.rollback();
@@ -146,6 +146,13 @@ export class PgBossQueue implements JobQueue {
       },
       rollback: () => transaction.rollback(),
     };
+  }
+
+  /** Closes the producer's pool, if it was opened (a server shutting down; tests). The queue starts again on its next use. */
+  async stop(): Promise<void> {
+    const started = this.started;
+    this.started = undefined;
+    await (await started?.catch(() => undefined))?.stop();
   }
 }
 

@@ -207,3 +207,50 @@ a page of its own for a page's busy state (rare, and the error state's "Try agai
 
 Revisit when a request's legitimate wait on another request approaches three seconds (a slow handler holding a row or
 an advisory lock): shorten the holder's transaction first.
+
+## Amendment, 2026-11-11 (second): the request's COMMIT is read, its jobs commit with it, and a handler has no pool
+
+Queue item 25 (a) (`co-001/web-transaction-scope`), three of the follow-ups the amendment above left. No migration,
+table, index, function or grant. It replaces item 2's "a send is one statement" and the consequence "a job a handler
+queued stays queued" above; everything else stands.
+
+1. **COMMIT's answer is read.** PostgreSQL answers a `COMMIT` sent in a failed transaction with the tag `ROLLBACK`
+   and no error, so work whose code swallowed a statement's error was reported as done with nothing written. Every
+   scope now commits through `committed()` (`packages/db/src/authz/scope.ts`), which returns only on the tag
+   `COMMIT`. Any other tag throws `TransactionNotCommittedError`: nothing was saved, the audit event included. An
+   ERROR of the server's own at `COMMIT` (an SQLSTATE; a deferred constraint, a serialization failure, a lock
+   timeout) is thrown on as it is, so the routes' mapping of codes stands. Any other end (the connection ended, a
+   FATAL) throws `CommitOutcomeUnknownError`: the commit may have been made. It is the scope's, so a job's and the
+   gateway's transactions get the same truth.
+2. **Where it bit in the web.** A mutation's audit event is the statement after its handler, which PostgreSQL refuses
+   in a failed transaction, so a mutation was already an error there. A route with no statement of the wrapper's
+   after the handler's was not: a download or another read of kind `handler`, which answered `ok` with rows whose
+   audit events had been rolled back. It now throws.
+3. **What the person sees, and what is recorded.** Not saved: the error state every server fault has, never "Saved";
+   logged by `COMMIT_NOT_APPLIED` and the request's ID; the request key is rolled back with the rest, so sending
+   again does the work. Unknown: the same state, logged by `COMMIT_OUTCOME_UNKNOWN`; the person is told neither.
+   The audit event is a row of the same transaction, so it is written exactly when the change is: no event says a
+   change was made that was not. Words of their own for the two cases are the UX queue's.
+4. **A request's jobs commit in step with it** (`apps/web/src/lib/http/request-sends.ts`). A handler's sends are kept
+   (each payload validated as it is sent) and, as the last step before the request's `COMMIT`, inserted in one
+   transaction on a connection of the queue producer's pool, which stays open. A job that cannot be inserted fails
+   the request, as a failed send always has. The request commits, then the queue's transaction does; a request that
+   did not commit rolls it back. So no worker sees a job before the records it reads are committed (a worker could
+   take a job early and find nothing, until now), and no job outlives a request that rolled back.
+5. **What two commits leave.** If the queue's commit fails after the request's, each job is sent again directly,
+   three times, and one still unsent is logged as an error by `JOB_NOT_QUEUED_AFTER_COMMIT`, its type and the
+   request's ID. If the process dies between the two commits, the job is lost without a line. Only an outbox table
+   written in the request's own transaction closes that; it needs a migration and is recorded for the schema lane.
+   Where the request's commit is unknown, the jobs are committed: a job that finds nothing does nothing, and a job
+   lost for a saved record is the worse error.
+6. **A signed-in handler's services carry no application pool** (`SignedInServices`; R4-S2), nor the sign-in flow
+   built on it, by type and, since the wrapper builds the object without them, at run time; and their queue is the
+   request's sends by one door (`enqueue`). Public routes keep the pool: they open no scope. Kept on purpose:
+   billing's and the e-signature vendor's pools and the model gateway's (docs/adr/0055).
+
+Alternatives considered: the send as a statement of the request's transaction (the application login would need
+rights on the queue's schema, and with them every practice's jobs: a grant, and the wrong one); an outbox table (the
+exact design, one commit; a migration, so not this change); every send after the commit (a send that fails then is a
+saved record with no job and a person told "saved", where a failed send undoes the request today); a delayed job
+cancelled on rollback (every job starts late, and a cancel can be lost as a send can).
+

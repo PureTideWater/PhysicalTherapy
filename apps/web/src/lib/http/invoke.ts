@@ -358,7 +358,8 @@ async function transacted<R>(
   let outcome: Outcome<R>;
   try {
     outcome = await transact({
-      services: signedInServices(services, sends),
+      // The handler's queue is the request's sends by their one door: it can queue with the request, and cannot hold or settle them.
+      services: signedInServices(services, sends.door()),
       afterCommit: (work) => {
         committed.push(work);
       },
