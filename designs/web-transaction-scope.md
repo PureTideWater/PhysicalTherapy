@@ -23,6 +23,12 @@ jobs and the gateway get the same truth):
 
 Neither new error's message holds a statement, a value or an identifier.
 
+**Where it bites in the web (found in the build).** A mutation's audit event is the statement after its handler, and
+PostgreSQL refuses it in a failed transaction (25P02), so a mutation whose handler swallowed an error was already a
+server error, not "Saved". The false `ok` is reached where no statement of the wrapper's follows the handler's: a
+download or another read of kind `handler`, answered with rows whose audit events were rolled back; and a job's scope
+in the worker, reported complete. Both are closed by the one change in the scope.
+
 **What the person sees.** Not saved, certainly: the request fails as any server fault does (the error state, "Something
 went wrong", with its reference; a JSON client gets 500). Never "Saved". The request key was rolled back with the
 rest, so sending again does the work. Logged by code `COMMIT_NOT_APPLIED` and the request's ID. A swallowed statement
@@ -101,6 +107,10 @@ that commits with the request. The wrapper builds that object without the proper
 reaches for it at run time through `any` finds `undefined`. Public routes keep `Services`: they open no scope and take
 their own connections by design. The wrapper itself keeps the pool (it opens the transaction). The count test stays,
 for the process-wide `services()` accessor, which a type cannot remove.
+
+**Also removed (found in the build):** `signIn`, the sign-in flow, which is built on the application pool and commits
+in steps of its own; only the public sign-in routes use it. And a handler's `queue` is a frozen object with `enqueue`
+alone, so a handler cannot hold or settle the request's jobs even through `any`.
 
 **Kept, on purpose:** `billingPool` and `esignPool` (other logins, each used after the person's permission is checked;
 ADR 0055) and `modelPool` (the gateway's rows must outlive a rolled-back request and must not wait on the request's
