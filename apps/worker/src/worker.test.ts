@@ -89,7 +89,8 @@ function fakePool() {
       Promise.resolve({
         query: (text: string, values?: unknown[]) => {
           queries.push({ text, values });
-          return Promise.resolve({ rows: [], rowCount: 0, command: '', oid: 0, fields: [] });
+          // A transaction's own statements are answered with their tags, as PostgreSQL answers them: the scope reads COMMIT's.
+          return Promise.resolve({ rows: [], rowCount: 0, command: text === 'COMMIT' ? 'COMMIT' : '', oid: 0, fields: [] });
         },
         release: () => undefined,
       }),
@@ -236,6 +237,7 @@ describe('startWorker', () => {
         mail_events: failing,
         mail_expiry: failing,
         dunning_notices: failing,
+        password_notices: failing,
       },
       heartbeatMs: 60_000,
     });
@@ -416,6 +418,7 @@ describe('startWorker', () => {
         mail_events: failing,
         mail_expiry: failing,
         dunning_notices: failing,
+        password_notices: failing,
       },
       heartbeatMs: 60_000,
     });
@@ -557,7 +560,7 @@ describe('startWorker', () => {
           query: (text: string) => {
             queries.push(text);
             const rows: unknown[] = text.startsWith('SELECT practice_run_refusal') ? [{ reason: "the PaidWhole account of the practice's organization is on hold, so no new work starts here; everything here stays readable" }] : [];
-            return Promise.resolve({ rows, rowCount: rows.length, command: '', oid: 0, fields: [] });
+            return Promise.resolve({ rows, rowCount: rows.length, command: text === 'COMMIT' ? 'COMMIT' : '', oid: 0, fields: [] });
           },
           release: () => undefined,
         }),
@@ -593,7 +596,7 @@ describe('startWorker', () => {
             const rows: unknown[] = text.startsWith('SELECT practice_run_refusal')
               ? [{ reason: "the PaidWhole account of the practice's organization is on hold, so no new work starts here; everything here stays readable" }]
               : [];
-            return Promise.resolve({ rows, rowCount: rows.length, command: '', oid: 0, fields: [] });
+            return Promise.resolve({ rows, rowCount: rows.length, command: text === 'COMMIT' ? 'COMMIT' : '', oid: 0, fields: [] });
           },
           release: () => undefined,
         }),
@@ -630,7 +633,7 @@ describe('startWorker', () => {
           query: (text: string) => {
             queries.push(text);
             const rows: unknown[] = text.startsWith('SELECT practice_run_refusal') ? [{ reason: 'held' }] : [];
-            return Promise.resolve({ rows, rowCount: rows.length, command: '', oid: 0, fields: [] });
+            return Promise.resolve({ rows, rowCount: rows.length, command: text === 'COMMIT' ? 'COMMIT' : '', oid: 0, fields: [] });
           },
           release: () => undefined,
         }),
@@ -709,6 +712,7 @@ describe('startWorker', () => {
       mail_events: () => Promise.resolve(),
       mail_expiry: () => Promise.resolve(),
       dunning_notices: () => Promise.resolve(),
+      password_notices: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, pool, logger, handlers: placeholderHandlers, platform, heartbeatMs: 60_000 });
     for (const type of PLATFORM_JOB_TYPES) {
@@ -739,6 +743,7 @@ describe('startWorker', () => {
       mail_events: () => Promise.resolve(),
       mail_expiry: () => Promise.resolve(),
       dunning_notices: () => Promise.resolve(),
+      password_notices: () => Promise.resolve(),
     };
     const worker = await startWorker({ boss: client, logger: capture().logger, platform, heartbeatMs: 60_000 });
     for (const type of JOB_TYPES) {

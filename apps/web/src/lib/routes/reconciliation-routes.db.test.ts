@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 
-import { type ScopeClient, documentObjectKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
+import { type ScopeClient, databaseClient, documentObjectKey, readDatabaseUrl, withJobScope, withPracticeScope } from '@tp/db';
 import { addMembership, asOwner, createUser } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { practiceLedgerTotals, practiceRecoveredPeriods, casePatientBalance as reportRule } from '@tp/worker/ledger';
@@ -13,29 +13,34 @@ import type { TriageWorld } from '@tp/worker/testing/triage';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
-import { LineCorrectionWords } from '../../components/reconciliation/display';
+import { LedgerTotals, LineCorrectionWords, ReportedInterest, interestWords } from '../../components/reconciliation/display';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
+import { practiceRoute, selfRoute } from '../http/invoke';
 import type { CookieJar, Outcome, Route } from '../http/route';
-import { type Services, createServices } from '../server/services';
+import { type Services, createServices, signedInServices } from '../server/services';
+import { WEB_LOCK_TIMEOUT_MS } from '../server/lock-timeout';
 import { lockLedger } from '../../../../worker/src/reconcile/ledger';
 import { LedgerWorld, ledSettings } from '../../../../worker/src/reconcile/test-support/ledger-world';
-import { casePatientBalance, reconciliation } from '../reconciliation/queries';
+import { type MatchView, casePatientBalance, reconciliation } from '../reconciliation/queries';
 import { MemoryQueue } from '../uploads/queue';
 import { practiceHome } from './practice';
 import { matchClaimAction, matchDepositAction, matchPostingAction, reconciliationPage, reverseMatchAction, saveTemplateAction, templatePage } from './reconciliation';
 import { generateRoiAction, roiStatementCsv, roiStatementPage, roiStatementPdf, roiStatementsPage } from './roi';
-import { adjustEntryAction, ledgerReviewPage } from './specialist';
+import { ADJUSTMENT_CONSEQUENCE, adjustEntryAction, ledgerReviewPage } from './specialist';
+import { assignCaseAction } from './workbench';
 import { casePage, casesPage, reopenLineAction, writeOffLineAction } from './triage';
 import { csrfTokenFor } from '../http/csrf';
 
 /**
  * The Reconciliation screen, the posting-template mapping and the ROI statements through their routes
  * against PostgreSQL (PRD 5, J10 and J12; PRD 7, Reconciliation and Reports; PRD 13; PRD 20; test
- * matrix LED-02, LED-04, LED-05, LED-06, LED-07, LED-11; docs/adr/0042, 0043). A practice's SYNTHETIC
+ * matrix LED-02, LED-04, LED-05, LED-06, LED-07, LED-11, LED-23, LED-24; docs/adr/0042, 0043, 0084). A practice's SYNTHETIC
  * LED-06 original payment is priced under a signed-off 50.00-per-unit 97110 schedule and triaged into a
  * case; its adjusted remittance, posting export, a bank export with a mistyped trace and the recoupment
  * then reach the ledger through the reconcile job's own handler; and the people of the practice work
@@ -83,7 +88,7 @@ async function sessionOf(userId: string): Promise<string> {
   if (token === undefined) {
     // An internal role signs in with a hardware key (the contract specialist, under the practice's support grant).
     const method = userId === w.pricing.specialist ? 'webauthn' : 'totp';
-    token = (await openSession(w.app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+    token = (await openSessionNow(w.app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
     tokens.set(userId, token);
   }
   return token;
@@ -407,7 +412,7 @@ describe('the Reconciliation screen (PRD 7)', () => {
     // The screen's reads refuse a scope that reads statement by statement.
     await expect(
       withPracticeScope(w.app, { actorId: practice.manager, practiceIds: [practice.practiceId] }, (scope) =>
-        reconciliation(scope, services, practice.practiceId, { caseId: null, linesPage: 1, entriesPage: 1 }, true, `test-${randomUUID()}`),
+        reconciliation(scope, signedInServices(services, { enqueue: () => Promise.resolve() }), practice.practiceId, { caseId: null, linesPage: 1, entriesPage: 1 }, true, `test-${randomUUID()}`),
       ),
     ).rejects.toThrow('the ledger is read in one snapshot');
     const page = ok(await call(reconciliationPage, practice.manager, P()));
@@ -580,6 +585,124 @@ describe('billable to the patient beside the ledger (PRD 13; docs/adr/0067; test
   });
 });
 
+describe('interest from the PLB L6 that pays or takes it back, beside the interest the claims report (designs/ledger-interest-once.md 6.3 and 7; test matrix LED-23, LED-24; docs/adr/0084)', () => {
+  /** A practice of its own with LED-23's or LED-24's two case lines open from the fixture's original payment, then each file loaded and reconciled. */
+  async function interestPractice(id: 'LED-23' | 'LED-24', ...files: readonly string[]): Promise<{ readonly practice: Practice; readonly at: { readonly practiceId: string } }> {
+    const target = await ledger.practice(`RECONCILIATION ${id} INTEREST ${randomUUID().slice(0, 8)}`, ledSettings());
+    await ledger.caseFor(target, `${id}/original.835`);
+    for (const file of files) {
+      await ledger.load(target, `${id}/${file}`);
+      await ledger.reconcile(target);
+    }
+    return { practice: target, at: { practiceId: target.practiceId } };
+  }
+
+  /** The words a person reads of a rendered element, tags stripped. */
+  const words = (element: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(element).replace(/<[^>]+>/g, '').replaceAll('&#x27;', '’');
+
+  /** A line's interest entries' amounts, ascending. */
+  const interestAmounts = (line: { readonly entries: readonly { readonly stage: string; readonly amountCents: string }[] } | undefined) =>
+    (line?.entries ?? [])
+      .filter((entry) => entry.stage === 'interest')
+      .map((entry) => entry.amountCents)
+      .sort((a, b) => Number(BigInt(a) - BigInt(b)));
+
+  it('shows the PLB L6’s interest as paid in its check, the claim’s reported AMT I once beside it, and the totals net (LED-23 paired.835)', async () => {
+    const { practice: target, at } = await interestPractice('LED-23', 'paired.835');
+    const page = ok(await call(reconciliationPage, target.manager, at));
+    expect(page.totals.interestCents).toBe('540');
+    expect(page.linkage.items).toHaveLength(2);
+    const remittanceId = page.linkage.items[0]?.interest[0]?.remittanceId;
+    for (const line of page.linkage.items) {
+      expect(line.interest).toEqual([expect.objectContaining({ kind: 'interest', source: 'plb', takesBack: false, trace: 'SYNEFTLED23002', standing: true, allocated: true })]);
+      expect(line.reportedInterest).toEqual([{ remittanceId, trace: 'SYNEFTLED23002', payerName: 'SYNTHETIC PAYER L', paidOn: '2026-06-08', amountCents: '540', takenBack: false }]);
+    }
+    expect(page.linkage.items.flatMap((line) => interestAmounts(line)).sort()).toEqual(['240', '300']);
+    const [line] = page.linkage.items;
+    const match = line?.interest[0] as MatchView;
+    expect(interestWords(match)).toBe(': interest paid in this check (PLB L6)');
+    expect(words(createElement(ReportedInterest, { rows: line?.reportedInterest ?? [] }))).toBe(
+      'Reported on the claim (AMT I), not counted' +
+        'Remittance SYNEFTLED23002, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).' +
+        'Interest is counted only as a check pays it or takes it back (PLB L6), in the Interest list above.',
+    );
+    // The reported rows are a list of their own, named as its label is, apart from the Interest list (WCAG 1.3.1).
+    expect(renderToStaticMarkup(createElement(ReportedInterest, { rows: line?.reportedInterest ?? [] }))).toContain('<ul aria-label="Reported on the claim (AMT I), not counted"');
+    // A paid entry a contract specialist adjusted down still reads as paid: the match's own interest entry is above zero.
+    const entry = line?.entries.find((item) => item.stage === 'interest');
+    ok(await call(adjustEntryAction, w.pricing.specialist, at, { entryId: entry?.id, amount: '-0.01', reason: 'SYNTHETIC specialist review of the interest', confirm: 'on' }));
+    const after = ok(await call(reconciliationPage, target.manager, at));
+    expect(after.totals.interestCents).toBe('539');
+    expect(after.linkage.items.find((item) => item.serviceLineId === line?.serviceLineId)?.interest).toEqual([expect.objectContaining({ id: match.id, takesBack: false })]);
+  });
+
+  it('shows interest a PLB L6 took back as taken back in its check, the claims’ reported take-back beside it, and never lets a line’s interest below zero (LED-24 taken-back.835)', async () => {
+    const { practice: target, at } = await interestPractice('LED-24', 'paired.835', 'taken-back.835');
+    const page = ok(await call(reconciliationPage, target.manager, at));
+    expect(page.totals.interestCents).toBe('0');
+    for (const line of page.linkage.items) {
+      // In the order the ledger made them (ledger_match.seq): paid, then taken back.
+      expect(line.interest).toEqual([
+        expect.objectContaining({ trace: 'SYNEFTLED24002', source: 'plb', takesBack: false }),
+        expect.objectContaining({ trace: 'SYNEFTLED24005', source: 'plb', takesBack: true }),
+      ]);
+      expect(line.reportedInterest).toEqual([
+        expect.objectContaining({ trace: 'SYNEFTLED24002', paidOn: '2026-06-08', amountCents: '540', takenBack: false }),
+        expect.objectContaining({ trace: 'SYNEFTLED24005', paidOn: '2026-08-03', amountCents: '540', takenBack: true }),
+      ]);
+    }
+    expect(page.linkage.items.flatMap((line) => interestAmounts(line)).sort()).toEqual(['-240', '-300', '240', '300']);
+    const [line] = page.linkage.items;
+    expect(interestWords(line?.interest[1] as MatchView)).toBe(': interest taken back in this check (PLB L6)');
+    expect(words(createElement(ReportedInterest, { rows: line?.reportedInterest ?? [] }))).toBe(
+      'Reported on the claim (AMT I), not counted' +
+        'Remittance SYNEFTLED24002, SYNTHETIC PAYER L, paid 2026-06-08: the claim reports $5.40 of interest (AMT I).' +
+        'Remittance SYNEFTLED24005, SYNTHETIC PAYER L, paid 2026-08-03: the claim reports $5.40 of interest taken back (AMT I).' +
+        'Interest is counted only as a check pays it or takes it back (PLB L6), in the Interest list above.',
+    );
+    // The line holds no interest now: lowering its paid entry would take it below zero, refused on the amount field.
+    const paid = line?.entries.find((item) => item.stage === 'interest' && BigInt(item.amountCents) > 0n);
+    expect(paid?.adjustable).toBe(true);
+    expect(await call(adjustEntryAction, w.pricing.specialist, at, { entryId: paid?.id, amount: '-0.01', reason: 'SYNTHETIC specialist review of the interest', confirm: 'on' })).toMatchObject({
+      status: 'invalid',
+      issues: [{ field: 'amount', message: 'a line\'s interest, net of what the payer took back, never goes below zero' }],
+    });
+  });
+
+  it('nets a chain’s reversal and correction in one remittance, so a restatement adds no reported row and the claim’s 5.40 shows once (LED-23 net-zero.835)', async () => {
+    const { practice: target, at } = await interestPractice('LED-23', 'paired.835', 'net-zero.835');
+    const page = ok(await call(reconciliationPage, target.manager, at));
+    expect(page.totals.interestCents).toBe('540');
+    for (const line of page.linkage.items) {
+      expect(line.reportedInterest).toEqual([expect.objectContaining({ trace: 'SYNEFTLED23002', amountCents: '540', takenBack: false })]);
+      expect(line.interest).toHaveLength(1);
+    }
+  });
+
+  it('shows AMT I with no PLB L6 in its check as reported and counts it nowhere (LED-23 reported-only.835)', async () => {
+    const { practice: target, at } = await interestPractice('LED-23', 'reported-only.835');
+    const page = ok(await call(reconciliationPage, target.manager, at));
+    expect(page.totals.interestCents).toBe('0');
+    for (const line of page.linkage.items) {
+      expect(line.interest).toEqual([]);
+      expect(interestAmounts(line)).toEqual([]);
+      expect(line.reportedInterest).toEqual([expect.objectContaining({ trace: 'SYNEFTLED23006', amountCents: '540', takenBack: false })]);
+    }
+    // A viewer, who reads no PHI, reads the same reported amounts.
+    const reader = await createUser(w.owner);
+    await addMembership(w.owner, target.world.organizationId, reader, 'viewer');
+    expect(ok(await call(reconciliationPage, reader, at)).linkage.items[0]?.reportedInterest).toEqual([expect.objectContaining({ amountCents: '540' })]);
+  });
+
+  it('says the totals’ interest is net of what the payer took back, and the adjustment’s consequence keeps a line’s interest at or above zero (section 7)', () => {
+    const totals = { proofLevel: 'deposited', approvedCents: '0', payerApprovedCents: '0', postedCents: '0', depositedCents: '0', recoupedCents: '0', interestCents: '540', recoveredCents: '0' } as const;
+    expect(words(createElement(LedgerTotals, { totals, title: 'Totals', description: '' }))).toContain('Interest$5.40paid by the payer, net of any it took back, apart from principal');
+    expect(ADJUSTMENT_CONSEQUENCE).toBe(
+      'Adjusting writes a new entry in your name with your reason that changes this entry’s amount by what you enter; the entry itself never changes, and an adjustment is undone only by reversing its match. The ledger keeps it between zero and what the entry’s evidence shows (the row’s amount for a posting or a deposit, the entry’s own amount for an approval, a recoupment or interest), a line’s posted and deposited never above what was approved for it, and a line’s interest, net of what the payer took back, never below zero. The totals and the line’s stage follow the ledger.',
+    );
+  });
+});
+
 /**
  * CAS-56 (docs/adr/0092): no web request waits on the practice's ledger lock. A reconcile pass holds the lock for its
  * whole transaction (minutes at real size), and so does another person's ledger action for its own; the write-off, the
@@ -666,8 +789,8 @@ describe('no web request waits on the ledger lock (CAS-56)', () => {
       for (const [name, send] of actions) {
         const started = performance.now();
         const outcome = await send();
-        // The whole outcome: a status and nothing else, so no identifier and no word of what holds the lock.
-        expect(outcome, name).toEqual({ status: 'busy' });
+        // The whole outcome: a status and its closed word, so no identifier and no word of what holds the lock.
+        expect(outcome, name).toEqual({ status: 'busy', what: 'ledger' });
         // The whole request (session, keys, the lock, the rollback), on a loaded runner too; a wait on the lock would
         // last until the holder lets go, which it does only after this loop.
         expect(performance.now() - started, `${name}: answered at once, never after a wait`).toBeLessThan(2_000);
@@ -715,8 +838,277 @@ describe('no web request waits on the ledger lock (CAS-56)', () => {
     const first = await call(matchDepositAction, practice.manager, P(), { eftRowId: randomUUID(), remittanceId: randomUUID() }, inFlight);
     // The first held the lock and went on to its own answer (its ids name nothing); the second met the lock.
     expect(first.status).toBe('not_found');
-    expect(second).toEqual({ status: 'busy' });
+    expect(second).toEqual({ status: 'busy', what: 'ledger' });
     // The first committed or rolled back, so the lock is free again.
     expect((await call(matchPostingAction, practice.manager, P(), { postingRowId: randomUUID(), remittanceId: randomUUID() })).status).toBe('not_found');
   }, 30_000);
+});
+
+/**
+ * CAS-57 (docs/adr/0092, the amendment of 2026-11-11): no web mutation waits on a row a reconcile pass holds. A pass
+ * keeps, to its commit, the case rows of the lines it writes for, and a request that rewrites such a row (assigning the
+ * case here: its activity's trigger sets the case's owner) used to wait for the whole pass on one of the web's
+ * connections. Every transaction the routes' wrapper opens now bounds its lock waits (invoke.ts, gates;
+ * server/lock-timeout.ts), so the wait ends after three seconds and the request is answered `busy`, with the closed
+ * word `records`, writing nothing. Here a second session holds what a pass, a first request or a schema change would,
+ * and the request is refused in about the timeout; with the lock free the same request, under the same request key,
+ * goes through. Synthetic data only.
+ */
+describe('no web mutation waits on a row a reconcile pass holds (CAS-57)', () => {
+  /** What the routes logged as a warning: a refusal is logged by its code and the request's own ID alone. */
+  const logged: { readonly message: string; readonly fields: unknown }[] = [];
+  let web: Services;
+
+  beforeAll(() => {
+    const quiet = createLogger();
+    web = {
+      ...services,
+      logger: {
+        debug: (message, fields) => quiet.debug(message, fields),
+        info: (message, fields) => quiet.info(message, fields),
+        warn: (message, fields) => {
+          logged.push({ message, fields });
+        },
+        error: (message, fields) => quiet.error(message, fields),
+        child: (fields) => quiet.child(fields),
+      },
+    };
+  });
+
+  /**
+   * Holds what the statements lock in an open transaction of a session of its own (the owner's login: only the lock
+   * matters here, not who holds it), until released by a rollback or a commit. It lets go by itself five seconds after
+   * the timeouts it must outlast, so a regression that waits for the holder fails its assertions instead of hanging
+   * the file with the transaction open.
+   */
+  async function holding(statements: readonly (readonly [string, readonly unknown[]])[], timeouts = 1): Promise<{ readonly release: (how?: 'ROLLBACK' | 'COMMIT') => Promise<void> }> {
+    const client = databaseClient(w.pricing.database.url);
+    await client.connect();
+    try {
+      await client.query('BEGIN');
+      for (const [statement, values] of statements) {
+        const held = await client.query(statement, [...values]);
+        // A row locked or written, or a statement that returns none (LOCK TABLE).
+        expect(held.rowCount ?? 1).toBeGreaterThanOrEqual(1);
+      }
+    } catch (error) {
+      await client.end();
+      throw error;
+    }
+    let released = false;
+    const release = async (how: 'ROLLBACK' | 'COMMIT' = 'ROLLBACK'): Promise<void> => {
+      if (released) {
+        return;
+      }
+      released = true;
+      clearTimeout(failSafe);
+      await client.query(how);
+      await client.end();
+    };
+    const failSafe = setTimeout(
+      () => {
+        release().catch(() => undefined);
+      },
+      timeouts * WEB_LOCK_TIMEOUT_MS + 5_000,
+    );
+    return { release };
+  }
+
+  /**
+   * The case's row as a pass holds it: a pass that wrote a stage event for one of the case's lines updated the row
+   * without changing its key, which is the lock FOR NO KEY UPDATE takes. No column changes here, so nothing to undo
+   * and nothing for the counts below to see. (FOR UPDATE would be a stronger lock than a pass's, and would stop the
+   * request one statement earlier, at its activity's foreign key.)
+   */
+  const holdCase = () => holding([['SELECT 1 FROM "case" WHERE id = $1 FOR NO KEY UPDATE', [caseId]]]);
+
+  /**
+   * A first request with this key, part way through: the key's lock taken as claimRequestKey takes it (the first 64
+   * bits of the SHA-256 of the person's ID and the key as a uuid's text) and the key written, its transaction still
+   * open.
+   */
+  const firstRequest = (requestKey: string) =>
+    holding([
+      [
+        "SELECT pg_advisory_xact_lock(('x' || substr(encode(sha256(convert_to('request_key:' || $1::uuid::text || ':' || $2::uuid::text, 'UTF8')), 'hex'), 1, 16))::bit(64)::bigint)",
+        [practice.manager, requestKey],
+      ],
+      ['INSERT INTO mutation_request (user_id, request_key, route_id) VALUES ($1, $2, $3)', [practice.manager, requestKey, assignCaseAction.id]],
+    ]);
+
+  /** How long a call took, with what it answered. */
+  async function timed<R>(run: () => Promise<R>): Promise<{ readonly answer: R; readonly waited: number }> {
+    const started = performance.now();
+    const answer = await run();
+    return { answer, waited: performance.now() - started };
+  }
+
+  /** It waited for the timeout (the lock really was held) and no longer (the holder lets go only after this). */
+  const waitedTheTimeout = (waited: number): void => {
+    expect(waited).toBeGreaterThanOrEqual(WEB_LOCK_TIMEOUT_MS - 250);
+    expect(waited).toBeLessThan(WEB_LOCK_TIMEOUT_MS + 4_000);
+  };
+
+  const state = async () => {
+    const activity = await w.owner.query<{ n: string }>('SELECT count(*)::text AS n FROM case_activity WHERE practice_id = $1', [practice.practiceId]);
+    const audit = await w.owner.query<{ n: string }>('SELECT count(*)::text AS n FROM audit_event WHERE practice_id = $1', [practice.practiceId]);
+    const keys = await w.owner.query<{ n: string }>('SELECT count(*)::text AS n FROM mutation_request WHERE user_id = $1', [practice.manager]);
+    const owner = await w.owner.query<{ owner_user_id: string | null }>('SELECT owner_user_id FROM "case" WHERE id = $1', [caseId]);
+    return { activity: activity.rows[0]?.n, audit: audit.rows[0]?.n, keys: keys.rows[0]?.n, owner: owner.rows[0]?.owner_user_id ?? null };
+  };
+
+  /** The one line a refusal logs: its code and the request's own ID, and nothing of pg's words. */
+  const loggedOnce = (code: string): void => {
+    expect(logged).toHaveLength(1);
+    expect(Object.keys(logged[0]?.fields as object).sort()).toEqual(['error_code', 'request_id']);
+    expect(logged[0]?.fields).toMatchObject({ error_code: code });
+    expect(logged[0]?.message).not.toMatch(/relation|tuple|statement|canceling/);
+    logged.length = 0;
+  };
+
+  it('bounds the lock waits of every transaction a route runs in, and of that transaction only', async () => {
+    const shown = async ({ scope }: { readonly scope: { readonly client: ScopeClient } }) => (await scope.client.query<{ lock_timeout: string }>('SHOW lock_timeout')).rows[0]?.lock_timeout;
+    const ofPractice = practiceRoute({ id: 'test.cas57.practice', kind: 'page', path: '/p/[practiceId]/test', phi: true, permission: 'practice.open', params: z.object({ practiceId: z.uuid() }), handle: shown });
+    const ofPerson = selfRoute({ id: 'test.cas57.self', kind: 'page', path: '/test', phi: false, params: z.object({}), handle: shown });
+    const timeout = `${String(WEB_LOCK_TIMEOUT_MS / 1000)}s`;
+    expect(ok(await call(ofPractice, practice.manager, P(), undefined, web))).toBe(timeout);
+    expect(ok(await call(ofPerson, practice.manager, {}, undefined, web))).toBe(timeout);
+    // Not a setting of the pool's connections: outside a route's transaction (sign-in, the session's read, the rate
+    // limit, a job) a statement on the same pool waits as it always has.
+    const clients = await Promise.all([w.app.connect(), w.app.connect(), w.app.connect()]);
+    try {
+      for (const client of clients) {
+        expect((await client.query<{ lock_timeout: string }>('SHOW lock_timeout')).rows[0]?.lock_timeout).toBe('0');
+      }
+    } finally {
+      for (const client of clients) {
+        client.release();
+      }
+    }
+  });
+
+  it('answers busy after the timeout, never after the holder, writes nothing, and goes through once the row is free', async () => {
+    const assign = { caseId, ownerUserId: practice.manager, requestKey: randomUUID() };
+    const before = await state();
+    logged.length = 0;
+    const holder = await holdCase();
+    try {
+      const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
+      // A status and its closed word: no identifier, and no word of what holds the row.
+      expect(answer).toEqual({ status: 'busy', what: 'records' });
+      waitedTheTimeout(waited);
+      expect(await state()).toEqual(before);
+      loggedOnce('LOCK_TIMEOUT');
+    } finally {
+      await holder.release();
+    }
+    // The row free: the same assignment under the same request key goes through (the refusal kept no key).
+    expect(ok(await call(assignCaseAction, practice.manager, P(), assign, web)).objectId).toBe(caseId);
+    const after = await state();
+    expect(after.owner).toBe(practice.manager);
+    expect(Number(after.activity)).toBe(Number(before.activity) + 1);
+    expect(Number(after.keys)).toBe(Number(before.keys) + 1);
+    expect(logged).toEqual([]);
+  }, 60_000);
+
+  it('answers the same request key sent while its first request is still running as already sent and still being processed, and as already sent once the first has saved', async () => {
+    const assign = { caseId, ownerUserId: '', requestKey: randomUUID() };
+    const before = await state();
+    logged.length = 0;
+    // The first request, part way through: its key's lock taken and its key written, its transaction still open.
+    const first = await firstRequest(assign.requestKey);
+    try {
+      const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
+      // Never "nothing was saved": the first may yet save. The closed word alone, and nothing written by this one.
+      expect(answer).toEqual({ status: 'busy', what: 'request' });
+      waitedTheTimeout(waited);
+      expect(await state()).toEqual(before);
+      loggedOnce('REQUEST_STILL_RUNNING');
+    } finally {
+      // The first request saves.
+      await first.release('COMMIT');
+    }
+    expect(await call(assignCaseAction, practice.manager, P(), assign, web)).toEqual({ status: 'duplicate' });
+    const after = await state();
+    expect({ ...after, keys: before.keys }).toEqual(before);
+    expect(Number(after.keys)).toBe(Number(before.keys) + 1);
+  }, 60_000);
+
+  it('calls only the same key still running "already sent": another lock met as the key is written (the table, behind a schema change) is the records’ refusal', async () => {
+    const assign = { caseId, ownerUserId: '', requestKey: randomUUID() };
+    const before = await state();
+    logged.length = 0;
+    // What a schema change queued behind a long request amounts to for every later one: the table cannot be written.
+    const holder = await holding([['LOCK TABLE mutation_request IN SHARE MODE', []]]);
+    try {
+      const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
+      expect(answer).toEqual({ status: 'busy', what: 'records' });
+      waitedTheTimeout(waited);
+      expect(await state()).toEqual(before);
+      loggedOnce('LOCK_TIMEOUT');
+    } finally {
+      await holder.release();
+    }
+    // The table free: the same request under the same key goes through.
+    expect(ok(await call(assignCaseAction, practice.manager, P(), assign, web)).objectId).toBe(caseId);
+  }, 60_000);
+
+  it('refuses a page’s read the same way when it waits on a lock (a table behind a schema change): its adapter shows the error state, never "not found"', async () => {
+    logged.length = 0;
+    expect((await call(casePage, practice.manager, { ...P(), caseId }, undefined, web)).status).toBe('ok');
+    const holder = await holding([['LOCK TABLE "case" IN ACCESS EXCLUSIVE MODE', []]]);
+    try {
+      const { answer, waited } = await timed(() => call(casePage, practice.manager, { ...P(), caseId }, undefined, web));
+      expect(answer).toEqual({ status: 'busy', what: 'records' });
+      waitedTheTimeout(waited);
+      loggedOnce('LOCK_TIMEOUT');
+    } finally {
+      await holder.release();
+    }
+    expect((await call(casePage, practice.manager, { ...P(), caseId }, undefined, web)).status).toBe('ok');
+  }, 60_000);
+
+  it('waits for a first request that ends inside the timeout, and answers by how it ended: already sent where it saved, done where it was rolled back', async () => {
+    logged.length = 0;
+    for (const [end, expected] of [
+      ['COMMIT', 'duplicate'],
+      ['ROLLBACK', 'ok'],
+    ] as const) {
+      const assign = { caseId, ownerUserId: '', requestKey: randomUUID() };
+      const first = await firstRequest(assign.requestKey);
+      // The first request ends half a second in.
+      const ending = setTimeout(() => {
+        first.release(end).catch(() => undefined);
+      }, 500);
+      try {
+        const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
+        // Answered by how the first ended: a request that waited the timeout out is refused, never this.
+        expect(answer.status).toBe(expected);
+        // And it waited for the first to end.
+        expect(waited).toBeGreaterThanOrEqual(400);
+      } finally {
+        clearTimeout(ending);
+        await first.release(end);
+      }
+    }
+    // Neither was refused: nothing is logged.
+    expect(logged).toEqual([]);
+  }, 60_000);
+
+  it('bounds the scope’s own opening read too: a request that waits there (a table of the permission read behind a schema change) is refused the same way', async () => {
+    const assign = { caseId, ownerUserId: '', requestKey: randomUUID() };
+    const before = await state();
+    logged.length = 0;
+    const holder = await holding([['LOCK TABLE practice IN ACCESS EXCLUSIVE MODE', []]]);
+    try {
+      const { answer, waited } = await timed(() => call(assignCaseAction, practice.manager, P(), assign, web));
+      expect(answer).toEqual({ status: 'busy', what: 'records' });
+      waitedTheTimeout(waited);
+      loggedOnce('LOCK_TIMEOUT');
+    } finally {
+      await holder.release();
+    }
+    expect(await state()).toEqual(before);
+    expect(ok(await call(assignCaseAction, practice.manager, P(), assign, web)).objectId).toBe(caseId);
+  }, 60_000);
 });

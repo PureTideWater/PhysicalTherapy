@@ -1,0 +1,23 @@
+{
+  "case": "SGN-17",
+  "module": "SGN",
+  "title": "A sign-in step begun before a password reset is refused after it",
+  "assertion": "A completed reset recorded by the account itself (`password_reset_completed`, and `password_reset_outcome_unknown`, under the password notice's guard) moves the account's mark (`\"user\".sign_in_not_before`) to the database's clock, never back, and ends every open session of the account in the same transaction, by the database, whatever the caller did first, and refuses to run outside READ COMMITTED; every sign-in attempt reads its start once from the same clock (`sign_in_step_began()`, whole milliseconds) before its first provider call and carries it sealed through every step; a session whose attempt began at or before the mark, or ahead of the clock, is refused by the database under the account's row lock (`user_session_sign_in_not_before`), in either order of a sign-in racing the reset, and a row with no start (the release before) is neither checked nor locked; the transaction that opens a session and the one that records a reset take the account's row first (`sign_in_lock_account()`, the acting account's own row only), so the three-connection cycle with `resolve_session()` does not deadlock; a stale code step is refused as a closed step before the provider is asked, counts no failure and uses up no code; a stale hardware-key sign-in is refused only after a valid assertion; a stale key-registration step is refused at its options and at its verify, and no key is registered; a stale new-password or enrolment step is refused before the provider call; a sign-in whose typed address names an account other than the provider's subject's is refused outright once the person is proved, opens no session and no key step, and pages (`security event: sign-in refused for a crossed account`, `SignInRefusedCrossedAccount`); each refusal for a start at or before the mark is decided and recorded in one call (`sign_in_step_refused()`, which answers the reason: `no_account`, `no_start`, `ahead_of_clock` or `before_reset`), writes one `security_event` for an account, a step and a mark (the step in the purpose; a repeat adds none) and logs `security event: sign-in step refused after a password reset` by IDs and the step, counted and alarmed at one in five minutes for every step but the hardware-key sign-in's (`SignInStepRefusedAfterReset`); a start ahead of the clock is refused without that line and logs a clock fault instead; a hardware key whose registration returns after the reset was recorded is removed at the provider, and when it is not the account is locked (`sign_in_lock_key_across_reset()`, only on the record of that registration since the mark), so the key signs in to nothing, the lock is recorded every time, the key's own account is locked first, and `unlock_user()` refuses to unlock it (`user_key_across_reset_hold`; the console says why) until the owner has recorded the key cleared after the lock (`security event: hardware key registered across a password reset`, `removed`, `not_removed` or `not_removed_not_locked`, which pages: `HardwareKeyRegisteredAcrossReset`), `hardware_key_registered` is audited only if the key is still there, and a throw after the provider stored the key is read as refused; a session is opened only with a start; a step sealed with no start starts again; a new sign-in begun after the reset opens a session; the person sees the closed-step words they already know and no new ones; the rule covers the attempts the application carries, so for a call made at Cognito directly it holds only once the client is confidential (docs/adr/0088, its second release)",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "apps/web/src/lib/auth/sign-in.db.test.ts",
+    "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/e2e/sign-in.spec.ts",
+    "packages/db/src/sign-in-not-before.db.test.ts",
+    "infra/test/monitoring.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic personas reset their passwords and answer stale steps through the local identity provider against a synthetic database; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

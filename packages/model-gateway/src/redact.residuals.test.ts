@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, redactLetterForScreen } from './redact';
+import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, redactLetterForScreen } from '@tp/redact';
 import residuals from './redact.residuals.json' with { type: 'json' };
 
 /**

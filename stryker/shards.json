@@ -22,6 +22,7 @@
           "packages/ledger/src/allocation.ts",
           "packages/ledger/src/csv.ts",
           "packages/ledger/src/index.ts",
+          "packages/ledger/src/interest.ts",
           "packages/ledger/src/matching.ts",
           "packages/ledger/src/pairing.ts",
           "packages/ledger/src/payment.ts",
@@ -115,6 +116,7 @@
       "mutate": {
         "packets": [
           "packages/packets/src/readable.ts",
+          "packages/packets/src/verifier/identifiers.ts",
           "packages/packets/src/verifier/index.ts",
           "packages/packets/src/verifier/mismatches.ts"
         ]

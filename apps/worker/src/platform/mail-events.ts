@@ -37,9 +37,13 @@ import { type NoticeClient, asOperator } from './support-notices';
  *    the queue only after that commits (JOB-05). An account alarm's state change pauses the screening stream
  *    (account_rate). A message that does not parse is logged by its queue ID (MAIL_EVENT_UNREADABLE) and left for the
  *    dead-letter queue; one the database refuses is logged by its SQLSTATE and left to be received again.
- * 4. Act on what the record returns: a pause (MAIL_STREAM_PAUSED) disables the screening set at once; a notice not
- *    delivered to every recipient is NOTICE_UNDELIVERED with its support grant's or invoice's ID; an invitation not
- *    delivered is INVITATION_UNDELIVERED with its ID.
+ * 4. Act on what the record returns. What it reports not delivered is logged first, once the record has committed and
+ *    before the message is deleted from the queue: a notice not delivered to every recipient is NOTICE_UNDELIVERED with
+ *    its support grant's or invoice's ID; an invitation not delivered is INVITATION_UNDELIVERED with its ID; a
+ *    password-changed email bounced, suppressed or rejected is PASSWORD_NOTICE_UNDELIVERED with its notice's and user's
+ *    IDs and the mail state, reported once (docs/adr/0091). The database names each to that one call alone, so a delete
+ *    that fails after the commit cannot lose the line, and the event received again reports and logs nothing. Then the
+ *    delete, and after it a pause (MAIL_STREAM_PAUSED), which disables the screening set at once.
  *
  * Logs carry IDs and codes only: no address, in no log line, payload, audit event or error. Outside SES, this event
  * path keeps the address only in the queue's encrypted message, for at most 4 days (14 in the dead-letter queue); the
@@ -245,6 +249,8 @@ interface RecordedRow {
   readonly invoice_undelivered: string | null;
   readonly invitation_undelivered: string | null;
   readonly stream_paused: MailPauseReason | null;
+  /** The password-changed notice this event made undelivered, reported by this call alone (docs/adr/0091). */
+  readonly password_notice_undelivered: string | null;
 }
 
 /** The pause's alarm line: one fixed sentence a reason, each with MAIL_STREAM_PAUSED. */
@@ -293,7 +299,7 @@ async function recordEvent(options: MailEventsOptions, record: MailEventRecord):
   const { client } = options;
   return asOperator(client, record.practiceId, async () => {
     const { rows } = await client.query(
-      `SELECT recorded, state, notice_undelivered, invoice_undelivered, invitation_undelivered, stream_paused
+      `SELECT recorded, state, notice_undelivered, invoice_undelivered, invitation_undelivered, stream_paused, password_notice_undelivered
          FROM operator_record_mail_event($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         record.messageId,
@@ -446,6 +452,29 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
         logger.error('mail event could not be recorded; it is received again', { job_id: requestId, queue_message_id: message.id, error_code: sqlState(error) });
         continue;
       }
+      // What the record reported not delivered is logged here, before the delete: the database names each to the one
+      // call whose record made it so, and that record has committed, so a delete that then fails (or a task stopped
+      // there) must not take the operator's line with it. The event received again is answered with every one of these
+      // null, and logs nothing.
+      if (row.notice_undelivered !== null) {
+        logger.error('support-access notice not delivered to every administrator', { job_id: requestId, support_grant_id: row.notice_undelivered, error_code: MAIL_LOG_CODES.noticeUndelivered });
+      }
+      if (row.invoice_undelivered !== null) {
+        logger.error('dunning notice not delivered to every billing owner', { job_id: requestId, invoice_id: row.invoice_undelivered, error_code: MAIL_LOG_CODES.noticeUndelivered });
+      }
+      if (row.invitation_undelivered !== null) {
+        logger.warn('invitation email not delivered', { job_id: requestId, invitation_id: row.invitation_undelivered, error_code: MAIL_LOG_CODES.invitationUndelivered });
+      }
+      if (row.password_notice_undelivered !== null) {
+        // The user's ID from the message's tp_recipient tag, and the state as the reason: bounced, suppressed or rejected.
+        logger.error('password notice not delivered', {
+          job_id: requestId,
+          password_notice_id: row.password_notice_undelivered,
+          user_id: entry.record.recipientUserId,
+          undelivered_reason_code: row.state,
+          error_code: MAIL_LOG_CODES.passwordNoticeUndelivered,
+        });
+      }
       // Deleted only once its record has committed (JOB-05): a failure before this leaves it to be received again.
       await options.source.remove(message);
       if (!row.recorded) {
@@ -464,15 +493,6 @@ export async function runMailEvents(options: MailEventsOptions): Promise<MailEve
           mail_state_code: row.state,
           bounce_subtype_code: entry.record.event === 'bounce' ? entry.record.bounceSubtype : null,
         });
-      }
-      if (row.notice_undelivered !== null) {
-        logger.error('support-access notice not delivered to every administrator', { job_id: requestId, support_grant_id: row.notice_undelivered, error_code: MAIL_LOG_CODES.noticeUndelivered });
-      }
-      if (row.invoice_undelivered !== null) {
-        logger.error('dunning notice not delivered to every billing owner', { job_id: requestId, invoice_id: row.invoice_undelivered, error_code: MAIL_LOG_CODES.noticeUndelivered });
-      }
-      if (row.invitation_undelivered !== null) {
-        logger.warn('invitation email not delivered', { job_id: requestId, invitation_id: row.invitation_undelivered, error_code: MAIL_LOG_CODES.invitationUndelivered });
       }
       if (row.stream_paused !== null) {
         await pausedNow(row.stream_paused);

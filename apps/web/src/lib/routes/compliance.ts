@@ -18,7 +18,7 @@ import { z } from 'zod';
 import { returnPage } from '../http/download-refusal';
 import { platformRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult } from '../http/route';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 import { opaqueId, optionalText } from './schemas';
 
 /**
@@ -84,7 +84,7 @@ interface Queryable {
   query<T extends object>(text: string, values?: unknown[]): Promise<{ rows: T[] }>;
 }
 
-async function readEvidence(client: Queryable, services: Services): Promise<{ checklist: Checklist; workforce: WorkforceMember[]; records: RecordView[] }> {
+async function readEvidence(client: Queryable, services: SignedInServices): Promise<{ checklist: Checklist; workforce: WorkforceMember[]; records: RecordView[] }> {
   const records = await client.query<{ id: string; kind: PersonRecordKind; subject: string; occurred_on: string; document_ref: string; sha256: string; created_at: Date }>(
     "SELECT id, kind, subject, to_char(occurred_on, 'YYYY-MM-DD') AS occurred_on, document_ref, sha256, created_at FROM compliance_record ORDER BY occurred_on DESC, created_at DESC, id",
   );

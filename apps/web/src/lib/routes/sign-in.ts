@@ -279,6 +279,12 @@ function pendingOf<S extends Pending['step']>(
   if (pending?.step !== step) {
     return undefined;
   }
+  // A step the release before sealed carries no start of its attempt, so nothing can say it began after the account's
+  // latest password reset: it is no step, and the person starts again (docs/adr/0093, D8). The reset step holds no
+  // proof and carries none.
+  if (pending.step !== 'reset' && typeof pending.began !== 'number') {
+    return undefined;
+  }
   const closesAt = stepClosesAt(pending);
   return closesAt !== undefined && now.getTime() >= closesAt ? undefined : (pending as Extract<Pending, { step: S }> & StepMeta);
 }
@@ -559,6 +565,18 @@ export const registerKeyPage = publicRoute({
   },
 });
 
+/**
+ * A key-registration step with no start is no step (docs/adr/0093, D8), but it still seals a grant: given back before
+ * the person starts again, as every other way out of that step gives it back (review SEC-N6 of 2026-11-11).
+ */
+async function releaseUnstartedKeyStep(context: PublicContext<unknown, unknown>): Promise<void> {
+  const sealed = readPending(context.request.cookies, context.services.sealer, context.services.now());
+  if (sealed?.step === 'register_key' && typeof sealed.began !== 'number') {
+    clearPending(context.request.cookies);
+    await context.services.signIn.abandon(sealed, contextOf(context));
+  }
+}
+
 export type RegisterOptionsResult = { readonly options: PublicKeyCredentialCreationOptionsJSON } | StepResult;
 
 export const hardwareKeyRegistrationOptions = publicRoute({
@@ -574,10 +592,11 @@ export const hardwareKeyRegistrationOptions = publicRoute({
   handle: async (context): Promise<RegisterOptionsResult> => {
     const pending = pendingOf(context, 'register_key');
     if (pending === undefined) {
+      await releaseUnstartedKeyStep(context);
       return RESTART;
     }
     const at = context.services.now().getTime();
-    const begun = await context.services.signIn.beginKeyRegistration(pending);
+    const begun = await context.services.signIn.beginKeyRegistration(pending, contextOf(context));
     if ('kind' in begun) {
       return settle(context, begun, { at, from: pending });
     }
@@ -599,9 +618,11 @@ export const registerHardwareKey = publicRoute({
   input: z.object({ response: credentialJson }),
   handle: async (context) => {
     const pending = pendingOf(context, 'register_key');
-    return pending === undefined
-      ? RESTART
-      : advance(context, pending, () => context.services.signIn.completeKeyRegistration(pending, context.input.response as unknown as RegistrationResponseJSON, contextOf(context)));
+    if (pending === undefined) {
+      await releaseUnstartedKeyStep(context);
+      return RESTART;
+    }
+    return advance(context, pending, () => context.services.signIn.completeKeyRegistration(pending, context.input.response as unknown as RegistrationResponseJSON, contextOf(context)));
   },
 });
 
@@ -740,6 +761,9 @@ export const resetConfirm = resetRoute(
           return { error: 'Choose a stronger password.', issues: [passwordIssue(result.problems)] };
         case 'sessions_not_ended':
         case 'client_credential':
+        case 'outcome_unknown':
+          // outcome_unknown: the provider did not say whether the password changed (docs/adr/0093, D9). Never the code's
+          // refusal: the step ends with the generic words; the flow ended the account's sessions and paged the operator.
           clearSignIn(cookies);
           return COULD_NOT_CONTINUE;
         case 'reset':

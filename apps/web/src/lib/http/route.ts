@@ -2,7 +2,7 @@ import type { ActorScope, DirectoryPractice, MembershipRole, MfaMethod, Permissi
 import type { z } from 'zod';
 
 import type { EndedReason } from '../auth/sessions';
-import type { Services } from '../server/services';
+import type { Services, SignedInServices } from '../server/services';
 import type { RateBucket } from './rate-limit';
 
 /**
@@ -112,10 +112,11 @@ export type Outcome<R> =
   /** The platform is in maintenance (the platform.maintenance flag). */
   | { readonly status: 'maintenance' }
   /**
-   * A mutation refused because what it would write is being written by something else right now (the practice's ledger
-   * lock is held; docs/adr/0092): nothing was written, and the same request may be sent again. It names no one and nothing.
+   * A request refused because what it needs is being written by something else right now (docs/adr/0092 and its
+   * amendment of 2026-11-11): its transaction is rolled back, so nothing it wrote is kept, and the same request may be
+   * sent again. It names no one and nothing: `what` is a closed word for the sentence a person reads (BusyWhat).
    */
-  | { readonly status: 'busy' };
+  | { readonly status: 'busy'; readonly what: BusyWhat };
 
 /**
  * Thrown by a handler that would have had to wait for a lock another transaction holds (docs/adr/0092): the request's
@@ -124,10 +125,18 @@ export type Outcome<R> =
  */
 export class BusyError extends Error {
   override readonly name = 'BusyError';
-  constructor() {
+  constructor(readonly what: BusyWhat = 'ledger') {
     super('busy');
   }
 }
+
+/**
+ * What a busy refusal was waiting on, as a closed word (never a table, a row, a job or a person): the practice's ledger
+ * lock, which a ledger action takes if free or is refused at once; records, where a statement of the request's
+ * transaction waited past its lock_timeout for any lock (a row, a key, an advisory lock, a table behind a schema
+ * change); or the request itself, where the same request key was sent before and that first request is still running.
+ */
+export type BusyWhat = 'ledger' | 'records' | 'request';
 
 /** Thrown by a handler: what the request names does not exist, or the actor cannot see it. */
 export class NotFoundError extends Error {
@@ -312,14 +321,15 @@ export interface ReturnPage {
  */
 export type ReturnTo = (params: Readonly<Record<string, string | undefined>>) => ReturnPage | null;
 
-interface BaseContext<P, I> {
+interface BaseContext<P, I, S> {
   readonly params: P;
   readonly input: I;
   readonly request: RouteRequest;
-  readonly services: Services;
+  readonly services: S;
 }
 
-export type PublicContext<P, I> = BaseContext<P, I>;
+/** A public route opens no scope and takes its own connections, so it has every service. */
+export type PublicContext<P, I> = BaseContext<P, I, Services>;
 
 /**
  * Work a signed-in route runs only once its transaction has committed, in the order given: a job that must read what
@@ -329,14 +339,14 @@ export type PublicContext<P, I> = BaseContext<P, I>;
  */
 export type AfterCommit = (work: () => Promise<unknown>) => void;
 
-export interface ActorContext<P, I> extends BaseContext<P, I> {
+export interface ActorContext<P, I> extends BaseContext<P, I, SignedInServices> {
   readonly actor: Actor;
   readonly scope: ActorScope<ScopeClient>;
   readonly platformRoles: readonly MembershipRole[];
   readonly afterCommit: AfterCommit;
 }
 
-export interface PracticeContext<P, I> extends BaseContext<P, I> {
+export interface PracticeContext<P, I> extends BaseContext<P, I, SignedInServices> {
   readonly actor: Actor;
   readonly scope: PracticeScope<ScopeClient>;
   readonly practiceId: string;

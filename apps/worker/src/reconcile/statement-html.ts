@@ -111,7 +111,7 @@ export function statementHtml(document: StatementDocument): string {
       : `${recovered} is ${ratio} times the fees paid in the period.`,
   )}</p>
   ${figure(recovered, 'Cash at the proof level whose money moved in the period, less recoupments and reversals; payer approved and interest are never in it.', check.recovered, NO_RECOVERED_CASH[statement.proofLevel])}
-  ${figure('Interest, net', 'Interest the payer paid in the period, shown apart from principal.', check.interest, 'No interest was paid in the period.')}
+  ${figure('Interest, net', 'Interest the payer paid in the period, less any it took back, shown apart from principal.', check.interest, 'No interest was paid in the period.')}
   ${figure('Payer approved, not yet at the proof level', 'Approved by the end of the period and not yet posted or deposited as the proof level needs: its own stage, never summed into recovered (posted or deposited).', check.approvedUnposted, NOTHING_APPROVED_WAITING[statement.proofLevel])}
   <h2>${escapeHtml(ACTIONABLE_OPEN_LABEL)}: <span class="figure-amount">${escapeHtml(usd(statement.actionableOpenCents))}</span></h2>
   <p>${escapeHtml(`${ACTIONABLE_OPEN_NOTE} ${cases.length === 0 ? 'No case was being worked when the statement was generated.' : `Its ${String(cases.length)} ${cases.length === 1 ? 'case' : 'cases'}: ${cases.join(', ')}.`}`)}</p>

@@ -43,7 +43,7 @@ reviewer. Report where a screen breaks any of these:
   records a fact starts unanswered (baseline).
 - **States** (`PRD.md:260`; `packages/ui/src/states`). Empty: the next step and a control for it, a filtered list's
   filter and how to clear it, no vacuous or false fact ("0 of 0 lines") (baseline). Loading: the mark alone, never
-  animated, a plain bar still under reduced motion (`BRAND.md:127-128`; ADR 0056:42-43), keeping the frame and saying
+  animated, a plain bar still under reduced motion (`BRAND.md:128-129`; ADR 0056:42-43), keeping the frame and saying
   what loads (baseline). Error: a next step (`PRD.md:256`) in the app's frame, never raw JSON (baseline). Permission:
   what the role cannot do (`PRD.md:260`), a heading naming the page (WCAG 2.4.6), who can and a way back (baseline). Not
   found keeps the shell; work in progress updates itself (recommendations).
@@ -71,44 +71,44 @@ reviewer. Report where a screen breaks any of these:
   error that needs action, and `Alert` defaults to it (`packages/ui/src/components/alert.tsx:18`): success, progress and
   loading are status, and a live check stays quiet while the person types (4.1.3). Header cells and row headers; each
   row's controls name their row (1.3.1, 2.4.4). Text 4.5:1 (3:1 at 24 px and above), placeholders too, boundaries 3:1,
-  in both themes (`BRAND.md:154`; 1.4.3, 1.4.11). No hover-only content (1.4.13); a single-pointer way for a drag
+  in both themes (`BRAND.md:172`; 1.4.3, 1.4.11). No hover-only content (1.4.13); a single-pointer way for a drag
   (2.5.7); help in one place (3.2.6) and true for that screen (baseline).
 - **Words.** Serious, exact, warm; never "AI", hype or a projected dollar presented as recovered (`BRAND.md:23-24`);
   plain, the reader's need first, addressed to them (recommendation); a link says where it goes (2.4.4). Counts through
   `<Counted/>` or, with no mono, `counted()` (`apps/web/src/lib/copy/words.ts:8`); a code's label through `labelOf()`
   (`:27`). Words before any code, key or ID, an ID only as a detail; no schema key, validator text or unfilled "%s"
   (baseline; 3.3.1 in an error); a held file shows its segment and position (`PRD.md:268`); codes keep their values (ADR
-  0058:117). A label names exactly what it counts, and counts only this practice's records (baseline). No build words or
-  internal names ("the engine"); one name per thing and one thing per name, across screens and the payer's copy; one
-  apostrophe style (recommendations). Every error says what happened and a next step (`PRD.md:256`) the reader's role
-  can take, true to where it points (baseline). Claim nothing the product cannot prove, nor any third-party
-  certification (`BRAND.md:163-164`; baseline beyond it). Name who did a thing exactly (recommendation). Where the lint
-  does not read, hold CO-11 by hand (`change-order-001.md:95`; ADR 0058:110-113). Legal text changes only with the
-  founder's sign-off in the PR (`LANES.md` Delegations): a `docs/product/legal-surfaces.md` surface, the terms a
-  customer accepts, the privacy, cookie and AMA notices, the screening terms, `HANDOFF.md`'s counsel list.
+  0058:121-125). A label names exactly what it counts, and counts only this practice's records (baseline). No build
+  words or internal names ("the engine"); one name per thing and one thing per name, across screens and the payer's
+  copy; one apostrophe style (recommendations). Every error says what happened and a next step (`PRD.md:256`) the
+  reader's role can take, true to where it points (baseline). Claim nothing the product cannot prove, nor any
+  third-party certification (`BRAND.md:181-182`; baseline beyond it). Name who did a thing exactly (recommendation).
+  Where the lint does not read, hold CO-11 by hand (`change-order-001.md:95`; ADR 0058:112-115). Legal text changes only
+  with the founder's sign-off in the PR (`LANES.md` Delegations): a `docs/product/legal-surfaces.md` surface, the terms
+  a customer accepts, the privacy, cookie and AMA notices, the screening terms, `HANDOFF.md`'s counsel list.
 - **Brand.** Colours only from tokens, no Tailwind palette colour or `rgb()` (`brand.md:13-16`); the palette is the
-  brand owner's (ADR 0058:61-62). Status colours mark data only, labelled text on its tint, never in or near the logo; a
+  brand owner's (ADR 0058:63-64). Status colours mark data only, labelled text on its tint, never in or near the logo; a
   failure is danger, a system state a neutral badge, an investigatory line unpriced, never Short (`brand.md:26-28`; ADR
   0056:70-95). Brass is the keystone, foil, seals and, in the UI, only the rail underline; never text on white, a button
   fill or a background (`brand.md:32-33`; `BRAND.md:120-121`). Notice kinds differ by more than colour (1.4.1); each
   notice kind and state chip looks the same everywhere; danger style only on actions that remove access, remove or
   reverse a record, or write money off; native controls in Ink and the theme's `color-scheme` (baseline). Sign-in: the
-  stacked lockup on Paper, nothing else decorative (`BRAND.md:122`; ADR 0058:94).
+  stacked lockup on Paper, nothing else decorative (`BRAND.md:122`; ADR 0058:98).
 - **Type and marks.** Every money figure, code, unit count and rate in Plex Mono, tabular, 400 or 500, in sentences and
   buttons too, a native `<option>` excepted (`brand.md:36`; ADR 0056:50-51); one type scale and tile style (ADR
-  0056:47-50; `BRAND.md:125-126`). The mark and lockup keep every rule in `brand.md:17-22`, `:34-35`, `:40-41` and
+  0056:47-50; `BRAND.md:126-127`). The mark and lockup keep every rule in `brand.md:17-22`, `:34-35`, `:40-41` and
   `BRAND.md` section 8: a lone mark is `role="img"` "PaidWhole", one beside the name decorative. A page title is never
   the bare name, a second wordmark beside the lockup (baseline); "PaidWhole terms of use" is copy (ADR 0056:132-135).
   One empty-state mark per screen (ADR 0056:66-68). The seal and badge only when `reconciledToCash`, with the definition
   (`brand.md:29-31`).
 - **Print, PDF and email.** Report covers on Paper, inside pages white with a 16 px mark (`brand.md:42-43`), amounts in
-  mono (ADR 0056:108-109), nothing wider than the page or shrunk (ADR 0058:185-198); PDFs tagged (recommendation until
+  mono (ADR 0056:108-109), nothing wider than the page or shrunk (ADR 0058:190-202); PDFs tagged (recommendation until
   Lane A's PR 7); dark prints light (baseline). A packet and the payer's copy lead with the practice, with neither
-  PaidWhole's lockup, name, seal or badge (ADR 0056:113-118; ADR 0058:53-54) nor a qualifier code
+  PaidWhole's lockup, name, seal or badge (ADR 0056:113-118; ADR 0058:55-56) nor a qualifier code
   (`packages/packets/src/payer.ts:9`), and say what is asked: amount, lines, deadline, who to answer (baseline). A white
-  label leads with the firm, PaidWhole only as the earned badge (`BRAND.md:142-143`), and never carries the independence
-  claim (ADR 0058:92-94). Email: the lockup's PNG from the static host, never the application, no typed wordmark,
-  `tokens.ts` hex, no tagline for a prospect (`BRAND.md:129-139`), no PHI (`CLAUDE.md`'s Never list); a digest holds
+  label leads with the firm, PaidWhole only as the earned badge (`BRAND.md:160-161`), and never carries the independence
+  claim (ADR 0058:97-98). Email: the lockup's PNG from the static host, never the application, no typed wordmark,
+  `tokens.ts` hex, no tagline for a prospect (`BRAND.md:130-157`), no PHI (`CLAUDE.md`'s Never list); a digest holds
   counts and totals only (`PRD.md:246`).
 
 Severity. Blocking when the change makes a person misread money or a status, loses or silently changes what they

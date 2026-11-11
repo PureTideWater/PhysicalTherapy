@@ -17,7 +17,7 @@ import type { ModelProvider } from './provider';
 import { type PatientRecordsCheck, type ScreenIdentifiers, practiceRecordsCheckByShape, syntheticRecordsCheck } from './patient-records';
 import { LocalDeterministicProvider } from './providers/local';
 import type { ModelPurpose } from './purposes';
-import { compactIdentifier } from './redact';
+import { compactIdentifier } from '@tp/redact';
 import { type RequestInputs, requestFor } from './specs';
 import { type CallActor, MemoryModelCallStore } from './store';
 
@@ -239,7 +239,8 @@ export function memoryPracticeRecords(
               audited.push(...pending);
             }
             pending = [];
-            return result([]);
+            // Answered with its tag, as PostgreSQL answers it: the scope reads COMMIT's answer.
+            return Promise.resolve({ ...NO_RESULT, command: text } as never);
           }
           if (text.startsWith("SELECT set_config('app.actor_id'")) {
             actor = String(values[0]);

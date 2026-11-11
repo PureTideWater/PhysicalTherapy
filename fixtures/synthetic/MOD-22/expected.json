@@ -8,7 +8,7 @@
   "assertedBy": [
     "packages/model-gateway/src/redact.leaks.test.ts",
     "packages/model-gateway/src/redact.residuals.test.ts",
-    "packages/model-gateway/src/confusables.test.ts"
+    "packages/redact/src/confusables.test.ts"
   ],
   "codeListRelease": null,
   "noFileReason": "Letters are written in memory by the tests, and the pinned rows are synthetic text in src/redact.residuals.json; no file.",

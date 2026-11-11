@@ -4,9 +4,10 @@ import {
   AdminUserGlobalSignOutCommand,
   AssociateSoftwareTokenCommand,
   type AuthenticationResultType,
+  CognitoIdentityProviderClient,
   CompleteWebAuthnRegistrationCommand,
-  type CognitoIdentityProviderClient,
   ConfirmForgotPasswordCommand,
+  DeleteWebAuthnCredentialCommand,
   ForgotPasswordCommand,
   InitiateAuthCommand,
   ListWebAuthnCredentialsCommand,
@@ -64,8 +65,37 @@ export interface IdTokenVerifier {
   verify(idToken: string): Promise<{ readonly sub: string; readonly email?: unknown }>;
 }
 
+/**
+ * A client that sends each request once (docs/adr/0093, D9): the SDK client built with `maxAttempts: 1`, or anything
+ * with its send() and that setting. The provider reads the setting before it sends a confirm, so a client left on the
+ * SDK's default (three attempts) sends none.
+ */
+export type OneAttemptClient = CognitoClient & { readonly config: { readonly maxAttempts: () => Promise<number> } };
+
+/**
+ * The two SDK clients the provider takes (docs/adr/0093, D9): `client` with the SDK's retries, for every call whose
+ * repeat is a refusal the person can retry, and `confirmClient`, one attempt, for ConfirmForgotPassword alone.
+ */
+export function cognitoClients(region: string): { readonly client: CognitoIdentityProviderClient; readonly confirmClient: CognitoIdentityProviderClient } {
+  return { client: new CognitoIdentityProviderClient({ region }), confirmClient: new CognitoIdentityProviderClient({ region, maxAttempts: 1 }) };
+}
+
+/** The confirm's client is not set to one attempt: nothing was sent (docs/adr/0093, D9). */
+export class ConfirmClientRetriesError extends Error {
+  override readonly name = 'ConfirmClientRetriesError';
+  constructor() {
+    super('the client that confirms a password reset must send each request once (maxAttempts: 1); nothing was sent');
+  }
+}
+
 export interface CognitoProviderOptions {
   readonly client: CognitoClient;
+  /**
+   * The client ConfirmForgotPassword is sent on, and nothing else: one attempt (docs/adr/0093, D9). Required, so no
+   * composition leaves the SDK's default: a confirm whose answer was lost would be sent again, meet its own used code
+   * and read as a refused code while the password had changed.
+   */
+  readonly confirmClient: OneAttemptClient;
   readonly userPoolId: string;
   readonly clientId: string;
   readonly verifier: IdTokenVerifier;
@@ -162,6 +192,57 @@ const RESET_NOT_DELIVERED = new Set([
 ]);
 /** ConfirmForgotPassword's code problems and an unknown user: one refusal, never split by cause. */
 const RESET_REJECTED = new Set(['CodeMismatchException', 'ExpiredCodeException', 'LimitExceededException', 'TooManyFailedAttemptsException', 'UserNotFoundException', 'NotAuthorizedException']);
+
+/**
+ * A message trigger's failures. On a confirm they are modelled as client faults, but a trigger that runs after the
+ * password is stored (post confirmation) fails with the same names, so they do not say nothing changed.
+ */
+const LAMBDA_TRIGGER = new Set(['UnexpectedLambdaException', 'UserLambdaValidationException', 'InvalidLambdaResponseException']);
+
+/**
+ * Whether a failed ConfirmForgotPassword is an answer that changed nothing (docs/adr/0093, D9): the provider answered
+ * with a client fault (HTTP 4xx; or the SDK's `$fault` 'client' where no status came with it) not named for a Lambda
+ * trigger. Anything else (no answer at all, a server fault, a trigger's failure, a status and a fault that disagree)
+ * does not say whether the password changed.
+ */
+export function confirmChangedNothing(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || LAMBDA_TRIGGER.has(errorName(error))) {
+    return false;
+  }
+  if (neverSent(error)) {
+    return true;
+  }
+  const { $metadata: metadata, $fault: fault } = error as { readonly $metadata?: { readonly httpStatusCode?: unknown }; readonly $fault?: unknown };
+  const status = metadata?.httpStatusCode;
+  return typeof status === 'number' ? status >= 400 && status < 500 : fault === 'client';
+}
+
+/**
+ * Connection failures that happen before any byte of the request is written: the connection was refused, or the name
+ * did not resolve. A timeout, a reset connection (ECONNRESET) and a broken pipe (EPIPE) are not here: the request may
+ * have arrived.
+ */
+const NEVER_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN']);
+
+/**
+ * Whether a failed request cannot have reached the provider (review SEC-S2 of 2026-11-11): the error, a cause of it,
+ * or every error an aggregate holds (one per address tried) carries one of NEVER_SENT's codes. An aggregate is read
+ * by its members first, whatever code it carries itself: one address that failed another way may have been sent to. Such a confirm changed
+ * nothing, so it is the platform's failure and ends nobody's sessions.
+ */
+function neverSent(error: unknown, depth = 0): boolean {
+  if (typeof error !== 'object' || error === null || depth > 4) {
+    return false;
+  }
+  const { code, cause, errors } = error as { readonly code?: unknown; readonly cause?: unknown; readonly errors?: unknown };
+  if (Array.isArray(errors) && errors.length > 0) {
+    return errors.every((inner) => neverSent(inner, depth + 1));
+  }
+  if (typeof code === 'string') {
+    return NEVER_SENT.has(code);
+  }
+  return neverSent(cause, depth + 1);
+}
 
 /** The challenges this application answers, and the step each is. */
 const NEXT_STEPS: Readonly<Record<string, 'new_password_required' | 'mfa_setup_required' | 'mfa_required'>> = {
@@ -435,6 +516,18 @@ export class CognitoAuthProvider implements AuthProvider {
     }
   }
 
+  async removeHardwareKey(grant: string, credentialId: string): Promise<boolean> {
+    try {
+      await this.options.client.send(new DeleteWebAuthnCredentialCommand({ AccessToken: parseGrant(grant).a, CredentialId: credentialId }));
+      return true;
+    } catch (error) {
+      refuseCredential(error);
+      // Best effort (docs/adr/0093, D6): the flow reports a key it could not remove; the error's name alone is logged.
+      this.logger.warn('provider hardware key removal failed', { error_code: errorName(error) || 'unknown' });
+      return false;
+    }
+  }
+
   async release(grant: string): Promise<void> {
     const { r } = parseGrant(grant);
     if (r === undefined) {
@@ -518,9 +611,13 @@ export class CognitoAuthProvider implements AuthProvider {
     if (problems.length > 0) {
       return { kind: 'invalid_password', problems };
     }
+    // One attempt, read from the client itself before anything is sent (docs/adr/0093, D9).
+    if ((await this.options.confirmClient.config.maxAttempts()) !== 1) {
+      throw new ConfirmClientRetriesError();
+    }
     try {
       // It returns no tokens and opens no session: the next sign-in asks for the second factor.
-      await this.options.client.send(
+      await this.options.confirmClient.send(
         new ConfirmForgotPasswordCommand({ ClientId: this.options.clientId, Username: email, ConfirmationCode: code, Password: password, ...this.secretHash(email) }),
       );
       return { kind: 'reset' };
@@ -534,7 +631,17 @@ export class CognitoAuthProvider implements AuthProvider {
         // Unreachable while the pool's policy matches passwordProblems: no rule to name, as setNewPassword says it.
         return { kind: 'invalid_password', problems: [] };
       }
-      throw error;
+      if (confirmChangedNothing(error)) {
+        // The provider answered and changed nothing (a throttle, a refused parameter, a missing pool), or was never
+        // reached: the platform's failure. Thrown by its name alone (review SEC-N7 of 2026-11-11): the provider's
+        // message for a refused parameter can quote the value sent, and this request carries the code and the password.
+        const named = new Error(name || 'the identity provider refused the request');
+        named.name = name || 'Error';
+        throw named;
+      }
+      // No answer, a server fault or a trigger's failure: the password may have changed (docs/adr/0093, D9). The
+      // request was sent once, so this is never a repeat meeting its own used code. The name alone is carried.
+      return { kind: 'outcome_unknown', code: name || 'unknown' };
     }
   }
 

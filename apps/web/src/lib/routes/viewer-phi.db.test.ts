@@ -26,7 +26,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import { csrfTokenFor } from '../http/csrf';
 import type { CookieJar, Outcome, Route, SampleRefs } from '../http/route';
 import { type Services, createServices } from '../server/services';
@@ -109,7 +110,7 @@ function caller(pool: DatabasePool, services: Services) {
   const sessionOf = async (userId: string, method: 'totp' | 'webauthn'): Promise<string> => {
     let token = tokens.get(userId);
     if (token === undefined) {
-      token = (await openSession(pool, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+      token = (await openSessionNow(pool, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
       tokens.set(userId, token);
     }
     return token;

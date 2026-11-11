@@ -16,6 +16,7 @@
   "dependencies": {
     "@tp/money": "workspace:*",
     "@tp/pricing": "workspace:*",
+    "@tp/redact": "workspace:*",
     "@tp/triage": "workspace:*"
   },
   "devDependencies": {

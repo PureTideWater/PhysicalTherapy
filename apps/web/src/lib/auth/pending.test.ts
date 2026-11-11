@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { CookieJar } from '../http/route';
-import { clearPending, clearSignIn, readKeptEmail, readPending, stepClosesAt, writeKeptEmail, writePending } from './pending';
+import { clearPending, clearSignIn, readKeptEmail, readPending, stepClosesAt, stepMetaOf, writeKeptEmail, writePending } from './pending';
 import { Sealer } from './seal';
 import { KEPT_EMAIL_COOKIE, SIGN_IN_COOKIE } from './sessions';
 import type { Pending } from './sign-in';
@@ -50,6 +50,24 @@ describe('the pending step', () => {
     const carried = { ...MFA, startedAt: T0 - 60_000, passwordSaved: true as const };
     writePending(jar, sealer, carried, { startedAt: T0, setup: { at: 2, of: 3 } }, at(0));
     expect(readPending(jar, sealer, at(1))).toEqual({ ...MFA, startedAt: T0, setup: { at: 2, of: 3 } });
+  });
+
+  it('SGN-17: the attempt’s start is the flow’s own value: it is sealed with the step and no rewrite or meta changes it (docs/adr/0093, D3)', () => {
+    const jar = new Jar();
+    const began = T0 - 1234;
+    writePending(jar, sealer, { ...MFA, began }, { startedAt: T0 }, at(0));
+    expect(readPending(jar, sealer, at(1))).toEqual({ ...MFA, began, startedAt: T0 });
+    // A rewrite of the step with other meta keeps the start; meta never carries one.
+    const read = readPending(jar, sealer, at(1));
+    if (read === undefined) {
+      throw new Error('expected the step');
+    }
+    writePending(jar, sealer, read, { ...stepMetaOf(read), setup: { at: 1, of: 2 } }, at(2));
+    expect(readPending(jar, sealer, at(3))).toEqual({ ...MFA, began, startedAt: T0, setup: { at: 1, of: 2 } });
+    expect(stepMetaOf({ ...MFA, began, startedAt: T0 })).toEqual({ startedAt: T0 });
+    // A step sealed by the release before reads with none.
+    writePending(jar, sealer, MFA, { startedAt: T0 }, at(4));
+    expect(readPending(jar, sealer, at(5))).not.toHaveProperty('began');
   });
 
   it('SGN-01: reads a value sealed by the release before as a step with no stamp, which has no deadline', () => {

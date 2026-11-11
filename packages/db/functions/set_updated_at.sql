@@ -31,6 +31,7 @@
 -- Trigger function of: packet.packet_updated_at
 -- Trigger function of: packet_version.packet_version_updated_at
 -- Trigger function of: parse_report.parse_report_updated_at
+-- Trigger function of: password_notice.password_notice_updated_at
 -- Trigger function of: patient_ref.patient_ref_updated_at
 -- Trigger function of: payer.payer_updated_at
 -- Trigger function of: payer_plan_mapping.payer_plan_mapping_updated_at

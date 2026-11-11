@@ -194,6 +194,7 @@ describe('readPlatformConfig', () => {
     APP_ORIGIN: 'https://app.synthetic.test',
     STATIC_ASSET_ORIGIN: 'https://static.synthetic.test',
     SUPPORT_MAIL_BUCKET: 'tp-production-support-mail',
+    SUPPORT_EMAIL: 'support@synthetic.test',
     ...RDS,
   };
 
@@ -213,6 +214,8 @@ describe('readPlatformConfig', () => {
       staticAssetOrigin: null,
       // No events directory, nothing to read; probes go to the local outbox.
       mailEvents: { kind: 'local', dir: null, identitiesVerified: true },
+      // The web's development default (docs/adr/0091), so a local WORKER_JOBS=all worker starts.
+      supportEmail: 'support@synthetic.test',
     });
     expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', RESTORE_DRILL_ADMIN_URL: 'postgres://admin@localhost/d' })?.restoreDrill).toEqual({
       kind: 'local',
@@ -238,6 +241,7 @@ describe('readPlatformConfig', () => {
       appOrigin: 'https://app.synthetic.test',
       staticAssetOrigin: 'https://static.synthetic.test',
       mailEvents: { kind: 'sqs', queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789012/tp-production-mail-events', identitiesVerified: false },
+      supportEmail: 'support@synthetic.test',
     });
     expect(readPlatformConfig({ ...PRODUCTION, AUDIT_COPY_LOCK_MODE: 'GOVERNANCE' })?.auditStore).toEqual({ kind: 's3', bucket: 'tp-production-audit-copies', lockMode: 'GOVERNANCE' });
   });
@@ -272,6 +276,21 @@ describe('readPlatformConfig', () => {
       mail: { kind: 'local', dir: '/var/tp/mail', eventsDir: '/var/tp/events', streamPrefix: 'tp-dev' },
       mailEvents: { kind: 'local', dir: '/var/tp/events', identitiesVerified: false },
     });
+  });
+
+  it('names the support address the password-changed email gives (SUPPORT_EMAIL; docs/adr/0091), and never echoes a refused one', () => {
+    expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', SUPPORT_EMAIL: ' help@synthetic.test ' })?.supportEmail).toBe('help@synthetic.test');
+    expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', SUPPORT_EMAIL: '' })?.supportEmail).toBe('support@synthetic.test');
+    for (const refused of ['not an address', 'two@at@synthetic.test', 'support@', '@synthetic.test']) {
+      let error: unknown;
+      try {
+        readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', SUPPORT_EMAIL: refused });
+      } catch (caught) {
+        error = caught;
+      }
+      expect(error, refused).toBeInstanceOf(WorkerConfigError);
+      expect((error as Error).message).toBe('SUPPORT_EMAIL is an email address');
+    }
   });
 
   it.each([
@@ -309,6 +328,8 @@ describe('readPlatformConfig', () => {
     ['no screening sender', { SCREENING_MAIL_FROM: undefined, SCREENING_REPLY_TO: undefined }, /SCREENING_MAIL_FROM and SCREENING_REPLY_TO are required/],
     ['no stream prefix', { MAIL_STREAM_PREFIX: undefined }, /MAIL_STREAM_PREFIX is required when NODE_ENV is production/],
     ['a local events directory', { MAIL_EVENTS_DIR: '/var/tp/events' }, /MAIL_EVENTS_DIR is refused when NODE_ENV is production/],
+    ['no support address', { SUPPORT_EMAIL: undefined }, /SUPPORT_EMAIL is required when NODE_ENV is production/],
+    ['a blank support address', { SUPPORT_EMAIL: ' ' }, /SUPPORT_EMAIL is required when NODE_ENV is production/],
   ])('refuses %s in production', (_name, change, message) => {
     expect(() => readPlatformConfig({ ...PRODUCTION, ...change })).toThrow(message);
   });

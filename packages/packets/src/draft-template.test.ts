@@ -16,7 +16,7 @@ import { renderFacts } from './render';
 import { totalCues } from './roles-reader/cues';
 import { CURRENCY_WORDS, MULTIPLES, MULTIPLIERS, ORDINALS, SCALES, STRICT_NUMBER_WORDS, STRICT_PLURALS, TEENS, TENS, UNITS, scanText } from './scan';
 import { REGULATION, SHA, assemblyInput, contractCitation, line, promptPayRecord, roleContents } from './test-support';
-import { type Mismatch, verifyTemplate } from './verifier';
+import { type Mismatch, NO_CASE_IDENTIFIERS, verifyTemplate } from './verifier';
 
 /**
  * The code draft at format /3 and pass 2 of the template check (design lane-b-packet-figure-placeholders, sections 2.1,
@@ -108,7 +108,7 @@ describe('the code draft', () => {
   it('writes fact tokens at /3, every id one a model may use, and passes /3 on every named content', () => {
     for (const content of named()) {
       const template = draftNarrative(content, V3);
-      const report = verifyTemplate(template, content, []);
+      const report = verifyTemplate(template, content, NO_CASE_IDENTIFIERS);
       expect(report.mismatches, template).toEqual([]);
       expect(report.passed).toBe(true);
       const catalog = factCatalog(content);
@@ -123,7 +123,7 @@ describe('the code draft', () => {
   it('passes /3 on every generated pattern', () => {
     fc.assert(
       fc.property(factPackets, (content) => {
-        const report = verifyTemplate(draftNarrative(content, V3), content, []);
+        const report = verifyTemplate(draftNarrative(content, V3), content, NO_CASE_IDENTIFIERS);
         expect(report.mismatches).toEqual([]);
       }),
       { numRuns: 40 },
@@ -325,7 +325,7 @@ describe('properties of format /3 (section 8)', () => {
         const spaces = freeSpaces(draft);
         const at = (spaces[pick % spaces.length] as number) + 1;
         const template = `${draft.slice(0, at)}${inserted} ${draft.slice(at)}`;
-        const report = verifyTemplate(template, content, []);
+        const report = verifyTemplate(template, content, NO_CASE_IDENTIFIERS);
         expect(report.passed).toBe(false);
         const figures = report.mismatches.filter((mismatch) => mismatch.code === 'free_figure' || mismatch.code === 'number_word');
         expect(figures.some((mismatch) => mismatch.start <= at && at + inserted.length <= mismatch.end)).toBe(true);
@@ -346,7 +346,7 @@ describe('properties of format /3 (section 8)', () => {
         const at = ahead ? token.index : token.index + token[0].length;
         const template = `${draft.slice(0, at)}${typed}${draft.slice(at)}`;
         const start = ahead ? token.index + 1 : token.index;
-        const report = verifyTemplate(template, content, []);
+        const report = verifyTemplate(template, content, NO_CASE_IDENTIFIERS);
         expect(report.passed, template).toBe(false);
         expect(
           report.mismatches.some((mismatch) => mismatch.code === 'fact_not_separated' && mismatch.start === start && mismatch.end === start + token[0].length),
@@ -367,7 +367,7 @@ describe('properties of format /3 (section 8)', () => {
         const typed = signs[char % signs.length] as string;
         const template = `${draft.slice(0, token.index)}${typed}${draft.slice(token.index)}`;
         const start = token.index + typed.length;
-        const report = verifyTemplate(template, content, []);
+        const report = verifyTemplate(template, content, NO_CASE_IDENTIFIERS);
         expect(report.passed, template).toBe(false);
         expect(
           report.mismatches.some((mismatch) => mismatch.code === 'fact_not_separated' && mismatch.start === start && mismatch.end === start + token[0].length),
@@ -409,7 +409,7 @@ describe('properties of format /3 (section 8)', () => {
         const template = `For ${tokens.map((each) => each.token).join(' and ')}, the remittances show ${fact} [3].`;
         const covered = new Set(tokens.flatMap((each) => each.rows));
         const covering = rows.every((row) => covered.has(row));
-        expect(contradicted(template, verifyTemplate(template, content, [])).includes(fact)).toBe(!covering);
+        expect(contradicted(template, verifyTemplate(template, content, NO_CASE_IDENTIFIERS)).includes(fact)).toBe(!covering);
       }),
       { numRuns: 60 },
     );
@@ -433,9 +433,9 @@ describe('properties of format /3 (section 8)', () => {
         fc.pre(ids.length > 0);
         const fact = factPlaceholder(ids[pick % ids.length] as string);
         const plain = `The schedule states ${fact} here [3].`;
-        expect(contradicted(plain, verifyTemplate(plain, content, []))).toEqual([]);
+        expect(contradicted(plain, verifyTemplate(plain, content, NO_CASE_IDENTIFIERS))).toEqual([]);
         const template = first ? `${cue[0]?.toUpperCase() ?? ''}${cue.slice(1)}, the schedule states ${fact} here [3].` : `The schedule states ${fact} here, ${cue} [3].`;
-        expect(contradicted(template, verifyTemplate(template, content, []))).toEqual([fact]);
+        expect(contradicted(template, verifyTemplate(template, content, NO_CASE_IDENTIFIERS))).toEqual([fact]);
       }),
       { numRuns: 60 },
     );
@@ -444,7 +444,7 @@ describe('properties of format /3 (section 8)', () => {
 
 describe('pass 2: contradiction, both directions (CAS-54)', () => {
   const several = FACT_CONTENTS.severalCodes();
-  const check = (template: string, content: PacketContent = several) => verifyTemplate(template, content, []);
+  const check = (template: string, content: PacketContent = several) => verifyTemplate(template, content, NO_CASE_IDENTIFIERS);
 
   it('fails a free-text role cue that names a role the fact does not hold, and passes one that names its own', () => {
     for (const [template, content] of [

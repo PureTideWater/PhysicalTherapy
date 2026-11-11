@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { codeTokens, figureInQuote, figureSpans, inQuote, normalized, readAmount, readDate, readPercent, readYear, standsAlone, tokenInQuote, tokenSpans, wholeInQuote } from './figures';
-import { dateForms } from './redact';
+import { dateForms } from '@tp/redact';
 
 /** Code reads what a model copied; a model never produces an amount or a date (CLAUDE.md, rule 1). */
 

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { type DocumentStatus, type PracticeCipher, type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, recordAuditEvent } from '@tp/db/runtime';
 import { type FigureCheck, type LedgerEntry, type ProofLevel, type ReportReconciliation, type StoredStatement, entriesById, ratioText, recomputeStatement, reportReconciliation, roiStatementCsv } from '@tp/ledger';
-import { centsToString, parseCents, sumCents } from '@tp/money';
+import { centsToString, negateCents, parseCents, sumCents } from '@tp/money';
 import {
   type CorrectionKind,
   type LineCorrection,
@@ -14,12 +14,13 @@ import {
   lineCorrections,
   practiceLedgerSettings,
   practiceLedgerTotals,
+  reportedInterest,
   storedStatement,
   unmatchedItems,
 } from '@tp/worker/ledger';
 
 import { type ListPage, pageWindow } from '../http/paging';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 
 /**
  * The Reconciliation screen's and the ROI statements' reads (PRD 7, Reconciliation: "ERA to posting to
@@ -139,6 +140,12 @@ export interface MatchView {
   /** A PLB recoupment or interest (provider adjustment), or a reversing claim. */
   readonly source: 'plb' | 'reversal' | null;
   /**
+   * An interest match whose own entry of stage interest is below zero: interest the payer took back (docs/adr/0084). Read by
+   * that entry's sign, never its corrections', so a paid entry a specialist adjusted down, or one whose match was reversed,
+   * still reads as paid; one PLB L6 may carry both. False for every other match.
+   */
+  readonly takesBack: boolean;
+  /**
    * A standing claim match read in payment terms (docs/adr/0067), or null for any other match: how it reads beside
    * its stored outcome, which way the allowed amount moved from the baseline it was decided against, and the
    * payer's payment increase it carried (text cents).
@@ -224,6 +231,20 @@ export function correctionView(line: LineCorrection | undefined, phi: boolean): 
 /** Whether a case shows "Payer corrected; balance is the patient's": the worker's one rule (@tp/worker/ledger casePatientBalance), which the audit report reads too. */
 export { casePatientBalance };
 
+/**
+ * One remittance in which the claims of a chain the case line is matched to report interest (AMT I) netting to other than
+ * zero, from stored rows (@tp/worker/ledger reportedInterest; docs/adr/0084): shown as reported, counted nowhere. The amount
+ * is the net's size, as text cents; `takenBack` when the net is below zero.
+ */
+export interface ReportedInterestView {
+  readonly remittanceId: string;
+  readonly trace: string;
+  readonly payerName: string;
+  readonly paidOn: string;
+  readonly amountCents: string;
+  readonly takenBack: boolean;
+}
+
 /** A case line's linkage: the remittance that reprocessed it (ERA), its posting and its deposit, and its entries. */
 export interface LinkageLine {
   readonly caseId: string;
@@ -237,6 +258,8 @@ export interface LinkageLine {
   readonly deposits: readonly MatchView[];
   readonly recoupments: readonly MatchView[];
   readonly interest: readonly MatchView[];
+  /** The interest its chains' claims report (AMT I), one row per chain and remittance, in payment order: counted nowhere. */
+  readonly reportedInterest: readonly ReportedInterestView[];
   readonly entries: readonly EntryView[];
   /**
    * What a payer response accepted that the remittance reprocessing the line paid only in part, as
@@ -277,13 +300,15 @@ interface MatchRow {
   readonly deposited_on: string | null;
   readonly eft_cents: string | null;
   readonly eft_batch: string | null;
+  readonly takes_back: boolean;
 }
 
 const MATCH_SELECT = `SELECT m.id, m.practice_id, m.kind, m.claim_id, m.posting_row_id, m.eft_row_id, m.provider_adjustment_id, m.remittance_id, m.service_line_id, m.outcome, m.level, m.allocated,
          m.matched_by, mu.email AS matched_by_email, m.matched_at, m.reversed_at, ru.email AS reversed_by_email, m.reversal_reason,
          r.trn02, r.bpr16_date::text AS paid_on, r.payer_name,
          p.check_or_trace AS posting_reference, p.posted_on::text AS posted_on, p.amount_cents::text AS posting_cents, p.batch AS posting_batch,
-         e.trace AS eft_reference, e.deposited_on::text AS deposited_on, e.amount_cents::text AS eft_cents, e.batch_reference AS eft_batch
+         e.trace AS eft_reference, e.deposited_on::text AS deposited_on, e.amount_cents::text AS eft_cents, e.batch_reference AS eft_batch,
+         (m.kind = 'interest' AND coalesce((SELECT i.amount_cents < 0 FROM ledger_entry i WHERE i.match_id = m.id AND i.stage = 'interest' ORDER BY i.seq LIMIT 1), false)) AS takes_back
     FROM ledger_match m JOIN remittance r ON r.id = m.remittance_id
     LEFT JOIN posting_row p ON p.id = m.posting_row_id LEFT JOIN eft_row e ON e.id = m.eft_row_id
     LEFT JOIN "user" mu ON mu.id = m.matched_by LEFT JOIN "user" ru ON ru.id = m.reversed_by`;
@@ -318,6 +343,7 @@ function matchOf(row: MatchRow, cipher: PracticeCipher | null, read?: MatchCorre
     postingRowId: row.posting_row_id,
     eftRowId: row.eft_row_id,
     source: row.kind === 'recoupment' || row.kind === 'interest' ? (row.provider_adjustment_id === null ? 'reversal' : 'plb') : null,
+    takesBack: row.takes_back,
     reading: read?.reading ?? null,
     allowed: read?.allowed ?? null,
     paymentIncreaseCents: read === undefined ? null : centsToString(read.change.paymentIncreaseCents),
@@ -447,7 +473,7 @@ export interface ReconciliationData {
  * stages in one transaction, and at READ COMMITTED one that commits between those statements would show its figure
  * beside the lines' earlier stages.
  */
-export async function reconciliation(scope: Scope, services: Services, practiceId: string, query: ReconciliationQuery, phi: boolean, requestId: string): Promise<ReconciliationData> {
+export async function reconciliation(scope: Scope, services: SignedInServices, practiceId: string, query: ReconciliationQuery, phi: boolean, requestId: string): Promise<ReconciliationData> {
   const { rows: isolation } = await scope.client.query<{ level: string }>("SELECT current_setting('transaction_isolation') AS level");
   if (isolation[0]?.level !== 'repeatable read' && isolation[0]?.level !== 'serializable') {
     throw new Error('the ledger is read in one snapshot: open the scope with oneSnapshot');
@@ -479,15 +505,17 @@ export async function reconciliation(scope: Scope, services: Services, practiceI
     (row) => ({ objectId: row.service_line_id, practiceId: row.practice_id }),
   );
   const lineIds = lines.map((line) => line.service_line_id);
-  const lineMatches = (await scope.client.query<MatchRow>(`${MATCH_SELECT} WHERE m.practice_id = $1 AND m.service_line_id = ANY ($2::uuid[]) ORDER BY m.matched_at, m.id`, [practiceId, lineIds])).rows;
+  const lineMatches = (await scope.client.query<MatchRow>(`${MATCH_SELECT} WHERE m.practice_id = $1 AND m.service_line_id = ANY ($2::uuid[]) ORDER BY m.seq`, [practiceId, lineIds])).rows;
   const remittances = [...new Set(lineMatches.filter((match) => match.kind === 'claim').map((match) => match.remittance_id))];
   const cash = (
-    await scope.client.query<MatchRow>(`${MATCH_SELECT} WHERE m.practice_id = $1 AND m.kind IN ('posting', 'deposit') AND m.remittance_id = ANY ($2::uuid[]) ORDER BY m.matched_at, m.id`, [practiceId, remittances])
+    await scope.client.query<MatchRow>(`${MATCH_SELECT} WHERE m.practice_id = $1 AND m.kind IN ('posting', 'deposit') AND m.remittance_id = ANY ($2::uuid[]) ORDER BY m.seq`, [practiceId, remittances])
   ).rows;
   const lineEntries = (await scope.client.query<EntryRow>(`${ENTRY_SELECT} WHERE e.practice_id = $1 AND e.service_line_id = ANY ($2::uuid[]) ORDER BY e.seq`, [practiceId, lineIds])).rows;
   const shortfalls = await approvalShortfalls(scope, practiceId, lineIds);
   // The lines' corrections in payment terms, from the same rows (their PR adjustments read with the lines above).
   const corrections = await lineCorrections(scope, practiceId, lineIds);
+  // The interest the lines' chains report in AMT I, grouped by the reconcile's own chain walk, from the same snapshot.
+  const reported = await reportedInterest(scope, practiceId, lineIds);
   const linkage: LinkageLine[] = lines.map((line) => {
     const correction = corrections.get(line.service_line_id);
     const readings = new Map((correction?.matches ?? []).map((match) => [match.matchId, match]));
@@ -507,6 +535,16 @@ export async function reconciliation(scope: Scope, services: Services, practiceI
       deposits: proving.filter((match) => match.kind === 'deposit').map((match) => matchOf(match, cipher)),
       recoupments: own.filter((match) => match.kind === 'recoupment').map((match) => matchOf(match, cipher)),
       interest: own.filter((match) => match.kind === 'interest').map((match) => matchOf(match, cipher)),
+      reportedInterest: reported
+        .filter((row) => row.serviceLineId === line.service_line_id)
+        .map((row) => ({
+          remittanceId: row.remittanceId,
+          trace: row.trace,
+          payerName: row.payerName,
+          paidOn: row.paidOn,
+          amountCents: centsToString(row.netCents < 0n ? negateCents(row.netCents) : row.netCents),
+          takenBack: row.netCents < 0n,
+        })),
       entries: lineEntries.filter((entry) => entry.service_line_id === line.service_line_id).map((entry) => entryOf(entry, cipher)),
       shortfallCents: shortfallText(shortfalls, line.service_line_id),
       correction: correctionView(correction, phi),
@@ -827,7 +865,7 @@ export class StatementFileIntegrityError extends Error {
 }
 
 /** The printed PDF, checked against its SHA-256, the download audited; undefined when the statement is not printed. */
-export async function statementPdf(scope: Scope, services: Services, practiceId: string, statementId: string, requestId: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
+export async function statementPdf(scope: Scope, services: SignedInServices, practiceId: string, statementId: string, requestId: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
   const { rows } = await scope.client.query<{ document_key: string | null; pdf_sha256: string | null }>('SELECT document_key, pdf_sha256 FROM roi_statement WHERE id = $1 AND practice_id = $2', [
     statementId,
     practiceId,

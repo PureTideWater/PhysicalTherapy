@@ -113,7 +113,7 @@ async function scenario(id: string, proofLevel: 'posted' | 'deposited'): Promise
 /** A fixed UUID no row holds, the same on both sides (so a refusal's inputs are the same). */
 const NO_ROW = '00000000-0000-4000-8000-000000000049';
 
-const CLAIM_MATCH = "SELECT id FROM ledger_match WHERE kind = 'claim' AND reversed_at IS NULL ORDER BY matched_at, id";
+const CLAIM_MATCH = "SELECT id FROM ledger_match WHERE kind = 'claim' AND reversed_at IS NULL ORDER BY seq";
 
 async function led07(): Promise<Sequence> {
   const practice = await scenario('LED-07', 'posted');
@@ -129,7 +129,7 @@ async function led07(): Promise<Sequence> {
     { actorId: manager, run: async (c) => reverseMatch(c, { practiceId, matchId: await idOf(c.scope, "SELECT id FROM ledger_match WHERE kind = 'posting' AND reversed_at IS NULL"), reason: 'SYNTHETIC wrong check' }) },
     { actorId: w.specialist, run: async (c) => adjustEntry(c, { practiceId, entryId: await idOf(c.scope, "SELECT id FROM ledger_entry WHERE stage = 'approved'"), amountCents: cents(-1000n), reason: 'SYNTHETIC review' }) },
     { actorId: manager, run: async (c) => reverseMatch(c, { practiceId, matchId: await idOf(c.scope, CLAIM_MATCH), reason: 'SYNTHETIC not this claim' }) },
-    { actorId: manager, run: async (c) => reverseMatch(c, { practiceId, matchId: await idOf(c.scope, "SELECT id FROM ledger_match WHERE kind = 'claim' ORDER BY matched_at, id LIMIT 1"), reason: 'again' }) },
+    { actorId: manager, run: async (c) => reverseMatch(c, { practiceId, matchId: await idOf(c.scope, "SELECT id FROM ledger_match WHERE kind = 'claim' ORDER BY seq LIMIT 1"), reason: 'again' }) },
   ];
   return { practice, steps };
 }
@@ -140,8 +140,8 @@ async function led02(): Promise<Sequence> {
   await w.reconcile(practice, { documentId: await w.stageExport(practice, 'LED-05/eft-export.csv', 'eft_export', bytes) });
   const { practiceId, manager } = practice;
   const eft = (scope: Scope, amount: string) => idOf(scope, 'SELECT id FROM eft_row WHERE amount_cents = $1', [amount]);
-  const adjusted = (scope: Scope) => idOf(scope, "SELECT remittance_id AS id FROM ledger_match WHERE kind = 'claim' ORDER BY matched_at, id LIMIT 1");
-  const correction = (scope: Scope) => idOf(scope, "SELECT claim_id AS id FROM ledger_match WHERE kind = 'claim' ORDER BY matched_at, id LIMIT 1");
+  const adjusted = (scope: Scope) => idOf(scope, "SELECT remittance_id AS id FROM ledger_match WHERE kind = 'claim' ORDER BY seq LIMIT 1");
+  const correction = (scope: Scope) => idOf(scope, "SELECT claim_id AS id FROM ledger_match WHERE kind = 'claim' ORDER BY seq LIMIT 1");
   const line = (scope: Scope) => idOf(scope, 'SELECT service_line_id AS id FROM case_line');
   const steps: ManualStep[] = [
     { actorId: manager, run: async (c) => matchDepositByHand(c, { practiceId, eftRowId: await eft(c.scope, '2999'), remittanceId: await adjusted(c.scope) }) },

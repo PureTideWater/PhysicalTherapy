@@ -3,9 +3,11 @@ import path from 'node:path';
 
 import { type Page, expect, test } from '@playwright/test';
 
-import { SYNTHETIC_PRACTICES, personaEmail, personaPassword } from '../scripts/synthetic-personas';
+import { SYNTHETIC_PRACTICES, personaEmail, personaPassword, personaTotpCode } from '../scripts/synthetic-personas';
 import { E2E_DEV_AUTH_DIR } from './env';
 import { enterPassword, practiceId, refusal, signInWithTotp, withDatabase } from './helpers';
+import { E2E_SUPPORT_EMAIL, sendPasswordNoticesOnce } from './mail';
+import { type OutboxMessage, outboxFor } from './outbox';
 
 /**
  * Sign-in and sessions in the browser (PRD 6 and 7; docs/product/sessions.md; test matrix SEC-15):
@@ -151,11 +153,19 @@ function arrival(page: Page) {
   return page.locator('[data-slot="arrival-focus"]');
 }
 
-test('a forgotten password is reset by emailed code, and the second factor is still asked (SGN-05, SGN-06, SGN-07)', async ({ page }) => {
+/** The password-changed emails the platform sent an address, oldest first (docs/adr/0091; SGN-16). SYNTHETIC accounts only. */
+function passwordChangedFor(email: string): OutboxMessage[] {
+  return outboxFor(email).filter((message) => message.subject === 'Your password was changed | PaidWhole');
+}
+
+test('a forgotten password is reset by emailed code, the account’s address is told, and the second factor is still asked (SGN-05, SGN-06, SGN-07, SGN-16)', async ({ page }) => {
   const email = personaEmail('reset');
   const chosen = 'Synthetic-reset-Chosen-Pass-2026!';
   const urls: string[] = [];
   page.on('framenavigated', (frame) => urls.push(frame.url()));
+  // Whatever an earlier try of this test left queued goes first, so the reset below is told exactly once.
+  await sendPasswordNoticesOnce();
+  const told = passwordChangedFor(email).length;
   await requestReset(page, email);
   await expect(arrival(page)).toBeFocused();
   await expect(arrival(page)).toHaveText(/^Check your email.*If an account uses the address you typed, we sent it a six-digit code\./);
@@ -176,6 +186,25 @@ test('a forgotten password is reset by emailed code, and the second factor is st
   await expect(arrival(page)).toBeFocused();
   await expect(arrival(page)).toContainText('Your email is filled in: sign in with your new password and the code from your authenticator app.');
   await expect(page.getByLabel('Email')).toHaveValue(email);
+  // The reset queued one password-changed email in its own transaction; the platform's job sends it to the account's
+  // own address: the change's minute in UTC; that every session ended and, the persona having a second factor enrolled,
+  // that signing in still asks for it; to ignore it if they made the change; if not, the support address to write to
+  // from the address they sign in with, and their organization's administrator to tell; a reply goes to that support
+  // address too; and no link (SGN-16; docs/adr/0091).
+  expect((await sendPasswordNoticesOnce()).sent).toBeGreaterThanOrEqual(1);
+  expect(passwordChangedFor(email)).toHaveLength(told + 1);
+  const notice = passwordChangedFor(email).at(-1);
+  expect(notice?.to).toEqual([email]);
+  expect(notice?.body).toMatch(/The password for your PaidWhole account was changed at \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC, with a code sent to this address\./);
+  expect(notice?.body).toContain('Every session of this account has ended. Signing in still asks for your authenticator code or hardware key.');
+  expect(notice?.body).toContain('If you changed it, ignore this email.');
+  expect(notice?.body).toContain(`If you did not, write to ${E2E_SUPPORT_EMAIL} now from the address you sign in with, and tell your organization’s administrator. We will help you secure the account.`);
+  expect(notice?.replyTo).toBe(E2E_SUPPORT_EMAIL);
+  expect(notice?.body).not.toMatch(/https?:/);
+  expect(notice?.html).not.toMatch(/<a[\s>]|href=/i);
+  // A second run sends nothing more.
+  await sendPasswordNoticesOnce();
+  expect(passwordChangedFor(email)).toHaveLength(told + 1);
   // The old password no longer opens the account.
   await page.getByLabel('Password', { exact: true }).fill(personaPassword('reset'));
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -186,6 +215,69 @@ test('a forgotten password is reset by emailed code, and the second factor is st
   await expect(page.getByLabel('Six-digit code')).toBeVisible();
   // The address was never in a URL.
   expect(urls.some((url) => url.includes('@') || url.includes(encodeURIComponent('@')))).toBe(false);
+});
+
+/** Answers the code step with the persona's current code, and the next step's when a parallel sign-in used this one. */
+async function answerCode(page: Page, key: string): Promise<void> {
+  const at = Date.now();
+  await page.getByLabel('Six-digit code').fill(personaTotpCode(key, new Date(at)));
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  const left = page.waitForURL((url) => url.pathname !== '/sign-in/mfa').then(() => true);
+  const refused = refusal(page)
+    .filter({ hasText: 'That did not match' })
+    .waitFor()
+    .then(
+      () => false,
+      () => true,
+    );
+  if (!(await Promise.race([left, refused])) && new URL(page.url()).pathname === '/sign-in/mfa') {
+    await page.getByLabel('Six-digit code').fill(personaTotpCode(key, new Date(at + 30_000)));
+    await page.getByRole('button', { name: 'Sign in' }).click();
+  }
+  await left;
+}
+
+test('a code step begun before a password reset is closed after it, in another browser, and a new sign-in opens the session (SGN-17)', async ({ page, browser }) => {
+  // Its own persona: the specs run in parallel, and this one changes the password.
+  const key = 'reset-step';
+  const email = personaEmail(key);
+  const chosen = 'Synthetic-reset-After-Step-2026!';
+  // The first browser proves the password the account holds now (the seeded one, or the one an earlier try of this
+  // test chose) and stops at the code step.
+  await enterPassword(page, key);
+  if (!(await page.waitForURL(/\/sign-in\/mfa$/, { timeout: 5000 }).then(() => true, () => false))) {
+    await enterPassword(page, key, chosen);
+  }
+  await expect(page).toHaveURL(/\/sign-in\/mfa$/);
+  // A second browser resets the password with the emailed code.
+  const other = await browser.newContext();
+  try {
+    const second = await other.newPage();
+    const before = resetCodesFor(email).length;
+    await requestReset(second, email);
+    await expect.poll(() => resetCodesFor(email).length).toBeGreaterThan(before);
+    await second.getByLabel('Six-digit code').fill(resetCodesFor(email).at(-1) ?? '');
+    await second.getByLabel('New password', { exact: true }).fill(chosen);
+    await second.getByLabel('New password again').fill(chosen);
+    await second.getByRole('button', { name: 'Save password' }).click();
+    await expect(second).toHaveURL(/\/sign-in\?reason=password_reset$/);
+    // The first browser's step proved the old password: a right code no longer opens a session from it.
+    await answerCode(page, key);
+    await expect(page).toHaveURL(/\/sign-in\?reason=step_expired$/);
+    // The step's own closing words, the address kept for the restart (docs/adr/0081): nothing new is said.
+    await expect(arrival(page)).toContainText('That sign-in step closed. Your email is filled in: type your password to start again.');
+    await expect(page.getByLabel('Email')).toHaveValue(email);
+    await page.goto('/account/devices');
+    await expect(page).toHaveURL(/\/sign-in$/);
+    // A sign-in begun after the reset, with the new password and a code, opens one.
+    await enterPassword(page, key, chosen);
+    await expect(page).toHaveURL(/\/sign-in\/mfa$/);
+    await answerCode(page, key);
+    await page.goto('/account/devices');
+    await expect(page).toHaveURL(/\/account\/devices$/);
+  } finally {
+    await other.close();
+  }
 });
 
 test('Use a different email ends the reset step at any time, with the address not kept (SGN-06, review UXR-01)', async ({ page }) => {

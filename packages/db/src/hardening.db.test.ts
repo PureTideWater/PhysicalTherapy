@@ -352,7 +352,8 @@ describe('the audit log', () => {
     // And, since migration 20261107090000, the three the mail record writes: a notice no one received, and the
     // screening stream's pause and resume (audit #76), which only its definer functions write; since migration
     // 20261108090000, PaidWhole's suspension and reinstatement of an organization, which only
-    // console_set_organization_status writes (docs/adr/0080).
+    // console_set_organization_status writes (docs/adr/0080); since migration 20261111090000, the password-changed
+    // notice's sent and undelivered records, which only the operator's outbox functions write (docs/adr/0091).
     for (const reserved of [
       'notice_sent',
       'security_event',
@@ -363,6 +364,8 @@ describe('the audit log', () => {
       'mail_stream_resumed',
       'organization_suspended',
       'organization_reinstated',
+      'password_notice_sent',
+      'password_notice_undelivered',
     ]) {
       expect(await insert('user', reserved), reserved).toBe('42501');
       expect(await insert('service', reserved), reserved).toBe('42501');

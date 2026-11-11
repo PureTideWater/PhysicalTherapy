@@ -13,6 +13,8 @@ import {
   batchProblems,
   heldWith,
   leaveAsks,
+  putAnswer,
+  refusalWords,
   startingKind,
   stillSending,
   waitingFor,
@@ -334,5 +336,51 @@ describe('the drop zone’s heading', () => {
     const html = rendered({ kinds: [ANSI] });
     expect(html).toMatch(/<h2 id="[^"]+" class="[^"]*">Choose 835 files to upload<\/h2>/);
     expect(html).not.toContain('Drop ');
+  });
+});
+
+/**
+ * A request the server refused as busy (docs/adr/0092, the amendment of 2026-11-11; CAS-57): an upload's request, its
+ * completion or its retry waited past the web's lock_timeout. The words never ask for a reload, which would drop the
+ * files on screen, and this server's own receiver refused as busy is never read as "bytes already stored".
+ */
+describe('a request refused as busy', () => {
+  const BUSY = 'The records this upload needs are being updated. Try again in a few minutes.';
+
+  it('says so, claiming nothing about what was sent, and never asks for a reload', () => {
+    expect(refusalWords(409, { status: 'busy' })).toBe(BUSY);
+    expect(refusalWords(409, { status: 'busy' })).not.toContain('Reload');
+  });
+
+  it('keeps every other refusal’s words: the first issue’s, a suspended organization’s reason, the role’s, and the plain refusal', () => {
+    expect(refusalWords(400, { status: 'invalid', issues: [{ field: 'files', message: 'SYNTHETIC issue words' }] })).toBe('SYNTHETIC issue words');
+    expect(refusalWords(403, { status: 'suspended', reason: 'SYNTHETIC reason' })).toBe('Not started: SYNTHETIC reason.');
+    expect(refusalWords(403, { status: 'forbidden' })).toBe('Your role cannot upload files here.');
+    expect(refusalWords(409, { status: 'duplicate' })).toBe('The server refused the request. Reload the page and try again.');
+    expect(refusalWords(500, {})).toBe('The server refused the request. Reload the page and try again.');
+  });
+
+  it('says of the same request still running that the file is already being sent, never that records are being updated', () => {
+    expect(refusalWords(409, { status: 'busy', what: 'request' })).toBe('This file is already being sent. Retry it in a few minutes.');
+    expect(refusalWords(409, { status: 'busy', what: 'records' })).toBe(BUSY);
+    // Any other word, or none, is the records' sentence: the words are fixed, and nothing of the answer is shown.
+    expect(refusalWords(409, { status: 'busy', what: 'SYNTHETIC other words' })).toBe(BUSY);
+  });
+
+  it('reads a PUT’s 409 as bytes already stored, unless its body is the busy refusal of this server’s own receiver', () => {
+    const stored = { bytes: 'stored' };
+    expect(putAnswer(200, '')).toEqual(stored);
+    expect(putAnswer(204, '')).toEqual(stored);
+    // A presigned PUT's condition (its body is never JSON), and the receiver's answer to a request key used before.
+    expect(putAnswer(412, '<Error><Code>PreconditionFailed</Code></Error>')).toEqual(stored);
+    expect(putAnswer(409, '<Error><Code>ConditionalRequestConflict</Code></Error>')).toEqual(stored);
+    expect(putAnswer(409, JSON.stringify({ status: 'duplicate' }))).toEqual(stored);
+    expect(putAnswer(409, '')).toEqual(stored);
+    expect(putAnswer(409, 'null')).toEqual(stored);
+    // Nothing was stored: the file's row shows the refusal and its Retry.
+    expect(putAnswer(409, JSON.stringify({ status: 'busy', what: 'records' }))).toEqual({ bytes: 'busy', words: BUSY });
+    expect(putAnswer(409, JSON.stringify({ status: 'busy', what: 'request' }))).toEqual({ bytes: 'busy', words: 'This file is already being sent. Retry it in a few minutes.' });
+    expect(putAnswer(403, JSON.stringify({ status: 'busy', what: 'records' }))).toEqual({ bytes: 'refused' });
+    expect(putAnswer(500, '')).toEqual({ bytes: 'refused' });
   });
 });

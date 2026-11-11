@@ -168,9 +168,12 @@ function loggingScope(scope: PracticeScope<ScopeClient>, sent: SentQuery[], fail
   return new Proxy(scope, { get: (target, key) => (key === 'client' ? client : forward(target, key)) });
 }
 
-/** The chain readers' practice-wide queries, by a phrase of their text (reconcile/remittances.ts and ledger.ts). */
+/**
+ * The chain readers' practice-wide queries, by a phrase of their text (reconcile/remittances.ts and ledger.ts). The
+ * matches are read in the order the ledger made them (ledger_match.seq; docs/adr/0084).
+ */
 const CHAIN_ORDER_SENT = "m.kind IN ('claim', 'recoupment')";
-const LEDGER_MATCHES_SENT = 'FROM ledger_match m WHERE m.practice_id = $1 ORDER BY m.matched_at, m.id';
+const LEDGER_MATCHES_SENT = 'FROM ledger_match m WHERE m.practice_id = $1 ORDER BY m.seq';
 const CLAIM_LINES_SENT = 'WITH RECURSIVE named';
 const REVERSALS_SENT = "v.claim_status_code = '22' AND v.reversal_of_claim_id";
 

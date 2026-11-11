@@ -24,6 +24,16 @@ describe('the mail streams', () => {
     // Every kind the record holds is one a stream carries; a stream refuses another's kind.
     expect([...new Set(Object.values(MAIL_STREAM_KINDS).flat())].sort()).toEqual([...MAIL_KINDS].sort());
     expect(() => mailTags({ stream: 'screening', kind: 'digest', subjectId: notice })).toThrow(MailTagError);
+    // The password-changed notice (docs/adr/0091): the transactional stream alone, its notice the subject, its user the recipient.
+    expect(mailTags({ stream: 'transactional', kind: 'password_changed', subjectId: notice, recipientUserId: notice })).toEqual([
+      { Name: 'tp_kind', Value: 'password_changed' },
+      { Name: 'tp_subject', Value: notice },
+      { Name: 'tp_recipient', Value: notice },
+    ]);
+    for (const stream of ['notices', 'screening'] as const) {
+      expect(() => mailTags({ stream, kind: 'password_changed', subjectId: notice })).toThrow(MailTagError);
+    }
+    expect(() => mailTags({ stream: 'transactional', kind: 'password_changed', recipientUserId: notice })).toThrow(MailTagError);
     expect(() => mailTags({ stream: 'notices', kind: 'dunning', subjectId: 'a b' })).toThrow(new MailTagError('a mail tag holds an opaque ID or a code only; nothing was sent'));
   });
 
@@ -36,6 +46,8 @@ describe('the mail streams', () => {
       invitationUndelivered: 'INVITATION_UNDELIVERED',
       probeMissed: 'MAIL_PROBE_MISSED',
       eventUnreadable: 'MAIL_EVENT_UNREADABLE',
+      // A password-changed email not delivered, or not sent within 24 hours (docs/adr/0091, D9): it pages.
+      passwordNoticeUndelivered: 'PASSWORD_NOTICE_UNDELIVERED',
     });
   });
 

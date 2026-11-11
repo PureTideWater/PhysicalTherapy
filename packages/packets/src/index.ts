@@ -209,11 +209,13 @@ export {
   sentenceSpans,
 } from './scan';
 export {
+  type CaseIdentifiers,
   type CheckedFigure,
   type FigureNeeds,
   MISMATCH_CODES,
   type Mismatch,
   type MismatchCode,
+  NO_CASE_IDENTIFIERS,
   type TemplateReading,
   type VerifierReport,
   type VerifierReportV2,

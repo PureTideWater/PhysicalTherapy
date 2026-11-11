@@ -25,8 +25,9 @@ import { newTotpSecret, totpUri, verifyTotp } from './totp';
  * (each code once), and real WebAuthn verification with user verification required, so a browser's
  * virtual authenticator can exercise the hardware-key path. Challenges last three minutes (the user
  * pool's sign-in session) and grants fifteen (its access tokens), from the constants the sign-in
- * steps state and infra pins (step-limits.ts). A forgotten password is reset by a mailed six-digit code, as Cognito's
- * ForgotPassword does it: kept hashed, for the code's hour, used once, five tries, a new request replacing it.
+ * steps state and infra pins (step-limits.ts). A forgotten password is reset by a mailed six-digit code, modelled on
+ * Cognito's ForgotPassword: kept hashed, for the code's hour, used once, five tries. Here a new request replaces the
+ * earlier code; whether Cognito's does, and its code's hour, are unverified (docs/adr/0081 A3, O-8).
  */
 
 export interface WebAuthnSettings {
@@ -47,7 +48,27 @@ export interface DevAuthOptions {
   readonly deliverResetCode?: (email: string, code: string) => Promise<void>;
   readonly now?: () => Date;
   readonly scryptCost?: ScryptCost;
+  /** Faults a test switches on (docs/adr/0093, D6 and D9); none by default, and none in development. */
+  readonly faults?: DevFaults;
 }
+
+/**
+ * What a test makes the twin do that Cognito can do and the twin otherwise never does. Each is read at the call, so a
+ * test switches it on and off around one step.
+ */
+export interface DevFaults {
+  /**
+   * A reset confirmation whose answer is lost (docs/adr/0093, D9): 'after' applies the reset and then answers
+   * outcome_unknown (the provider changed the password and its answer never arrived); 'before' answers outcome_unknown
+   * and changes nothing (the request never arrived). Undefined: the twin answers as it always has.
+   */
+  readonly lostResetAnswer?: () => 'after' | 'before' | undefined;
+  /** True: removeHardwareKey removes nothing and answers false (docs/adr/0093, D6). */
+  readonly keyRemovalFails?: () => boolean;
+}
+
+/** The name the twin gives a lost answer: no provider error has it, so a log line that carries it names the twin. */
+export const DEV_LOST_ANSWER = 'DevLostAnswer';
 
 const CHALLENGE_MS = PROVIDER_CHALLENGE_SECONDS * 1000;
 const GRANT_MS = PROVIDER_GRANT_SECONDS * 1000;
@@ -293,6 +314,15 @@ export class DevAuthProvider implements AuthProvider {
     return true;
   }
 
+  async removeHardwareKey(grant: string, credentialId: string): Promise<boolean> {
+    const record = await this.granted(grant);
+    if (record === undefined || this.options.faults?.keyRemovalFails?.() === true) {
+      return false;
+    }
+    const updated = await this.options.store.update(record.sub, (current) => ({ ...current, credentials: current.credentials.filter((credential) => credential.id !== credentialId) }));
+    return updated?.credentials.every((credential) => credential.id !== credentialId) === true;
+  }
+
   release(): Promise<void> {
     return Promise.resolve();
   }
@@ -357,6 +387,15 @@ export class DevAuthProvider implements AuthProvider {
   }
 
   async confirmPasswordReset(email: string, code: string, password: string): Promise<PasswordResetResult> {
+    const lost = this.options.faults?.lostResetAnswer?.();
+    if (lost === 'before') {
+      return { kind: 'outcome_unknown', code: DEV_LOST_ANSWER };
+    }
+    const result = await this.confirmed(email, code, password);
+    return lost === 'after' ? { kind: 'outcome_unknown', code: DEV_LOST_ANSWER } : result;
+  }
+
+  private async confirmed(email: string, code: string, password: string): Promise<PasswordResetResult> {
     const problems = passwordProblems(password);
     if (problems.length > 0) {
       return { kind: 'invalid_password', problems };

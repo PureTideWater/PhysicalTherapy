@@ -1532,6 +1532,29 @@ reconciliation-001's milestone check names the exception. Lane A's PR 7 writes t
 - Stryker ships an ignorer that matches a single mutant.
 - fast-check, Stryker or Vitest fails a canary case on an upgrade.
 
+### Amendment (`co-001/packets-verifier-identifier-fold`, 2026-11-11): the verifier's reading for identifiers is mutated; the letter reader's matcher it reads through is not
+
+The packet verifier now reads a narrative for the case's identifiers through the letter reader's matcher
+([0047](0047-read-narratives-as-they-show-refuse-the-cases-identifiers-bound-ledger-corrections-and-give-them-and-the-regulation-to-the-specialist.md),
+amendment of this date), which moved to a package of its own, `@tp/redact`
+([0054](0054-match-model-figures-whole-and-in-role-read-letters-only-through-their-reader-hold-budgets-before-calls-and-serve-only-evaluated-prompts.md),
+amendment of this date).
+
+- **`packages/packets/src/verifier/identifiers.ts` is mutated** (the `verifier/**` glob of `MUTATE.packets`), in the
+  `packets-verifier` shard, with no survivor: the union of the two readings, the rules for tokens and dated figures and
+  the reading across a token are each held by a test of `packages/packets/src/verifier-identifiers.test.ts`.
+- **`packages/redact/src/redact.ts` is not in a mutate set.** This is an exception to "the verifier and what it reads"
+  above, and the reason is stated here so it is not read as an oversight. The file was never mutated in the gateway;
+  it is about 3,500 lines of patterns, which by `roles.ts`'s measure (1,917 mutants in 16.7 KB) is several thousand
+  mutants, each survivor needing a killing test or an equivalent a second reviewer records; and its tests are the
+  gateway's (unit, property and golden), which no packets run executes. Measuring it is an item of its own, proposed
+  to the build's orchestrator with this change. Until then the reader is held by those suites, by MOD-19's properties
+  (the generator of each written form is the oracle, so a form the matcher stops reading fails there) and by MOD-20's
+  differential.
+- **A change to the reader runs the packets shards.** `@tp/redact` is in the closure of `@tp/packets`
+  (`tools/stryker/affected.ts`), so a pull request that changes only the letter reader is measured in all of packets'
+  shards, which it was not before. That is the cost of one reader.
+
 ## Part 5 (`co-001/ci-pin-age`)
 
 ### Context

@@ -394,6 +394,17 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   ]),
   // Acting Lane B (co-001/web-ledger-try-lock; docs/adr/0092): a person's ledger action takes the ledger lock only if it is free.
   'CAS-56': none(8, 'The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding the lock: no file.', ['apps/web/src/lib/routes/reconciliation-routes.db.test.ts']),
+  'CAS-57': none(8, 'The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding a case’s row, a request key’s lock or a table: no file.', [
+    'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
+    'apps/web/src/lib/server/lock-timeout.test.ts',
+    'apps/web/src/lib/server/lock-timeout.db.test.ts',
+    'apps/web/src/lib/http/http.test.ts',
+    'apps/web/src/lib/http/next.test.ts',
+    'apps/web/src/lib/http/busy-words.test.ts',
+    'apps/web/src/components/action-form.test.tsx',
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/uploads/uploader.test.tsx',
+  ]),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
@@ -489,6 +500,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     ],
   },
   'LED-18': { completesIn: 9, build: workflow.led18, assertedBy: ['apps/worker/src/reconcile/payment-terms.db.test.ts', 'packages/ledger/src/payment.test.ts'] },
+  'LED-23': { completesIn: 9, build: workflow.led23, assertedBy: ['apps/web/e2e/ledger-interest.spec.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts', 'apps/worker/src/reconcile/interest.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts', 'packages/ledger/src/interest.test.ts'] },
+  'LED-24': { completesIn: 9, build: workflow.led24, assertedBy: ['apps/web/src/lib/routes/reconciliation-routes.db.test.ts', 'apps/worker/src/reconcile/interest.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts', 'packages/ledger/src/interest.test.ts'] },
+  'LED-25': none(9, 'database tests', ['apps/worker/src/reconcile/chain.db.test.ts', 'apps/worker/src/reconcile/chain.large.db.test.ts']),
   'SEC-01': none(1, 'The catalog test reads the migrated schema.', ['packages/db/src/catalog.db.test.ts']),
   'SEC-02': none(1, 'Cross-tenant tests are generated from the schema catalog and the route registry.', ['packages/db/src/cross-tenant.db.test.ts', 'apps/web/src/lib/routes/route-tests/define.ts']),
   'SEC-03': none(1, 'Grant expiry is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
@@ -822,9 +836,12 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // SDK 1.x on the Anthropic path: the client's tracing, logging and host held, extra headers refused (docs/adr/0048, amendment of 2026-11-01).
   'MOD-17': none(10, 'The client and the configuration are built in memory with a synthetic key, the SDK’s code is read where pnpm installed it, and a fake fetch answers each failure in memory; no file.', ['packages/model-gateway/src/providers/anthropic-client.test.ts', 'packages/model-gateway/src/config.test.ts']),
   'MOD-18': none(10, 'A fake fetch answers a synthetic message in memory; no request leaves the process; no file.', ['packages/model-gateway/src/providers/anthropic-client.test.ts']),
+  // The packet verifier reads a narrative for the case's identifiers through the letter reader's matcher (docs/adr/0047 and 0054, amendments of 2026-11-11).
+  'MOD-19': none(10, 'Narratives are generated in memory by the property test, which writes each identifier and so knows where it is; no file.', ['packages/packets/src/verifier-identifiers.test.ts', 'apps/worker/src/packets/packets.db.test.ts']),
+  'MOD-20': none(10, 'Narratives are generated in memory by the property test from pieces it holds; no file.', ['packages/packets/src/verifier-identifiers.test.ts', 'packages/packets/src/check-browser.test.ts', 'packages/redact/src/narrative.test.ts']),
   // The Social Security, phone and own-identifier forms the range fix exposed, closed (the orchestrator's rulings A, A' and B of 2026-11-07; docs/adr/0054, amendment of 2026-11-11).
   'MOD-21': none(10, 'Letters are written in memory by the tests, a property among them, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
-  'MOD-22': none(10, 'Letters are written in memory by the tests, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/model-gateway/src/confusables.test.ts']),
+  'MOD-22': none(10, 'Letters are written in memory by the tests, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/redact/src/confusables.test.ts']),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
   'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
   'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),
@@ -1111,6 +1128,37 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/http/http.test.ts',
     'apps/web/e2e/onboarding.spec.ts',
     'apps/web/e2e/sign-in.spec.ts',
+  ]),
+  // The password-changed email (co-001/password-changed-notice; docs/adr/0091).
+  'SGN-16': none(1, 'The notices are queued and sent against a synthetic database, to an in-memory sender or the local outbox; no file.', [
+    'packages/db/src/password-notice.db.test.ts',
+    'packages/db/src/mail.db.test.ts',
+    'packages/db/src/hardening.db.test.ts',
+    'apps/worker/src/platform/password-notices.test.ts',
+    'apps/worker/src/platform/password-notices.db.test.ts',
+    'apps/worker/src/platform/mail-events.db.test.ts',
+    'apps/worker/src/mail/mail.test.ts',
+    'packages/auth-mail/src/render.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/e2e/sign-in.spec.ts',
+    'infra/test/operator-role.test.ts',
+    'infra/test/mail-streams.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  // A sign-in step begun before a password reset, and a reset whose answer was lost (co-001/step-before-reset; docs/adr/0093).
+  'SGN-17': none(1, 'Synthetic personas reset their passwords and answer stale steps through the local identity provider against a synthetic database; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in.spec.ts',
+    'packages/db/src/sign-in-not-before.db.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  'SGN-18': none(1, 'A synthetic persona confirms a reset through a provider twin that loses its answer, and the Cognito classification runs on a fake client; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'packages/db/src/sign-in-not-before.db.test.ts',
+    'infra/test/monitoring.test.ts',
   ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
   // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).

@@ -102,6 +102,7 @@ export const MONEY_PACKAGES = [
   'packages/synth',
   'packages/billing',
   'packages/model-gateway',
+  'packages/redact',
 ];
 const MONEY_MESSAGE = 'Money is bigint cents and rates are Decimal (packages/money/README.md).';
 const moneySyntax = [

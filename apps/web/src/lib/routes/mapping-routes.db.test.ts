@@ -15,7 +15,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import { csrfTokenFor } from '../http/csrf';
 import type { CookieJar, MutationResult, Outcome, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
@@ -111,7 +112,7 @@ const tokens = new Map<string, string>();
 async function sessionOf(userId: string): Promise<string> {
   let token = tokens.get(userId);
   if (token === undefined) {
-    token = (await openSession(app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+    token = (await openSessionNow(app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
     tokens.set(userId, token);
   }
   return token;
@@ -496,7 +497,7 @@ describe('under SYNTHETIC release 900001', () => {
     expect((await call(priceAgainAction, target.manager, { practiceId: elsewhere.practiceId }, press)).status).toBe('not_found');
 
     // A failure to queue undoes the whole press.
-    const broken: Services = { ...services, queue: { enqueue: () => Promise.reject(new Error('SYNTHETIC queue down')), enqueueScreeningRun: () => Promise.resolve(null) } };
+    const broken: Services = { ...services, queue: { enqueue: () => Promise.reject(new Error('SYNTHETIC queue down')), enqueueScreeningRun: () => Promise.resolve(null), hold: () => Promise.reject(new Error('SYNTHETIC queue down')) } };
     await call(priceAgainAction, target.manager, P, press, broken).catch((error: unknown) => error);
     expect(await rerunsOf(runId)).toEqual([]);
 

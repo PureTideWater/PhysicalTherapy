@@ -2,9 +2,11 @@ import { ContractWorkflowError } from '@tp/contracts';
 import {
   type ActorScope,
   type AnyScope,
+  CommitOutcomeUnknownError,
   type MembershipRole,
   PermissionDeniedError,
   type ScopeClient,
+  TransactionNotCommittedError,
   organizationRoles,
   platformRoles,
   practiceDirectory,
@@ -21,9 +23,11 @@ import { z } from 'zod';
 import { type ActiveSession, SESSION_COOKIE, resolveSession } from '../auth/sessions';
 import { RUN_STARTING_ROUTES, SuspendedError } from '../billing/runs';
 import { cookieToken } from '../auth/tokens';
-import type { Services } from '../server/services';
+import { WEB_LOCK_TIMEOUT_MS } from '../server/lock-timeout';
+import { type Services, type SignedInServices, signedInServices } from '../server/services';
 import { CSRF_FIELD, csrfTokenMatches, sameOrigin } from './csrf';
 import { type RateBucket, takeRateLimit } from './rate-limit';
+import { RequestSends } from './request-sends';
 import {
   type Access,
   type Actor,
@@ -85,6 +89,31 @@ const REQUEST_KEY = z.object({ requestKey: z.uuid() });
 function issuesOf(error: z.ZodError): Issue[] {
   return error.issues.map((issue) => ({ field: issue.path.join('.') || 'input', message: issue.message }));
 }
+
+/**
+ * PostgreSQL's lock_not_available: a statement gave up waiting for a lock, in a request's own transaction (BOUNDED) or
+ * in a queue send a handler made while it was open (uploads/queue.ts). The web's own code uses no NOWAIT.
+ */
+const LOCK_NOT_AVAILABLE = '55P03';
+
+/**
+ * The bound every transaction this wrapper opens for a signed-in request carries (docs/adr/0092, the amendment of
+ * 2026-11-11; server/lock-timeout.ts): its lock_timeout, set by the scope as the transaction's first statement, so
+ * every lock wait in it, the scope's own opening read, a handler's statement, a trigger's, a library's, ends after
+ * three seconds, for that transaction only. A handler cannot leave it out, since the wrapper opens the transaction;
+ * lock-timeout.test.ts holds that every transaction opened here carries it.
+ */
+const BOUNDED = { lockTimeoutMs: WEB_LOCK_TIMEOUT_MS } as const;
+
+/**
+ * Waits for a request key's own lock: the first 64 bits of the SHA-256 of the person's ID and the key as the uuid it
+ * is stored as (so another spelling of it, upper case, is the same lock). A key is text its sender chooses, and the
+ * other advisory locks here (the ledger's, a packet's, a pricing run's) are hashtextextended of a prefixed ID, a hash
+ * that can be steered: under it, a key could be made to equal another practice's lock. Under SHA-256 it cannot, and
+ * two people's keys meet by chance once in 2^64.
+ */
+const REQUEST_KEY_LOCK =
+  "SELECT pg_advisory_xact_lock(('x' || substr(encode(sha256(convert_to('request_key:' || app_actor_id()::text || ':' || $1::uuid::text, 'UTF8')), 'hex'), 1, 16))::bit(64)::bigint)";
 
 function isPgError(error: unknown, code: string): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === code;
@@ -229,8 +258,24 @@ export async function shellFor(scope: AnyScope<ScopeClient>, currentPracticeId: 
   };
 }
 
-/** Records the request key; false when it was already used (the mutation then does nothing). */
+/**
+ * Records the request key; false when it was already used (the mutation then does nothing). The same key sent again
+ * while its first request is still running waits first, on a lock of its own that the first holds to its end: the
+ * key's, for this person. If the first ends inside the lock timeout, this one is answered as any key used before (or
+ * goes on, where the first was rolled back). Past it, this one is refused as busy with the closed word `request`:
+ * "nothing was saved" would be false of a form whose earlier send may yet save (docs/adr/0092, the amendment of
+ * 2026-11-11). The wait is a statement of its own so that only it is called `request`: the insert can meet other
+ * locks (the person's own row behind its foreign key, the table behind a schema change), and those are `records`.
+ */
 async function claimRequestKey(scope: AnyScope<ScopeClient>, routeId: string, requestKey: string): Promise<boolean> {
+  try {
+    await scope.client.query(REQUEST_KEY_LOCK, [requestKey]);
+  } catch (error) {
+    if (isPgError(error, LOCK_NOT_AVAILABLE)) {
+      throw new BusyError('request');
+    }
+    throw error;
+  }
   const { rowCount } = await scope.client.query(
     'INSERT INTO mutation_request (user_id, request_key, route_id) VALUES (app_actor_id(), $1, $2) ON CONFLICT (user_id, request_key) DO NOTHING',
     [requestKey, routeId],
@@ -282,13 +327,79 @@ async function runCommitted(committed: readonly (() => Promise<unknown>)[], serv
   }
 }
 
-/** Maps what a handler may throw to an outcome; anything else is a server error. */
-async function refusal(error: unknown, kind: Route['kind'], services: Services, actor: Actor, practiceId: string | null): Promise<Outcome<never>> {
+/** What a signed-in request's handler is given beside its scope: its services, its queue and its work for after the commit. */
+interface Request {
+  /** The services without the application pool, the queue this request's own (SignedInServices). */
+  readonly services: SignedInServices;
+  readonly afterCommit: (work: () => Promise<unknown>) => void;
+  /** Called as the transaction's last step, after the handler, its audit event and the shell: the request's jobs are held for its commit. */
+  readonly hold: () => Promise<void>;
+}
+
+/**
+ * A signed-in request's one transaction and what is tied to its end (Queues item 25 (a)). `transact` opens the
+ * transaction and runs the route in it, calling hold() last; this then reads how it ended, which the scope reports
+ * only from COMMIT's own answer:
+ * - committed: the request's jobs are committed to the queue, the work left for after the commit runs, and the
+ *   outcome is the handler's;
+ * - not committed (anything thrown; a COMMIT the server answered with ROLLBACK): the jobs are rolled back with it,
+ *   no after-commit work runs, and the outcome is the refusal, or the error is thrown on. Never `ok`;
+ * - not known (the commit ended without an answer): the jobs are committed (request-sends.ts says why), nothing
+ *   else runs, and the error is thrown on: the person is told neither that it saved nor that it did not.
+ */
+async function transacted<R>(
+  services: Services,
+  requestId: string,
+  transact: (request: Request) => Promise<Outcome<R>>,
+  refuse: (error: unknown) => Promise<Outcome<never>>,
+): Promise<Outcome<R>> {
+  const committed: (() => Promise<unknown>)[] = [];
+  const sends = new RequestSends(services.queue, services.logger, requestId);
+  let outcome: Outcome<R>;
+  try {
+    outcome = await transact({
+      // The handler's queue is the request's sends by their one door: it can queue with the request, and cannot hold or settle them.
+      services: signedInServices(services, sends.door()),
+      afterCommit: (work) => {
+        committed.push(work);
+      },
+      hold: () => sends.hold(),
+    });
+  } catch (error) {
+    await sends.settle(error);
+    if (error instanceof TransactionNotCommittedError) {
+      // A statement failed and its error was swallowed on the way: a fault in a handler, and nothing was saved.
+      services.logger.error('a request’s transaction was rolled back at its commit; nothing was saved', { error_code: 'COMMIT_NOT_APPLIED', request_id: requestId });
+    } else if (error instanceof CommitOutcomeUnknownError) {
+      services.logger.error('a request’s commit ended without an answer; whether it saved is not known', { error_code: 'COMMIT_OUTCOME_UNKNOWN', request_id: requestId });
+    }
+    return refuse(error);
+  }
+  await sends.settle(undefined);
+  await runCommitted(committed, services);
+  return outcome;
+}
+
+/**
+ * Maps what a handler may throw to an outcome; anything else is a server error. The request's transaction is already
+ * rolled back when this runs (the scope's own catch), so a busy refusal keeps nothing the request wrote in it.
+ */
+async function refusal(error: unknown, kind: Route['kind'], services: Services, actor: Actor, practiceId: string | null, requestId: string): Promise<Outcome<never>> {
   if (error instanceof NotFoundError) {
     return { status: 'not_found' };
   }
   if (error instanceof BusyError) {
-    return { status: 'busy' };
+    if (error.what === 'request') {
+      services.logger.warn('a request key was sent again while its first request was still running; refused as busy', { error_code: 'REQUEST_STILL_RUNNING', request_id: requestId });
+    }
+    return { status: 'busy', what: error.what };
+  }
+  if (isPgError(error, LOCK_NOT_AVAILABLE)) {
+    // A statement waited past the request's lock_timeout (BOUNDED) for a lock something else holds. Logged by its code
+    // and the request's own ID alone, never pg's words, which name the statement and the relation: a refusal a
+    // person can retry is otherwise silent, and how often requests meet a long holder is the operator's to see.
+    services.logger.warn('a request waited past the lock timeout and was refused as busy', { error_code: 'LOCK_TIMEOUT', request_id: requestId });
+    return { status: 'busy', what: 'records' };
   }
   if (error instanceof TermsRequiredError) {
     return { status: 'terms_required' };
@@ -315,7 +426,17 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
     return { status: 'invalid', issues: error.issues.length > 0 ? error.issues : [{ field: 'input', message: error.message }] };
   }
   if (error instanceof PermissionDeniedError) {
-    const shell = kind === 'page' ? await withActor(services.pool, actor.userId, (scope) => shellFor(scope, practiceId)) : undefined;
+    let shell: Shell | undefined;
+    try {
+      shell = kind === 'page' ? await withActor(services.pool, actor.userId, (scope) => shellFor(scope, practiceId), BOUNDED) : undefined;
+    } catch (shellError) {
+      if (isPgError(shellError, LOCK_NOT_AVAILABLE)) {
+        // The refused page's frame is a read of its own, bounded as the request was: one that waits is the same refusal.
+        services.logger.warn('a request waited past the lock timeout and was refused as busy', { error_code: 'LOCK_TIMEOUT', request_id: requestId });
+        return { status: 'busy', what: 'records' };
+      }
+      throw shellError;
+    }
     const outcome = { status: 'forbidden' as const, permission: error.permission, message: error.message, roles: error.roles };
     return shell === undefined ? outcome : { ...outcome, shell };
   }
@@ -432,25 +553,23 @@ function actorRoute<P, I, R>(spec: ActorSpec<P, I, R>, access: Extract<Access, {
       if (refused !== undefined) {
         return refused;
       }
-      const committed: (() => Promise<unknown>)[] = [];
-      const afterCommit = (work: () => Promise<unknown>) => {
-        committed.push(work);
-      };
-      try {
-        const outcome = await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
-          // The console stays open in maintenance (its administrators turn the flag off there); the terms of use
-          // bind customers only, whom no platform route serves.
-          await gates(scope, { termsExempt: shape.termsExempt || access.kind === 'platform', maintenanceExempt: access.kind === 'platform' || shape.termsExempt });
-          const roles = access.kind === 'platform' ? await requirePlatformPermission(scope, access.permission) : await platformRoles(scope);
-          return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
-            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles, afterCommit }),
-          );
-        });
-        await runCommitted(committed, services);
-        return outcome;
-      } catch (error) {
-        return refusal(error, spec.kind, services, actor, null);
-      }
+      return transacted(
+        services,
+        request.requestId,
+        (mine) =>
+          withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
+            // The console stays open in maintenance (its administrators turn the flag off there); the terms of use
+            // bind customers only, whom no platform route serves.
+            await gates(scope, { termsExempt: shape.termsExempt || access.kind === 'platform', maintenanceExempt: access.kind === 'platform' || shape.termsExempt });
+            const roles = access.kind === 'platform' ? await requirePlatformPermission(scope, access.permission) : await platformRoles(scope);
+            const outcome = await run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
+              spec.handle({ params: parsed.params, input: parsed.input, request, services: mine.services, actor, scope, platformRoles: roles, afterCommit: mine.afterCommit }),
+            );
+            await mine.hold();
+            return outcome;
+          }, BOUNDED),
+        (error) => refusal(error, spec.kind, services, actor, null, request.requestId),
+      );
     },
   };
 }
@@ -493,33 +612,31 @@ export function practiceRoute<P extends { readonly practiceId: string }, I, R>(s
         return refused;
       }
       const practiceId = parsed.params.practiceId;
-      const committed: (() => Promise<unknown>)[] = [];
-      const afterCommit = (work: () => Promise<unknown>) => {
-        committed.push(work);
-      };
-      try {
-        const outcome = await withPracticeScope(services.pool, { actorId: actor.userId, practiceIds: [practiceId], oneSnapshot }, async (scope) => {
-          await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
-          if (scope.access(practiceId) === undefined) {
-            throw new NotFoundError();
-          }
-          const access = requirePracticePermission(scope, practiceId, spec.permission);
-          if (RUN_STARTING_ROUTES.has(spec.id)) {
-            const reason = await practiceRunRefusalFor(scope.client, practiceId, spec.permission);
-            if (reason !== null) {
-              throw new SuspendedError(reason);
+      return transacted(
+        services,
+        request.requestId,
+        (mine) =>
+          withPracticeScope(services.pool, { actorId: actor.userId, practiceIds: [practiceId], oneSnapshot, ...BOUNDED }, async (scope) => {
+            await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
+            if (scope.access(practiceId) === undefined) {
+              throw new NotFoundError();
             }
-          }
-          const roles = await platformRoles(scope);
-          return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId, roles }, () =>
-            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, practiceId, access, platformRoles: roles, afterCommit }),
-          );
-        });
-        await runCommitted(committed, services);
-        return outcome;
-      } catch (error) {
-        return refusal(error, spec.kind, services, actor, practiceId);
-      }
+            const access = requirePracticePermission(scope, practiceId, spec.permission);
+            if (RUN_STARTING_ROUTES.has(spec.id)) {
+              const reason = await practiceRunRefusalFor(scope.client, practiceId, spec.permission);
+              if (reason !== null) {
+                throw new SuspendedError(reason);
+              }
+            }
+            const roles = await platformRoles(scope);
+            const outcome = await run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId, roles }, () =>
+              spec.handle({ params: parsed.params, input: parsed.input, request, services: mine.services, actor, scope, practiceId, access, platformRoles: roles, afterCommit: mine.afterCommit }),
+            );
+            await mine.hold();
+            return outcome;
+          }),
+        (error) => refusal(error, spec.kind, services, actor, practiceId, request.requestId),
+      );
     },
   };
 }
@@ -553,27 +670,25 @@ export function organizationRoute<P extends { readonly organizationId: string },
         return refused;
       }
       const organizationId = parsed.params.organizationId;
-      const committed: (() => Promise<unknown>)[] = [];
-      const afterCommit = (work: () => Promise<unknown>) => {
-        committed.push(work);
-      };
-      try {
-        const outcome = await withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
-          await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
-          if ((await organizationRoles(scope, organizationId)).length === 0) {
-            throw new NotFoundError();
-          }
-          const held = await requireOrganizationPermission(scope, organizationId, spec.permission);
-          const roles = await platformRoles(scope);
-          return run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
-            spec.handle({ params: parsed.params, input: parsed.input, request, services, actor, scope, platformRoles: roles, organizationId, organizationRoles: held, afterCommit }),
-          );
-        });
-        await runCommitted(committed, services);
-        return outcome;
-      } catch (error) {
-        return refusal(error, spec.kind, services, actor, null);
-      }
+      return transacted(
+        services,
+        request.requestId,
+        (mine) =>
+          withActor(services.pool, actor.userId, async (scope: ActorScope<ScopeClient>) => {
+            await gates(scope, { termsExempt: shape.termsExempt, maintenanceExempt: false });
+            if ((await organizationRoles(scope, organizationId)).length === 0) {
+              throw new NotFoundError();
+            }
+            const held = await requireOrganizationPermission(scope, organizationId, spec.permission);
+            const roles = await platformRoles(scope);
+            const outcome = await run({ route: shape, scope, requestKey: parsed.requestKey, requestId: request.requestId, practiceId: null, roles }, () =>
+              spec.handle({ params: parsed.params, input: parsed.input, request, services: mine.services, actor, scope, platformRoles: roles, organizationId, organizationRoles: held, afterCommit: mine.afterCommit }),
+            );
+            await mine.hold();
+            return outcome;
+          }, BOUNDED),
+        (error) => refusal(error, spec.kind, services, actor, null, request.requestId),
+      );
     },
   };
 }

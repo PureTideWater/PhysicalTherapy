@@ -81,6 +81,7 @@ apps/web/src/lib/contracts/remedies.ts
 apps/web/src/lib/copy/words.ts
 apps/web/src/lib/fonts.ts
 apps/web/src/lib/http/attribution.ts
+apps/web/src/lib/http/busy-words.ts
 apps/web/src/lib/http/csrf.ts
 apps/web/src/lib/http/download-refusal-words.ts
 apps/web/src/lib/http/download-refusal.ts
@@ -90,6 +91,7 @@ apps/web/src/lib/http/invoke.ts
 apps/web/src/lib/http/next.ts
 apps/web/src/lib/http/rate-limit.ts
 apps/web/src/lib/http/received.ts
+apps/web/src/lib/http/request-sends.ts
 apps/web/src/lib/http/route.ts
 apps/web/src/lib/http/security-headers.ts
 apps/web/src/lib/http/sign-in-for.ts
@@ -113,6 +115,7 @@ apps/web/src/lib/screening/tlds.ts
 apps/web/src/lib/screening/validation-credentials.ts
 apps/web/src/lib/screening/validation.ts
 apps/web/src/lib/server/config.ts
+apps/web/src/lib/server/lock-timeout.ts
 apps/web/src/lib/server/pools.ts
 apps/web/src/lib/server/services.ts
 apps/web/src/lib/uploads/limits.ts
@@ -189,6 +192,7 @@ apps/worker/src/parse/report.ts
 apps/worker/src/platform/audit-copy.ts
 apps/worker/src/platform/mail-events.ts
 apps/worker/src/platform/monitoring-schedule.ts
+apps/worker/src/platform/password-notices.ts
 apps/worker/src/platform/pg-dump-restorer.ts
 apps/worker/src/platform/rds-restorer.ts
 apps/worker/src/platform/restore-drill.ts
@@ -212,6 +216,7 @@ apps/worker/src/price/rerun.ts
 apps/worker/src/price/settings.ts
 apps/worker/src/price/store.ts
 apps/worker/src/reconcile/exports.ts
+apps/worker/src/reconcile/interest-chains.ts
 apps/worker/src/reconcile/job.ts
 apps/worker/src/reconcile/ledger.ts
 apps/worker/src/reconcile/pass.ts
@@ -362,6 +367,7 @@ packages/edi835/src/values.ts
 packages/ledger/src/allocation.ts
 packages/ledger/src/csv.ts
 packages/ledger/src/index.ts
+packages/ledger/src/interest.ts
 packages/ledger/src/matching.ts
 packages/ledger/src/pairing.ts
 packages/ledger/src/payment.ts
@@ -410,7 +416,6 @@ packages/model-gateway/src/providers/bedrock.ts
 packages/model-gateway/src/providers/local.ts
 packages/model-gateway/src/providers/messages.ts
 packages/model-gateway/src/purposes.ts
-packages/model-gateway/src/redact.ts
 packages/model-gateway/src/spec.ts
 packages/model-gateway/src/specs.ts
 packages/model-gateway/src/store.ts
@@ -463,6 +468,7 @@ packages/packets/src/roles.ts
 packages/packets/src/scan.ts
 packages/packets/src/serialize.ts
 packages/packets/src/verifier/contradiction.ts
+packages/packets/src/verifier/identifiers.ts
 packages/packets/src/verifier/index.ts
 packages/packets/src/verifier/mismatches.ts
 packages/packets/src/verifier/template.ts
@@ -477,6 +483,8 @@ packages/pricing/src/release.ts
 packages/pricing/src/trace.ts
 packages/pricing/src/types.ts
 packages/pricing/src/windows.ts
+packages/redact/src/index.ts
+packages/redact/src/redact.ts
 packages/rules/src/build.ts
 packages/rules/src/content.ts
 packages/rules/src/guards.ts

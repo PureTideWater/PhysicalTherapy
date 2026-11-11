@@ -37,6 +37,16 @@ import { LED_PLAN, LedgerWorld, ledSettings } from './test-support/ledger-world'
  * at a time. The adjusted remittances hold PER_REMITTANCE claims each, as a payer's checks do, since a line-level row is
  * matched among its check's claims. The 835s are LED-06's SYNTHETIC fixtures (fixtures/synthetic/LED-06) with their
  * claim loop repeated under new SYNTHETIC numbers; every identifier says SYN or SYNTHETIC.
+ *
+ * Each check also carries interest in the implementation guide's shape (docs/adr/0084): every correction reports
+ * INTEREST_CENTS of interest (AMT I) and the check pays its claims' interest in one PLB L6 naming nothing, so the
+ * approving reconciles credit each line's interest once, from its check's PLB L6, and the measured pass walks every
+ * PLB L6 of the practice's history again and writes nothing more. Fails first without the interest path's indexes
+ * (review INT-REL-2): each PLB L6's draws scanned every case line against every match, 161 s for this pass. A later
+ * check then takes each claim's interest back, by a PLB L6 naming its correction, beside another patient's claim, so the
+ * measured pass also walks LINES PLB L6s that take interest back, each reading the holdings of its chain's lines
+ * (PR 126 review F-M2-2: those holdings were rebuilt from every interest entry for each such PLB L6, quadratic in the
+ * practice's history; they are now kept once a pass).
  */
 
 /** The case lines the measured pass posts. */
@@ -57,6 +67,10 @@ const PASS_BUDGET_MS = 60_000;
 
 /** Each case line: LED-06's 97110 x 2 line paid 70.00 against an expected 100.00, corrected to 100.00. */
 const DIFFERENCE_CENTS = '3000';
+/** The interest each correction reports (AMT I) and its check's PLB L6 pays: 0.50 a claim. */
+const INTEREST_CENTS = 50;
+/** What the other patient's claim in each check taking interest back pays: LED-06's original, 70.00. */
+const OTHER_CENTS = 7000;
 
 let w: LedgerWorld;
 
@@ -112,10 +126,10 @@ function periodOf(chunk: number): { readonly from: string; readonly to: string }
   return { from: at(0), to: at(DAYS_PER_CHUNK - 1) };
 }
 
-/** Case line n's claim loops: LED-06's with its numbers, code and date of service replaced (the original's, or the adjusted's reversal and correction). */
+/** Case line n's claim loops: LED-06's with its numbers, code and date of service replaced (the original's, or the adjusted's reversal and correction, the correction reporting its interest after its REF F8). */
 function claimLoops(loops: readonly string[], n: number): string[] {
   const { serviceDate, code } = lineOf(n);
-  return loops.map((segment) =>
+  return loops.flatMap((segment) => (segment.startsWith('REF*F8*') ? [segment, `AMT*I*${cents(INTEREST_CENTS)}`] : [segment])).map((segment) =>
     segment
       .replaceAll('SYNPCNLED06001', patientControlNumber(n))
       .replaceAll('SYNCCNLED060001', `SYNCCNRCL${number(n)}`)
@@ -156,7 +170,13 @@ function original835(chunk: number, first: number, count: number): Buffer {
   return interchange(ORIGINAL, 420_000_000 + chunk, [{ trace: `SYNEFTRCLO${String(chunk).padStart(4, '0')}`, amount: cents(7000 * count), loops }]);
 }
 
-/** The chunk's adjusted payments: checks of PER_REMITTANCE claims, each LED-06's reversal and correction, paying 30.00 a claim. */
+/** The payee's identifier (N1*PE's NPI), which a check's PLB carries. */
+const PAYEE = (ADJUSTED.header.find((segment) => segment.startsWith('N1*PE*')) ?? '').split('*')[4] ?? '';
+
+/**
+ * The chunk's adjusted payments: checks of PER_REMITTANCE claims, each LED-06's reversal and correction, paying 30.00 a
+ * claim, and one PLB L6 naming nothing that pays the claims' interest (BPR02 30.50 a claim).
+ */
 function adjusted835(chunk: number, first: number, count: number): { readonly bytes: Buffer; readonly checks: readonly { readonly trace: string; readonly lines: readonly number[] }[] } {
   const checks: { trace: string; lines: number[] }[] = [];
   for (let start = 0; start < count; start += PER_REMITTANCE) {
@@ -165,9 +185,39 @@ function adjusted835(chunk: number, first: number, count: number): { readonly by
   const bytes = interchange(
     ADJUSTED,
     430_000_000 + chunk,
-    checks.map((check) => ({ trace: check.trace, amount: cents(3000 * check.lines.length), loops: check.lines.flatMap((n) => claimLoops(ADJUSTED.claims, n)) })),
+    checks.map((check) => ({
+      trace: check.trace,
+      amount: cents((3000 + INTEREST_CENTS) * check.lines.length),
+      loops: [...check.lines.flatMap((n) => claimLoops(ADJUSTED.claims, n)), `PLB*${PAYEE}*20261231*L6*-${cents(INTEREST_CENTS * check.lines.length)}`],
+    })),
   );
   return { bytes, checks };
+}
+
+/**
+ * The chunk's checks taking interest back, one for each adjusted check: another patient's claim (LED-06's original under
+ * its own SYNTHETIC numbers, on a day no case line has) paying 70.00, and one PLB L6 of 0.50 for each of the adjusted
+ * check's claims, naming its correction: BPR02 70.00 less 0.50 a claim.
+ */
+function takenBack835(chunk: number, checks: readonly { readonly trace: string; readonly lines: readonly number[] }[]): Buffer {
+  return interchange(
+    ADJUSTED,
+    440_000_000 + chunk,
+    checks.map((check, index) => {
+      const other = `${String(chunk).padStart(2, '0')}${String(index + 1).padStart(4, '0')}`;
+      const loops = ORIGINAL.claims.map((segment) =>
+        segment
+          .replaceAll('SYNPCNLED06001', `SYNPCNRCLK${other}`)
+          .replaceAll('SYNCCNLED060001', `SYNCCNRCLK${other}`)
+          .replace(/^DTM\*472\*\d{8}$/, 'DTM*472*20260601'),
+      );
+      return {
+        trace: `SYNEFTRCLT${other}`,
+        amount: cents(OTHER_CENTS - INTEREST_CENTS * check.lines.length),
+        loops: [...loops, ...check.lines.map((n) => `PLB*${PAYEE}*20261231*L6:SYNCCNRCL${number(n)}A*${cents(INTEREST_CENTS)}`)],
+      };
+    }),
+  );
 }
 
 /** The posting export (LED-06's template, SYNTHETIC PM EXPORT v1): one line-level row per case line, its correction's payment. */
@@ -209,7 +259,7 @@ async function count(practice: Practice, sql: string, values: unknown[] = []): P
 }
 
 describe('a real-size reconcile (CAS-42.3)', () => {
-  it(`posts ${String(LINES)} case lines from one row each in one pass, holding at most the practice's ledger lock`, async () => {
+  it(`posts ${String(LINES)} case lines from one row each in one pass, holding at most the practice's ledger lock, their interest credited once and taken back once`, async () => {
     const chunks = Math.ceil(LINES / PER_CHUNK);
     expect(chunks).toBeGreaterThan(0);
     // Every chunk's days fall before the original payment (2026-04-06).
@@ -236,14 +286,31 @@ describe('a real-size reconcile (CAS-42.3)', () => {
     // The adjusted remittances, loaded and reconciled (the ledger's approvals) one chunk at a time; then the posting
     // export, one line-level row per case line: its correction's patient control number, code, date and payment.
     const rows: { trace: string; n: number }[] = [];
+    const checks: { readonly chunk: number; readonly checks: readonly { readonly trace: string; readonly lines: readonly number[] }[] }[] = [];
     for (let chunk = 0; chunk < chunks; chunk += 1) {
       const adjusted = adjusted835(chunk, chunk * PER_CHUNK + 1, sizeOf(chunk));
       await load('LED-06/adjusted.835', adjusted.bytes);
       await w.reconcile(practice);
       rows.push(...adjusted.checks.flatMap((check) => check.lines.map((n) => ({ trace: check.trace, n }))));
+      checks.push({ chunk, checks: adjusted.checks });
     }
     expect(await count(practice, "SELECT count(*)::int AS n FROM ledger_entry WHERE practice_id = $1 AND stage = 'approved' AND amount_cents = $2", [practice.practiceId, DIFFERENCE_CENTS])).toBe(LINES);
     expect(rows).toHaveLength(LINES);
+    // Each line's interest credited once, from its check's PLB L6.
+    const interest = async () => ({
+      entries: await count(practice, "SELECT count(*)::int AS n FROM ledger_entry WHERE practice_id = $1 AND stage = 'interest' AND amount_cents = $2", [practice.practiceId, String(INTEREST_CENTS)]),
+      takenBack: await count(practice, "SELECT count(*)::int AS n FROM ledger_entry WHERE practice_id = $1 AND stage = 'interest' AND amount_cents = $2", [practice.practiceId, String(-INTEREST_CENTS)]),
+      cents: await count(practice, "SELECT coalesce(sum(amount_cents), 0)::int AS n FROM ledger_entry WHERE practice_id = $1 AND stage = 'interest'", [practice.practiceId]),
+      l6s: await count(practice, "SELECT count(*)::int AS n FROM provider_adjustment WHERE practice_id = $1 AND category = 'interest'", [practice.practiceId]),
+    });
+    expect(await interest()).toEqual({ entries: LINES, takenBack: 0, cents: INTEREST_CENTS * LINES, l6s: Math.ceil(LINES / PER_REMITTANCE) });
+    // Then each claim's interest taken back by a later check's PLB L6 naming its correction, one chunk at a time.
+    for (const chunk of checks) {
+      await load('LED-06/adjusted.835', takenBack835(chunk.chunk, chunk.checks));
+      await w.reconcile(practice);
+    }
+    const afterTakeBacks = { entries: LINES, takenBack: LINES, cents: 0, l6s: Math.ceil(LINES / PER_REMITTANCE) + LINES };
+    expect(await interest()).toEqual(afterTakeBacks);
     const exportId = await w.stageExport(practice, 'LED-06/posting-export.csv', 'posting_export', postingExport(rows));
     const setupMs = performance.now() - setupStarted;
 
@@ -269,6 +336,8 @@ describe('a real-size reconcile (CAS-42.3)', () => {
     expect(sampled.peak).toBeGreaterThan(0);
     expect(sampled.peak).toBeLessThanOrEqual(MOST_ADVISORY_LOCKS);
     expect(passMs).toBeLessThan(PASS_BUDGET_MS);
+    // The pass walked every PLB L6 again, those taking interest back among them, and wrote no more interest.
+    expect(await interest()).toEqual(afterTakeBacks);
 
     // Every case line holds one posted entry of its difference, proved by its own row.
     expect(

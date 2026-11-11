@@ -26,7 +26,7 @@ import {
   screenedBytes,
   someIdentifierRun,
   storedSeparators,
-} from './redact';
+} from '@tp/redact';
 
 /**
  * The contract screen's side of redact.ts (combined audit item 120; docs/adr/0070, Part 3): the page tokenizer

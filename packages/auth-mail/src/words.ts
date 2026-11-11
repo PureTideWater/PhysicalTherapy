@@ -6,7 +6,8 @@ import { brandName } from '@paidwhole/brand';
  * "recover". No name, no organization, no PHI. Each is set as written: Cognito's mail does not go through the worker's
  * brandedSubject(), so a subject names the product itself.
  *
- * The section 2.5 words of the reset code (the recovery design, UXR-04) are kept word for word.
+ * The section 2.5 words of the reset code (the recovery design, UXR-04) are kept word for word, with one sentence
+ * added after its 15 minutes (O-8): "If you asked more than once, use the newest code."
  */
 
 /** Every source Cognito's CustomMessage trigger is called with (the AWS Lambda trigger's triggerSource values). */
@@ -77,7 +78,9 @@ export const COGNITO_MESSAGES: Readonly<Record<CognitoMessageSource, MessageWord
     subject: `Your ${brandName} code`,
     paragraphs: [
       [`Your code to choose a new ${brandName} password is `, code, '.'],
-      [`Enter it on the page that sent it within ${String(RESET_STEP_MINUTES)} minutes. If you did not ask for it, ignore this email: your password is unchanged.`],
+      // "If you asked more than once, use the newest code." (decision O-8, Lane A's orchestrator as the brand owner's
+      // delegate, 2026-11-05): true whether or not Cognito voids an earlier code, which is not verified here.
+      [`Enter it on the page that sent it within ${String(RESET_STEP_MINUTES)} minutes. If you asked more than once, use the newest code. If you did not ask for it, ignore this email: your password is unchanged.`],
     ],
   },
   CustomMessage_AdminCreateUser: invitation,
@@ -127,15 +130,28 @@ export function utcMinute(at: Date): string {
 }
 
 /**
- * The password-changed email's lines (sent from the follow-on pull request, docs/adr/0091): when, that every session
- * ended (the sign-in notice's words) and the second factor still holds, and the support route, which is to write from the address one signs in
- * with (docs/runbooks/support-mail.md). No link that acts on the account, and no "from where".
+ * The password-changed email's four lines (sent by the worker's password_notices job, docs/adr/0091):
+ *
+ * 1. When, and that the change was made with a code sent to this address.
+ * 2. That every session ended (the sign-in notice's words) and, only to an account with a second factor enrolled
+ *    (`secondFactorEnrolled`, the claim's mfa_enrolled), that signing in still asks for it. An account with none (an
+ *    invitee who stopped before the authenticator) is never told a factor guards it: its line ends at the sessions.
+ * 3. To ignore the email if the reader made the change. Never "nothing more to do": a locked account that resets is
+ *    told too, and still has to write to have the lock lifted.
+ * 4. If they did not, two routes: to write to the support address from the address they sign in with (the sign-in
+ *    screens' phrase, not "this address", which a forwarded mailbox is not; docs/runbooks/support-mail.md), and to tell
+ *    their organization's administrator, a route that needs no inbound mail: mail from a sender SES cannot verify, or
+ *    from a disabled account, opens no ticket.
+ *
+ * No link that acts on the account, and no "from where".
  */
-export function passwordChangedLines(changedAt: Date, supportEmail: string): readonly string[] {
+export function passwordChangedLines(changedAt: Date, supportEmail: string, secondFactorEnrolled: boolean): readonly string[] {
   return [
     `The password for your ${brandName} account was changed at ${utcMinute(changedAt)}, with a code sent to this address.`,
-    'Every session of this account has ended. Signing in still asks for your authenticator code or hardware key.',
-    'If you changed it, there is nothing more to do.',
-    `If you did not, write to ${supportEmail} from this address now, and we will help you secure the account.`,
+    secondFactorEnrolled
+      ? 'Every session of this account has ended. Signing in still asks for your authenticator code or hardware key.'
+      : 'Every session of this account has ended.',
+    'If you changed it, ignore this email.',
+    `If you did not, write to ${supportEmail} now from the address you sign in with, and tell your organization’s administrator. We will help you secure the account.`,
   ];
 }

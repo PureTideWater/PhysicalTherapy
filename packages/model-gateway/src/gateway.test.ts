@@ -15,6 +15,7 @@ import type { ModelPrice } from './prices';
 import { PROMPTS, modelFor } from './prompts';
 import { type ModelProvider, type ModelRequest, type ModelResponse, ProviderFailure } from './provider';
 import { MAX_REQUEST_BYTES, NAMES_PATIENT_MESSAGE, SCREEN_UNAVAILABLE_MESSAGE, TOO_LONG_MESSAGE } from './functions/contract-terms';
+import { identifierKinds } from './functions/narrative';
 import { practiceRecordsCheckByShape, syntheticRecordsCheck } from './patient-records';
 import { LocalDeterministicProvider } from './providers/local';
 import { ALL_SERVED, MODEL_PURPOSES, type ModelPurpose, type ServedKey, type ServedSet, offeredPurposes } from './purposes';
@@ -204,8 +205,8 @@ describe('MOD-06: the kill switch', () => {
     expect(line).toMatchObject({ outcome: 'priced', expectedAllowedCents: 6500n });
     // The analyst starts from the packets package's own draft, which the verifier passes.
     await expect(call(harness, 'draftPacketNarrative')).rejects.toBeInstanceOf(ModelFeatureOffError);
-    const { content, identifiers } = syntheticNarrativeInput();
-    expect(verifyNarrative(draftNarrative(content), narrativeFacts(content), identifiers).passed).toBe(true);
+    const input = syntheticNarrativeInput();
+    expect(verifyNarrative(draftNarrative(input.content), narrativeFacts(input.content), identifierKinds(input)).passed).toBe(true);
   });
 });
 

@@ -5,7 +5,16 @@ import { type Page, expect } from '@playwright/test';
 import { LocalKeyProvider, OWNER_ROLE, databaseClient, developmentMasterKey, provisionPracticeKey } from '@tp/db';
 import { asOwner, createPracticeWithLocation } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
-import { LocalMailEventSource, LocalMailSender, type MailEventsResult, MemoryMailControl, runMailEvents, sendSupportGrantNotices } from '@tp/worker/runtime';
+import {
+  LocalMailEventSource,
+  LocalMailSender,
+  type MailEventsResult,
+  MemoryMailControl,
+  type PasswordNoticeResult,
+  runMailEvents,
+  sendPasswordNotices,
+  sendSupportGrantNotices,
+} from '@tp/worker/runtime';
 
 import { FileDevStore } from '../src/lib/auth/dev-store';
 import { hashPassword } from '../src/lib/auth/password';
@@ -148,6 +157,19 @@ export async function sendSupportNoticesOnce(): Promise<void> {
   await withDatabase(async (client) => {
     await sendSupportGrantNotices({ client, mail: localMail(), origin: E2E_ORIGIN, requestId: `e2e-notices-${randomUUID()}`, logger: createLogger({ sink: () => undefined }) });
   });
+}
+
+/** The support address the password-changed email names, and its Reply-To: the web's development default, which the e2e server keeps. */
+export const E2E_SUPPORT_EMAIL = 'support@synthetic.test';
+
+/**
+ * The platform's password_notices job, once, on the e2e database (docs/adr/0091; SGN-16): every pending notice a
+ * completed reset queued, sent through the local sender to the account's own address.
+ */
+export async function sendPasswordNoticesOnce(): Promise<PasswordNoticeResult> {
+  return withDatabase((client) =>
+    sendPasswordNotices({ client, mail: localMail(), supportEmail: E2E_SUPPORT_EMAIL, requestId: `e2e-password-notices-${randomUUID()}`, logger: createLogger({ sink: () => undefined }) }),
+  );
 }
 
 /** SES's account and the screening set, as the journeys' platform sees them (one per spec process). */

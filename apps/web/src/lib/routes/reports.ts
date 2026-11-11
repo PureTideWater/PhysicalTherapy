@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { cameFrom, returnPage } from '../http/download-refusal';
 import { practiceRoute } from '../http/invoke';
 import { type Download, InputError, type MutationResult, NotFoundError, type ReturnTo } from '../http/route';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 import { type ExportRecord, type ReportDocumentSummary, exportHistory, listReportDocuments } from '../reports/documents';
 import { type Attestation, type DownloadRecord, REPORT_RELEASE_WITHDRAWN_TEXT, type ReportDetail, type ReportSummary, downloads, listReports, reportFile, reportOf } from '../reports/queries';
 import { RUN_NOT_IN_EFFECT, RUN_RELEASE_WITHDRAWN, type RunChoice, isRunInEffect, isRunReleaseWithdrawn, runsInEffect } from '../triage/queries';
@@ -285,7 +285,7 @@ export const releaseReportAction = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ reportId: refs.attestedReportId }) },
 });
 
-async function file(scope: PracticeScope<ScopeClient>, services: Services, practiceId: string, reportId: string, kind: 'pdf' | 'csv', requestId: string): Promise<Uint8Array<ArrayBuffer>> {
+async function file(scope: PracticeScope<ScopeClient>, services: SignedInServices, practiceId: string, reportId: string, kind: 'pdf' | 'csv', requestId: string): Promise<Uint8Array<ArrayBuffer>> {
   const bytes = await reportFile(scope, services, practiceId, reportId, kind, requestId);
   if (bytes === undefined) {
     throw new NotFoundError();

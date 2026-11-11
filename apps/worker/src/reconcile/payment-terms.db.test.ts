@@ -534,7 +534,7 @@ describe('a line with a copay (LED-16)', () => {
     expect(await w.lineStage(led.practice, led.serviceLineId)).toBe('recovered');
   });
 
-  it('splits a claim’s interest and takes a withholding in order by what the payer pays on each of two lines', async () => {
+  it('splits a claim’s interest, paid by its PLB L6, and takes a withholding in order by what the payer pays on each of two lines', async () => {
     const led = await opened('LED-16', 'two-lines-original.835');
     const lines = await w.rows<{ service_line_id: string }>(led.practice, 'SELECT cl.service_line_id FROM case_line cl JOIN service_line l ON l.id = cl.service_line_id ORDER BY l.line_no');
     expect(lines).toHaveLength(2);
@@ -550,6 +550,15 @@ describe('a line with a copay (LED-16)', () => {
       { stage: 'approved', amountCents: '3000', allocated: false },
       { stage: 'interest', amountCents: '300', allocated: true },
     ]);
+    // Credited once, from the PLB L6 naming the correction, for the correction's lines; its AMT I says whose it is and credits nothing itself (docs/adr/0084).
+    const [l6] = await w.rows<{ id: string }>(led.practice, "SELECT a.id FROM provider_adjustment a WHERE a.category = 'interest' AND a.reason_code = 'L6'");
+    const [correction] = await w.rows<{ id: string }>(led.practice, "SELECT c.id FROM claim c WHERE c.claim_status_code <> '22' AND c.frequency_code = '7'");
+    expect(
+      await w.rows(
+        led.practice,
+        "SELECT e.evidence_kind, e.evidence_id, m.claim_id, m.provider_adjustment_id FROM ledger_entry e JOIN ledger_match m ON m.id = e.match_id WHERE e.stage = 'interest' ORDER BY e.seq",
+      ),
+    ).toEqual([0, 1].map(() => ({ evidence_kind: 'provider_adjustment', evidence_id: l6?.id, claim_id: correction?.id, provider_adjustment_id: l6?.id })));
     // 30.00 withheld in line order, each line at most what is approved for it: 24.00, then 6.00.
     await loaded(led.practice, 'LED-16/two-lines-wo.835');
     expect(sharesOf((await of(coinsurance)) as never, 'recouped')).toEqual(['-2400']);

@@ -95,6 +95,9 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   { key: 'pricing-admin', organization: 'internal', role: 'platform_admin' },
   { key: 'ledger-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'ledger-viewer', organization: 'other_group', role: 'viewer' },
+  // The interest journey (docs/adr/0084; e2e/ledger-interest.spec.ts): a billing manager of the other group who signs in
+  // to it alone, so its sign-ins never spend a TOTP step that the payment-terms journey's 'ledger-manager' needs.
+  { key: 'interest-manager', organization: 'other_group', role: 'billing_manager' },
   { key: 'packet-drafter', organization: 'other_group', role: 'billing_manager' },
   { key: 'packet-approver', organization: 'other_group', role: 'billing_manager' },
   // The packet's export attestation (D16; docs/adr/0061): the reimbursement reviewer, under a support grant on the journey's practice.
@@ -184,6 +187,9 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   // their password by emailed code, alone, because a request spends the sign_in bucket's count for the address and the
   // reset changes the password (apart from lockout's, which locks).
   { key: 'reset', organization: 'group', role: 'viewer' },
+  // A code step begun before a reset is closed after it (docs/adr/0093; test matrix SGN-17): a viewer in that one test
+  // only, because the reset changes the password while the specs run in parallel.
+  { key: 'reset-step', organization: 'group', role: 'viewer' },
   // The shell's skip link (test matrix CI-30), each persona in that one test only, so no sign-in or hardware key is shared
   // with a test that runs at once: a practice administrator of the group, on a practice page and the group's users
   // page, and a platform administrator on the console.
