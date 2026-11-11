@@ -1,0 +1,36 @@
+// node hand.mts : hand-written letters aimed at (a)-(e) and at the added rules' neighbours.
+import { judge, digitsOnly } from './lib.mts';
+const H = 'Service 01/01/2020-150.00 Paid\n';
+const sp = (n: number) => ' '.repeat(n);
+const sets: Record<string, string[]> = {
+  A: ['Phone (20) 2555 0123', 'Phone (20) 2-555-0123', 'Phone (20) 25550123', 'Tel 20) 2555 0123', 'Fax 20: 2555-0123', 'Phone ( 20 ) 2 555 0123', 'Phone (20th) 2555 0123', 'Phone\n(20) 2555 0123', 'Phone numbers (20) 2555 0123', 'Call 20: 2555 0123', 'Contact (20) 2555-0123', 'Phone 20 (cell): 2555 0123',
+    'SSN (9) 00-12-3456', 'SSN (9) 00123456', 'SSN 9) 00 12 3456', 'SSN 9: 00-12-3456', 'SSN (90) 0-12-3456', 'SSN (90) 0123456', 'SSN 90: 012 3456', 'SSN 90) 012-3456', 'SSN\n90) 012-3456', 'Social Security No. (90) 012 3456', 'SS# 9) 00 12 3456', 'SSN (9) 00 12 3456 Paid 150.00', 'SSN 9 (new): 00 12 3456', 'SSN 9:00-12-3456', 'SSN (9)00-12-3456', 'SSN (90)0123456',
+    'Phone 1) 202 555 0123', 'Phone (2) 02 555 0123', 'SSN (2) 900 12 3456', 'Phone 20 2555 0123', 'SSN 9 00 12 3456', 'SSN (9. 00 12 3456', H + 'Phone (20) 2555 0123', H + 'SSN (9) 00 12 3456', H + 'SSN (90) 0123456'],
+  B: ['SSN 900 12.3456150.00', 'SSN 900 12.345678', 'SSN: 900 12.34567', 'Social Security 900 12.3456150.00 Paid', 'SSN 900  12.3456150.00', 'SSN 900 - 12.3456150.00', 'SSN 900 12. 3456150.00', 'Medicare 900 12.3456150.00', 'SSN 900 12.345601/02/2020', 'SSN 900 12.34562020', 'SSN (900) 12.3456150.00', 'SSN 900 12.3456 150.00', 'SSN 900-12.3456150.00', 'SSN 900.12 3456150.00', H + 'SSN 900 12.3456150.00', H + 'SSN 900 12.345678', 'SSN 900 12.3456A', 'HICN 900 12.3456150.00', 'SSN 900 12.34567 on file', 'Medicare ID 900 12.345678'],
+  C: [H + '(202) 555-01234', H + '(202) 555-0123150', H + 'Line (202) 555-012397110', H + '(202) 555-0123150,00', H + '(202) 555-01231 97110 150.00', H + '(202) 555-0123150.00', H + '( 202 ) 555-01234', H + '(202) - 555-01234', H + '(202)\n555-01234', H + '(202) 555 01234', H + '(202)555-01234', '(202) 555-01234', H + '(202) 555-012301/02', H + '(202) 555-01232020', H + 'Fax (202) 555-01234', H + 'Line (001) 420-97110', H + 'at (202) 555-0123x150', H + '(202) 555-0123', 'Service 01/01/2020-150.00 Paid (202) 555-01234 Units'],
+  D: ['Social Security Claim Number 900-12-345678', 'Social Security Claim Number 900-12-3456150.00', 'SSN Claim No. 900-12-3456150.00', 'SSN Reference 900-12-3456150.00', 'SSN Account Code 900-12-3456150.00', 'Social Security Account Number:' + sp(14) + '900-12-3456150.00', 'Social Security Account Number 900-12-345678', 'Social Security Account Number 900-12-3456150.00', 'SSN Account 01-900-12-3456150.00', 'SSN Group 900-12-3456150.00', 'SSN Case 900-12-345678', 'Soc Sec Policy No.' + sp(12) + ':   900-12-3456150.00', 'SSN Member ID' + sp(20) + '900-12-3456150.00', 'SSN Plan Code 900-12-345678', 'HICN Claim 900-12-3456150.00', 'HIC Claim Number 900-12-345678', 'Social Security Tax ID 900-12-3456150.00', 'SSN Check 900-12-3456150.00', 'SSN Certificate\n900-12-3456150.00', 'Social Security Account Number' + sp(14) + '900123456150.00', 'SSN Claim 900123456150.00', 'SSN Claim 90012345601/02/2020', 'Social Security Account Number 900123456150.00', 'SSN Record' + sp(30) + '900-12-345678', 'SSN Acct  900-12-345678', 'SSN File 900-12-345678', 'SSN Account ID 900-12-345678 Paid', 'Social Security Subscriber ID:' + sp(12) + '900-12-345678'],
+  E: ['Seen 9001234562020-1-5', 'Seen 9001234562020-01-5', '9001234562020/1/5 Paid', 'Seen 20255501232020-1-5', 'SSN: 9001234562020-1-5', 'Seen 9001234562020.1.5', 'Seen 9001234562020-1-5 and 150.00', 'Seen 9001234562020-01-05', 'Seen 9001234562020-1-05', 'Seen 9001234562020-12-5', 'DOB 20255501232020-12-5.'],
+  M: [H + 'Paid 2020XXXXX3456', H + 'Acct 123XXXXX3456', H + 'DOS 1/2/20XXXXX3456', H + 'Paid 150.00XXXXX3456', H + 'PaidXXXXX3456', H + 'Paid 150.00XXX-XX-3456', H + 'DOS 01/02/2020***-**-3456', H + 'Pd.XXX XX 3456', H + 'Acct 123XXX-XX-3456', H + 'CPT 97110XXXXX3456', 'CPT 97110XXX-XX-3456', 'Paid $150XXX-XX-3456', 'Paid 150.00___-__-3456', 'Paid 2020XXX-XX-3456', 'Paid 1/2/20XXX-XX-3456'],
+  N: ['9001234569/9/2020', 'Seen 9001234569/9/2020', 'Phone (2/3) 555-0100', 'Phone (2 of 3) 555-0100', 'Phone [2] 555-0100', 'Phone (#2) 555-0100', 'Phone (2.) 555-0100', 'Phone (2)\n555-0100', 'Phone (2), 555-0100', 'Phone (2) - 555-0100', 'Phone line (2) 555-0100', 'Phone (2a) 555-0100', 'Phone (ii) 555-0100', 'Phone\n\n(2) 555-0100', 'Phone (two) 555-0100', 'Phone (2nd line) 555-0100', 'Phone (2) 555-0100', 'Phone ( 2 ) 555-0100',
+    'Paid 150,00XXX-XX-3456', 'Paid 150.0XXX-XX-3456', 'Units 12XXX-XX-3456', 'Paid 150XXXXX3456', 'DOS Jan 2, 2020XXX-XX-3456', 'DOS 2020/1/2XXX-XX-3456', 'CPT 97110xxx-xx-3456', 'CPT 97110XXX XX 3456', 'CPT 97110XXX-XX 3456', 'CPT 97110XXXXX3456', 'CPT 97110X X X-X X-3456',
+    'DOS 01 02 2020900-12-3456', 'DOS 01_02_2020900-12-3456', 'Q1 2020900-12-3456', 'DOS Jan 1st 2020900-12-3456', 'DOS January, 2020900-12-3456', 'DOS 01.02.2020900-12-3456', "DOS Jan '2020900-12-3456", 'Winter 2020900-12-3456', 'DOS 1-2-2020202-555-0123',
+    '[202] 555-0123150.00', '(202) 555.0123150.00', '(202)-555-0123150.00', '(202)  555-0123150.00', '(202)\n555-0123150.00', '(202 ) 555-0123150.00', '{202} 555-0123150.00', '(202) 555 - 0123150.00', '(202) 555-0123150', '(202) 555-012397110',
+    '900-12-3456150.00/97110', '900-12-3456150.00/3', '900-12-3456150.00-01-Jan-2020', '900-12-3456150.00-1/2020', '900-12-3456150.00/120', '900-12-3456150.00/120.00', '900-12-3456150.00-1.2.2020', '900-12-3456150.00/1.2.2020', '900-12-3456150.00/2020-01-02', '900-12-3456150.00-1.2.20', '900-12-3456150.00 - 120.00', '900-12-3456150.00-120',
+    'Social Security number as shown on your record: 900-12-345678', 'S.S. No. on file: 900-12-345678', 'Social Security Number (SSN) on file with the plan: 900-12-345678', 'SSA Account 900-12-345678', 'SSN on file: 900-12-345678', 'Phone on file: 202-555-0123150.00', 'Telephone number on record: 202-555-0123150.00', 'Phone/Account: 202-555-0123150.00', 'REMITTANCE ADVICE\n900-12-3456150.00 01/02/2020', 'Statement\n\n900-12-3456150.00', 'Statement\n900-12-3456150.00', 'Statement:\n \n900-12-3456150.00',
+    '90012345601 Jan 2020', '9001234561.2.2020', '90012345601.02.20', '9001234562020-01-02150.00', '20255501231-2-2020', '20255501239.9.2020', '9001234569-9-2020', '20255501232020-1-2150.00'],
+};
+const NEEDLES = ['900123456', '2025550123'];
+const only = process.argv[2];
+for (const [name, letters] of Object.entries(sets)) {
+  if (only && !only.includes(name)) continue;
+  console.log(`== ${name}`);
+  const allRefused: string[] = [], allSame: string[] = [];
+  for (const letter of letters) {
+    const j = judge(letter, NEEDLES.filter((n) => digitsOnly(letter).includes(n)));
+    if (j.h.refused && j.b.refused && j.s.refused) { allRefused.push(JSON.stringify(letter)); continue; }
+    if (!j.h.refused && !j.b.refused && !j.s.refused && j.h.text === letter && j.b.text === letter && j.s.text === letter) { allSame.push(JSON.stringify(letter)); continue; }
+    console.log(`  [${j.sev || '-'}${j.notes.length ? ' ' + j.notes.join(',') : ''}] ${j.line}`);
+  }
+  console.log(`  ALL THREE REFUSED (${allRefused.length}): ${allRefused.join('  ')}`);
+  console.log(`  ALL THREE SENT UNCHANGED (${allSame.length}): ${allSame.join('  ')}`);
+}

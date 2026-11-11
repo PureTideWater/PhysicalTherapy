@@ -39,3 +39,15 @@ The scripts carry the absolute paths of the session that wrote them (`/home/user
   (`rows-at-8e599038.txt`); E2-6 is a held-letter cost the amendment records.
 - `brief-g1.md`, `brief-g2.md`, `recorded-for-the-fourth-review.md`: the briefs and the recorded list given to the two
   reviewers of the delta 91e1527a to 8e599038 (G1 PHI, G2 must-stay).
+- `g1/`: the PHI review of that delta, which ran to its report: G1-1 (blocking: a number's own first digits taken for a
+  list number, so letters the base refuses were sent; the fuzzers' run on 8e599038 had shown the same 22 letters,
+  `fuzzer-flips-at-8e599038.txt`), G1-2 to G1-5 and five lines of residuals (`findings.mts` holds every letter, `mech.mts`
+  puts one line of the delta back at a time, `gen.mts` is its generator by mode). Each was run first and fixed in d3657ba2
+  and a66fee45; `rows-at-a66fee45.txt` reads its letters on the head, on 8e599038 and on the base.
+- `g2/`: the must-stay review of the same delta, which ran to its report: G2-1 to G2-3 (major: a month's word after a
+  space read as a date glued to a number; a row's bars and a file name's underscores read as a date's joiners; a label
+  two line breaks above its number no longer naming it), G2-4 to G2-7 and one measured cost in a recorded family
+  (`a.mts` to `f.mts`, `findings.jsonl`, `findings2.jsonl`; `c.mts` measures the rates). Fixed in d3657ba2 and a66fee45
+  (`rows-at-a66fee45.txt`).
+- `brief-h1.md`, `brief-h2.md`, `recorded-for-the-fifth-review.md`: the briefs and the recorded list given to the two
+  reviewers of the delta 8e599038 to a66fee45 (H1 PHI, H2 must-stay).

@@ -1,0 +1,112 @@
+"802-45-678901 Jan 15, 2026 97110 150.00" 
+    head: same | before: REFUSED | base: same
+"Web ID 802-456-78901 Sep 30, 2026" 
+    head: same | before: REFUSED | base: same
+"Line (001) 420-97116 Jan 15, 2026 150.00" 
+    head: same | before: REFUSED | base: same
+"(001) 420 97116 Jan 15, 2026" 
+    head: same | before: REFUSED | base: same
+"802-45-678901 may 30 days" 
+    head: same | before: REFUSED | base: same
+"Claim 802-45-678901 Jan 15, 2026 97110 150.00" 
+    head: same | before: same | base: same
+"802-45-678901 01/15/2026 97110 150.00" 
+    head: same | before: same | base: same
+"802-45-678945 Jan 15, 2026 97110 150.00" 
+    head: same | before: same | base: same
+"ClaimNo|Line|DOS|HCPCS|Billed\n41534035603|1|20260613|97140|464.44" 
+    head: same | before: REFUSED | base: same
+"91895853214|3|20260401|97110|238.64" 
+    head: same | before: REFUSED | base: same
+"93443549614|3|202672509812|294.94" 
+    head: same | before: REFUSED | base: same
+"12345678901|02|2026" 
+    head: same | before: REFUSED | base: same
+"See attached ERA_79790014228_08_2026.pdf for details." 
+    head: same | before: REFUSED | base: same
+"\\\\fs01\\era\\12345678901\\01\\2026\\remit.pdf" 
+    head: same | before: REFUSED | base: same
+"41534035603,1,20260613,97140,464.44" 
+    head: same | before: same | base: same
+"Claim 12345678901|02|2026" 
+    head: same | before: same | base: same
+"Claim\nNumber\n20260112345.01" 
+    head: same | before: REFUSED | base: same
+"ICN\n-----------------\n12345678901234.01" 
+    head: same | before: REFUSED | base: same
+"Claim Number:\n\n20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Your reference number is\n\n20260112345.01 and it was paid." 
+    head: same | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\nMember ID:\n\n802-45-678901" 
+    head: same | before: REFUSED | base: same
+"Claim Number:\n20260112345.01" 
+    head: same | before: same | base: same
+"Service 01/01/2020-150.00 Paid\nMember ID:\n802-45-678901" 
+    head: same | before: same | base: same
+"If you have questions, please call\n1) Member Services 97110 97140\nThank you." 
+    head: REFUSED | before: REFUSED | base: same
+"Ways to contact us:\n1: 150.00 billed, 120.00 allowed, 30.00 owed\nThank you." 
+    head: same | before: same | base: same
+"You can reach us by phone\n2) 97110 x 2 units, 97140 x 1 unit\nThank you." 
+    head: same | before: same | base: same
+"If you have questions, please call\nMember Services 97110 97140\nThank you." 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"If you have questions, please call\n1. Member Services 97110 97140\nThank you." 
+    head: same | before: same | base: same
+"Phone on file: 202-555-0123150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Phone on-file: 202-555-0123150.00" 
+    head: REFUSED | before: same | base: same
+"Phone on\nfile: 202-555-0123150.00" 
+    head: REFUSED | before: same | base: same
+"Service 01/01/2020-150.00 Paid\nLine (001) 420-97110" 
+    head: REFUSED | before: same | base: same
+"Service 01/01/2020-150.00 Paid\nLine (001)420-97110" 
+    head: REFUSED | before: REFUSED | base: same
+"Sec. 2.1. 2026011-22-3333" 
+    head: same | before: REFUSED | base: same
+"Items 3 - 5 - 2026011-22-3333" 
+    head: same | before: REFUSED | base: same
+"Dismay 2026011-22-3333" 
+    head: same | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\nTelephone call 99441 1 45.00 45.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\nTelephone call (2) 99441 1 45.00 45.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\nTelephone call (2nd) 99441 1 45.00 45.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\nTelephone call ( 2 ) 99441 1 45.00 45.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Telephone call (2nd) 99441 1 45.00 45.00" 
+    head: same | before: same | base: same
+"Telephone call (2nd) 98966 45.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Telephone call 98966 45.00" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"Claim Number  Date of Service  Code  Billed\n802-45-678901 Jan 15, 2026 97110 150.00" 
+    head: same | before: REFUSED | base: same
+"We received your appeal for 802-45-678901 Jan 15, 2026 services." 
+    head: same | before: REFUSED | base: same
+"Your number 123-456-78915 Oct 20, 2026" 
+    head: same | before: REFUSED | base: same
+"Medicare rate 110 32.74425" 
+    head: same | before: same | base: same
+"Medicare rate 110 32.74425 Jan 15, 2026" 
+    head: same | before: REFUSED | base: same
+"Remittance\nAdvice No. 20260112345.01" 
+    head: same | before: REFUSED | base: same
+"Remittance Advice No. 20260112345.01" 
+    head: same | before: same | base: same
+"Statement_12345678915_May_2026.pdf" 
+    head: same | before: REFUSED | base: same
+"1234567899/9/2020" 
+    head: REFUSED | before: same | base: same
+"Lines reviewed:\n724-24-822630 Jan 2026 97535 340.34\n959-373-69523 Aug 22 2026 97161 471.68" 
+    head: same | before: REFUSED | base: same
+"Questions? Call\n1: 150.00 120.00 30.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Questions? Call\n150.00 120.00 30.00" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"Reference Number\n================\n20260112345.01" 
+    head: same | before: REFUSED | base: same

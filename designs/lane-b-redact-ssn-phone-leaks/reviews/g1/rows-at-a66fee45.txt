@@ -1,0 +1,136 @@
+"Phone (20) 2555 0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Tel (20) 2555-0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Phone: (20) 2555-0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Fax 20) 2555 0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Phone\n(20) 2555 0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Phone numbers ( 20 ) 2555 0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Dear Member,\nQuestions? Tel (20) 2555-0123\nThank you." 
+    head: REFUSED | before: same | base: REFUSED
+"Phone (20) 2555 0123 or 202-555-0124" 
+    head: REFUSED | before: "Phone (20) 2555 0123 or [PHONE]" | base: REFUSED
+"SSN (9) 00-12-3456" 
+    head: REFUSED | before: same | base: REFUSED
+"SSN 9) 00 12 3456" 
+    head: REFUSED | before: same | base: REFUSED
+"SSN (90) 0123456" 
+    head: REFUSED | before: same | base: REFUSED
+"SSN: (90) 0-12-3456" 
+    head: REFUSED | before: same | base: REFUSED
+"Line 1 97110 150.00\nSSN (9) 00-12-3456 Paid 150.00" 
+    head: REFUSED | before: same | base: REFUSED
+"Phone 20 2555 0123" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"Phone (202) 555 0123" 
+    head: "Phone [PHONE]" | before: "Phone [PHONE]" | base: "Phone [PHONE]"
+"Seen 9001234562020-1-5" 
+    head: REFUSED | before: same | base: same
+"Seen 9001234562020-01-5" 
+    head: REFUSED | before: same | base: same
+"DOB 20255501232020-12-5." 
+    head: REFUSED | before: same | base: same
+"9001234562020/1/5 Paid" 
+    head: REFUSED | before: same | base: same
+"Seen 9001234562020-01-05" 
+    head: REFUSED | before: REFUSED | base: same
+"Social Security Account Number:              900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"Social Security Account Number              900123456150.00" 
+    head: REFUSED | before: same | base: same
+"SSN Account 01-900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"Social Security Account Number 01/02/2020900-12-3456" 
+    head: REFUSED | before: same | base: same
+"Social Security Claim Number 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"SSN Account Code 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"Social Security Account Number 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\n(202) 555-01234" 
+    head: REFUSED | before: same | base: same
+"Service 01/01/2020-150.00 Paid\n(202) 555-01232020" 
+    head: REFUSED | before: same | base: same
+"Service 01/01/2020-150.00 Paid\n(202) 555-01231 97110 150.00" 
+    head: REFUSED | before: same | base: same
+"Service 01/01/2020-150.00 Paid (202) 555-01234 Units" 
+    head: REFUSED | before: same | base: same
+"Service 01/01/2020-150.00 Paid\n(202)555-01234" 
+    head: REFUSED | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\nLine (001) 420-97110" 
+    head: REFUSED | before: same | base: same
+"SSN 900 12.3456150.00" 
+    head: REFUSED | before: same | base: same
+"SSN 900 12.345678" 
+    head: REFUSED | before: same | base: same
+"Social Security 900 12.3456150.00 Paid" 
+    head: REFUSED | before: same | base: same
+"SSN (900) 12.3456150.00" 
+    head: REFUSED | before: same | base: same
+"HICN 900 12.3456150.00" 
+    head: REFUSED | before: same | base: same
+"SSN 900 12.345601/02/2020" 
+    head: REFUSED | before: REFUSED | base: same
+"Medicare rate 110 32.74420" 
+    head: same | before: same | base: same
+"Phone (20)2555-0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Phone (20) 2555.0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Mobile (20) 2555 0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Tel. No. (20) 2555-0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Phone number: (20) 2555-0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Call (20) 2555-0123 today" 
+    head: REFUSED | before: same | base: REFUSED
+"SSN (9)00123456" 
+    head: REFUSED | before: same | base: REFUSED
+"SSN (90) 012 3456" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"TTY (20) 2555 0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Toll-free (20) 2555 0123" 
+    head: REFUSED | before: same | base: REFUSED
+"Medicare (90) 0123456" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"HICN (9) 00123456A" 
+    head: REFUSED | before: same | base: REFUSED
+"Phone (20) 2555 0123 x12" 
+    head: REFUSED | before: same | base: REFUSED
+"Service 01/01/2020-150.00 Paid\nTel (20) 2555-0123" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"SSN Account 2020-900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"Soc Sec Acct 01/02/20900-12-3456" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"SSN Record 150.00900-12-3456" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"Social Security Account Number 4-900-12-345678" 
+    head: same | before: same | base: same
+"Service 01/01/2020-150.00 Paid\nDept. (202) 555-01234" 
+    head: REFUSED | before: same | base: same
+"Phone (2) 202-555-0123150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN (2) 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Phone 2) (202) 555-0123150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN (90) 0-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Phone (2) 01/01/2020-150.00 97110 2 555 0123" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"SSN (9) 00 12 34.56" 
+    head: REFUSED | before: same | base: REFUSED
+"SSN (9) 0012 3456" 
+    head: REFUSED | before: same | base: REFUSED
+"Phone (1) 202 555 0123" 
+    head: "Phone (1) [PHONE]" | before: "Phone (1) [PHONE]" | base: "Phone (1) [PHONE]"
+"Phone (12) 025550123" 
+    head: "Phone (12) [SSN]" | before: "Phone (12) [SSN]" | base: "Phone (12) [SSN]"
