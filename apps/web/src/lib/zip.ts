@@ -28,5 +28,8 @@ export function zipCodeText(zip5: string, plusFour: string | null): string {
   return plusFour === null ? zip5 : `${zip5}-${plusFour}`;
 }
 
-/** The message a form gives text that is not a ZIP code. */
-export const ZIP_CODE_FORMAT = 'five digits, or ZIP+4 such as 27601-1234';
+/**
+ * The message a form gives text that is not a ZIP code: an instruction, read after the field's name ("Billing ZIP: enter
+ * five digits, …"; ADR 0077). @tp/packets' CORRESPONDENCE_FIELD_RULES.address_zip writes the same words out.
+ */
+export const ZIP_CODE_FORMAT = 'enter five digits, or a ZIP+4 such as 27601-1234';

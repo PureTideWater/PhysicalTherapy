@@ -2,7 +2,7 @@ import type { PracticeCipher } from '@tp/db/runtime';
 import { type PostedClaim, batchMatches, checkPosting, correctedEntry, countedStage, depositMatches, entriesById, linePosting, partialShare, postsLine } from '@tp/ledger';
 import { type Cents, ZERO_CENTS, cents, parseCents } from '@tp/money';
 
-import { type Scope, type StoredEntry, insertEntry, insertMatch, ledgerEntries, ledgerMatches } from './ledger';
+import { type Scope, type StoredEntry, type StoredMatch, insertEntry, insertMatch, ledgerEntries, ledgerMatches } from './ledger';
 import { type ClaimLine, chainContext, lineChain } from './remittances';
 
 /**
@@ -68,13 +68,26 @@ interface PostingRowRow {
   readonly service_date: string | null;
 }
 
-/** The claims of a remittance carrying a claim reference, with their payments and lines. */
-async function claimsWithReference(scope: Scope, cipher: PracticeCipher, remittanceId: string, reference: string): Promise<PostedClaim[]> {
-  const claims = await scope.client.query<{ id: string; paid_cents: string; patient_control_number: string }>(
-    'SELECT c.id, c.paid_cents::text AS paid_cents, c.patient_control_number FROM claim c WHERE c.remittance_id = $1 ORDER BY c.claim_no',
-    [remittanceId],
-  );
-  const named = claims.rows.filter((claim) => cipher.decrypt('claim.patient_control_number', claim.patient_control_number) === reference);
+/**
+ * A pass's claims by remittance, in claim order, each with its patient control number decrypted: filled as the posting
+ * rows name the remittances, so each remittance's claims are read and decrypted once a pass however many rows name it
+ * (SUITE-CAP-3 D7; docs/adr/0087). Claims never change within a pass, so what it holds equals a fresh read. Kept for one
+ * pass only and never logged; a person's match by hand passes none and reads as before.
+ */
+export type RemittanceClaims = Map<string, readonly { readonly id: string; readonly paidCents: string; readonly patientControlNumber: string }[]>;
+
+/** The claims of a remittance carrying a claim reference, with their payments and lines (from `read` when it holds the remittance's claims). */
+async function claimsWithReference(scope: Scope, cipher: PracticeCipher, remittanceId: string, reference: string, read?: RemittanceClaims): Promise<PostedClaim[]> {
+  let claims = read?.get(remittanceId);
+  if (claims === undefined) {
+    const { rows } = await scope.client.query<{ id: string; paid_cents: string; patient_control_number: string }>(
+      'SELECT c.id, c.paid_cents::text AS paid_cents, c.patient_control_number FROM claim c WHERE c.remittance_id = $1 ORDER BY c.claim_no',
+      [remittanceId],
+    );
+    claims = rows.map((claim) => ({ id: claim.id, paidCents: claim.paid_cents, patientControlNumber: cipher.decrypt('claim.patient_control_number', claim.patient_control_number) }));
+    read?.set(remittanceId, claims);
+  }
+  const named = claims.filter((claim) => claim.patientControlNumber === reference);
   if (named.length === 0) {
     return [];
   }
@@ -84,7 +97,7 @@ async function claimsWithReference(scope: Scope, cipher: PracticeCipher, remitta
   );
   return named.map((claim) => ({
     claimId: claim.id,
-    paidCents: parseCents(claim.paid_cents),
+    paidCents: parseCents(claim.paidCents),
     lines: lines.rows.filter((line) => line.claim_id === claim.id).map((line) => ({ procedureCode: line.procedure_code, serviceDate: line.service_date, paidCents: parseCents(line.paid_cents) })),
   }));
 }
@@ -106,16 +119,23 @@ export type PostingDecision =
 
 /**
  * Where a posting row belongs: among `candidates` (by default the remittances of its check or trace
- * number; a person names one when matching by hand).
+ * number; a person names one when matching by hand). A pass passes `read`, its claims by remittance (D7).
  */
-export async function postingDecision(scope: Scope, cipher: PracticeCipher, practiceId: string, row: PostingRowRow, candidates?: readonly { readonly id: string; readonly paymentCents: Cents }[]): Promise<PostingDecision> {
+export async function postingDecision(
+  scope: Scope,
+  cipher: PracticeCipher,
+  practiceId: string,
+  row: PostingRowRow,
+  candidates?: readonly { readonly id: string; readonly paymentCents: Cents }[],
+  read?: RemittanceClaims,
+): Promise<PostingDecision> {
   const remittances = candidates ?? (await remittancesOf(scope, practiceId, row.check_or_trace));
   const amount = parseCents(row.amount_cents);
   if (row.claim_reference !== null) {
     const reference = cipher.decrypt('posting_row.claim_reference', row.claim_reference);
     const found: { remittanceId: string; claimId: string }[] = [];
     for (const remittance of remittances) {
-      const claimId = linePosting({ amountCents: amount, procedureCode: row.procedure_code, serviceDate: row.service_date, claims: await claimsWithReference(scope, cipher, remittance.id, reference) });
+      const claimId = linePosting({ amountCents: amount, procedureCode: row.procedure_code, serviceDate: row.service_date, claims: await claimsWithReference(scope, cipher, remittance.id, reference, read) });
       if (claimId !== null) {
         found.push({ remittanceId: remittance.id, claimId });
       }
@@ -138,17 +158,37 @@ export async function postingRow(scope: Scope, practiceId: string, postingRowId:
   return rows[0];
 }
 
+/** The evidence rows a pass matches, each with its column on ledger_match: a closed map, never read from input. */
+const MATCHED_BY = { posting_row: 'posting_row_id', eft_row: 'eft_row_id' } as const;
+
+/**
+ * The IDs of the practice's posting (or EFT) rows no match was ever made for, standing or reversed (SUITE-CAP-3 D15;
+ * docs/adr/0087): one set operation in the server, the practice's row IDs less every row ID its matches name. A set
+ * operation has no per-row plan, so it stays linear on a table not yet analyzed, as a newly loaded export's rows are,
+ * where the anti-join it replaces could be planned to read the matches once per row; and the worker receives only the
+ * never-matched IDs, which it then reads the rows of, never the practice's history of row IDs. Identifiers only.
+ */
+async function neverMatched(scope: Scope, practiceId: string, table: keyof typeof MATCHED_BY): Promise<string[]> {
+  const column = MATCHED_BY[table];
+  const { rows } = await scope.client.query<{ id: string }>(
+    `SELECT r.id FROM ${table} r WHERE r.practice_id = $1 EXCEPT SELECT m.${column} FROM ledger_match m WHERE m.practice_id = $1 AND m.${column} IS NOT NULL`,
+    [practiceId],
+  );
+  return rows.map((row) => row.id);
+}
+
 /** Matches the practice's posting rows no match was ever made for, in the order they posted. */
 export async function matchPostings(scope: Scope, cipher: PracticeCipher, practiceId: string): Promise<number> {
   const { rows } = await scope.client.query<PostingRowRow>(
     `SELECT ${POSTING_ROW_COLUMNS} FROM posting_row p
-      WHERE p.practice_id = $1 AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.posting_row_id = p.id)
+      WHERE p.practice_id = $1 AND p.id = ANY ($2::uuid[])
       ORDER BY p.posted_on, p.created_at, p.row_no`,
-    [practiceId],
+    [practiceId, await neverMatched(scope, practiceId, 'posting_row')],
   );
   let matched = 0;
+  const read: RemittanceClaims = new Map();
   for (const row of rows) {
-    const decision = await postingDecision(scope, cipher, practiceId, row);
+    const decision = await postingDecision(scope, cipher, practiceId, row, undefined, read);
     if (decision.kind === 'unmatched') {
       continue;
     }
@@ -190,9 +230,9 @@ export async function depositDecision(scope: Scope, practiceId: string, row: { r
 export async function matchDeposits(scope: Scope, practiceId: string): Promise<number> {
   const { rows } = await scope.client.query<EftRowRow>(
     `SELECT e.id, e.source_document_id, e.trace, e.amount_cents::text AS amount_cents, e.batch_reference FROM eft_row e
-      WHERE e.practice_id = $1 AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.eft_row_id = e.id)
+      WHERE e.practice_id = $1 AND e.id = ANY ($2::uuid[])
       ORDER BY e.deposited_on, e.created_at, e.row_no`,
-    [practiceId],
+    [practiceId, await neverMatched(scope, practiceId, 'eft_row')],
   );
   let matched = 0;
   const batches = new Map<string, EftRowRow[]>();
@@ -278,6 +318,23 @@ async function shares(scope: Scope, practiceId: string, entries: readonly Stored
   return { byRemittance, byClaim, paired };
 }
 
+/**
+ * Each standing match's `before`, in the list's order: what the check-level postings of its remittance ahead of it in
+ * the list sum to, the amount a partial check-level posting's share is what they leave of (partialShare). One running
+ * sum per remittance (SUITE-CAP-3 D6; docs/adr/0087), where settleMatches re-filtered the list's prefix for every match:
+ * the same amounts in the same order (settle-order.test.ts), linear in the list. A match with no amount read counts zero.
+ */
+export function checkPostedBefore(standing: readonly Pick<StoredMatch, 'id' | 'kind' | 'level' | 'remittanceId'>[], amountOf: ReadonlyMap<string, { readonly amount: Cents }>): Cents[] {
+  const posted = new Map<string, Cents>();
+  return standing.map((match) => {
+    const before = posted.get(match.remittanceId) ?? ZERO_CENTS;
+    if (match.kind === 'posting' && match.level === 'check') {
+      posted.set(match.remittanceId, cents(before + (amountOf.get(match.id)?.amount ?? ZERO_CENTS)));
+    }
+    return before;
+  });
+}
+
 interface MatchedRow {
   readonly match_id: string;
   readonly amount_cents: string;
@@ -334,15 +391,11 @@ export async function settleMatches(scope: Scope, practiceId: string, createdBy:
   }
   const standing = matches.filter((match) => match.standing && (match.kind === 'posting' || match.kind === 'deposit'));
   let count = 0;
+  const postedBefore = checkPostedBefore(standing, amountOf);
   for (const [position, match] of standing.entries()) {
     const { amount, payment, code, date } = amountOf.get(match.id) as { amount: Cents; payment: Cents; code: string | null; date: string | null };
     // The check's check-level postings before this one: a partial posting's share is what they leave.
-    const before = cents(
-      standing
-        .slice(0, position)
-        .filter((other) => other.kind === 'posting' && other.level === 'check' && other.remittanceId === match.remittanceId)
-        .reduce((sum, other) => sum + (amountOf.get(other.id)?.amount ?? ZERO_CENTS), 0n),
-    );
+    const before = postedBefore[position] as Cents;
     const owed = match.level === 'claim' ? byClaim.get(match.claimId as string) : byRemittance.get(match.remittanceId);
     if (owed === undefined || (only !== undefined && match.id !== only)) {
       continue;

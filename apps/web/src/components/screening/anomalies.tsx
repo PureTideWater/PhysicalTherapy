@@ -133,6 +133,31 @@ function Reduced({ cents, copy }: { readonly cents: Cents | null; readonly copy:
 }
 
 /**
+ * Words with each money figure in them in the mono face with tabular numerals (.claude/rules/brand.md; PR 121's P1), the
+ * words unchanged: the string itself when it names none, otherwise one span holding the whole run, so a status chip (an
+ * inline flex box) lays the words out as one line of text with their spaces.
+ */
+function withFigures(words: string): ReactNode {
+  const parts = words.split(/(\$\d[\d,]*(?:\.\d{2})?)/);
+  if (parts.length === 1) {
+    return words;
+  }
+  return (
+    <span>
+      {parts.map((part, at) =>
+        at % 2 === 1 ? (
+          <span key={at} className="font-mono tabular-nums">
+            {part}
+          </span>
+        ) : (
+          part
+        ),
+      )}
+    </span>
+  );
+}
+
+/**
  * What a standing says, for a row or a group whose anomalies are all its rows. At or above, a pooled row or group is
  * at or above its figure before the reduction (screening_standing()), so above or at its fully reduced one too: both.
  */
@@ -143,27 +168,27 @@ function standingWords(standing: ScreeningStanding, pooled: boolean, difference:
     case 'within_reduction_range':
       return WITHIN_REDUCTION_RANGE;
     case 'below_by_threshold_or_less':
-      return pooled ? 'Below the fully reduced figure by $5 a claim line or less' : 'Below by $5 a claim line or less';
+      return `Below ${pooled ? REDUCED_FIGURE : ONE_FIGURE} by $5 a claim line or less`;
     case 'at_or_above':
       return pooled ? 'Allowed is at or above both Medicare figures' : `Allowed is ${differenceWords(difference, ONE_FIGURE)}`;
   }
 }
 
 /**
- * A standing as a labelled chip, every standing but an anomaly neutral. In the stacked rows an anomaly takes the
- * unpriced tone, as ADR 0056 shows an investigatory line, never Short (a screening makes no finding about a payer); the
- * table's stays short until UX PR 4b moves it, because #42's result.test.tsx pins it there. The table's chip carries
- * data-anomaly and data-standing, the stacked one data-stacked-standing (docs/adr/0078).
+ * A standing as a labelled chip: an anomaly in the unpriced tone, as ADR 0056 shows an investigatory line, never Short
+ * (a screening makes no finding about a payer); the rest neutral. The table's chip carries data-anomaly and
+ * data-standing, the stacked one data-stacked-standing (docs/adr/0078); its words keep their $5 in the mono face.
  */
 function Standing({ standing, copy, children }: { readonly standing: ScreeningStanding; readonly copy: Copy; readonly children: string }) {
   const anomaly = standing === 'anomaly';
+  const tone = anomaly ? 'unpriced' : 'neutral';
   return copy === 'table' ? (
-    <StatusChip tone={anomaly ? 'short' : 'neutral'} data-anomaly={String(anomaly)} data-standing={standing}>
-      {children}
+    <StatusChip tone={tone} data-anomaly={String(anomaly)} data-standing={standing}>
+      {withFigures(children)}
     </StatusChip>
   ) : (
-    <StatusChip tone={anomaly ? 'unpriced' : 'neutral'} data-stacked-standing={standing}>
-      {children}
+    <StatusChip tone={tone} data-stacked-standing={standing}>
+      {withFigures(children)}
     </StatusChip>
   );
 }
@@ -173,7 +198,7 @@ function GroupStatus({ group, copy }: { readonly group: ScreeningGroup; readonly
   if (group.standing === 'anomaly' && group.rows > 1) {
     return (
       <Standing standing="anomaly" copy={copy}>
-        {`Anomaly: ${group.anomalyRows.toLocaleString('en-US')} of ${counted(group.rows, 'row')} more than $5 a claim line below their lowest figure`}
+        {`Anomaly: ${group.anomalyRows.toLocaleString('en-US')} of ${counted(group.rows, 'row')} more than $5 a claim line below ${group.anomalyRows === 1 ? 'its' : 'their'} lowest figure`}
       </Standing>
     );
   }
@@ -184,12 +209,31 @@ function GroupStatus({ group, copy }: { readonly group: ScreeningGroup; readonly
   );
 }
 
+/** How many groups are anomalies, the count on its noun and its digits grouped (UX-206; design 3.4's closed set). */
+function anomalyCount(groups: number, anomalies: number, within: number): string {
+  const all = groups.toLocaleString('en-US');
+  if (groups === 1) {
+    if (anomalies === 1) {
+      return 'The only group is an anomaly.';
+    }
+    return within === 1 ? 'The only group is within the range of the reduction across codes: between its two figures, which is not an anomaly.' : 'The only group is not an anomaly.';
+  }
+  if (anomalies === 0) {
+    return groups === 2 ? 'Neither group is an anomaly.' : `None of the ${all} groups is an anomaly.`;
+  }
+  if (anomalies === groups) {
+    return groups === 2 ? 'Both groups are anomalies.' : `All ${all} groups are anomalies.`;
+  }
+  return `${anomalies.toLocaleString('en-US')} of ${all} groups ${anomalies === 1 ? 'is an anomaly' : 'are anomalies'}.`;
+}
+
 /**
  * What the anomalies card says above its table, from the database's counts over every group (never the page's): how
- * many groups are anomalies, and how many are within the range of the reduction across codes; with more than one
- * page, which groups this page shows and what its last row sums, one other group named as one (with 50 groups a page,
- * that is page 1 of a result of 51, and the next page lists it). The words for more other groups are the ones #42's
- * result.test.tsx pins, until UX PR 4b.
+ * many groups are anomalies, the count on its noun (UX-206), and how many are within the range of the reduction across
+ * codes, both before the rule; then, with more than one group, their order (one group has none to state); with more
+ * than one page, which groups this page shows and what its last entry sums (the table's last row and the list's last
+ * item, UXR-08), one other group named as one (with 50 groups a page, that is page 1 of a result of 51, and the next
+ * page lists it).
  */
 export function anomaliesDescription(page: Pick<ScreeningGroupPage, 'groups' | 'anomalyGroups' | 'withinReductionGroups' | 'pages' | 'firstGroup' | 'lastGroup' | 'others'>): string {
   if (page.groups === 0) {
@@ -197,19 +241,20 @@ export function anomaliesDescription(page: Pick<ScreeningGroupPage, 'groups' | '
   }
   const anomalies = page.anomalyGroups;
   const within = page.withinReductionGroups;
-  const all = page.groups.toLocaleString('en-US');
-  const first = anomalies === 0 ? `No group of ${all} is an anomaly.` : `${counted(anomalies, 'group')} of ${all} ${anomalies === 1 ? 'is an anomaly' : 'are anomalies'}.`;
+  const first = anomalyCount(page.groups, anomalies, within);
+  // With one group, the first sentence says what it is: within the range is said there, for both counts.
   const second =
-    within === 0
+    within === 0 || page.groups === 1
       ? ''
       : ` ${counted(within, anomalies === 0 ? 'group' : 'more group')} ${within === 1 ? 'is' : 'are'} within the range of the reduction across codes: between ${within === 1 ? 'its' : 'their'} two figures, which is not an anomaly.`;
   const range = `${page.firstGroup.toLocaleString('en-US')} to ${page.lastGroup.toLocaleString('en-US')}`;
   const rest =
     page.others.groups === 1
-      ? 'the table’s last row is the one other group, its rows summed, and the next page lists it'
-      : `the table’s last row sums the other ${page.others.groups.toLocaleString('en-US')}, and the pages below list them`;
+      ? 'the last entry is the one other group, its rows summed, and the next page lists it'
+      : `the last entry sums the other ${page.others.groups.toLocaleString('en-US')}, and the pages below list them`;
+  const order = page.groups === 1 ? '' : ' Largest difference from the lowest figure first.';
   const shown = page.pages <= 1 ? '' : ` This page lists groups ${range}; ${rest}.`;
-  return `${first} ${ANOMALY_RULE}${second} Largest difference from the lowest figure first.${shown}`;
+  return `${first}${second} ${ANOMALY_RULE}${order}${shown}`;
 }
 
 /** The page's own address with another page of groups, back at the anomalies card. */
@@ -334,8 +379,8 @@ function othersStanding(others: ScreeningOtherGroups): string {
 /**
  * The other groups' sums in either copy, as the database sums them. Their fully reduced columns sum each row's lowest
  * figure, as the summary's do: the fully reduced figure for a row of a code in the reduction across codes, the one
- * figure otherwise. The chip's tone is Standing's: unpriced in the stacked rows when an anomaly is among them, short in
- * the table until UX PR 4b.
+ * figure otherwise. The chip's tone is Standing's: unpriced when an anomaly is among them, neutral otherwise, in both
+ * copies.
  */
 function otherCells(others: ScreeningOtherGroups, copy: Copy): Readonly<Record<OtherKey, ReactNode>> {
   const anomaly = others.anomalyGroups > 0;
@@ -349,7 +394,7 @@ function otherCells(others: ScreeningOtherGroups, copy: Copy): Readonly<Record<O
     reducedDifference: <ScreeningMoney cents={others.lowestDifferenceCents} />,
     status:
       copy === 'table' ? (
-        <StatusChip tone={anomaly ? 'short' : 'neutral'} data-anomaly={String(anomaly)}>
+        <StatusChip tone={anomaly ? 'unpriced' : 'neutral'} data-anomaly={String(anomaly)}>
           {othersStanding(others)}
         </StatusChip>
       ) : (
@@ -402,7 +447,7 @@ export function ScreeningAnomalies({ groups, page, path }: { readonly groups: re
     <Card data-section="anomalies" data-groups={String(page.groups)} data-page={String(page.page)}>
       <CardHeader>
         <CardTitle id="screening-anomalies">{ANOMALIES_TITLE}</CardTitle>
-        <CardDescription>{anomaliesDescription(page)}</CardDescription>
+        <CardDescription>{withFigures(anomaliesDescription(page))}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {page.groups === 0 ? (
@@ -533,7 +578,7 @@ export function ScreeningTopRows({ rows, shown = 25 }: { readonly rows: readonly
     <Card data-section="top-rows">
       <CardHeader>
         <CardTitle id="screening-top-rows">{TOP_ROWS_TITLE}</CardTitle>
-        <CardDescription>{topRowsDescription(listed.length)}</CardDescription>
+        <CardDescription>{withFigures(topRowsDescription(listed.length))}</CardDescription>
       </CardHeader>
       {listed.length === 0 ? null : (
         <CardContent className="flex flex-col gap-3">

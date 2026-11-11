@@ -69,13 +69,14 @@ import type { TriagedLines } from './checks';
  *   jobs run in the concurrent phase, and a second set of four in the large jobs together.
  * - D and E, periods of A's shape (largeTogetherLines each; docs/adr/0083, D20): D's priced during setup and triaged in
  *   the large jobs together, E's priced there.
- * - F, step 7b's practice (Lane A's orchestrator, 2026-11-04; test scope, until SUITE-CAP-3 lands and moves step 7b
- *   back to A as its acceptance step): CAS-42.3's 2,000 lines (reconcileLines; fewer at the smoke size) of A's shape,
- *   every claim under a SYNTHETIC contract that pays a fixed FIXED_UNIT_CENTS a unit (FIXED_RATE), at least the line
- *   materiality above what the original remittance allowed, its dispute window cited and verified, so its triage
- *   during setup makes every line actionable, in one case. A keeps its full month for triage and reports: the reconcile
- *   pass walks every open case line, and A's month (about 31% actionable) cannot reconcile in one attempt until
- *   SUITE-CAP-3 (docs/adr/0083).
+ * - F, step 7b's practice (Lane A's orchestrator, 2026-11-04; SUITE-CAP-3 D14, ruled 2026-11-06, docs/adr/0087):
+ *   10,000 lines (reconcileLines; fewer at the smoke size) of A's shape, sized for the pass's first attempt to complete
+ *   within 360 s, every claim under a SYNTHETIC contract that pays a fixed FIXED_UNIT_CENTS a unit (FIXED_RATE), at
+ *   least the line materiality above what the original remittance allowed, its dispute window cited and verified, so
+ *   its triage during setup makes every line actionable, in one case. A keeps its full month for triage and reports:
+ *   the reconcile at A's full month (its 30,795 actionable lines, about 31% of its month) was measured at 1,653 s, past
+ *   a job's 15-minute attempt, most of it in the ledger triggers, which are Lane A's; moving step 7b back to A is the
+ *   acceptance step of Lane A's trigger pull request (docs/adr/0083's dated note of 2026-11-07).
  * - F's reprocessing (step 7b; the ledger freeze exception granted 2026-10-27): once F is triaged, SYNTHETIC 835s that
  *   reverse each claim holding an actionable line and pay its correction, every actionable line at its expected amount
  *   (checks of REPROCESSING_CHECK_CLAIMS claims), and a SYNTHETIC posting export with one line-level row per
@@ -100,14 +101,14 @@ export interface ScenarioSize {
   readonly claimsPerRemittance: number;
   /** Practices D's and E's lines each (the large jobs together, D20). */
   readonly largeTogetherLines: number;
-  /** Practice F's lines, each actionable once triaged (step 7b's reconcile; CAS-42.3's size at full size). */
+  /** Practice F's lines, each actionable once triaged (step 7b's reconcile; the full-size form of CAS-42.3's 2,000, D14). */
   readonly reconcileLines: number;
 }
 
-export const FULL_SIZE: ScenarioSize = { measuredLines: 100_000, reportLines: 20_000, remittances: 4, claimsPerRemittance: 2_000, largeTogetherLines: 100_000, reconcileLines: 2_000 };
+export const FULL_SIZE: ScenarioSize = { measuredLines: 100_000, reportLines: 20_000, remittances: 4, claimsPerRemittance: 2_000, largeTogetherLines: 100_000, reconcileLines: 10_000 };
 export const SMALL_SIZE: ScenarioSize = { measuredLines: 2_000, reportLines: 500, remittances: 4, claimsPerRemittance: 50, largeTogetherLines: 2_000, reconcileLines: 600 };
 
-/** The practice step 7b reconciles (its own, not A: docs/adr/0083). */
+/** The practice step 7b reconciles (its own, not A, until Lane A's trigger fixes land: docs/adr/0083, docs/adr/0087). */
 export const RECONCILE_PRACTICE = 'F';
 
 /** The period A and B are priced for: every quarter of 2026. */
@@ -129,18 +130,11 @@ export const PLACE_OF_SERVICE = { '11': 'non_facility', '22': 'facility' } as co
 export const SETTINGS = { place_of_service_settings: PLACE_OF_SERVICE, default_rounding: 'HALF_UP_CENT', proof_level: 'posted', posting_export_template: { template: 'synthetic_pm_export_v1' } } as const;
 
 /**
- * The worker's command with a heap flag after `node` (#31's explicit heap limit; infra/lib/heap.ts): production's
- * worker command from tools/screening-capacity/containers.ts, which imports no heap constant (docs/adr/0071; B1).
+ * The worker's command with a heap flag after `node` (#31's explicit heap limit; infra/lib/heap.ts, where it is defined
+ * so infra/test/heap.test.ts measures the page reader under the same spelling): production's worker command from
+ * tools/screening-capacity/containers.ts, which imports no heap constant (docs/adr/0071; B1).
  */
-export function withHeapFlag(command: readonly string[], flag: string): string[] {
-  if (command[0] !== 'node') {
-    throw new RangeError('the command runs node');
-  }
-  if (!/^--max-old-space-size=\d+$/.test(flag) || command.some((word) => word.startsWith('--max-old-space-size'))) {
-    throw new RangeError('one heap flag, --max-old-space-size=<MiB>');
-  }
-  return [command[0], flag, ...command.slice(1)];
-}
+export { withHeapFlag } from '../../infra/lib/heap';
 
 export interface CapacityLine {
   readonly lineNo: number;

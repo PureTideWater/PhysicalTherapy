@@ -146,8 +146,9 @@ them. It answers ADR 0058's D9 question (2). The co-founder, as brand owner, set
    and 4.9:1 on Paper. It keeps a margin above 4.5:1 that anti-aliasing and display variance on small chip text
    cannot eat; `packages/brand/src/tokens.test.ts` holds it at 4.8:1 or more on its tint.
    The unpriced tone's chip (Unpriced, Flagged, Deadline passed, and the free screening's unpriced dispositions and
-   stacked anomaly standings) and the report stylesheet's `.unpriced` take `--pw-unpriced` in place of Slate. The
-   chip's border, the same token, is 4.8:1 on its tint and 3.8:1 against the neutral chip's Line border. The dark
+   anomaly standings, stacked and, since UX PR 4b of 2026-11-07, in the table) and the report stylesheet's `.unpriced`
+   take `--pw-unpriced` in place of Slate. The chip's border, the same token, is 4.8:1 on its tint and 3.8:1 against
+   the neutral chip's Line border. The dark
    pair (#9AA5B5 on #1A2537, 6.1:1) already met the minimum and is unchanged. `packages/brand/src/tokens.test.ts` holds every status color at 4.5:1 or more on its tint, in both
    themes.
 4. **Dark mode's ship rule.** Dark mode stays off until a dark-mode pass has checked every screen, PHI screens

@@ -1,0 +1,19 @@
+{
+  "case": "CAS-53",
+  "module": "CAS",
+  "title": "A narrative template’s fact ids",
+  "assertion": "Every catalog id renders for its content; an id the content lacks (row out of range, interest not stated, a code not in the pattern, `deadline.window_days` with two counts, a window id above the first level, `contract.rate` for a fractional amount or a percentage method) and a stray `{{` fail (`unknown_fact`); a non-canonical id (rows out of order, `claim.4` not a first row, a one-line claim, `lines.*` equal to a code’s rows, a code id in a one-code pattern) fails (`fact_not_canonical`) and names the canonical id; codes G0283, 0275T and 97110 and a modifier render from content; an off-shape code has no id; a typed subset sum opens the picker and is never matched to a row set; a person’s write whose row map changed under a row-bound id is refused (`schedule_changed`).",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": ["packages/packets/src/verifier-template.test.ts","packages/packets/src/fact-catalog.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Templates verified over the named SYNTHETIC fact packets of the packets tests: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": [
+    "Pending, slice 5 (the web picker and preview): a typed subset sum opening the picker. Pending, slice 4 (the worker’s export, approval and verifier of now): schedule_changed. The tests listed assert the ids’ half; fact-catalog.test.ts holds the off-shape code’s."
+  ]
+}

@@ -221,14 +221,12 @@ class Facts {
   }
 }
 
-/** Every amount a parameters object holds under a key ending in _cents (a rate, stated per `scopes`), and every percentage under percent or percentage. */
+/**
+ * Every amount a parameters object holds under a key ending in _cents (a rate, stated per `scopes`), and every percentage
+ * under percent or percentage. An array is read as the object it is: Object.entries gives its items under the keys '0',
+ * '1', ..., none of which ends in _cents or is percent or percentage, so each item is read by the call below.
+ */
 function parameterFigures(value: unknown, facts: Facts, scopes: readonly Scope[]): void {
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      parameterFigures(item, facts, scopes);
-    }
-    return;
-  }
   if (typeof value !== 'object' || value === null) {
     return;
   }

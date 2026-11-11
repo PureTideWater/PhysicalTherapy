@@ -20,7 +20,7 @@ const header = z.string().trim().max(100, 'a header of at most 100 characters').
 
 export const templateForm = z.object({
   template: z.enum([OWN_TEMPLATE, ...BUILT_IN_POSTING_TEMPLATES.map((template) => template.id)]),
-  system: z.string().trim().max(100, 'at most 100 characters').optional(),
+  system: z.string().trim().max(100, 'enter at most 100 characters').optional(),
   date_format: z.enum(DATE_FORMATS).optional(),
   ...Object.fromEntries(POSTING_FIELDS.map((field) => [columnField(field), header])),
 });

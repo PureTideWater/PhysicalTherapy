@@ -99,7 +99,7 @@ export default async function PracticeSettingsPage(props: Props) {
               autoComplete="off"
               maxLength={10}
               defaultValue={stored ?? ''}
-              hint="Five digits, or ZIP+4 such as 27601-1234. Saving replaces the ZIP and the ZIP+4 together."
+              hint="Five digits, or a ZIP+4 such as 27601-1234. Saving replaces the ZIP and the ZIP+4 together."
             />
           </ActionForm>
         </CardContent>

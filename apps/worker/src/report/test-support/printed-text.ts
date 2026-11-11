@@ -1,6 +1,6 @@
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 // pdf.js runs its worker in this thread from the module that registers itself (as the page reader does,
-// packages/contracts/src/evidence/page-thread.ts).
+// packages/contracts/src/evidence/page-reader.ts).
 import 'pdfjs-dist/legacy/build/pdf.worker.mjs';
 
 /**

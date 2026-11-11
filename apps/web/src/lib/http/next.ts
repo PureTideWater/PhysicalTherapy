@@ -54,10 +54,21 @@ async function nextRequest(params: unknown, input?: unknown, upload?: UploadBody
   };
 }
 
+/**
+ * What a form says when its action met the practice's ledger lock (docs/adr/0092): nothing was saved, what was typed
+ * stays, and pressing again is the next step. It never says what holds the lock (a reconcile, or another person's action),
+ * so the wait it names holds for either: a person's action is over in a moment, a pass in minutes, and a press that
+ * meets the lock again is refused again, at once. "The recovery ledger" is the name the Cases and Reconciliation pages use.
+ */
+export const BUSY_MESSAGE = 'The recovery ledger is being updated, so nothing was saved. What you typed is still here: try again in a minute.';
+
 /** What a refused form says when the wrapper's rate limits refused it (a refused CSRF token is a page out of date, STALE). */
 function guardMessage(outcome: Outcome<unknown>): string | undefined {
   if (outcome.status === 'rate_limited') {
     return `Too many attempts in a short time. Wait ${minutesWords(retryMinutes(outcome.retryAfterSeconds))} and try again.`;
+  }
+  if (outcome.status === 'busy') {
+    return BUSY_MESSAGE;
   }
   return undefined;
 }
@@ -153,8 +164,9 @@ const INVALID_LEAD = 'Fix the fields listed here, then try again.';
  * A page out of date (a CSRF token its session has overtaken, or a missing or garbled request key): nothing was saved,
  * and the form reads the page again, which renders a fresh token and key in place, so what was typed stays (ADR 0077).
  * The flag marks it: a form that reads the page again (ActionForm's summary, the version and export forms) writes its
- * own next step, which depends on whether the person's own press sent the post, in place of these words. These are for
- * a form that does not (the screening upload, a #42 file, until it does), so its refusal still has a next step.
+ * own next step, which depends on whether the person's own press sent the post, in place of these words. The words stay
+ * for a post made without JavaScript; every form with JavaScript replaces them with RefusalLead's, and the screening
+ * upload, which never posts to an action, with its own origin lead.
  */
 const STALE: ActionState = { error: 'This page was out of date, so nothing was saved. Reload the page and try again.', stale: true };
 

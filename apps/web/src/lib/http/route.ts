@@ -110,7 +110,24 @@ export type Outcome<R> =
   /** The terms of use in force have not been accepted by this customer yet. */
   | { readonly status: 'terms_required' }
   /** The platform is in maintenance (the platform.maintenance flag). */
-  | { readonly status: 'maintenance' };
+  | { readonly status: 'maintenance' }
+  /**
+   * A mutation refused because what it would write is being written by something else right now (the practice's ledger
+   * lock is held; docs/adr/0092): nothing was written, and the same request may be sent again. It names no one and nothing.
+   */
+  | { readonly status: 'busy' };
+
+/**
+ * Thrown by a handler that would have had to wait for a lock another transaction holds (docs/adr/0092): the request's
+ * transaction rolls back, nothing is written or audited, and the outcome is `busy`. It carries no identifier and
+ * never says what holds the lock.
+ */
+export class BusyError extends Error {
+  override readonly name = 'BusyError';
+  constructor() {
+    super('busy');
+  }
+}
 
 /** Thrown by a handler: what the request names does not exist, or the actor cannot see it. */
 export class NotFoundError extends Error {

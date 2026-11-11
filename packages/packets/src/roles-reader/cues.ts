@@ -1,4 +1,4 @@
-import type { Cues } from '../roles-words';
+import { type Cues, type Vocabulary, vocabulary } from '../roles-words';
 import type { Figure } from '../scan';
 import type { FigureRole, ReadKind, Token } from './kinds';
 import { ANY, type Cued, type Entry, type Family, type Match, Walk, cueAt, nearest, notWord, one, ordered } from './walk';
@@ -434,4 +434,25 @@ export class CueReader extends Walk {
     }
     return this.role(index, 'date', this.vocab.DATE_CUES);
   }
+}
+
+/**
+ * The words that state a total or all the lines, ADR 0086's cue tables as one list (design lane-b-packet-figure-placeholders,
+ * section 4; docs/adr/0089): format /3's pass 2 fails a part fact (a code's, a claim's, a line's or a set of rows') in a
+ * sentence that holds one of them in its free text (../verifier/contradiction.ts). Each is a phrase of lower-case words
+ * as the reader's tokens give them: the closed list's total phrases ("in total", "in all"), "total" and "totals" (so "the
+ * total" and "a total of"), "altogether" and "overall", every line ("each line", "every visit"), and all of the rows
+ * ("all the lines", "all lines", "all of the claims", "across the lines", "across all the services").
+ */
+export function totalCues(vocab: Vocabulary = vocabulary()): readonly string[] {
+  const rows = [...vocab.PLURAL_ROWS];
+  return [
+    ...vocab.TOTAL_PHRASES,
+    'total',
+    'totals',
+    'altogether',
+    'overall',
+    ...[...vocab.EACH].flatMap((each) => [...vocab.ONE_LINE].map((line) => `${each} ${line}`)),
+    ...rows.flatMap((noun) => [`all ${noun}`, `all the ${noun}`, `all of the ${noun}`, `all these ${noun}`, `across the ${noun}`, `across these ${noun}`]),
+  ];
 }

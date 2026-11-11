@@ -92,13 +92,14 @@ import {
  *     each job alone; then A's actionable lines read back beside the lines the scenario makes actionable
  *     (expectedActionableLines), since A keeps its full month for triage and reports;
  *  7b. F's reconcile (the ledger freeze exception granted 2026-10-27; docs/adr/0083), on a practice of its own at
- *     CAS-42.3's 2,000 lines, each actionable once F's setup triage ran, while A keeps its full month for triage and
- *     reports (Lane A's orchestrator, 2026-11-04, until SUITE-CAP-3 moves step 7b back to A; the summary's Known gap
- *     line): SYNTHETIC 835s reprocessing every claim with an actionable line, each line paid its expected amount, staged
- *     and parsed, then a SYNTHETIC posting export posting each actionable line from its own row, staged as intake leaves
- *     it and reconciled by the reconcile job (the approvals and the postings in one pass), measured like the chain; the
- *     monitoring chain each parse queues is cancelled before it starts (cancelMonitoring), so this phase and the next run
- *     only their own jobs;
+ *     10,000 lines, each actionable once F's setup triage ran, sized for its first attempt to complete within 360 s,
+ *     while A keeps its full month for triage and reports (Lane A's orchestrator, 2026-11-04; SUITE-CAP-3 D14, ruled
+ *     2026-11-06, docs/adr/0087: until Lane A's trigger fixes land, whose pull request moves step 7b back to A; the
+ *     summary's Known gap line): SYNTHETIC 835s reprocessing every claim with an actionable line, each line paid its
+ *     expected amount, staged and parsed, then a SYNTHETIC posting export posting each actionable line from its own
+ *     row, staged as intake leaves it and reconciled by the reconcile job (the approvals and the postings in one pass),
+ *     measured like the chain; the monitoring chain each parse queues is cancelled before it starts (cancelMonitoring),
+ *     so this phase and the next run only their own jobs;
  *  7c. the large jobs together (D20): A's second audit report (its inline triage a re-triage), D's triage, E's run
  *     created and its price job, and C's second four parses, queued within a second, the memory sampled each second
  *     until all seven finish;
@@ -711,8 +712,8 @@ async function main(): Promise<number> {
     // A's full month, read back once its chain triage ran: its actionable lines beside the scenario's (checks.ts).
     aActionable = againstExpected(await actionableLines(seeding, a, aRun), await expectedActionableLines(seeding, a, aRun));
     say(`A’s triage: ${String(aActionable.lines)} actionable lines (${String(aActionable.matched)} of them expected) of the ${String(aActionable.expected)} the scenario expects, of its ${String(size.measuredLines)}`);
-    // 7b, F's reconcile, on a practice of its own (docs/adr/0083): its reprocessing 835s parsed, then its posting export
-    // reconciled (approvals and postings in one pass).
+    // 7b, F's reconcile, on a practice of its own at 10,000 lines (docs/adr/0083, docs/adr/0087 D14): its reprocessing
+    // 835s parsed, then its posting export reconciled (approvals and postings in one pass).
     const reprocessed = reprocessing(RECONCILE_PRACTICE, fClaims, await actionableLines(seeding, f, fRun));
     expectedPosted = reprocessed.lines;
     const reprocessingDocuments: string[] = [];
