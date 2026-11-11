@@ -3348,7 +3348,16 @@ export function redactionSpans(text: string, patient: PatientIdentifiers, claims
     const first = merge(found);
     const covered = within([...first]);
     const wider = widerMatchesIn(unmarked(normal), subject).filter((match) => !covered(match));
-    if (wider.length === 0 || refusedAsFirstRead(written(normal, first), patient, claims)) {
+    if (wider.length === 0) {
+      return { text: normal, spans: first };
+    }
+    // Past the wider reading's work bound (WIDER_WORK_BOUND) the letter is refused by the count, as screenAsBothRead
+    // refuses it: the first reading's spans, and the mark the check refuses after the letter's last character.
+    const sent = written(normal, first);
+    if (widerWorkOf(sent) > WIDER_WORK_BOUND) {
+      return { text: unreadPastTheBound(normal), spans: first };
+    }
+    if (refusedAsFirstRead(sent, patient, claims)) {
       return { text: normal, spans: first };
     }
     return { text: normal, spans: merge([...found, ...wider]) };
@@ -3390,6 +3399,33 @@ export function redactLetterForScreen(text: string, patient: PatientIdentifiers,
   return inOneReading(() => screenAsBothRead(text, patient, claims));
 }
 
+/**
+ * The wider reading's work bound (docs/adr/0054, amendment of 2026-11-11, the work bound): the most characters the first
+ * reading's check may be made to read again so that a wider match may be applied. The wider reading itself is cheap; its
+ * cost is the rule that keeps it safe, that a wider match is applied only to a letter the first reading's own check does
+ * not refuse (refusedAsFirstRead), which reads the whole letter the first reading wrote once more, and a second time
+ * where it holds a CR LF. A letter of 100,000 characters with CR LF line endings and a name written apart took 3.4 to
+ * 4.0 s of the reader's 3 s on the reference machine so. The bound is the size of the letter that budget is proved on:
+ * one such letter's worth of re-reading, so a letter with a wider match is read to 100,000 characters, and to about
+ * 50,000 where it holds a CR LF. Past it the check is not run, no wider match is applied, and the letter is REFUSED
+ * (unreadPastTheBound), never sent as the first reading alone wrote it. A count of characters, not a clock: a letter has
+ * the same answer on every machine and in every run. A letter with nothing for the wider reading to apply does no such
+ * work and meets no bound, whatever its length.
+ */
+export const WIDER_WORK_BOUND = 100_000;
+
+/** The characters refusedAsFirstRead reads of a text: its length, and where it holds a CR LF its length again with each CR LF written as a line feed. */
+const widerWorkOf = (text: string) => text.length + (text.includes('\r\n') ? asLineFeeds(text).length : 0);
+
+/**
+ * A text the wider reading found a match in and could not afford to apply it to (WIDER_WORK_BOUND), written so that the
+ * check refuses it: with one of the checks' own marks at its end, which holdsAsFirstRead refuses at its first line,
+ * before any reading, in every text ("text that holds one is no text to trust"). The refusal is the check's own, so no
+ * caller has a second answer to remember, and the text cannot be sent by a caller that runs the check, as every caller
+ * must. The text before the mark is the first reading's, whole: every span it replaced is replaced.
+ */
+const unreadPastTheBound = (text: string) => `${text}${BARRIER}`;
+
 /** redactLetterForScreen's two readings, the first (screenAsFirstRead) and the wider one, inside one reading's stores (inOneReading). */
 function screenAsBothRead(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
   const normal = unbracketed(text);
@@ -3403,8 +3439,10 @@ function screenAsBothRead(text: string, patient: PatientIdentifiers, claims: rea
   // reading replaced is replaced (merge only joins and widens spans), and every run it offered the screen is offered.
   const covered = within([...first.spans]);
   const wider = widerMatchesIn(unmarked(normal), subject).filter((match) => !covered(match));
-  if (wider.length === 0 || refusedAsFirstRead(first.text, patient, claims)) {
-    return { text: first.text, claims: first.claims, replaced: first.replaced, candidates: first.candidates };
+  // Past the wider reading's work bound the first reading's check is not asked again: the letter is refused by the count.
+  const unread = wider.length > 0 && widerWorkOf(first.text) > WIDER_WORK_BOUND;
+  if (unread || wider.length === 0 || refusedAsFirstRead(first.text, patient, claims)) {
+    return { text: unread ? unreadPastTheBound(first.text) : first.text, claims: first.claims, replaced: first.replaced, candidates: first.candidates };
   }
   const spans = merge([...first.found, ...wider]);
   const sent = written(normal, spans);

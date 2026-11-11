@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, holdsNameOrNumber, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
+import { type LetterClaim, type PatientIdentifiers, WIDER_WORK_BOUND, holdsIdentifier, holdsNameOrNumber, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
 
 import { timed } from './test-support/time-budget';
 
@@ -880,6 +880,114 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
     expect(sentOrRefused('SSN of the insured party\r\n900 12 3456', JANE, JANE_CLAIMS)).toBe('SSN of the insured party\r\n[SSN]');
     // One character further the label is out of reach in either writing: the recorded residual, unchanged.
     expect(sentOrRefused('SSN on file.  Statement\r\nNo. 900-12-3456150.00', JANE, JANE_CLAIMS)).toBe('SSN on file.  Statement\r\nNo. 900-12-3456150.00');
+  });
+
+  // The wider reading's work bound (docs/adr/0054, amendment of 2026-11-11, "the work bound"). A wider match is applied
+  // only after the first reading's check has read the letter the first reading wrote once more, twice where it holds a
+  // CR LF: that re-reading is the wider reading's work, counted in characters. Past WIDER_WORK_BOUND the check is not
+  // run and the letter is refused: by a count, never by a clock, so a letter has one answer on every machine and run.
+  describe('the work bound of the wider reading', () => {
+    const FILL = 'paid in full. ';
+    /** A letter of exactly `length` characters: words no reading takes, `middle`, then the name with a part written apart. */
+    const padded = (length: number, middle = '') => {
+      const tail = `${middle} Dear Zephy ra,`;
+      return `${FILL.repeat(Math.ceil(length / FILL.length)).slice(0, length - tail.length)}${tail}`;
+    };
+    const letterPath = (letter: string) => {
+      const sent = redactLetter(letter, patient, claims).text;
+      return holdsIdentifier(sent, patient, claims) ? REFUSED : sent;
+    };
+
+    it('is a fixed count of characters: the size of the letter the reader’s time budget is proved on', () => {
+      expect(WIDER_WORK_BOUND).toBe(100_000);
+    });
+
+    it('reads a letter whose re-reading is exactly the bound, and refuses the letter one character longer', () => {
+      const within = padded(WIDER_WORK_BOUND);
+      expect(within).toHaveLength(WIDER_WORK_BOUND);
+      const sent = sentOrRefused(within, patient, claims);
+      expect(sent).toBe(`${within.slice(0, -'Zephy ra,'.length)}[PATIENT_NAME],`);
+      expect(letterPath(within)).toBe(sent);
+      const over = padded(WIDER_WORK_BOUND + 1);
+      expect(over).toHaveLength(WIDER_WORK_BOUND + 1);
+      expect(sentOrRefused(over, patient, claims)).toBe(REFUSED);
+      expect(letterPath(over)).toBe(REFUSED);
+    });
+
+    it('counts a CR LF letter in both writings the check reads: its length, and its length with each CR LF as a line feed', () => {
+      // Two CR LF: 50,001 characters as written and 49,999 with line feeds are the bound exactly; one more is past it.
+      const within = padded(WIDER_WORK_BOUND / 2 + 1, '\r\nThank you.\r\n');
+      expect(within.length + within.replaceAll('\r\n', '\n').length).toBe(WIDER_WORK_BOUND);
+      expect(sentOrRefused(within, patient, claims)).toBe(`${within.slice(0, -'Zephy ra,'.length)}[PATIENT_NAME],`);
+      const over = padded(WIDER_WORK_BOUND / 2 + 2, '\r\nThank you.\r\n');
+      expect(over.length + over.replaceAll('\r\n', '\n').length).toBe(WIDER_WORK_BOUND + 2);
+      expect(sentOrRefused(over, patient, claims)).toBe(REFUSED);
+      expect(letterPath(over)).toBe(REFUSED);
+    });
+
+    it('counts the text the first reading wrote, placeholders and all, which is what its check reads again', () => {
+      // "Zephyra" is seven characters and its placeholder fourteen: a letter seven under the bound is read again as the
+      // bound exactly, and one of six under it as one past the bound.
+      const within = padded(WIDER_WORK_BOUND - 7, ' Zephyra');
+      expect(sentOrRefused(within, patient, claims)).toBe(`${within.slice(0, -' Zephyra Dear Zephy ra,'.length)} [PATIENT_NAME] Dear [PATIENT_NAME],`);
+      expect(sentOrRefused(padded(WIDER_WORK_BOUND - 6, ' Zephyra'), patient, claims)).toBe(REFUSED);
+    });
+
+    it('shows nothing the first reading redacts in the letter it refuses past the bound', () => {
+      const over = padded(WIDER_WORK_BOUND + 1, ' Jane Zephyra, member SYNMEMBER0042, claim SYNCLAIM0001, born 03/14/1980.');
+      for (const text of [redactLetterForScreen(over, patient, claims).text, redactLetter(over, patient, claims).text]) {
+        expect(holdsIdentifier(text, patient, claims)).toBe(true);
+        expect(text).toContain(' [PATIENT_NAME] [PATIENT_NAME], member [MEMBER_ID], claim [CLAIM_1], born [DATE_OF_BIRTH].');
+        expect(text).not.toMatch(/Jane|Zephyra|SYNMEMBER0042|SYNCLAIM0001|03\/14\/1980/u);
+      }
+      const { text, spans } = redactionSpans(over, patient, claims);
+      expect(holdsIdentifier(text, patient, claims)).toBe(true);
+      expect(spans.map((span) => span.placeholder)).toEqual(['[PATIENT_NAME]', '[PATIENT_NAME]', '[MEMBER_ID]', '[CLAIM_1]', '[DATE_OF_BIRTH]']);
+    });
+
+    it('gives a letter the same answer, to the character, on every run', () => {
+      for (const letter of [padded(WIDER_WORK_BOUND), padded(WIDER_WORK_BOUND + 1), padded(WIDER_WORK_BOUND / 2 + 2, '\r\nThank you.\r\n')]) {
+        const once = redactLetterForScreen(letter, patient, claims);
+        const held = holdsIdentifier(once.text, patient, claims);
+        for (let run = 0; run < 3; run += 1) {
+          const again = redactLetterForScreen(letter, patient, claims);
+          expect(again).toEqual(once);
+          expect(holdsIdentifier(again.text, patient, claims)).toBe(held);
+        }
+      }
+    });
+
+    it.each(HELD_FRAMES)('refuses a letter the first reading refuses on either side of the bound: %j', (held) => {
+      const short = `${held}Dear Zephy ra,`;
+      const within = `${held}${padded(WIDER_WORK_BOUND - held.length)}`;
+      const over = `${held}${padded(WIDER_WORK_BOUND + 1 - held.length)}`;
+      for (const letter of [short, within, over, `${over}\r\n`]) {
+        expect(sentOrRefused(letter, patient, claims)).toBe(REFUSED);
+        expect(letterPath(letter)).toBe(REFUSED);
+      }
+    });
+
+    it('reads a letter of any length that holds nothing for the wider reading to apply, as before', () => {
+      // No wider match, no work: the bound is no limit on a letter's length. With CR LF and without.
+      for (const ending of ['\n', '\r\n']) {
+        const long = `${`${FILL}${ending}`.repeat(10_000)}Dear Jane Zephyra, your claim SYNCLAIM0001 was paid.`;
+        expect(long.length).toBeGreaterThan(WIDER_WORK_BOUND + 50_000);
+        expect(sentOrRefused(long, patient, claims)).toBe(`${`${FILL}${ending}`.repeat(10_000)}Dear [PATIENT_NAME] [PATIENT_NAME], your claim [CLAIM_1] was paid.`);
+      }
+    });
+
+    it('refuses every letter past the bound that holds a name written apart, whatever else it holds', () => {
+      const pieces = fc.constantFrom('Your claim was denied. ', 'Service 01/02/2026 ', 'Paid $120.00 ', 'CO-45 ', 'Dear Zephyra, ', 'ref SYNCLAIM0001 ', 'Call 555-0100. ', '\r\n', '\n', 'in a ', 'Zeph. yra ', '1 1 11 ');
+      fc.assert(
+        fc.property(fc.array(pieces, { minLength: 1, maxLength: 12 }), fc.integer({ min: 1, max: 400 }), (parts, extra) => {
+          const body = parts.join('');
+          const letter = `${body}${padded(WIDER_WORK_BOUND + extra)}`;
+          expect(sentOrRefused(letter, patient, claims)).toBe(REFUSED);
+          expect(letterPath(letter)).toBe(REFUSED);
+        }),
+        { numRuns: 15 },
+      );
+    });
   });
 
   // The review of the build (review A of co-001/redact-item-26). Each finding on both sides: what is closed, and what stays.

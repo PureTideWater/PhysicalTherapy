@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import type { FlagRow } from '../flags';
-import { BARRIER, type LetterClaim, type PatientIdentifiers, dateForms, datesIn, fold, holdsIdentifier, holdsNameOrNumber, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '@tp/redact';
+import { BARRIER, type LetterClaim, type PatientIdentifiers, WIDER_WORK_BOUND, dateForms, datesIn, fold, holdsIdentifier, holdsNameOrNumber, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '@tp/redact';
 import { SYNTHETIC_IDS, SYNTHETIC_LETTER, localGateway, registerOutput, syntheticLetterInput, syntheticLetterOutput, syntheticRecords } from '../testing';
 import { type DenialLetterInput, type DenialLetterOutput, denialLetterSpec, verifyDenialLetter } from './denial-letter';
 import { mentionsIdentifier } from './narrative';
@@ -324,6 +324,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
   /** No budget: only how long a row may hang. A loaded runner's wall clock is no part of the reader's cost (vitest's default is 5 s). */
   const HANG_GUARD_MS = 60_000;
   const fill = (unit: string) => unit.repeat(Math.floor(N / unit.length));
+  /** As fill, to a length of the caller's. */
+  const fillTo = (unit: string, length: number) => unit.repeat(Math.floor(length / unit.length));
   const half = (unit: string) => unit.repeat(Math.floor(N / 2 / unit.length));
   /** MOD-16's CI counterexample: a letter whose chain only the range fix's barriers hold (cc3dd7f6 refused it for the range's digits). */
   const HELD = 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. ';
@@ -334,15 +336,20 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['dates written with spaces alone (4.7 s before)', ['JANE Q VANTREE'], fill('1 1 11 '), ['SYN555001']],
     // MOD-23: the wider reading of the call's own names reads the letter's dates and views the first reading read, once
     // (inOneReading); a letter that holds a name written apart is read by both, and one that writes it thousands of times.
-    ['dates written with slashes, then the name with a part written apart', ['JANE Q VANTREE'], `${fill('1/1/11 ')}Vant ree`, ['SYN555001']],
-    ['dates written with spaces alone, then the name over a full stop', ['JANE Q VANTREE'], `${fill('1 1 11 ')}Vant. ree`, ['SYN555001']],
+    // Each within the wider reading's work bound (WIDER_WORK_BOUND: the characters the first reading's check reads again
+    // before a wider match is applied), so each is read by both readings; the same letters past it are refused below.
+    ['dates written with slashes, then the name with a part written apart', ['JANE Q VANTREE'], `${fillTo('1/1/11 ', WIDER_WORK_BOUND - 8)}Vant ree`, ['SYN555001']],
+    ['dates written with spaces alone, then the name over a full stop', ['JANE Q VANTREE'], `${fillTo('1 1 11 ', WIDER_WORK_BOUND - 9)}Vant. ree`, ['SYN555001']],
     ['the name letter by letter, repeated', ['JANE Q VANTREE'], fill('V a n t r e e '), ['SYN555001']],
-    ['the name written apart, then initials to the end of the letter', ['JANE Q VANTREE'], `Vant ree${' J'.repeat(N / 2)}`, ['SYN555001']],
+    ['the name written apart, then initials to the end of the letter', ['JANE Q VANTREE'], `Vant ree${' J'.repeat((WIDER_WORK_BOUND - 8) / 2)}`, ['SYN555001']],
     ['all of the name but its last letter, spaced, repeated', ['JANE Q VANTREE'], fill('V a n t r e '), ['SYN555001']],
-    // The wider reading's dearest letters: a wider match is applied only after the first reading's check has read the
-    // letter, and a CR LF letter is checked in both writings, so these are read about 2.7 times as long as on the base.
-    ['dates written with spaces alone and a CR LF, then the name with a part written apart', ['JANE Q VANTREE'], `${fill('1 1 11 ')}\r\nVant ree`, ['SYN555001']],
-    ['a digit and a CRLF, repeated, then the name with a part written apart', ['JANE Q VANTREE'], `${fill('5\r\n')}Vant ree`, ['SYN555001']],
+    // The wider reading's dearest letters that are still read. A CR LF letter with nothing for the wider reading to apply
+    // is checked in both writings (K-1): the first reading's check twice. One that holds a name written apart is checked
+    // four times (both writings before the wider match is applied, both after), so the bound holds it to half the length.
+    ['dates written with spaces alone, and a CR LF', ['JANE Q VANTREE'], `${fill('1 1 11 ')}\r\n`, ['SYN555001']],
+    ['a digit and a CR LF, repeated', ['JANE Q VANTREE'], fill('5\r\n'), ['SYN555001']],
+    ['dates written with spaces alone and a CR LF, then the name with a part written apart, at the bound', ['JANE Q VANTREE'], `${fillTo('1 1 11 ', WIDER_WORK_BOUND / 2 - 10)}\r\nVant ree`, ['SYN555001']],
+    ['a digit and a CR LF, repeated, then the name with a part written apart, at the bound', ['JANE Q VANTREE'], `${'5\r\n'.repeat(Math.floor((WIDER_WORK_BOUND - 16) / 5))}Vant ree`, ['SYN555001']],
     ['dates with a claim’s digits between them (5.0 s before)', ['JANE VANTREE'], fill('1-1-11 555001 '), ['555001']],
     // Social Security and phone numbers by pattern (docs/adr/0054, amendment of 2026-11-04; twins NPA-555-01xx, 9xx).
     ['phones back to back', ['JANE Q VANTREE'], fill('(202) 555-0123 '), ['SYN555001']],
@@ -379,6 +386,24 @@ describe('one pass over one folded view: every placeholder survives and no ident
     });
     expect(run.value).toEqual({ held: false, mentioned: false });
     expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
+  });
+
+  // The wider reading's work bound (docs/adr/0054, amendment of 2026-11-11, "the work bound"): the letters above with
+  // the name written apart, at the full N characters, and the two that took 3.4 to 4.0 s of the 3 s budget before the
+  // bound (a CR LF letter of N characters with a name written apart). Each is past the count, so each is refused without
+  // the first reading's check being run again: by the count alone, in well under the budget.
+  it.each([
+    ['dates written with slashes, then the name with a part written apart', `${fill('1/1/11 ')}Vant ree`],
+    ['dates written with spaces alone, then the name over a full stop', `${fill('1 1 11 ')}Vant. ree`],
+    ['the name written apart, then initials to the end of the letter', `Vant ree${' J'.repeat(N / 2)}`],
+    ['dates written with spaces alone and a CR LF, then the name with a part written apart', `${fill('1 1 11 ')}\r\nVant ree`],
+    ['a digit and a CR LF, repeated, then the name with a part written apart', `${fill('5\r\n')}Vant ree`],
+    ['dates written with spaces alone and a CR LF, then the name with a part written apart, one line past the bound', `${fillTo('1 1 11 ', WIDER_WORK_BOUND / 2)}\r\nVant ree`],
+  ])('refuses a letter past the wider reading’s work bound by its count, well within the budget: %s', { timeout: HANG_GUARD_MS }, (_case, text) => {
+    const who = patient(['JANE Q VANTREE']);
+    const run = timed(BUDGET_MS, () => holdsIdentifier(redactLetterForScreen(text, who, claim('SYN555001')).text, who, claim('SYN555001')));
+    expect(run.value).toBe(true);
+    expect(run.ms, `redacted and refused ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
   });
 
   // Review round 3 (GATEWAY3-3): the check's own paths, a letter it refuses included, in time linear in its length.
