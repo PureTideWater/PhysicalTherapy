@@ -2554,15 +2554,15 @@ const NAMED_BEFORE = new RegExp(`(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:AC
  * amount its first. It does where structure says whose the other digits are:
  * - after it: cents after its last group, or a second shape begun in that group ("900-12-3456150.00",
  *   "202-555-0123202-555-0124"), the shape wrapped after a dash too;
- * - before it: a currency amount's digits, an amount's cents, or a year ("$150.00900-12-3456", "$514451/293-6215",
- *   "150.00900-12-3456", "01/01/2020900-12-3456", "2020900-12-3456");
+ * - before it: a currency amount's digits, four digits or more, an amount's cents, or a two-digit year after its month
+ *   and day ("$150.00900-12-3456", "$514451/293-6215", "2020900-12-3456", "01/01/2020900-12-3456", "150.00900-12-3456");
  * unless a reference's noun names the number ("Case No. 123-45-678901-02", "Policy No. 01-23456-78-9012"). Under an SSN,
  * phone or Medicare label the shape that starts at its group's start is the person's number whatever is glued after it ("SSN No. 900-12-345678", "Phone
  * number 202-555-01234567", "Medicare ID 900-12-345678"), in the number's usual writing too, with digits glued after it
  * ("Phone number (202) 555-01234567", "Tel 202 555-0123150.00": the review of the build, B1-8). With no structure and no label a longer group is as often a
- * reference's ("Tracking 123-456-78901", "Claim # 20260115-12-3456", "29 CFR 2590.715-2719": the review of the build,
- * B2-3 and B2-6): 'shape', which a held letter alone refuses (the first group three digits, or four or more longer, and
- * no noun naming it: "900-01-202012th", "2020900-12-3456"), as cc3dd7f6 refused every held letter.
+ * reference's ("Tracking 123-456-78901", "29 CFR 2590.715-2719": the review of the build, B2-3): 'shape', which a held
+ * letter alone refuses (the first group three digits, the last longer, and no noun naming it: "900-01-202012th"), as
+ * cc3dd7f6 refused every held letter.
  * And a run of eleven digits or more with cents after it ("900123456150.00"), unless named ("ICN 12345678901234.01"); and
  * an amount's cents with a nine or a ten right after them ("150.00900123456"; never a comma between two numbers of a list).
  * A date written year first with digits glued after its day ("2020-01-02150.00") is read as cc3dd7f6 read it.
@@ -2597,15 +2597,16 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labeled: (group:
     const yearFirst = /^(?:19|20)[0-9]{2}$/u.test(a.digits) && /^(?:0[1-9]|1[0-2])$/u.test(b.digits) && /^(?:0[1-9]|[12][0-9]|3[01])/u.test(c.digits);
     if (yearFirst) continue;
     const [before, after, last] = [groups[i - 1], groups[i + 3], groups[i + 4]];
-    // Digits before the shape are another number's where a currency amount holds them, where they are an amount's cents (two
-    // of them, a point joining them to the group before: "150.00900-12-3456") or where they are a year ("2020900-12-3456",
-    // "01/01/2020900-12-3456", "June 18, 2026423.435-4454"; a two-digit year after its month and day, "01/02/20900-12-3456").
+    // Digits before the shape are another number's where a currency amount holds them, where they are four or more (a year, a
+    // whole number: "2020900-12-3456", "01/01/2020900-12-3456", "2025550100900-12-3456"), an amount's cents (two of them, a
+    // point joining them to the group before: "150.00900-12-3456") or a two-digit year after its month and day
+    // ("01/02/20900-12-3456"); one to three more are as often a reference's own ("29 CFR 2590.715-2719").
     // Digits after it are another number's where the shape starts at its group's start and cents follow them
     // ("900-12-3456150.00"), they begin a second shape ("202-555-0123202-555-0124") or they begin a date
     // ("202-555-012301/02/2020"). A group joined by the reference's own joiner is the reference's ("2026-0115-123-4567",
     // "123-45-67890-01": the review of the fix round, C2-3).
     const joinBefore = before === undefined ? '' : text.slice(before.end, a.start);
-    const headAnothers = head > 0 && (inCurrency || (head === 2 && /^[.,]$/u.test(joinBefore)) || (head === 4 && /^(?:19|20)/u.test(a.digits)) || (head === 2 && DATE_GLUED_BEFORE.test(text.slice(Math.max(0, a.start - 8), a.start))));
+    const headAnothers = head > 0 && (inCurrency || head >= 4 || (head === 2 && /^[.,]$/u.test(joinBefore)) || (head === 2 && DATE_GLUED_BEFORE.test(text.slice(Math.max(0, a.start - 10), a.start))));
     const second = tail === 3 && after !== undefined && last !== undefined && (after.digits.length === 2 || after.digits.length === 3) && last.digits.length >= 4 && TIGHT_JOIN.test(text.slice(c.end, after.start)) && TIGHT_JOIN.test(text.slice(after.end, last.start));
     const tailAnothers = head === 0 && tail > 0 && (CENTS_GLUED.test(text.slice(c.end, c.end + 5)) || second || DATE_GLUED_AFTER.test(text.slice(c.start + 4, c.start + 16)));
     if (labeled(a) && (head === 0 || headAnothers)) return 'structure';
@@ -2614,8 +2615,8 @@ function gluedShape(text: string, groups: readonly ScanGroup[], labeled: (group:
     while (first > 0 && TIGHT_JOIN.test(text.slice(groups[first - 1]?.end ?? 0, groups[first]?.start ?? 0))) first -= 1;
     if (headAnothers || tailAnothers) {
       if (!named(groups[first] ?? a)) return 'structure';
-    } else if (!inCurrency && !named(a) && (head === 0 || head >= 4)) {
-      // No structure says whose the other digits are ("900-01-202012th", "2020900-12-3456"): a held letter refuses it.
+    } else if (!inCurrency && head === 0 && !named(a)) {
+      // No structure says whose the digits after it are ("900-01-202012th"): a held letter refuses it.
       shape = true;
     }
   }
@@ -2654,8 +2655,11 @@ const CODE_LIST_BEFORE = /(?<!\p{L})(?:CPT(?:[\p{Pd}− ]?4)?|HCPCS|CODES?|MODIF
 const TAX_BEFORE = /(?<!\p{L})(?:F?EIN|TIN|TAX(?:PAYER)?[ \t]?I\.?D\.?(?:ENTIFICATION)?)\)?(?:[ \t]{0,3}(?:NO|NUMBER|NBR|NUM)\b\.?)?(?:[ \t]{0,3}\((?:F?EIN|TIN)\))?[ \t]{0,3}[:#]{0,2}[ \t]{0,3}$/u;
 const LINE_BREAK_IN = new RegExp(LINE_BREAK, 'u');
 const TIGHT_JOIN = /^[\p{Pd}−⁃˗➖./()_|\\'‘’ʼʹˊ′‵`~·‧∙⋅・•]{1,2}$/u;
-/** A date's month and day, each with its separator, up to the two-digit year glued before a shape: "01/02/" before "20900-12-3456". */
-const DATE_GLUED_BEFORE = /(?<![0-9])(?:0?[1-9]|[12][0-9]|3[01])[/.\p{Pd}\u2212](?:0?[1-9]|[12][0-9]|3[01])[/.\p{Pd}\u2212]$/u;
+/**
+ * A date up to its last two digits, glued before a shape: its month and day before a two-digit year ("01/02/" before
+ * "20900-12-3456"), or its year and month before its day ("2020-01-" before "02900-12-3456").
+ */
+const DATE_GLUED_BEFORE = /(?<![0-9])(?:(?:0?[1-9]|[12][0-9]|3[01])[/.\p{Pd}\u2212](?:0?[1-9]|[12][0-9]|3[01])|(?:19|20)[0-9]{2}[/.\p{Pd}\u2212](?:0?[1-9]|1[0-2]))[/.\p{Pd}\u2212]$/u;
 /** A date glued after a shape's last four digits: month, day and year, or year first, with their separators ("01/02/2020", "2020-01-02"). */
 const DATE_GLUED_AFTER = /^(?:(?:0?[1-9]|[12][0-9]|3[01])[/.\p{Pd}\u2212](?:0?[1-9]|[12][0-9]|3[01])[/.\p{Pd}\u2212](?:(?:19|20)[0-9]{2}|[0-9]{2})|(?:19|20)[0-9]{2}[/.\p{Pd}\u2212](?:0?[1-9]|1[0-2])[/.\p{Pd}\u2212](?:0?[1-9]|[12][0-9]|3[01]))(?![0-9])/u;
 /** A dash at a line's end and the next line's indentation: a number wrapped after its joiner ("900-12-\n3456150.00"). */

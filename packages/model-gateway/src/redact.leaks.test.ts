@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, redactLetterForScreen, redactionSpans } from './redact';
+import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, redactLetter, redactLetterForScreen, redactionSpans } from './redact';
 
 /**
  * The leaks co-001/redact-ssn-phone-leaks closes (test matrix MOD-21, MOD-22; docs/adr/0054, the amendment of that change;
@@ -94,7 +94,8 @@ describe('MOD-21: a Social Security or phone number glued to another number, beh
     unchanged('Ticket 802-91-69413'),
     unchanged('Inquiry # 150-98-68279'),
     unchanged('Inquiry No. 150-98-68279'),
-    unchanged('Patient ID 900-12-3456150.00'),
+    // No other word names a number: cents glued after the shape are another number's (the review of the build, B2-4).
+    refused('Patient ID 900-12-3456150.00'),
     // An SSN or phone label names no reference, whatever follows the label's word.
     refused('SSN No. 900-12-3456150.00'),
     refused('SSN# 900-12-3456150.00'),
@@ -103,8 +104,10 @@ describe('MOD-21: a Social Security or phone number glued to another number, beh
     refused('Fax No. 202-555-0123150.00'),
     // And a word that ends in "id" is no word and "ID": "Paid", "Medicaid" and "Valid" name nothing.
     refused('Paid-975-20-18460.00.'),
-    refused('Medicaid 900-12-345678'),
-    refused('Valid 123-45-678901'),
+    // With nothing after its longer last group and no label, the number is as often a reference: sent, as at ef3e8d20
+    // (the review of the build, B2-3).
+    unchanged('Medicaid 900-12-345678'),
+    unchanged('Valid 123-45-678901'),
   ])('G1: more digits glued after an SSN’s or a phone’s own shape refuse the letter, unless a reference’s noun names the number: %j %s', (letter, _outcome, sent) => {
     expectOutcome(letter, sent);
   });
@@ -138,8 +141,9 @@ describe('MOD-21: a Social Security or phone number glued to another number, beh
     unchanged('Total $1,250.00-123-4567'),
     unchanged('Deductible $1000/$250/$5000'),
     unchanged('Paid $1,500.00 on 01-12-2026'),
-    // A shape right after the currency sign is the amount itself, as before (R1b's currency guard).
-    unchanged('Paid $900-12-3456150.00'),
+    // A shape right after the currency sign with cents glued after it is refused as it is with no sign (the review of the
+    // build, B2-4).
+    refused('Paid $900-12-3456150.00'),
   ])('G1: an SSN’s or a phone’s own shape that starts inside a currency amount refuses the letter; an amount beside other numbers stays: %j %s', (letter, _outcome, sent) => {
     expectOutcome(letter, sent);
   });
@@ -166,7 +170,10 @@ describe('MOD-21: a Social Security or phone number glued to another number, beh
   it.each([
     refused('PaidXXX-XX-3456'),
     refused('2020***-**-3456'),
-    refused('Seen 2020XXXXX3456'),
+    // Five mask characters and four digits are as often a masked account number: refused in a held letter only, as at
+    // ef3e8d20 (the review of the build, B2-2).
+    unchanged('Seen 2020XXXXX3456'),
+    refused(`${HELD}Seen 2020XXXXX3456`),
     // The mask set apart is redacted as before; six mask characters and four digits are a masked account number.
     sentAs('SSN XXX-XX-3456', 'SSN [SSN]'),
     unchanged('Deposited to account XXXXXX1234'),
@@ -232,8 +239,8 @@ describe('MOD-21: a Social Security or phone number glued to another number, beh
     // And the scan's read over the numbers before an amount reads through the list number.
     refused('TTY 1: Questions? 150.00 120.00 30.00'),
     refused('Fax 1: 15.00 12.00 3.00'),
-    // Recorded: a local number after a list number and ")" stays as at ef3e8d20; three digits are no list number; "Line" is no label.
-    unchanged('Tel 1) 555-0123'),
+    // A local number after a list number and ")" is the label's; three digits are no list number; "Line" is no label.
+    sentAs('Tel 1) 555-0123', 'Tel 1) [PHONE]'),
     unchanged('Fax 123: 555-0100'),
     unchanged('Line 1: 555-0100'),
   ])('G5: an SSN or phone label is read through its own list number: %j %s', (letter, _outcome, sent) => {
@@ -544,8 +551,10 @@ describe("MOD-22: the call's own identifiers written with look-alikes or a digit
     expect(sentOrRefused('Dear Zeph\u00B7yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME], your claim');
     expect(sentOrRefused('Dear Zeph\u2027yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME], your claim');
     expect(sentOrRefused('Dear Ja\u00B7ne Zeph\u2027y\u2027ra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME] [PATIENT_NAME], your claim');
-    // A bullet and a full stop are no joiner of a name.
-    expect(sentOrRefused('Dear Zeph\u2022yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear Zeph\u2022yra, your claim');
+    // The bullet, the bullet operator and the dot operator join a name's pieces too; a full stop does not.
+    expect(sentOrRefused('Dear Zeph\u2022yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME], your claim');
+    expect(sentOrRefused('Dear Zeph\u2219yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear [PATIENT_NAME], your claim');
+    expect(sentOrRefused('Dear Zeph.yra, your claim', JANE, JANE_CLAIMS)).toBe('Dear Zeph.yra, your claim');
   });
 
   it('redacts a name stored in Greek in either case, and written with the Latin letters it looks like: both cases of a letter fold to one thing', () => {
@@ -765,12 +774,233 @@ describe('MOD-23 residuals (pinned as sent today; test-matrix MOD-23 closes them
 
   // Beside them, the closed cases: a middle dot or a hyphenation point joins a name's pieces, and a part split by a space
   // with both pieces capitalized is the name.
+  it('redacts the name written with a part split by a space, both pieces capitalized, alone and in a held letter', () => {
+    expect(sentOrRefused('Dear Zephy Ra, your claim', patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
+    expect(sentOrRefused(`${HELD}Dear Zephy Ra, your claim`, patient, claims)).toBe(`${HELD}Dear [PATIENT_NAME], your claim`);
+  });
+
+  // A name written with a middle dot or a hyphenation point is a match ef3e8d20 did not make: redacted alone; in a held
+  // letter, which ef3e8d20 refused for the name's pieces, it is left as written and the letter stays refused.
   it.each([
     ['a middle dot inside the name', 'Dear Zeph\u00B7yra, your claim'],
     ['a hyphenation point inside the name', 'Dear Zeph\u2027yra, your claim'],
-    ['a part split by a space, both pieces capitalized', 'Dear Zephy Ra, your claim'],
-  ])('redacts the name written with %s, alone and in a held letter: %j', (_what, letter) => {
+  ])('redacts the name written with %s alone, and refuses the held letter as ef3e8d20 did: %j', (_what, letter) => {
     expect(sentOrRefused(letter, patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
-    expect(sentOrRefused(`${HELD}${letter}`, patient, claims)).toBe(`${HELD}Dear [PATIENT_NAME], your claim`);
+    expect(sentOrRefused(`${HELD}${letter}`, patient, claims)).toBe(REFUSED);
+  });
+});
+
+describe('the reviews of the build and of its fix round (docs/adr/0054): each finding on both sides', () => {
+  const SIMONE = patientOf(['SIMONE VANTREE'], ['1980-03-14'], ['ZZ7654321']);
+  const outcome = (letter: string, patient: PatientIdentifiers = JANE, claims: readonly LetterClaim[] = JANE_CLAIMS) => sentOrRefused(letter, patient, claims);
+
+  // B1-1, B1-5: a match ef3e8d20 did not make is applied only where the letter is not refused without it. Nothing tests
+  // what stands beside the number: an invisible character between two numbers changes nothing.
+  it.each([
+    sentAs('Call Zephyra at 555-0123', 'Call [PATIENT_NAME] at [PHONE]'),
+    sentAs('Call Zephyra at 555-0123, 8 a.m. to 5 p.m.', 'Call [PATIENT_NAME] at [PHONE], 8 a.m. to 5 p.m.'),
+    refused('Call Zephyra at 555-0123/555-0124'),
+    refused('Call Zephyra at 555-0123/​555-0124'),
+    refused('Call Zephyra at 555-0123 ​555-0124'),
+    refused('Phone 1: 555-0100​/555-0124'),
+    refused('ID SYNMEMBERO042 555-0123'),
+    sentAs('ID SYNMEMBERO042 on file', 'ID [MEMBER_ID] on file'),
+  ])('B1-1, B1-5: a number or an identifier only this reading reads is redacted where ef3e8d20 refused nothing, and left for the refusal where it refused: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // B1-2: a name only this reading reads (look-alike letters, a middle dot) ends no label's window.
+  it.each([
+    sentAs('Phone ZЕРНYRА\n555-0123', 'Phone [PATIENT_NAME]\n[PHONE]'),
+    sentAs('Phone: Zeph·yra\n555-0123', 'Phone: [PATIENT_NAME]\n[PHONE]'),
+    sentAs('Phone Zephyra\n555-0123', 'Phone [PATIENT_NAME]\n[PHONE]'),
+  ])('B1-2: a label reads through the call’s own identifier across the one line break a label reads: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // B1-3, B1-14: the look-alike fold is for the call's own identifiers. A Cyrillic letter that looks like a digit ends no
+  // label's window, and a keep-noun spelled in look-alikes keeps no number.
+  it.each([
+    sentAs('Phone (Зоя): 555-0123', 'Phone (Зоя): [PHONE]'),
+    sentAs('TTY без 555-0123', 'TTY без [PHONE]'),
+    sentAs('ІСN 900123456', 'ІСN [SSN]'),
+    sentAs('ICN 900123456', 'ICN 900123456'),
+  ])('B1-3, B1-14: the patterns and the scan read a look-alike as the letter it is: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // B1-4: the checks' own marks, written in a letter, are the control characters they are.
+  it.each([refused('SSN \u0003\n900.12 3456'), sentAs('Phone \u0003\n555-0123', 'Phone \u0003\n[PHONE]'), refused('SSN \u0001 900.12 3456')])('B1-4: a control character of the checks’ own in a letter is no placeholder: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // B1-6, B1-7, C2-6: the glued Social Security labels and the masked SSN glued, and what stays.
+  it.each([
+    refused('PatientHICN 900.12 3456'),
+    refused('PatientSS# 900.12 3456'),
+    refused('PatientSS No 900.12 3456'),
+    refused('PaidXXX - XX - 3456'),
+    refused('PaidXXX-XX-\n3456'),
+    refused('FaxXXX-XX-3456'),
+    unchanged('Deposited to Acct#XXXX1234 on 01/15/2026.'),
+    unchanged('Acct#XXXX-XX-1234'),
+    unchanged('Signature_____2026'),
+  ])('B1-6, B1-7, B2-2, C2-6: a glued Social Security label and a masked SSN glued in its own shape refuse; a masked account number stays: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // B1-8, B2-3, B2-4, B2-6, C2-2, C2-3, C2-4 and the gate's replay: structure decides whose the digits glued to an SSN's or
+  // a phone's shape are; a label always does; a reference's noun names; nothing else does.
+  it.each([
+    refused('Phone number (202) 555-01234567'),
+    refused('Tel 202 555-0123150.00'),
+    refused('Paid 150.00900123456'),
+    refused('Paid $150.002025550123'),
+    refused('Paid $150.00900-12-\n3456'),
+    refused('Patient # 900-12-3456150.00'),
+    refused('Medicare No. 900-12-3456150.00'),
+    refused('$900-12-3456150.00'),
+    refused('202-555-012301/02/2020'),
+    refused('01/02/20900-12-3456'),
+    refused('2020900-12-3456'),
+    refused('June 18, 2026423.435-4454'),
+    unchanged('Case No. A123-45-678901'),
+    unchanged('Confirmation code 802-91-69413'),
+    unchanged('Cases 123-45-678901, 123-45-678902'),
+    unchanged('Claim # 20260115-12-3456'),
+    unchanged('Policy No. 01-23456-78-9012'),
+    unchanged('Referral # 123-45-67890-01'),
+    unchanged('Claim Number | 2026-0115-123-4567'),
+    unchanged('TCN # 2026008123456.01'),
+    unchanged('Internal Control Number (ICN): 2026008123456.01'),
+    unchanged('ICN 12345678901,12345678902'),
+    unchanged('20260112345,01/05/2026,150.00,96.40'),
+    unchanged('Contact Information\nMember ID: 1234-567-89012'),
+    unchanged('Contact: Billing 250.75 123456'),
+    unchanged('Telephone visit 250.00   1234567'),
+    unchanged('Contact us about March 7, 2024−671.422026-03-12−March 3, 2023.'),
+  ])('B1-8, B2-3, B2-4, B2-6, C2-2, C2-3, C2-4: digits glued to an SSN’s or a phone’s shape refuse the letter where structure or a label says whose they are; a reference stays: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // B1-9, C2-7 and the gate's replay: a label's list number.
+  it.each([
+    sentAs('Tel. 1: 555-0100', 'Tel. 1: [PHONE]'),
+    sentAs('Phone (1): 555-0100', 'Phone (1): [PHONE]'),
+    sentAs('Phone 1 (home): 555-0100', 'Phone 1 (home): [PHONE]'),
+    sentAs('Contact 1: 8005550118 Contact 2: 8005550175', 'Contact 1: [PHONE] Contact 2: [PHONE]'),
+    // In parentheses it is a list number only before a colon.
+    unchanged('SSN (2). 150.00 120.00 30.00'),
+    unchanged('TTY users call (2), 2,403.99; Paid 150.00 2026'),
+    // The recorded cost: what ef3e8d20 refuses after the label, it now refuses after the label's list number too.
+    refused('Contact: Springfield, IL 62701-1234'),
+    refused('Contact 1: Springfield, IL 62701-1234'),
+  ])('B1-9, C2-7: a label is read through its list number, after an abbreviation’s full stop or in parentheses before a colon too: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // B1-10, B1-11, B1-13, B2-1, C2-8: digit-for-letter forms are of five characters or more, in pieces too; a look-alike
+  // form glued inside a longer run refuses; what an ordinary token is stays.
+  it('B1-10, B1-11, B1-13: reads a digit-for-letter form written in pieces, another script’s digit that looks like a letter, and a look-alike form glued', () => {
+    const claims = claimsOf('SYNCLAIM0001');
+    expect(outcome('ID ZZ 765432l', SIMONE, claims)).toBe('ID [MEMBER_ID]');
+    expect(outcome('Claim SYNCLAIM-OOO1', SIMONE, claims)).toBe('Claim [CLAIM_1]');
+    expect(outcome('Dear VAN-TR3E,', SIMONE, claims)).toBe('Dear [PATIENT_NAME],');
+    expect(outcome('Dear Van-\ntr3e,', SIMONE, claims)).toBe('Dear [PATIENT_NAME],');
+    expect(outcome('Dear ٧ANTREE,', SIMONE, claims)).toBe('Dear [PATIENT_NAME],');
+    expect(outcome('Paid 150.00νantree', SIMONE, claims)).toBe(REFUSED);
+    expect(outcome('Re: ZZ76S432197110 on file.', SIMONE, claims)).toBe(REFUSED);
+    expect(outcome('900-12-3456́thZephyraPaid')).toBe(REFUSED);
+  });
+
+  it.each([
+    [['LIAM VANTREE'], 'Our office is open 8am to 11am and 1pm to 5pm. Please call before 11AM Eastern.'],
+    [['COLE VANTREE'], 'Adjustment CO13 applied. Adjustment CO131 (claim specific negotiated discount).'],
+    [['JANE Q ZEPHYRA'], 'Coverage ends JAN31. Service dates JAN3, JAN10, JAN17'],
+    [['OMAR VANTREE'], 'DOS 10MAR2026 97110 GP 2 150.00'],
+    [['ANNA LANE'], 'Plan3 benefits apply.'],
+    [['ERIC BOTH'], 'the 80th percentile'],
+    [['ANNA WEEKS'], 'Plan of care: Week-5 reassessment'],
+    [['BILLIE VANTREE'], 'House Bill-13 takes effect 01/01/2027.'],
+  ])('B2-1, C2-8: an ordinary token is no digit-for-letter form of a name of four letters, of a month’s word, or of a word and a number: %j %j', (names, letter) => {
+    expect(outcome(letter, patientOf(names), claimsOf('SYNCLAIM0001'))).toBe(letter);
+  });
+
+  it('records the cost that stays: a plural name and its singular with a 5 glued to it', () => {
+    expect(outcome('Plan of care: Week5 reassessment', patientOf(['ANNA WEEKS']), claimsOf('SYNCLAIM0001'))).toBe('Plan of care: [PATIENT_NAME] reassessment');
+  });
+
+  // B2-7, C2-1: a short word of another script is no Latin name; a name stored in its own script is the name.
+  it('B2-7, C2-1: reads a short name in the patient’s own script, and no short Latin name in another script’s word', () => {
+    // "na russkom" for a patient HA; "Dear Ms. Li" for a patient whose name is stored in Cyrillic.
+    const notice = 'на русском языке';
+    expect(outcome(notice, patientOf(['LINH HA']), claimsOf('SYNCLAIM0001'))).toBe(notice);
+    expect(outcome('Dear Linh Ha, Ms. Ha was approved.', patientOf(['LINH HA']), claimsOf('SYNCLAIM0001'))).toBe('Dear [PATIENT_NAME], Ms. [PATIENT_NAME] was approved.');
+    expect(outcome('Dear Ms. Ли:', patientOf(['ЗЕФИРА ЛИ']), claimsOf('SYNCLAIM0001'))).toBe('Dear Ms. [PATIENT_NAME]:');
+  });
+
+  // C1-1: a Social Security label a change of case sets apart is a second reading, never a replacement.
+  it.each([refused('Tel claimSS#b 20255 50123'), refused('Tel caseHICé 20255 50123'), refused('Call Zephyra at 555-0123.\nTel claimSS#b 20255 50123')])('C1-1: the reading with the glued label set apart only adds to the reading as written: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // C1-2: a match ef3e8d20 did not make is no item of a list and ends no label's window; C1-3, C1-4: what ef3e8d20's
+  // reading refused stays refused whatever the look-alike fold reads beside the name.
+  it.each([
+    sentAs('Claim Zephy∙ra, 900123456', 'Claim [PATIENT_NAME], [SSN]'),
+    sentAs('Claim Zephyrа, 900123456', 'Claim [PATIENT_NAME], [SSN]'),
+    sentAs('Claim Mаrch 14 1980, 900123456', 'Claim [DATE_OF_BIRTH], [SSN]'),
+    refused('Mаrch 14, 1980 555 01 23'),
+    refused(`${HELD}Zephyra Ꝯ00-12-3456`),
+    refused('Zephyra〇'),
+    refused('〇Zephyra'),
+    refused('Seen Jane Zephyra〇 on 01/02/2020, paid 150.00'),
+  ])('C1-2, C1-3, C1-4: the look-alike reading only adds to ef3e8d20’s own: %j %s', (letter, _outcome, sent) => {
+    expect(outcome(letter), JSON.stringify(letter)).toBe(sent);
+  });
+
+  // B1-12, B2-5, B2-8, C2-5: a held letter's date of birth in more writings, never the verb "may" or a day in words; and
+  // more of what a held letter places by its structure.
+  it('B1-12, B2-5, C2-5: reads the date of birth with a Roman month and a two-digit year and run together as six digits; never the verb "may" or a day in words', () => {
+    const born = (date: string) => patientOf(['JANE Q ZEPHYRA'], [date]);
+    const claims = claimsOf('SYNCLAIM0001');
+    const held = 'Service 01/01/2020-150.00 Paid\n';
+    expect(outcome(`${HELD}14/III/80`, born('1980-03-14'), claims)).toBe(REFUSED);
+    expect(outcome(`${HELD}ID 80031455`, born('1980-03-14'), claims)).toBe(REFUSED);
+    expect(outcome(`${held}Born May 12th`, born('1980-05-12'), claims)).toBe(REFUSED);
+    expect(outcome(`${held}the 12th of May`, born('1980-05-12'), claims)).toBe(REFUSED);
+    for (const line of ['Visits over 12 may require prior authorization.', 'Visits after the 12th may require prior authorization.', 'Visits over 12 may\nrequire prior authorization.', 'You may 12) call us.']) {
+      expect(outcome(`${held}${line}`, born('1980-05-12'), claims), line).toBe(`${held}${line}`);
+    }
+    // Recorded: a day written as an ordinal's word is not read.
+    expect(outcome(`${held}The first March payment was applied.`, born('1980-03-01'), claims)).toBe(`${held}The first March payment was applied.`);
+    expect(outcome(`${HELD}March fourteenth`, born('1980-03-14'), claims)).toBe(`${HELD}March fourteenth`);
+  });
+
+  it.each(['Washington, D.C. 20201-0001', 'Springfield, IL, 62701-1234', 'Tax ID #: 12-3456789', 'CPT code(s) 97110 97140', 'M54.50 97110', '97110 (2) 150.00'])('B2-8: a held letter places %j by its structure', (line) => {
+    const letter = `Service 01/01/2020-150.00 Paid\n${line}`;
+    expect(outcome(letter), JSON.stringify(letter)).toBe(letter);
+  });
+
+  // The invariant behind B1-1 and C1-1: whatever redactLetterForScreen leaves as written that redactLetter replaces, the
+  // check refuses.
+  it('refuses every letter in which the letter reader left a match as written (property)', () => {
+    const label = fc.constantFrom('Phone', 'Tel', 'Call', 'SSN', 'Fax', 'Contact');
+    const own = fc.constantFrom(' Zephyra', ' Jane Zephyra', ' ZZ7654321', ' 1:', ' (2):', ' ZЕPHYRA', ' Zeph·yra', ' SYNMEMBERO042', ' VANTR3E', '');
+    const number = fc.constantFrom('555-0123', '2025550123', '900-12-3456', '90012-3456', '555 0124', '900 12 34.56', 'XXXXX3456');
+    const joiner = fc.constantFrom(' ', ': ', ' at ', '\n', ' - ');
+    const between = fc.constantFrom('/', ' ', ', ', '/​', '​/', '\n', ' or ', '-', ' 150.00 ');
+    const frame = fc.constantFrom('', HELD, 'Paid $0,000.00. ', 'Re: ');
+    fc.assert(
+      fc.property(frame, label, own, joiner, number, fc.option(fc.tuple(between, number), { nil: undefined }), fc.constantFrom('', ' Paid', '.', 'x'), (start, word, identifier, gap, first, second, end) => {
+        const letter = `${start}${word}${identifier}${gap}${first}${second === undefined ? '' : `${second[0]}${second[1]}`}${end}`;
+        const patient = patientOf(['JANE Q ZEPHYRA', 'SIMONE VANTREE'], ['1980-03-14'], ['SYNMEMBER0042', 'ZZ7654321']);
+        const screened = redactLetterForScreen(letter, patient, JANE_CLAIMS).text;
+        if (screened !== redactLetter(letter, patient, JANE_CLAIMS).text) {
+          expect(holdsIdentifier(screened, patient, JANE_CLAIMS), JSON.stringify(letter)).toBe(true);
+        }
+      }),
+      { numRuns: 600 },
+    );
   });
 });
