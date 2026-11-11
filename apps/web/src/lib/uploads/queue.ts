@@ -138,7 +138,7 @@ export class PgBossQueue implements JobQueue {
       commit: async () => {
         try {
           // The answer is read, as the request's own is (pg-boss's commit() takes any answer for a commit).
-          await committed({ query: (text) => transaction.db.executeSql(text) });
+          await committed({ query: (text) => transaction.db.executeSql(text) as Promise<{ readonly command?: unknown }> });
         } finally {
           // Releases the connection: after a commit it changes nothing, and after a failed one it is the rollback.
           await transaction.rollback();
@@ -201,7 +201,7 @@ export class MemoryQueue implements JobQueue {
 
   /** Validates as a send does; the jobs join `jobs` at commit() and never after rollback(). */
   hold(sends: readonly PendingSend[]): Promise<HeldSends> {
-    const held = sends.map((send) => ({ type: send.type, payload: parsePayload(send.type, send.payload) as unknown }));
+    const held = sends.map((send) => ({ type: send.type, payload: parsePayload(send.type, send.payload) }));
     let settled = false;
     const settle = () => {
       const first = !settled;
