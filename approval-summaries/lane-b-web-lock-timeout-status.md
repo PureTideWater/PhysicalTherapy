@@ -6,13 +6,16 @@ orchestrator session_019i9ifDAzQNA3kLHozjBoeS; built by W3, session_019i9ifE6JAC
 Reserved: test-matrix CAS-57; a dated amendment to ADR 0092.
 
 ## Now
-**2026-11-11 02:10 UTC: FIX ROUND 1 BUILT, ITS DELTA REVIEWS RUNNING (W4).** Every confirmed finding of round 1 is
-fixed in the WIP ref `co-001/wip-web-lock-timeout` = f3dc3ee6 (three commits on 59eb9e9d; the PR branch on origin is
-still 59eb9e9d, so CI has not run on the fixes). Checked on f3dc3ee6: typecheck, lint, lint:copy, lint:logs,
-check:fixtures, synth --all, the watched list; unit suites around every touched file (639 passed); db
-`reconciliation-routes.db.test.ts` (18) and `web-pool.db.test.ts` (2); each new guard seen to fail without its code.
-Three delta reviews of `59eb9e9d..f3dc3ee6` were launched at 02:08 UTC. The container restarted once at 01:46 UTC;
-nothing was lost. The machine was ready at start (the environment's setup script).
+**2026-11-11 02:25 UTC: ROUND 2 IN, THE MECHANISM IS BEING NARROWED (W4).** The delta reviews of `59eb9e9d..f3dc3ee6`
+(security and ux-brand in; database still running) found no blocker, but the security one showed what a pool-wide
+timeout costs: it reaches flows that commit in steps (the session's end and its audit event, a failed sign-in's
+count, a sign-in step after the provider's grant is released), where a timeout loses a record or says "nothing was
+saved" falsely. **Decision (W4, recorded under "Reviews, round 2"):** the timeout moves from the web's pools to each
+route's own transaction (`SET LOCAL lock_timeout` as the routes' wrapper opens it, `invoke.ts`), plus the queue
+producer's pool. That is what Queues item 24 asks ("on every web mutation's transaction, set where the web's
+transactions are made"), a handler still cannot forget it, "nothing was saved" is true by construction, and sign-in,
+the session's read, the rate limit, public forms and the billing, e-signature and model pools behave exactly as
+before this change. WIP f3dc3ee6 holds the pool-wide version; the rework is not yet committed.
 
 ### RESUME-BLOCK (a fresh session builds from this; nothing else is needed)
 - **Where it is:** branch `co-001/web-lock-timeout` = 59eb9e9d on origin (one commit on the base 06cde5eb), draft PR
@@ -166,6 +169,44 @@ No blocker. Every confirmed finding is fixed in the WIP ref f3dc3ee6 ("TO DO" be
 - The queue's pool is bounded like the request pools; the model gateway's stays exempt (a call's record must wait).
 - The same key in flight waits the three seconds (a first request that finishes inside them still answers
   "Already sent"), then says the earlier send is still being processed: truer than "nothing was saved".
+
+### Round 2, the delta `59eb9e9d..f3dc3ee6` (2026-11-11 02:08 to 02:25 UTC; every finding checked by W4)
+No blocker.
+
+**Security delta, `security-reviewer`:**
+- R2-S1, should fix, CONFIRMED: "nothing was saved" is false where a path committed before its timeout:
+  `resolveSession` ends a session in one statement and writes its `session_ended` audit event in a second
+  transaction (`auth/sessions.ts:145`), so a timeout on the second loses the event for good; a sign-in step releases
+  the provider's grant before `openSession` (`auth/sign-in.ts:304`).
+- R2-S2, should fix, CONFIRMED: a timeout inside `sign_in_failed` (FOR UPDATE on the user's row) skips the failure
+  count and answers `busy` where an unknown address answers `credentials`.
+- R2-S3, note, CONFIRMED: the URL guard's `options` check is case-sensitive (harmless: the startup parameter wins).
+- R2-S4, note, ANSWERED: a form keeps its request key after a busy refusal (the browser test sends the same key twice).
+- R2-S5, note: the local receiver may have stored the bytes before a timeout (development and e2e only; the retry
+  recovers).
+- R2-S6, note, REFUTED: the screening's send after its commit is caught ("the minute's sweep sends its job",
+  `screening/routes.ts:746`).
+- R2-S7, note: no test covered busy on sign-in.
+- **What W4 did with S1, S2 and S7:** not patched one by one. They are what a pool-wide bound does to every flow
+  that commits in steps, and more such flows were not read (password reset, enrolment, the health check). The
+  timeout is set on the routes' own transaction instead, so those flows are untouched.
+
+**UX and brand delta, `ux-brand-reviewer`:**
+- R2-U1, should fix, CONFIRMED: on a form whose only field is a password or a code, "What you typed is still here,
+  except passwords and codes" keeps nothing. Fix: count only fields a refusal keeps; "Passwords and codes are not
+  kept: type them again, then try again in a few minutes."
+- R2-U2, should fix, CONFIRMED: the `request` lead sat under "Not done", though the first send may yet save. Fix:
+  titled "Not confirmed".
+- R2-U3, should fix, CONFIRMED: the `request` lead invited edits a retry would silently drop. Fix: "Send it again in
+  a few minutes, changing nothing, to see whether it saved: nothing is saved twice."; the server's words (a post
+  without JavaScript) say to reload the page.
+- R2-U4, should fix, CONFIRMED (development and e2e only): the upload client ignored the closed word.
+- R2-U5, note: "The records this form needs" read badly on a sign-in step and the public screening upload. With
+  the narrowed mechanism neither can show it.
+- R2-U6, note, DECLINED: "in a minute" for the ledger word only. Round 1 asked for one wait on every surface, and a
+  pass takes minutes.
+- R2-U7, note, follow-up for the UX queue: a page's busy state is the generic error state.
+- R2-U8 and R2-U9, notes: the button's name in the lead; "typed" for a choice. Kept as the house pattern.
 
 ## Log
 - 2026-11-11 02:10 UTC: fix round 1 built and pushed as WIP f3dc3ee6 (words, one mapping for every route, the queue's pool, the same key in flight, a page's error state, the URL guard, a log line by code); three delta reviews launched.
