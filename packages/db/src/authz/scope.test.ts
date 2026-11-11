@@ -142,7 +142,12 @@ describe('transaction handling', () => {
       expect((error as Error).message).not.toContain('SYNTHETIC');
       expect(released).toEqual([true]);
     }
-    await expect(committed({ query: () => Promise.reject(new Error('SYNTHETIC no code at all')) })).rejects.toBeInstanceOf(CommitOutcomeUnknownError);
+    // Whatever a driver rejects with: an error with no code, something that is no object, nothing at all.
+    for (const reason of [new Error('SYNTHETIC no code at all'), 'SYNTHETIC not an object', null, undefined]) {
+      // A thenable that rejects with the reason as it is, as a driver that rejects with no Error would.
+      const rejecting = () => ({ then: (_resolve: unknown, reject: (reason: unknown) => void) => reject(reason) }) as unknown as Promise<never>;
+      await expect(committed({ query: rejecting })).rejects.toBeInstanceOf(CommitOutcomeUnknownError);
+    }
     // The server's own ERROR, by its SQLSTATE, is certain: the transaction is rolled back.
     const serialization = Object.assign(new Error('could not serialize'), { code: '40001', severity: 'ERROR' });
     await expect(committed({ query: () => Promise.reject(serialization) })).rejects.toBe(serialization);
