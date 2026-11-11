@@ -86,7 +86,15 @@ Started by the orchestrator session_019i9ifDAzQNA3kLHozjBoeS. Setup OK; worktree
   42953657838); CAS-42.5 green (run 42953660378). Link sent to the orchestrator with D19's trade-off and the trailer note.
   The founder wrote "I approve as the founder" in this session at ~03:38 UTC: answered that only the committed
   suggestion on GitHub records it; nothing was written or merged on that word.
-- **RESUME-BLOCK (#126), waiting on the founder:** when the founder's commit of the suggestion lands (a push event on
+- **04:50 UTC: base 4fe8bcca (#137) merged as 026eceba and pushed** (the orchestrator's word: ec606eff conflicted, and a
+  conflicted PR gets no CI). One conflict, the imports of reconciliation-routes.db.test.ts (this branch's
+  ADJUSTMENT_CONSEQUENCE kept beside the base's assignCaseAction); no migration, function or domain-model change; hash
+  still `bb7662c6…6bf8`; typecheck, lint, lint:copy, lint:logs, check:fixtures, verify-content green; that db file 26/26.
+  The suggestion thread (comment 4533967660) is current on 026eceba at line 7469: not posted again. CAS-42.5
+  dispatched on 026eceba. **Scope (orchestrator, 04:26 UTC):** this session keeps #126 only, then records, unsubscribes
+  and stands down; password-changed-notice is W6's. Trailer: this session's commits name no model (its own standing
+  rule); the orchestrator accepted that at 04:39 UTC.
+- **RESUME-BLOCK (#126), head 026eceba, waiting on the founder:** when the founder's commit of the suggestion lands (a push event on
   the subscribed PR): read the line (name on approvers.json, a date, the hash), check `domain model` and the required
   checks (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`) are green on that commit and
   origin/claude/build-platform is an ancestor (merge the base once if not, then the checks again); merge with method
