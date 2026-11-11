@@ -2,7 +2,44 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9m
 
 # Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
 
-## RESUME-BLOCK, current (W20, session_019i9ifCRAB5iyShfYuBtnA3, 2026-11-11 about 23:25 UTC; part A MERGED; part B STOPPED at a blocker before its delta review, waiting on the orchestrator)
+## RESUME-BLOCK, current (W21, session_019i9ifCPJnxuf8XPM3RFrt8, 2026-11-12 about 00:30 UTC; the work bound is BUILT and pushed; its review is running; no PR yet)
+
+- **The ruling built (the orchestrator's, 2026-11-11: the 3 s budget stands; a deterministic work bound that fails closed).**
+  WIP `co-001/wip-redact-item-26` = **69e00b48** (f0d415e2 plus one commit). Local branch `co-001/redact-item-26`.
+  - Step 1 (a cheaper way): none taken. A profile of the dearest letter shows the wider reading itself is cheap; the
+    time is the first reading's check run four times (both writings before a wider match is applied, both after),
+    against once on the base. No few-line change removes a check and keeps the construction.
+  - Step 2: `WIDER_WORK_BOUND = 100_000` characters (`packages/redact/src/redact.ts`), counted on the text the first
+    reading wrote: its length, plus its length with CR LF as LF where it holds a CR LF (`widerWorkOf`, what
+    `refusedAsFirstRead` reads). Past it, where the wider reading has a match to apply, that check is not run, no wider
+    match is applied, and the letter is returned as the first reading wrote it with U+0001 at its end
+    (`unreadPastTheBound`), which `holdsAsFirstRead` refuses at its first line. Both paths (`screenAsBothRead`,
+    `redactionSpans`). No timer anywhere.
+  - Tests first (failed on f0d415e2, pass now): `redact.leaks.test.ts` `describe('the work bound of the wider reading')`
+    (10 rows) and `denial-letter.test.ts` (the name-apart rows trimmed to the bound and still read; the same letters
+    at N and the two 100 kB CR LF letters refused by the count; two CR LF rows with no wider match).
+  - Measured, Node 24, processor time at the reference calibration (`scripts/bound-time.mts`): dearest still read 2.0
+    to 2.2 s (a digit and a CR LF repeated to 100,000 characters, no wider match: K-1's two readings; and the same
+    with a name apart at the bound, 59,996 characters); base's dearest 1.1 to 1.5 s; past the bound refused in 0.4 to
+    0.8 s (was 3.4 to 4.0 s).
+  - What the bound refuses (`scripts/bound-refusals.mts`): the gate's 975,489 letters: longest 1,780 characters, none
+    can reach it; the repository's prose, 527 texts as written and with CR LF, 64 names, 67,456 letters: 0 refused by
+    the bound, 0 differ from f0d415e2 in answer, sent text or candidates.
+  - Typecheck, lint, the seven redaction test files (3,297) and `denial-letter.test.ts` (1,039) pass on Node 24.
+- **Running now:** the one adversarial review of everything since the reviewed build 2ab3e0dd (fix round 1 and the
+  bound), two reviewers: `reviews/c-phi/report.md`, `reviews/c-time/report.md` (briefs are in this session; snapshots
+  `/home/user/rev/{base,r0,f0d,head}`, delta `/home/user/rev/delta-since-review.diff`).
+- **Then, in order:** every finding run before any fix; a blocking one fixed and its delta reviewed once (not clean:
+  stop and tell the orchestrator); others pinned in ADR 0054 for Queues item 34. The gate (`/home/user/gate`, laid out
+  in this container: A `/home/user/snapA` = the base 83e30973's reader, F `/home/user/snapF` = f0d415e2, B
+  `/home/user/snapB` = the head; run A against B, and F against B for the letter-for-letter figure) and the battery
+  (`tools/lay.sh`; worktrees `tree-ef3`, `tree-cc3` exist) on recorded and fresh seeds, output to files; the full
+  local suite once on Node 24; ADR 0054 (rewrite "*The dearest letter.*", add the work bound and its must-stay cost,
+  tests, review C) and the matrix row MOD-23; the base merged right before the last push and the gate again; a draft
+  PR into claude/build-platform from the template naming every cost and residual; subscribe; merge on green; one line.
+- No PR is open, no subscription and no check-in is held.
+
+## RESUME-BLOCK, earlier (W20, session_019i9ifCRAB5iyShfYuBtnA3, 2026-11-11 about 23:25 UTC; part A MERGED; part B STOPPED at a blocker before its delta review, waiting on the orchestrator)
 
 - **Part A: merged.** #148 as 83e30973 (the base now). The time helper is not W18's: review T-1 showed W18's build
   passed a 3.4 to 3.8 s reader, so it was rebuilt (first run against the budget itself; a calibration only for
