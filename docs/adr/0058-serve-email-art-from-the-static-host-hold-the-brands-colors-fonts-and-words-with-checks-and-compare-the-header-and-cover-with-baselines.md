@@ -1,7 +1,8 @@
 # 0058. Serve the email art from the static host, hold the brand's colors, fonts and words with checks, and compare the header and the cover with baselines
 
 - **Status:** accepted; amends [0056](0056-wear-the-paidwhole-brand-from-one-token-source-self-hosted-fonts-and-status-as-text-on-tint.md)
-  (where the email art is served from, and which files may hold hex)
+  (where the email art is served from, and which files may hold hex); amended by
+  [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md) (the worker's email lockup is the art composited onto a White plate, a 1380 px PNG drawn at 184 px)
 - **Date:** 2026-10-17
 - **Deciders:** owner (reconciliation-001, decisions D6 to D11, approved 2026-10-17); founder (engineering)
 - **PRD sections:** 6 (Cross-cutting: accessibility; PHI pages make no third-party requests), 7 (the shell; "recovered"
@@ -44,7 +45,8 @@ the edge. The web image now copies `apps/web/public`, which Next's standalone ou
 fetched. The worker and platform tasks receive `STATIC_ASSET_ORIGIN` as the web task does (`infra/lib/constructs/compute.ts`);
 the worker reads it under the web app's https-origin rule, and the mail template (`apps/worker/src/mail/template.ts`)
 builds the lockup's address from it: the 1200 px PNG of the outlined horizontal lockup with its tagline, drawn at 160 px
-with the alternative text "PaidWhole". With no static host configured (a local build) a message goes without the art,
+with the alternative text "PaidWhole" (amended by [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md): the 1380 px PNG of that art on its White plate,
+`/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png`, drawn at 184 px so the art is 160 px; BRAND.md 7). With no static host configured (a local build) a message goes without the art,
 and the wordmark is never typed in its place. The application's own response headers stay exactly as ADR 0053 and ADR
 0055 set them: the branch's rule (`PUBLIC_BRAND_ASSET_HEADERS`) is gone, `security-headers.ts` is as `9ad1680` left it,
 and `/brand/*` from the application answers `same-origin` like every other response. This replaces ADR 0056's
@@ -240,7 +242,9 @@ are shown to fail on a table kept on one line, and fail on the frame as it stood
   missing one fails the journey there; run it on Linux or in CI.
 - The image build is not checked here (no Docker daemon). The first deploy should confirm that
   `https://<StaticDomainName>/brand/paidwhole-lockup-horizontal-tagline-1200w.png` answers 200 with
-  `Cross-Origin-Resource-Policy: cross-origin`. CloudFront caches `/brand/*` under the build output's policy; Next serves
+  `Cross-Origin-Resource-Policy: cross-origin` (amended by [0081](0081-state-and-enforce-each-sign-in-steps-limit-warn-before-it-closes-and-start-again-with-the-email-kept.md): confirm the plated files,
+  `/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png` and, for a prospect's mail,
+  `/brand/paidwhole-lockup-horizontal-email-plate-1380w.png`, which the worker's mail loads from the static host). CloudFront caches `/brand/*` under the build output's policy; Next serves
   public files with `max-age=0`, so CloudFront keeps them for its one-second minimum, and a changed lockup shows almost
   at once although the names are not content-hashed.
 - The hex rule is D9 item 4, which the owner approved: hex in `packages/brand/src/tokens.css`, `tokens.ts` and `mark.ts`

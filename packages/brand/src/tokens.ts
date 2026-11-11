@@ -45,7 +45,9 @@ export const type = {
   money: { font: "mono", weight: 500, numeric: "tabular-nums" },
 } as const;
 
+/** Corner radii and the space scale in CSS px, as tokens.css's --pw-radius-* and --pw-space-* (email markup reads these). */
 export const radius = { sm: 4, md: 6, lg: 10, pill: 999 } as const;
+export const space = { 1: 4, 2: 8, 3: 12, 4: 16, 6: 24, 8: 32 } as const;
 
 /** Logo rules that code can enforce. Sizes in CSS px. */
 export const logoRules = {

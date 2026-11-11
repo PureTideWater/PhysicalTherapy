@@ -25,8 +25,9 @@ import { newTotpSecret, totpUri, verifyTotp } from './totp';
  * (each code once), and real WebAuthn verification with user verification required, so a browser's
  * virtual authenticator can exercise the hardware-key path. Challenges last three minutes (the user
  * pool's sign-in session) and grants fifteen (its access tokens), from the constants the sign-in
- * steps state and infra pins (step-limits.ts). A forgotten password is reset by a mailed six-digit code, as Cognito's
- * ForgotPassword does it: kept hashed, for the code's hour, used once, five tries, a new request replacing it.
+ * steps state and infra pins (step-limits.ts). A forgotten password is reset by a mailed six-digit code, modelled on
+ * Cognito's ForgotPassword: kept hashed, for the code's hour, used once, five tries. Here a new request replaces the
+ * earlier code; whether Cognito's does, and its code's hour, are unverified (docs/adr/0081 A3, O-8).
  */
 
 export interface WebAuthnSettings {

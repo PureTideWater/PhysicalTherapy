@@ -8,7 +8,9 @@
   (its one exception: the sign-in email, rendered back after a step closes); reverses none of their rulings. UX PR 7
   (`co-001/ux-sign-in-recovery`) adds an amendment section of its own, with SGN-05 to SGN-08, whose A4 and Not covered
   [0088](0088-a-confidential-cognito-client-and-second-factor-enrolment-only-inside-a-live-invitation.md) amends.
-  `co-001/auth-emails` adds the code-email amendment, with SGN-13 to SGN-15.
+  `co-001/auth-emails` adds the code-email amendment, with SGN-13 to SGN-15. `co-001/email-lockup-plate` amends
+  [0058](0058-serve-email-art-from-the-static-host-hold-the-brands-colors-fonts-and-words-with-checks-and-compare-the-header-and-cover-with-baselines.md)
+  (the worker's email lockup is the art on a White plate, and its first-deploy check names the plated files).
 - **Date:** 2026-11-01
 - **Deciders:** the founder, under the standing rule of 2026-10-18; the co-founder, under the founder's delegation of
   2026-10-25, whose rulings have the build take each recommended option and wording without asking (UX-128's marker
@@ -246,7 +248,7 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
   sealed one), so reset requests and sign-in attempts for an address share one 15-minute count; a flood of requests
   can hold a sign-in for that long, as wrong passwords can. The bound on code guessing is a rate, not a per-code
   count: about 64 to 80 guesses per account per hour with no end, in parallel across accounts, since a new request
-  replaces the code; Cognito's per-code and per-request caps are unverified.
+  sends a new code; whether it voids the earlier one, and Cognito's per-code and per-request caps, are unverified.
 - **A4. A wrong reset code is not a sign-in failure.** It counts toward no lock and writes no event: counting would mark
   real accounts by timing and let anyone lock an account. Sustained guessing shows instead as a run of
   `password_reset_requested` events for one user, and refused codes and the reset routes' rate-limit refusals log at
@@ -324,17 +326,21 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
     KMS key and a KMS and an SES call per message inside Cognito's 5 seconds: a network dependency on the path of
     every code.
 - **B2. The words of every source** (`packages/auth-mail/src/words.ts`; house voice, BRAND.md 1; none is legal text):
-  the reset code's are the recovery design's section 2.5 word for word ("Your PaidWhole code"; "Your code to choose a
-  new PaidWhole password is {####}. Enter it on the page that sent it within 15 minutes. If you did not ask for it,
-  ignore this email: your password is unchanged."). The invitation and its resend ("Your PaidWhole invitation") give
-  Cognito's `{username}` once without saying what it is ("Your account is {username}. Sign in with the address this
-  email came to and this temporary password:", since in an email-attribute pool it may be the internal name), the
-  temporary password on its own line, the sign-in page as plain text and its 7 days
-  (`INVITATION_DAYS`), and an authenticator app (ADR 0088 D3's path). The attribute update and verification, sign-up,
-  resend-code and sign-in-code sources have true words though only the first two can fire in this pool. The footer of
-  every message: "PaidWhole never asks you to send your password or a code to anyone, by email, phone or chat:
-  enter a code only on the PaidWhole page that asked for it." (It ends messages that themselves carry a code, so it
-  says what never happens and where a code goes, not that PaidWhole never asks for one.) The 7 days, 15 minutes
+  the reset code's are the recovery design's section 2.5 word for word, with one sentence added after its 15 minutes
+  ("Your PaidWhole code"; "Your code to choose a new PaidWhole password is {####}. Enter it on the page that sent it
+  within 15 minutes. If you asked more than once, use the newest code. If you did not ask for it, ignore this email:
+  your password is unchanged."). The added sentence is decision O-8 (Lane A's orchestrator as the brand owner's
+  delegate, co-001/email-lockup-plate): it holds whether or not Cognito voids an earlier code when a second is asked
+  for, which is not verified, so neither the email nor the reset page's warning says that a new request replaces
+  the code. The invitation and its
+  resend ("Your PaidWhole invitation") give Cognito's `{username}` once without saying what it is ("Your account is
+  {username}. Sign in with the address this email came to and this temporary password:", since in an email-attribute
+  pool it may be the internal name), the temporary password on its own line, the sign-in page as plain text and its 7
+  days (`INVITATION_DAYS`), and an authenticator app (ADR 0088 D3's path). The attribute update and verification,
+  sign-up, resend-code and sign-in-code sources have true words though only the first two can fire in this pool. The
+  footer of every message: "PaidWhole never asks you to send your password or a code to anyone, by email, phone or
+  chat: enter a code only on the PaidWhole page that asked for it." (It ends messages that themselves carry a code, so
+  it says what never happens and where a code goes, not that PaidWhole never asks for one.) The 7 days, 15 minutes
   (the reset step, A1) and 3 minutes (the sign-in session) are held to `identity.ts` and `step-limits.ts` by tests.
   - The pool's own verification and invitation templates are the same frame's generic fallback ("Your PaidWhole code
     is {####}. Enter it on the page that sent it. If you did not ask for it, ignore this email: nothing on your
@@ -380,8 +386,12 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
     `password_reset_completed`), sent by a platform job on the transactional stream as kind `password_changed`.
     ADR 0091 records it, with SGN-16, in the follow-on pull request, after the founder approves the domain model
     (CO-02). Not for the invitation's first password;
-  - dark rules in email (the brand owner's call: the worker's lockup PNG is close to unreadable in a client that
-    inverts colors);
+  - dark rules in email. A client that inverts colors made the worker's lockup PNG close to unreadable; the brand
+    owner's delegate decided (O-5, co-001/email-lockup-plate) that the worker's lockup sits on a fixed White plate in
+    every variant, not a reversed variant and not a dark rule. Since such a client inverts the plate's cells too, the
+    plate's ground is the art's own pixels (review finding UX-S1): the email files are the 1200w art composited onto an
+    opaque White rounded plate (`tools/brand-email-plate`, BRAND.md 7). The user pool's mail has no header (B3), so no
+    plate;
   - the organization's name in the invitation.
 - **Not verified here** (no user pool in this lane; the founder's pool smoke check, phase 2 on staging, with a
   synthetic account): that Cognito sends the trigger's message as an HTML-only body (the raw MIME `Content-Type`); that
@@ -392,9 +402,20 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   completes with it (if it is refused, the list names every attribute but `email`); what the invitation's `{username}` becomes (the
   address or the pool's internal name; the words hold either way), in the trigger's message and the pool's own
   invitation template; a temporary password with `<` or `&` rendering whole (Cognito substitutes it raw into the HTML after
-  the trigger returns); and Cognito's subject (140) and message (20,000) limits and CloudFormation's limit on an inline
-  `ZipFile` (the source is 14.1 KB; the tests cap it at 16 KiB), which are quoted from memory: AWS's documentation
-  was not reachable from this session. If the inline limit binds, the source goes as `Code.fromAsset` of the same text.
+  the trigger returns); whether a first reset code still works after a second is requested (request two reset codes
+  and confirm whether the first still works; the email's words and the reset page's warning hold either way); and
+  Cognito's subject (140) and
+  message (20,000) limits and CloudFormation's limit on an inline `ZipFile` (the source is 14.2 KB, 14,171 bytes; the
+  tests cap it at 16 KiB), which are quoted from memory: AWS's documentation was not reachable from this session. If
+  the inline limit binds, the source goes as `Code.fromAsset` of the same text. Outside the pool, for the worker's mail
+  on staging: open a worker email in Gmail for iOS and in Outlook.com, both in dark mode, and confirm the lockup sits on
+  White and is legible; and confirm that
+  `https://<StaticDomainName>/brand/paidwhole-lockup-horizontal-tagline-email-plate-1380w.png` and, for a prospect's
+  mail, `https://<StaticDomainName>/brand/paidwhole-lockup-horizontal-email-plate-1380w.png` each answer 200 with
+  `Cross-Origin-Resource-Policy: cross-origin` (ADR 0058's first-deploy check, for the plated files). The renders of an
+  inverting client were made for the review, outside the repository, and are not proof of these clients; the
+  repository checks the art's pixels (`plateHolds`: the served PNG is opaque inside the rounded plate and White across
+  the plate's padding; `tools/brand-email-plate` and `apps/web/e2e/brand.spec.ts`).
 
 ## Revisit when
 
