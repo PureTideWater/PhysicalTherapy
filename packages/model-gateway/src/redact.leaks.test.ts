@@ -800,7 +800,10 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
 
   it('takes an initial beside a name read so, and both parts written so', () => {
     expect(sentOrRefused('Dear J. Zephy ra, your claim', patient, claims)).toBe('Dear [PATIENT_NAME]. [PATIENT_NAME], your claim');
-    expect(sentOrRefused('Dear Ja ne Zephy ra, your claim', patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
+    // Two words of the three the records hold are two names, as "Jane Zephyra" is; all three are the whole name.
+    expect(sentOrRefused('Dear Ja ne Zephy ra, your claim', patient, claims)).toBe('Dear [PATIENT_NAME] [PATIENT_NAME], your claim');
+    expect(sentOrRefused('Dear Jane Zephyra, your claim', patient, claims)).toBe('Dear [PATIENT_NAME] [PATIENT_NAME], your claim');
+    expect(sentOrRefused('Dear Ja ne Q Zephy ra, your claim', patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
   });
 
   it('refuses a text that still holds such a form: the check reads what redaction reads', () => {

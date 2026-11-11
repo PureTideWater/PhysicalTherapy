@@ -647,7 +647,34 @@ interface Subject {
   readonly patterns: boolean;
 }
 
-function formsOf(subject: Subject, wider = false): Form[] {
+/**
+ * A subject's forms (formsBuiltOf), built once per reading (inOneReading) for each subject, fold and width, however many
+ * readers ask: a form is built from the subject's values and the fold in effect alone, and no reader changes one (each
+ * reads a pattern's source and flags and runs a pattern of its own; the list is frozen so that none can). Outside a
+ * reading they are built on every call, as before.
+ */
+function formsOf(subject: Subject, wider = false): readonly Form[] {
+  if (formsOfCheck === null) {
+    return formsBuiltOf(subject, wider);
+  }
+  const key = `${ownFold}${wider ? '+' : ''}`;
+  let known = formsOfCheck.get(subject);
+  if (known === undefined) {
+    known = new Map();
+    formsOfCheck.set(subject, known);
+  }
+  let forms = known.get(key);
+  if (forms === undefined) {
+    forms = Object.freeze(formsBuiltOf(subject, wider));
+    known.set(key, forms);
+  }
+  return forms;
+}
+
+/** As viewsOfCheck, for formsOf: null outside a reading, and dropped when the reading returns. */
+let formsOfCheck: Map<Subject, Map<string, readonly Form[]>> | null = null;
+
+function formsBuiltOf(subject: Subject, wider: boolean): Form[] {
   const forms = new Map<string, Form>();
   const add = (form: Form | null) => {
     if (form !== null) {
@@ -939,6 +966,30 @@ function datesOf(normal: string, subject: Subject): DatesOf {
 
 /** As viewsOfCheck, for datesOf: the check reads the dates of its two masked texts, which are one text when no name was redacted. */
 let datesOfCheck: { readonly normal: string; readonly key: string; readonly dates: DatesOf }[] | null = null;
+
+/**
+ * Runs one reading of a letter with the check's stores open (viewsOfCheck, datesOfCheck, formsOfCheck), so that every
+ * reader inside it builds a text's views, reads its dates and builds the subject's forms once: the first reading and the wider one (widerMatchesIn) read the same
+ * text, and reading its dates a second time was a third of the time of a letter of dates (MOD-23). A reading inside
+ * another shares the outer one's stores; they are emptied when the outermost returns, so no letter's text is held past
+ * it. Each store is keyed by everything its answer depends on (the whole text, the fold, the view's kind, the dates of
+ * birth; for the forms the subject itself, the fold and the width), so a stored answer is the answer a fresh reading gives.
+ */
+function inOneReading<T>(read: () => T): T {
+  if (viewsOfCheck !== null && datesOfCheck !== null && formsOfCheck !== null) {
+    return read();
+  }
+  viewsOfCheck = [];
+  datesOfCheck = [];
+  formsOfCheck = new Map();
+  try {
+    return read();
+  } finally {
+    viewsOfCheck = null;
+    datesOfCheck = null;
+    formsOfCheck = null;
+  }
+}
 
 function readDatesOf(normal: string, subject: Subject): DatesOf {
   const births: Range[] = [];
@@ -3285,7 +3336,7 @@ function appliedMatches(normal: string, subject: Subject, claims: number): Found
 export function redactionSpans(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
   const normal = unbracketed(text);
   const subject = letterSubject(patient, claims);
-  return { text: normal, spans: merge([...matchesIn(unmarked(normal), subject), ...widerMatchesIn(unmarked(normal), subject)]) };
+  return inOneReading(() => ({ text: normal, spans: merge([...matchesIn(unmarked(normal), subject), ...widerMatchesIn(unmarked(normal), subject)]) }));
 }
 
 /** NFKC text with the spans replaced by their placeholders (those `replace` takes). */
@@ -3320,6 +3371,11 @@ export function redactLetter(text: string, patient: PatientIdentifiers, claims: 
  * from the package (index.ts), so it is no part of its public type.
  */
 export function redactLetterForScreen(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
+  return inOneReading(() => screenAsBothRead(text, patient, claims));
+}
+
+/** redactLetterForScreen's two readings, the first (screenAsFirstRead) and the wider one, inside one reading's stores (inOneReading). */
+function screenAsBothRead(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
   const normal = unbracketed(text);
   const subject = letterSubject(patient, claims);
   const first = screenAsFirstRead(normal, subject, claims);
@@ -3417,12 +3473,13 @@ function chainLeft(text: string, subject: Subject, claims: number, strict = true
  */
 export function holdsIdentifier(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): boolean {
   // The first reading's check, and the call's own identifiers in the wider reading (widerMatchesIn; MOD-23).
-  const holds = (read: string) => holdsAsFirstRead(read, patient, claims) || widerMatchesIn(masked(read, claims.length), letterSubject(patient, claims)).length > 0;
+  const subject = letterSubject(patient, claims);
+  const holds = (read: string) => holdsAsFirstRead(read, patient, claims) || widerMatchesIn(masked(read, claims.length), subject).length > 0;
   // A CR LF is one line ending written in two characters, and every reach of a label, a noun or a window is counted in
   // characters: the text is read once more with each CR LF written as a line feed, and the worse answer is taken, so a
   // letter is refused wherever its writing with LF is ("SSN on file. Statement", CR LF and "No. 900-12-3456150.00":
   // review K-1 of co-001/redact-ssn-phone-leaks). The first reading stands, and this one only adds.
-  return holds(text) || (text.includes('\r\n') && holds(text.replaceAll('\r\n', '\n')));
+  return inOneReading(() => holds(text) || (text.includes('\r\n') && holds(text.replaceAll('\r\n', '\n'))));
 }
 
 /** holdsIdentifier as the first reading alone gives it: what decides whether the wider reading's matches are applied (redactLetterForScreen). */
@@ -3433,9 +3490,7 @@ function holdsAsFirstRead(text: string, patient: PatientIdentifiers, claims: rea
   if (text.search(PRIVATE_MARKS) >= 0) {
     return true;
   }
-  viewsOfCheck = [];
-  datesOfCheck = [];
-  try {
+  return inOneReading(() => {
     const scanned = masked(text, claims.length);
     const subject = letterSubject(patient, claims);
     // The patterns read the same text with the call's own placeholders as OWN_MARK, so a number a label names through a
@@ -3445,10 +3500,7 @@ function holdsAsFirstRead(text: string, patient: PatientIdentifiers, claims: rea
       return true;
     }
     return chainLeft(text, subject, claims.length);
-  } finally {
-    viewsOfCheck = null;
-    datesOfCheck = null;
-  }
+  });
 }
 
 /** A Social Security or phone number's placeholder with a letter against it. */

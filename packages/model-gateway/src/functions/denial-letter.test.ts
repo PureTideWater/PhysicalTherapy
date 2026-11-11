@@ -225,7 +225,9 @@ describe('one pass over one folded view: every placeholder survives and no ident
     // The narrative's reading keeps the pieces rule: there such a name would fail every narrative.
     expect(holdsNameOrNumber('records in a timely manner', { names: ['INA VANTREE'], numbers: [] })).toBe(false);
     expect(redact(['TOBE VANTREE'], 'sent to be reviewed')).toBe('sent [PATIENT_NAME] reviewed');
-    expect(redact(['IDA VANTREE'], "I'd a question")).toBe("I'd a question");
+    // An apostrophe joins a name's part as it always did ("O'Brien"); with the space beside it, "I'd a" is IDA.
+    expect(redact(['IDA VANTREE'], "I'd a question")).toBe('[PATIENT_NAME] question');
+    expect(redact(['IDA VANTREE'], "I'd agreed")).toBe("I'd agreed");
     // The whole name still matches across its own parts, whatever its case.
     expect(redact(['INA VANTREE'], 'ina vantree, Ina')).toBe('[PATIENT_NAME], [PATIENT_NAME]');
   });
@@ -325,6 +327,13 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['a gap after a name as long as the letter (4.6 s before)', ['JANE Q VANTREE'], `Vantree${' '.repeat(N - 20)}x J`, ['SYN555001']],
     ['dates written with slashes, one after another (2.6 s before)', ['JANE Q VANTREE'], fill('1/1/11 '), ['SYN555001']],
     ['dates written with spaces alone (4.7 s before)', ['JANE Q VANTREE'], fill('1 1 11 '), ['SYN555001']],
+    // MOD-23: the wider reading of the call's own names reads the letter's dates and views the first reading read, once
+    // (inOneReading); a letter that holds a name written apart is read by both, and one that writes it thousands of times.
+    ['dates written with slashes, then the name with a part written apart', ['JANE Q VANTREE'], `${fill('1/1/11 ')}Vant ree`, ['SYN555001']],
+    ['dates written with spaces alone, then the name over a full stop', ['JANE Q VANTREE'], `${fill('1 1 11 ')}Vant. ree`, ['SYN555001']],
+    ['the name letter by letter, repeated', ['JANE Q VANTREE'], fill('V a n t r e e '), ['SYN555001']],
+    ['the name written apart, then initials to the end of the letter', ['JANE Q VANTREE'], `Vant ree${' J'.repeat(N / 2)}`, ['SYN555001']],
+    ['all of the name but its last letter, spaced, repeated', ['JANE Q VANTREE'], fill('V a n t r e '), ['SYN555001']],
     ['dates with a claim’s digits between them (5.0 s before)', ['JANE VANTREE'], fill('1-1-11 555001 '), ['555001']],
     // Social Security and phone numbers by pattern (docs/adr/0054, amendment of 2026-11-04; twins NPA-555-01xx, 9xx).
     ['phones back to back', ['JANE Q VANTREE'], fill('(202) 555-0123 '), ['SYN555001']],
