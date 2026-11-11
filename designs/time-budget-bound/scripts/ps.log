@@ -1,0 +1,6 @@
+ 2364  2356   11  1.1 node /opt/node22/bin/pnpm exec vitest run --reporter=verbose src/functions/denial-letter.test.ts src/redact.leaks.test.ts
+ 2419  2364   11  1.4 node /root/.local/share/pnpm/.tools/pnpm/10.34.8/bin/pnpm exec vitest run --reporter=verbose src/functions/denial-letter.test.ts src/redact.leaks.te
+ 2430  2419   17  3.2 node ./node_modules/.bin/../vitest/vitest.mjs run --reporter=verbose src/functions/denial-letter.test.ts src/redact.leaks.test.ts
+ 2452  2430    7 32.0 /opt/node22/bin/node --experimental-import-meta-resolve --require /home/user/PhysicalTherapy/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.
+ 2453  2430    7 33.5 /opt/node22/bin/node --experimental-import-meta-resolve --require /home/user/PhysicalTherapy/node_modules/.pnpm/vitest@5.0.5_@opentelemetry+api@1.9.
+ 22:09:26 up 15 min,  0 user,  load average: 9.01, 6.34, 3.01
