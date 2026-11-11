@@ -33,7 +33,7 @@ Started by the orchestrator session_019i9ifDAzQNA3kLHozjBoeS. Setup OK; worktree
 - **Reviews of b1c1b161 and of 97225576's SQL (four, all reported, none blocking):** fixed in 97225576 and d0a46a42
   (stale settle-order comments; CAS-49.1 holds the row-for-row count at 0 over a full set of runs; a direct check that a
   generated practice's interest is the PLB L6's alone; the manual comparison reads `seq`; `hashesOf` names the practice).
-  **Declined after measuring (73f-series commit before bf2fc44f):** practice predicates inside the interest chains'
+  **Declined after measuring (the commit before bf2fc44f):** practice predicates inside the interest chains'
   LATERAL lookups moved the plan off the link indexes: CAS-42.3 did not end in 30 minutes with them, 15.9 s without
   (budget 60 s); the walk stays scoped where it takes a claim in. **Owed, each its own item:** CAS-50/51 practices seeded
   with PLB L6/WO and the interest statements bounded (ADR 0087 note); the row-for-row settle comparison replacing the
@@ -44,7 +44,16 @@ Started by the orchestrator session_019i9ifDAzQNA3kLHozjBoeS. Setup OK; worktree
   migration or domain-model change since 64aa14d9, so the hash to approve is unchanged. Local suite: full through e2e
   on f0a3b6ad; on 97225576 green through db-2 except MOD-16 (unit, W1's) and the CAS-42.3 hang fixed above; the
   container restarted there, so CI on bf2fc44f is the suite of record (decision, W2: no third local run).
-- **RESUME-BLOCK (#126), head bf2fc44f:** (1) read CI on bf2fc44f (expected red: unit from MOD-16 until its base
+- **CI on bf2fc44f (01:35 UTC):** unit green; `domain model` red at the approval step (expected); `mutation` red: an
+  equivalent record of `allocation.ts:50:99` reported Killed (survives locally; cannot change a result; 120 runs of the
+  file with fresh seeds clean), read as a property failing by time under the mutation run: **e4ed0f0a** gives the four
+  long interest properties 60 s (pushed 01:50 UTC; not confirmed until CI's mutation job is green); `db (1/4)` cancelled
+  at its 20 minutes after 5 silent minutes: locally the shard passes 3347/3347 in 506 s (slowest: streamed.db 381 s,
+  triage.large 224 s, neither this PR's), so not reproduced; if it cancels again on e4ed0f0a, read which file was
+  running (the job's log, a longer tail) before changing anything. CAS-42.5 was dispatched on bf2fc44f; dispatch it
+  again on the final head after the last base merge. The container restarted twice (Postgres down each time:
+  `bash tools/setup-container.sh` from the ops worktree brings it back).
+- **RESUME-BLOCK (#126), head e4ed0f0a:** (1) read CI on bf2fc44f (expected red: unit from MOD-16 until its base
   merge; the domain model's blank approval line); (2) dispatch `release-capacity.yml` (CAS-42.5) on the head;
   (3) body (`lane-a-wip/interest-pr/body-build.py`; add RVM5-1, RVM6-1, D19's trade-off for the founder, the #134 and
   #136 merges, the three owed items), read back; (4) fresh-clone verification reading CI; (5) one suggestion comment
