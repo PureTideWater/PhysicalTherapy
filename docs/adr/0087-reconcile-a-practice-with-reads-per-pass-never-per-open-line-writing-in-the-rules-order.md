@@ -123,26 +123,32 @@ entries by the line's practice and the line, and `ledger_entry_rules` reads an e
 The migration carries exactly the two bodies the founder read, byte for byte, refuses to run over any other starting
 body, and changes nothing else: no table, column, index, trigger, policy, grant, amount, stage or refusal.
 
-Re-measured on the base edab4d4d (#126, #134, #136, #137, #140 and #141 merged), SYNTHETIC rows, 4 CPUs, one run each,
-one step-7b pass on a copy of each seed, before (the base's bodies) against after (the migration applied):
+Re-measured on the tree this pull request merges onto (the base 3bff4fd6: #126, #134, #136, #137, #140, #141 and
+#142 merged), SYNTHETIC rows, 4 CPUs, one run each, one step-7b pass on a copy of each seed, before (the base's
+bodies) against after (the migration applied):
 
 | Shape and size | Pass before | Pass after | `ledger_line_net` | `ledger_entry_rules` | The pass's writes |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Spread R, 2,000 lines | 53.7 s | 19.0 s | 36.2 s to 3.1 s | 2.0 s to 1.3 s | identical, 20,635 rows |
-| F, one case, 10,000 lines | 220.9 s | 79.2 s | 92.1 s to 2.2 s | 52.2 s to 4.0 s | identical, 102,907 rows |
-| A's month, 30,795 lines in F's shape | 1,770.2 s (197% of the attempt) | 317.1 s (35%) | 863.3 s to 7.1 s | 589.4 s to 15.0 s | identical, 316,770 rows |
+| Spread R, 2,000 lines | 54.7 s | 18.8 s | 36.8 s to 3.1 s | 2.1 s to 1.3 s | identical, 20,635 rows |
+| F, one case, 10,000 lines | 226.8 s | 76.0 s | 94.8 s to 2.2 s | 54.4 s to 3.9 s | identical, 102,907 rows |
+| A's month, 30,795 lines in F's shape | 1,745.5 s (194% of the attempt) | 333.2 s (37%) | 858.9 s to 7.4 s | 565.3 s to 15.5 s | identical, 316,770 rows |
+
+A first run of the same passes on the base before #142 (edab4d4d, the same worker code) gave 53.7 s to 19.0 s,
+220.9 s to 79.2 s and 1,770.2 s to 317.1 s, with the same rows identical. The container was not idle throughout
+either run (this pull request's reviews and pushes ran beside the passes), so read the times to about a tenth.
 
 - "Identical" is every row the pass wrote (ledger matches, ledger entries, stage events, audit events, postings),
   compared row for row in the order the ledger gave them, `seq` values included; identifiers new in the pass are
   compared by their order and encrypted text as present or absent. At A's month both runs approve 30,795 lines, post
   30,795 and recover 30,795, 4,947,800.00 posted. A pass writes no correction and meets no refusal: those are held
   by `apps/worker/src/reconcile/ledger-lookups.db.test.ts`, whose cases pass on the old bodies and on the new.
-- What remains of the inserts at A's month is `ledger_entry_within_evidence`, 91 s of the 317 (not part of this
+- What remains of the inserts at A's month is `ledger_entry_within_evidence`, 95 s of the 333 (not part of this
   exception).
 - **Step 7b's move back to A's month is not this pull request's acceptance step.** It follows as a pull request with
   no migration, measured on the merged tree with the weekly run's own harness (the schema batching plan, section 2):
   the exception covers one migration with two bodies, and the granted change does not wait on a capacity acceptance
-  that only the move needs. The 360 s sizing bound holds here with 43 s to spare on one run.
+  that only the move needs. The 360 s sizing bound holds here with 27 s to spare on the run above and 43 s on the
+  first, so the margin is small, as the design said it would be.
 - **A measured limit of the new `ledger_line_net`, found by this pull request's database review.** The design said the
   line index would be taken "whatever the statistics". It is not. Planned as the application role on PostgreSQL 18.4
   (generic plan, one practice in scope):
@@ -156,7 +162,7 @@ one step-7b pass on a copy of each seed, before (the base's bodies) against afte
   | analyzed with rows | the line's entries | the line's entries |
 
   So on a ledger that holds about 160 to some tens of thousands of entries and was never analyzed, the new body
-  is the slower one from about 4,000 entries. Measured: F at 10,000 lines on a ledger already holding 20,000
+  is the slower one from about 4,000 entries. Measured (on edab4d4d): F at 10,000 lines on a ledger already holding 20,000
   never-analyzed entries of another tenant passes in 132.0 s before and 168.5 s after (`ledger_line_net` 2.0 s to
   90.8 s; `ledger_entry_rules` 52.2 s to 4.1 s), with the same approved and posted cents. The pull request that moves
   step 7b measures the weekly run's own ledger as its pass finds it, for that reason.
