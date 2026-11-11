@@ -1,0 +1,49 @@
+
+ RUN  v5.0.5 /home/user/PhysicalTherapy
+
+ ❯ |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts (10 tests | 2 failed) 7253ms
+   ❯ the plans of the ledger’s lookups on a ledger with rows and no statistics (the reason for migration 20261113090000) (3)
+     × reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key (ledger_line_net as installed) 8ms
+     × reads an entry’s match and a correction’s match by the match’s primary key alone (ledger_entry_rules as installed) 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts > the plans of the ledger’s lookups on a ledger with rows and no statistics (the reason for migration 20261113090000) > reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key (ledger_line_net as installed)
+AssertionError: expected 'ledger_entry_by_date' to be 'ledger_entry_by_line' // Object.is equality
+
+Expected: "ledger_entry_by_line"
+Received: "ledger_entry_by_date"
+
+ ❯ apps/worker/src/reconcile/ledger-lookups.db.test.ts:315:37
+    313|     expect(entries?.['Relation Name']).toBe('ledger_entry');
+    314|     expect(entries?.['Node Type']).toBe('Index Scan');
+    315|     expect(entries?.['Index Name']).toBe('ledger_entry_by_line');
+       |                                     ^
+    316|     expect(entries?.['Index Cond']).toMatch(/\bpractice_id = \(/);
+    317|     expect(entries?.['Index Cond']).toMatch(/\bservice_line_id = \$1/);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts > the plans of the ledger’s lookups on a ledger with rows and no statistics (the reason for migration 20261113090000) > reads an entry’s match and a correction’s match by the match’s primary key alone (ledger_entry_rules as installed)
+AssertionError: SELECT 1 FROM ledger_match m WHERE m.id = NEW.match_id AND m.reversed_at IS NULL: expected 'ledger_match_standing' to be 'ledger_match_pkey' // Object.is equality
+
+Expected: "ledger_match_pkey"
+Received: "ledger_match_standing"
+
+ ❯ apps/worker/src/reconcile/ledger-lookups.db.test.ts:335:48
+    333|       expect(matches, read).toHaveLength(1);
+    334|       expect(matches[0]?.['Node Type'], read).toBe('Index Scan');
+    335|       expect(matches[0]?.['Index Name'], read).toBe('ledger_match_pkey…
+       |                                                ^
+    336|       expect(matches[0]?.['Index Cond'], read).toMatch(/^\(id = \$1\)$…
+    337|     }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 8 passed (10)
+   Start at  11:29:57
+   Duration  11.48s (tests 67%, transform 17%, import 16%)
+
+exit 1
