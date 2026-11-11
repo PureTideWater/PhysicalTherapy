@@ -1,8 +1,8 @@
-# Recorded for the fix round reviewed here (cf5094a0 against 0ddfa078 and ef3e8d20): do not report these again
+# Recorded for the fix round reviewed here (5d685267 against 0ddfa078 and ef3e8d20): do not report these again
 
 All letters are synthetic twins (patient ZEPHYRA / VANTREE, SSN 900-xx-xxxx, phones 555-01xx and 202-555-01xx, IDs SYN... and ZZ...).
 "Base" is ef3e8d20 (`/home/user/tree-ef3`), "before" is the head the last two reviews read, 0ddfa078 (`/home/user/work/p9/beforeF`),
-"head" is cf5094a0 (`/home/user/fix`).
+"head" is 5d685267 (`/home/user/fix`).
 
 ## What this round gives back on purpose (sent again, as the base sends them)
 - A bare run of digits glued before an SSN's or phone's shape, with no date, amount's cents or currency sign before it: `2020900-12-3456`,
@@ -26,6 +26,9 @@ All letters are synthetic twins (patient ZEPHYRA / VANTREE, SSN 900-xx-xxxx, pho
 - One or two digits in parentheses right after an SSN or phone label are its list number whatever follows: `Phone (2) 555-0100` is
   `Phone (2) [PHONE]`; `Cell (2) is 933.67 4536`, `SSN (2). 150.00 120.00 30.00`, `TTY users call (2), 2,403.99; Paid 150.00 2026` are refused,
   as the base refuses each with the "(n)" taken out. That is the recorded cost of the rule.
+- A date with a four-digit year glued after a bare nine or ten, the run's last digits its first: `SSN: 94156421006-22-2027`, `Seen 96104065401-04-2026`,
+  `9001234562020-01-02` (kept where a noun names the run: `ICN 96104065401-04-2026`; a two-digit year is not read: `12345678901-04-26`).
+- A word glued by a lost space before the month's word of a date that ends right before a shape: `PaidJan 1, 2020900-12-3456`.
 - An initial read only beside a name written with a new joiner is fresh too (D1-1), and a pattern's match inside a run that holds an
   identifier glued in a look-alike form is applied by `redactLetter` and `redactionSpans` again (withheld only on the screen path).
 

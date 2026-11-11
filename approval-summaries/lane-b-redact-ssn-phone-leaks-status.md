@@ -4,19 +4,20 @@ Must land before any real PHI is processed (ruling A, 2026-11-07 10:53 UTC; the 
 Counters MOD-21 and MOD-22 are allocated (2026-11-06 21:03 UTC); no new ADR is expected (an ADR 0054 amendment). Any other
 counter comes from the orchestrator.
 
-## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 10:50 UTC)
-- **State:** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **cf5094a0**: the fix round after the two reviews of the
-  delta and the gate's replay (code, tests; the six redaction test files pass, 3,840 tests; typecheck and lint clean).
-  Uncommitted in `/home/user/leaks`: the test-matrix rows MOD-21 and MOD-22 reworded to the final rules, with
-  `packages/synth/src/cases/matrix.ts` and `fixtures/synthetic/MOD-21|22/expected.json` regenerated (`pnpm synth --case`).
-  Branch `co-001/redact-ssn-phone-leaks` not on origin; no PR. Reports go to the orchestrator of record in
-  `lanes/STATE.md` (session_019i9ifBCrxfV35CFDVHLTad).
+## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 11:26 UTC)
+- **State:** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **5d685267** (cf5094a0, the fix round after the two
+  reviews of the delta and the gate's replay, plus two additions from the gate on cf5094a0: a date with a four-digit year
+  glued after a bare nine or ten, and a word glued before a dated month; and the test-matrix rows MOD-21 and MOD-22
+  reworded to the final rules with their registry copy and fixture records). The six redaction test files pass (3,848
+  tests); typecheck and lint clean. Branch `co-001/redact-ssn-phone-leaks` not on origin; no PR. Reports go to the
+  orchestrator of record in `lanes/STATE.md` (session_019i9ifBCrxfV35CFDVHLTad).
 - **Reviews so far:** design x2; build x2 (B1, B2); the fix round's delta: C1 and C2 cut off (no review; their rows re-run
   and fixed), then **D1 (PHI) and D2 (must-stay) ran to their reports on 0ddfa078** (`reviews/d1`, `reviews/d2`): D1-1 and
   a note; D2-1 to D2-7. Every finding was run first; all fixed in cf5094a0 but what `reviews/recorded-for-the-third-review.md`
-  lists as a cost. **Owed: a review of cf5094a0's delta (0ddfa078 to cf5094a0, `git diff` of `redact.ts`, 332 lines), two
-  narrow reviewers (PHI; must-stay), about 20 tool calls each, the report as the final message.** Not started at 10:50 UTC:
-  they start when the fuzzers and the gate on cf5094a0 read clean.
+  lists as a cost. **Owed: a review of the delta 0ddfa078 to 5d685267 (`git diff` of `redact.ts`, 341 lines), two narrow
+  reviewers (E1 PHI; E2 must-stay; briefs `reviews/brief-e1.md`, `brief-e2.md`), about 20 tool calls each, the report as
+  the final message.** Both were started at 11:24 UTC in this session and read `/home/user/fix` (= 5d685267); if this
+  session ends before they report, they do not count and are run again.
 - **What cf5094a0 changed** (commit message has the list): ef3e8d20's own matches are the settled ones (its reading taken
   on the text with the new name joiners written as U+30FB); a pattern's match inside a glued look-alike run is withheld
   only where a check follows; digits before a shape are another number's only as a currency amount's, cents after a
@@ -33,9 +34,15 @@ counter comes from the orchestrator.
 - **Measured on cf5094a0 so far:** pinned rows ruling A 697 of 697 (632 refused, 65 redacted), A' 406 of 406 (200 redacted,
   206 refused), B 5 of 5; the residual table needs no change; the four earlier reviews' reproduction scripts read line
   for line as on 0ddfa078; D1's rows are refused as ef3e8d20 refuses them and `redactLetter` reads as ef3e8d20; D2's rows
-  read as ef3e8d20 but the recorded costs. **Running since 10:41 UTC:** every fuzzer (the earlier ones and D1's), then
-  the gate on cf5094a0 against ef3e8d20 and cc3dd7f6 (`/home/user/work/p10/fuzz-all.out`, `/home/user/gate-out/p10-*`,
-  not kept).
+  read as ef3e8d20 but the recorded costs. **On cf5094a0 (10:41 to 11:15 UTC):** every PHI fuzzer 0 letters ef3e8d20
+  refused that the head sends (but a patient whose names are months, where the head redacts the month word ef3e8d20's
+  own check then finds: ruling B, as D1 judged it) and 0 matches left as written and sent; the must-stay fuzzers as on
+  0ddfa078; **the gate: no PHI class against ef3e8d20 or cc3dd7f6**; against the run on 0ddfa078, 536 more letters with a
+  number written as an SSN or phone refused or redacted, 21 sent again (15 of them closed in 5d685267, the rest residual
+  classes), 115 fewer must-stay letters refused in the class D2 fixed, 235 more refused after a number in parentheses
+  (ef3e8d20 refuses each without it); slowest letter 873 ms (cc3dd7f6 447 ms; budget 3,000 ms). **Running since 11:23
+  UTC on 5d685267:** the reproduction scripts, fuzzers with fresh seeds and the gate (`/home/user/work/p11/fuzz-all.out`,
+  `/home/user/gate-out/p11-*`, not kept).
 - **The rules as built:** `designs/lane-b-redact-ssn-phone-leaks/adr-0054-amendment-draft.md` (current for cf5094a0; three
   placeholders `@@...@@` to fill from the gate: the measured section and the two counts of the number in parentheses).
 - **Next, in order:** (1) read the fuzzers and the gate (no PHI class on either tree; replay class changes against p9);
