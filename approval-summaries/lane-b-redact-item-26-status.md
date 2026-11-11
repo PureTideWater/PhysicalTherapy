@@ -2,36 +2,66 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9m
 
 # Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
 
-## RESUME-BLOCK, current (W18, 2026-11-11 21:25 UTC; W17's block below is kept for its design decisions and review scopes)
+## RESUME-BLOCK, current (W18 at its token limit, 2026-11-11 about 22:35 UTC; fix round 1 is built and green, NOT yet reviewed on its delta; no PR is open)
 
-- **WIP ref:** `co-001/wip-redact-item-26` at **d67775d0** (three commits on f3f5a642). Local branch `co-001/redact-item-26`.
-- **Done since W17's block (its OPEN items 1 to 3):**
-  - Time: the wider reading read the letter's dates a second time. `inOneReading` opens the check's stores around each
-    exported reading (`redactLetterForScreen`, `redactionSpans`, `holdsIdentifier`; `holdsAsFirstRead` uses it too, it
-    is re-entrant), so both readings share views and dates. The two 100 kB rows: 1.04 to 1.19 s on the head against
-    1.04 to 1.16 s on the base on one machine (1.45 to 1.49 s before). Budget unchanged, no letter exempted. Five new
-    timing rows for letters that hold a split name (`denial-letter.test.ts`).
-  - The run-count row: the excess was the subject's forms rebuilt on every reader call (fixed work). `formsOf` now
-    builds them once per reading for each subject, fold and width (`formsOfCheck`, the list frozen; no reader runs a
-    form's own pattern object, each reads its source and flags). 2,106 runs against 2,385: 88.3 in 100, bar 90
-    unchanged (the base: 2,385 against 2,662, 89.6).
-  - Six files pass: gateway 4,127, packets `verifier-identifiers.test.ts` 107, `@tp/redact` 46; typecheck and lint
-    clean. Two of the new rows' expectations were wrong and are corrected (two words of a three-word name are two
-    placeholders, as on the base; `I'd a` is IDA under the blunt rule: an apostrophe always joined a part).
-  - Failing-first: the MOD-23 describe on the base's `redact.ts`: 32 of 39 fail; on the head 39 pass.
-  - `docs/product/test-matrix.md`: the MOD-23 row and its note (committed).
-- **Running in this container (gone if the container is):** `/home/user/bt/chain.sh`: the gate A = `/home/user/snapA`
-  (f3f5a642), B = `/home/user/snapB` (the head at 2ab3e0dd's `redact.ts`) into `/home/user/gate-out/i26-2`; then the
-  battery four times in parallel under `/home/user/bt/{hr,hf,rr,rf}` (head and base-as-head, recorded and fresh
-  seeds; `lay.sh <root> <dir of redact.ts>` builds one layout with every `/home/user/` path rewritten to the root;
-  outputs in `<root>/out/fuzz-all.out`). Fresh seeds are in `<root>/work/battery-fresh.sh`.
-- **OPEN, in this order:** read the gate's `report.md` counts and `PHI.*` rows; ADR 0054's amendment with the measured
-  numbers (and a pointer at the three residual sentences it closes: line 455 `jo ann`, the K-1 sentence, the MOD-23
-  sentence of the 2026-11-11 amendment); the two reviews (briefs: `designs/lane-b-redact-item-26/reviews/brief-*.md`;
-  frozen copies for them in `/home/user/rev/{head,base}`, the diff in `/home/user/rev/redact.diff`); read the
-  batteries (head against base-as-head, same seeds); at most two fix rounds; the full suite once; the base merge; the
-  gate again; the draft PR; CI; the merge.
-- No PR is open, no subscription and no check-in is held.
+- **WIP ref:** `co-001/wip-redact-item-26` at **b29e611a** (on f3f5a642). Local branch name `co-001/redact-item-26`.
+  Reviews A and B: `designs/lane-b-redact-item-26/reviews/review-a.md`, `review-b.md` (scripts beside them; rerun
+  lines at the end of each). Tools: `designs/lane-b-redact-item-26/tools/`. The first gate's report and the four
+  battery summaries (on 2ab3e0dd, before round 1): `designs/lane-b-redact-item-26/gate-report-2ab3e0dd.md`,
+  `battery-{hr,rr,hf,rf}-2ab3e0dd.out` (h = head, r = the base run as head; second letter r = recorded seeds, f = fresh).
+- **Done (the brief's steps 1 to 3, the two reviews of step 4, and fix round 1):**
+  - Time and run count fixed at their causes (`inOneReading`: views, dates and forms stored once per exported
+    reading; `formsOf`): dates rows back at the base's time; run count 2,110 against 2,389 (88.3, bar 90 unmoved).
+  - The orchestrator's addition (21:16 UTC): the 3 s bound made sound. `packages/model-gateway/src/test-support/
+    time-budget.ts`: the work in its own thread's processor time (`process.threadCpuUsage`), the bound `budget x
+    max(1, calibration / 40 ms)` with the calibration (a fixed regex workload, none of the reader's code) right before
+    and after, the faster counting, the work's fastest of three. 40 ms is the idle median of 200 on this container
+    class (`tools/cal.mts`). Under a load of six on four cores the rows read what they read idle (`tools/track.mts`).
+    The four wall-clock assertions (denial-letter.test.ts twice, redact.leaks.test.ts twice) go through it. A first
+    try that calibrated by wall clock over-read load by 2 to 4 times and was dropped. **Not yet reviewed.**
+  - Gate on 2ab3e0dd against f3f5a642: no PHI class, 462,984 refused on both, 13 letters changed (`in a` for INA),
+    slowest 994 ms. Batteries on 2ab3e0dd: head equals the base run as head but for CR LF letters now refused; fuzz
+    flips 0, DEPART 0; every fz flip is patient M's (ruling B), and the one FLIP-OWN of the fresh seed is sent the same
+    way by f3f5a642 (run by hand).
+  - Review A: A-1 BLOCKING on the path without the screen (`redactLetter`, no production caller; the gateway exports
+    it): wider placeholders un-refused letters. **Fixed in round 1:** `redactionSpans` applies wider matches only
+    where `refusedAsFirstRead` does not refuse the first reading's text; that guard reads the CR LF writing as LF too
+    (A-2), on both paths; U+0085 joins a part (`GAP.apart`, A-4 in part); a stored `[` or `]` is read as `(` `)` (A-5
+    in part); `\r+\n` is one line ending (`asLineFeeds`, A-6 in part). Recorded and pinned: A-3, A-4's other marks,
+    A-5's other separator, A-6's LF CR, A-2's one shape.
+  - Review B: nothing blocking; B-1 to B-5 are costs the design did not state, each pinned in
+    `redact.leaks.test.ts` (`describe('review B, the recorded costs')`) and written into ADR 0054's amendment. No code
+    change for them: the blunt rule is kept (the safer side), and each is handed to Queues item 34.
+  - Six files on b29e611a: gateway 4,165, packets' `verifier-identifiers.test.ts` 107, `@tp/redact` 46; typecheck and
+    lint clean. ADR 0054's amendment and the test matrix's MOD-23 row are written and committed.
+- **OPEN, in this order:**
+  1. **The delta review of round 1** (one subagent, about 20 tool calls, report
+     `designs/lane-b-redact-item-26/reviews/review-c.md`): the delta is `git diff 2ab3e0dd b29e611a --
+     packages/redact/src/redact.ts` (the guard `refusedAsFirstRead` in `redactionSpans` and `screenAsBothRead`,
+     `asLineFeeds`, `GAP.apart`, the stored bracket) and `test-support/time-budget.ts` with its four call sites (the
+     orchestrator asked for the time bound in the time reviewer's scope: can a slow or loaded runner flip it; can a
+     slower reader hide under it; is `max(1, .)` with the faster calibration sound; the 4 ms grain of thread time).
+     Rerun review A's fuzzer on the new head first (`reviews/a/fuzz.mts`, after copying the new `redact.ts` to
+     `/home/user/rev/head/`): expect base-refuses-head-sends 0 on BOTH paths now. This is fix round 1 of at most two.
+  2. The gate and the battery on the final tree: copy `packages/redact/src/{redact,confusables}.ts` into
+     `/home/user/snapB/packages/model-gateway/src/`, `bash /home/user/gate/run.sh /home/user/snapA /home/user/snapB
+     <out> --workers 4`; `tools/lay.sh /home/user/bt/hr <dir of the head's redact.ts>` (and `hf`), then
+     `O=<root>/out PREV=<root>/none bash <root>/work/battery.sh` (`battery-fresh.sh` for `hf`); compare with the kept
+     `battery-rr` and `battery-rf` summaries (the reference does not change). A fresh container needs `tools/lay.sh`'s
+     layout, the worktrees `tree-ef3`, `tree-cc3`, `tree-base` and `/home/user/gate` (README of the battery).
+  3. **One thing to weigh before the PR:** the two dearest budget rows (a CR LF letter of dates or digits with one name
+     written apart) read 2.2 to 2.5 s of processor time idle against 3 s, and 2.2 to 3.3 s of test duration inside the
+     parallel suite: they pass, with the least room of any row. The cost is the design's own (one more check before a
+     wider match is applied, and a CR LF letter checked in both writings: four checks). If CI shows them near the bound,
+     the cure is in the reader (fewer checks), not in the number; I found no way that keeps the composition.
+  4. The full local suite once (to a file); `git merge origin/claude/build-platform` right before the last push; the
+     gate again on the merged tree; the draft PR from `.github/pull_request_template.md` naming every residual and cost
+     in plain words (ADR 0054's amendment lists them); subscribe; merge on green; one line to the orchestrator.
+- **For the orchestrator (Queues item 34), from the reviews:** A-3 and B-1 (two families of new refusals), A-4 (a part
+  split by `, ` `: ` `; ` `(` or another script's full stop), A-5 (a stored number with another separator), A-6 (LF CR),
+  A-2's recorded shape, B-2 and B-3 (names of ordinary words; a deadline's month, a hyphenated word, `P.O.`), B-4 (an
+  amount that is a stored number's writing), B-5 (the dearest letter's time).
+- No PR is open, no subscription and no check-in is held. Nothing runs in the container.
 
 ## RESUME-BLOCK (written by W17 at its 250k-token limit; the build is not finished, nothing is reviewed, no PR is open)
 
@@ -130,3 +160,4 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9m
 - 2026-11-11 (W17): design note pushed (cee084c6) and sent to the orchestrator; prototype built; cost measured; tests
   written; WIP 7cbdd33d pushed. Stopped at the token limit with the items above open.
 - 2026-11-11T20:28Z (W18): started from 7cbdd33d; time and run-count fixed at their causes; six files pass; WIP d67775d0; gate and batteries running.
+- 2026-11-11T22:35Z (W18): reviews A and B in, every finding run; fix round 1 built and green (WIP b29e611a); the time bound made sound; stopped at the token limit before the delta review.
