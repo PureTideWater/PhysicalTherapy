@@ -57,8 +57,8 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
   ledger_entry are the same; new body hashes 5d0a94c0a294a732… (`ledger_line_net`) and 834cdefc070b08db…
   (`ledger_entry_rules`); a second apply is refused by the preflight. Locks taken: ACCESS SHARE on `ledger_entry` and
   `service_line` only (the SQL body's check), nothing a reader or writer waits for.
-- **The proof tests on the base (no migration):** `apps/worker/src/reconcile/ledger-lookups.db.test.ts`, 8 pass, 2 fail.
-  The two that fail are the plan guard, as the ask requires it to fail first: `ledger_line_net`'s line read takes
+- **The proof tests on the base (no migration):** `apps/worker/src/reconcile/ledger-lookups.db.test.ts`, in its final
+  form 7 pass and 4 fail (first form: 8 and 2). The four that fail are the plan guard's cases, as the ask requires it to fail first: `ledger_line_net`'s line read takes
   `ledger_entry_by_date` (expected `ledger_entry_by_line`), and `ledger_entry_rules`' correction lookup takes
   `ledger_match_standing` (expected `ledger_match_pkey`). The refusal tests (no match; another practice's match with
   both practices in scope; a reversed match on the entry path and on the correction path; a correction whose match the

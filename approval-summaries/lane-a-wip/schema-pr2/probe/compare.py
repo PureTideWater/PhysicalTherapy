@@ -25,12 +25,12 @@ for before, after in zip(pairs[0::2], pairs[1::2]):
         if row['_t'] == 'ledger_entry':
             cents[row['stage']] = cents.get(row['stage'], 0) + int(row['amount_cents'])
     name = os.path.basename(after)
-    if a == b:
+    if a == b and ca == cb:
         print(f'{name}: IDENTICAL row for row, in order, seq included [settle entries in match seq order: before {ca}, after {cb}] ({len(b)} rows: ' + ', '.join(f'{k} {v}' for k, v in sorted(by.items())) + '); entry cents by stage ' + json.dumps(cents, sort_keys=True))
     else:
         bad = 1
         diff = [i for i in range(max(len(a), len(b))) if i >= len(a) or i >= len(b) or a[i] != b[i]]
-        print(f'{name}: DIFFERS at {len(diff)} of {max(len(a), len(b))} rows; same as a set: {sorted(a) == sorted(b)}; first {diff[:3]}')
+        print(f'{name}: DIFFERS at {len(diff)} of {max(len(a), len(b))} rows; settle order rule before {ca}, after {cb}; same as a set: {sorted(a) == sorted(b)}; first {diff[:3]}')
         for i in diff[:2]:
             print('  before', a[i][:300] if i < len(a) else None); print('  after ', b[i][:300] if i < len(b) else None)
 sys.exit(bad)
