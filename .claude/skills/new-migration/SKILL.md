@@ -15,7 +15,8 @@ The runner bounds every lock wait and tries a migration again when a wait is can
 of 2026-11-11), so a migration never contains COMMIT, ROLLBACK, BEGIN or a `lock_timeout` of zero (the runner refuses
 what it can see of these, not every form), and never catches every error (`EXCEPTION WHEN OTHERS`) or `lock_not_available` around a statement that can
 wait for a lock, only around `NOWAIT`: the handler would swallow the cancellation and record the migration with that
-statement undone. Everything in it must be safe to run again from its first line.
+statement undone. Everything in it must be safe to run again from its first line. Each try runs under a savepoint, so a
+new enum type names all its values in `CREATE TYPE` (an `ADD VALUE` used in the same file fails).
 
 Regenerate docs/product/domain-model.md in the same pull request (pnpm db:domain-model --out --strict on a freshly
 migrated database) and open the pull request's description with the output of

@@ -195,7 +195,7 @@ const OWNERSHIP_PROBLEMS = `
   ) owned GROUP BY role
   ORDER BY 1`;
 
-/** The open transaction's number, which names it after it has ended (pg_xact_status). */
+/** The open transaction's number: a transaction begun later never has the same one. */
 async function transactionId(client: pg.Client): Promise<string> {
   const { rows } = await client.query<{ xid: string }>('SELECT pg_current_xact_id()::text AS xid');
   const xid = rows[0]?.xid;
@@ -333,6 +333,8 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
   // A connection lost while the run pauses between tries is reported by the next statement, not thrown from nowhere.
   client.on('error', () => undefined);
   await client.connect();
+  // The budget's clock counts this run's wait for another migrator too, as the deploy's own limit does.
+  const started = Date.now();
   try {
     if (options.dryRun === true) {
       return await dryRun(client, migrations, options.devLogin === true, lockWait);
@@ -340,8 +342,6 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
     await bootstrapRoles(client, { devLogin: options.devLogin === true });
     await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK]);
     try {
-      // The budget's clock starts with this run's own turn, not with its wait for another migrator's.
-      const started = Date.now();
       await client.query(`SET ROLE ${OWNER_ROLE}`);
       const { pending, done } = await pendingMigrations(client, migrations);
       const applied: string[] = [];
@@ -354,6 +354,9 @@ export async function migrate(options: MigrateOptions): Promise<MigrateResult> {
             await client.query(`SAVEPOINT ${TRY_SAVEPOINT}`);
             xid = await transactionId(client);
             await applyMigration(client, migration, xid);
+            // The checks above have passed: this is the runner's own transaction, and a COMMIT that fails (a
+            // deferred constraint, a wait cancelled there) rolls it back whole. No look at the savepoint then.
+            xid = undefined;
             await client.query('COMMIT');
             break;
           } catch (error) {

@@ -372,6 +372,35 @@ describe('a migration that ends the runner’s transaction in other ways', () =>
     });
   });
 
+  it('is not what a failed commit is: a deferred check that fails there changed nothing and is reported as itself', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      writeFileSync(
+        path.join(dir, PROBE),
+        'CREATE TABLE lock_wait_parent (id integer PRIMARY KEY);\nCREATE TABLE lock_wait_child (parent integer REFERENCES lock_wait_parent DEFERRABLE INITIALLY DEFERRED);\nINSERT INTO lock_wait_child VALUES (1);',
+      );
+      const error: unknown = await migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({}) }).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(MigrationError);
+      expect((error as MigrationError).message).toContain(`${PROBE} failed: insert or update on table "lock_wait_child" violates foreign key constraint`);
+      expect((error as MigrationError).message).not.toContain('partly applied');
+      const client = await connect(url);
+      try {
+        expect((await client.query("SELECT 1 FROM pg_tables WHERE tablename LIKE 'lock_wait_%'")).rows).toEqual([]);
+        expect(await probeRecorded(client)).toBe(0);
+      } finally {
+        await client.end();
+      }
+    });
+  });
+
+  it('is told by the transaction’s number when the file makes a savepoint of the runner’s name in a transaction of its own', async () => {
+    await withScratchDatabase(adminUrl, async (url) => {
+      await migrate({ databaseUrl: url });
+      writeFileSync(path.join(dir, PROBE), 'ROLLBACK;\nBEGIN;\nSAVEPOINT tp_migration_runner_try;\nSELECT no_such_function();');
+      await expect(migrate({ databaseUrl: url, migrationsDir: dir, lockWait: lockWait({}) })).rejects.toThrow(`${PROBE} failed and may be partly applied`);
+    });
+  });
+
   it('is not what a migration’s own savepoints and handled errors are', async () => {
     await withScratchDatabase(adminUrl, async (url) => {
       await migrate({ databaseUrl: url });
