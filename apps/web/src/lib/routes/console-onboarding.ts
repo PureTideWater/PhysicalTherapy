@@ -221,7 +221,7 @@ export const uploadAgreement = platformRoute({
     kind: z.enum(AGREEMENT_KINDS),
     version: requiredText(40),
     signer: requiredText(200),
-    signedOn: z.iso.date('a date (YYYY-MM-DD)'),
+    signedOn: z.iso.date('enter the day it was signed'),
   }),
   audit: { action: 'agreement_recorded', objectType: 'agreement' },
   handle: async ({ scope, input, request, services }): Promise<MutationResult> => {

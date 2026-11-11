@@ -22,9 +22,11 @@ interface Entry {
   /** Generates the case's files; absent with `noFile`. */
   readonly build?: Build;
   readonly noFile?: string;
+  /** What the case's tests do not assert yet, and which later slice does (the case's notes). */
+  readonly notes?: readonly string[];
 }
 
-const none = (completesIn: number, noFile: string, assertedBy?: readonly string[]): Entry => ({ completesIn, noFile, assertedBy });
+const none = (completesIn: number, noFile: string, assertedBy?: readonly string[], notes?: readonly string[]): Entry => ({ completesIn, noFile, assertedBy, ...(notes === undefined ? {} : { notes }) });
 
 function par29(b: CaseBuilder): void {
   const facts = largeFixtureFacts();
@@ -352,6 +354,34 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/packets/response-letter.browser.test.tsx',
     'apps/web/e2e/packets.spec.ts',
   ]),
+  // Lane B (co-001/suite-cap-3-reconcile, SUITE-CAP-3; docs/adr/0087): a reconcile pass compared with the per-line pass, its reads bounded
+  // per pass, and a pass at real size.
+  'CAS-49': none(8, 'Generated passes and LED worlds, compared with the per-line pass: no file.', ['apps/worker/src/reconcile/pass-equality.db.test.ts', 'apps/worker/src/reconcile/pass-equality-led.db.test.ts']),
+  'CAS-50': none(8, 'Generated at two sizes by the test: no file.', ['apps/worker/src/reconcile/pass-bounds.db.test.ts']),
+  'CAS-51': none(8, 'Generated at size by the test from LED-06\'s synthetic segments: no file.', ['apps/worker/src/reconcile/pass.large.db.test.ts']),
+  // Lane B (co-001/packet-figure-placeholders, slice 2): verifier format /3 behind an explicit format (VERIFIER_FORMAT stays /2): pass 1's
+  // strict scan and fact ids, pass 2's contradiction in both directions, the code draft's tokens. The model's half comes with slice 6.
+  'CAS-52': none(
+    8,
+    'Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.',
+    ['packages/packets/src/scan-strict.test.ts', 'packages/packets/src/verifier-template.test.ts', 'packages/packets/src/draft-template.test.ts', 'packages/packets/src/serialize.test.ts'],
+    [
+      'Pending, slice 6 (the gateway prompt and schema): a model’s draft with a /3 mismatch not written (not_drafted, misstated), a text segment with a brace or a bracket as invalid_output, a model’s line.* or claim.* id as unknown_fact, and the pre-call guard. The tests listed assert the verifier’s and serializeDraft’s half.',
+    ],
+  ),
+  'CAS-53': none(
+    8,
+    'Templates verified over the named SYNTHETIC fact packets of the packets tests: no file.',
+    ['packages/packets/src/verifier-template.test.ts', 'packages/packets/src/fact-catalog.test.ts'],
+    [
+      'Pending, slice 5 (the web picker and preview): a typed subset sum opening the picker. Pending, slice 4 (the worker’s export, approval and verifier of now): schedule_changed. The tests listed assert the ids’ half; fact-catalog.test.ts holds the off-shape code’s.',
+    ],
+  ),
+  'CAS-54': none(8, 'Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.', [
+    'packages/packets/src/draft-template.test.ts',
+    'packages/packets/src/verifier-template.test.ts',
+    'packages/packets/src/verifier-contradiction.test.ts',
+  ]),
   // Lane B (co-001/packet-figure-placeholders, slice 1): a narrative’s figures as fact tokens rendered by code; the render half, in the worker
   // and in a browser (formatUsdPlain against formatUsd en-US, and renderFacts, in both). The approval and export half come with later slices.
   'CAS-55': none(8, 'Templates rendered over the SYNTHETIC packets of @tp/packets/testing and the named fact packets of the catalog tests: no file.', [
@@ -362,6 +392,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'packages/money/src/usd-plain.test.ts',
     'apps/web/src/components/packets/fact-render.browser.test.ts',
   ]),
+  // Acting Lane B (co-001/web-ledger-try-lock; docs/adr/0092): a person's ledger action takes the ledger lock only if it is free.
+  'CAS-56': none(8, 'The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding the lock: no file.', ['apps/web/src/lib/routes/reconciliation-routes.db.test.ts']),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
@@ -869,6 +901,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'CI-27': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/manifests.test.ts', 'tools/stryker/affected.test.ts', 'tools/test/workflows.test.ts']),
   'CI-28': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/affected.test.ts', 'tools/stryker/gate.test.ts']),
   'CI-29': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/runtime.test.ts', 'tools/stryker/gate.test.ts', 'tools/stryker/canary/verdict.test.ts', 'tools/stryker/stryker.test.ts', 'tools/stryker/shards.test.ts', 'tools/test/workflows.test.ts']),
+  // The shell's skip link (WCAG 2.4.1; docs/adr/0077, amended by co-001/ux-forms-after-42).
+  'CI-30': none(0, "The skip-link journey reads the shell's first tab stop and the focus after Enter in the browser; no file.", ['apps/web/e2e/skip-link.spec.ts', 'apps/web/e2e/a11y.ts']),
   // The generated function files of the combined audit's item 111 (docs/adr/0068).
   'DBF-01': none(0, 'The function files are generated from a scratch database the drift file migrates; no file.', ['packages/db/src/domain-model/function-files.db.test.ts']),
   'DBF-02': none(0, 'A probe migration changes a function on a scratch database; no file.', ['packages/db/src/domain-model/domain-model-drift.db.test.ts']),
@@ -920,6 +954,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/form-issues.test.ts',
     'apps/web/src/components/form-hints.test.ts',
     'apps/web/src/components/fields.test.tsx',
+    'apps/web/src/lib/routes/messages.test.ts',
     'apps/web/e2e/forms-keep-input.spec.ts',
   ]),
   'FRM-05': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', ['apps/web/src/components/action-form.browser.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
@@ -969,6 +1004,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'TBL-07': none(1, 'The browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', ['apps/web/e2e/screening-phone.spec.ts']),
   'TBL-08': none(1, 'The words and tones are rendered from synthetic groups, rows and coverage the test writes by hand, the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts), and the copy lint reads the screening files; no file.', [
     'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/src/components/screening/result.test.tsx',
+    'apps/web/src/lib/screening/labels.test.ts',
     'apps/web/e2e/screening-phone.spec.ts',
     'tools/brand-copy/scan.test.ts',
   ]),
@@ -1127,6 +1164,9 @@ function definition(id: string, title: string, assertion: string, entry: Entry, 
       const b = new CaseBuilder({ id, module, title, assertion, completesIn: entry.completesIn, assertedBy: entry.assertedBy, codeListRelease: module === 'PAR' || build !== undefined ? CODE_LIST_RELEASE : null }, dir);
       if (entry.noFile !== undefined) {
         b.noFiles(entry.noFile);
+      }
+      for (const note of entry.notes ?? []) {
+        b.note(note);
       }
       build?.(b);
       return b.build();

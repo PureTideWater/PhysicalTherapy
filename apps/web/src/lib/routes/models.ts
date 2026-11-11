@@ -115,7 +115,7 @@ export const draftNarrativeAction = practiceRoute({
       caseId: opaqueId,
       basedOnVersionId: optionalText(opaqueId),
       promptPayState: optionalText(STATE_CODE),
-      attachments: z.array(opaqueId).max(20, 'at most 20 attached documents'),
+      attachments: z.array(opaqueId).max(20, 'attach at most 20 documents'),
       requestKey: z.uuid(),
     }),
   ),

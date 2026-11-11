@@ -65,7 +65,7 @@ export async function isRunInEffect(scope: Scope, practiceId: string, runId: str
 }
 
 /** Why a run was refused for triage or a report, as the person sees it. */
-export const RUN_NOT_IN_EFFECT = 'the pricing run in effect for its period: a complete run, or a re-run once it is accepted (not one it replaced)';
+export const RUN_NOT_IN_EFFECT = 'the pricing run in effect for its period is a complete run, or a re-run once accepted, not one it replaced; open that run';
 
 /** Whether the run's rule release was withdrawn since it priced (its content was wrong; audit item #4). False for a run the caller cannot see. */
 export async function isRunReleaseWithdrawn(scope: Scope, runId: string): Promise<boolean> {
@@ -78,7 +78,7 @@ export async function isRunReleaseWithdrawn(scope: Scope, runId: string): Promis
  * never built on a release whose content was wrong, and the remedy.
  */
 export const RUN_RELEASE_WITHDRAWN =
-  'a run priced under a rule release that is not withdrawn: this run’s release was withdrawn because its content was wrong, so no audit report is built on it; price the period again under the release in force, accept that re-run, then generate the report on it';
+  'this run’s rule release was withdrawn because its content was wrong, so no audit report is built on it; price the period again under the release in force, accept that re-run, then generate the report on it';
 
 /** The practice's triage settings, read from its settings (the defaults where it names none). */
 export async function practiceTriageSettings(scope: Scope, practiceId: string) {

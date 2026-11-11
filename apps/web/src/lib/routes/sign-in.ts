@@ -148,7 +148,7 @@ const WRONG_CODE: Issue = { field: 'code', message: 'enter the code your authent
 
 /** The new-password step's refusal by the policy: what the password still lacks, or the user pool's own refusal. */
 function passwordIssue(problems: readonly string[]): Issue {
-  return { field: 'password', message: problems.length === 0 ? 'the sign-in service refused it: choose a different password' : `it still needs ${listed(problems)}` };
+  return { field: 'password', message: problems.length === 0 ? 'the sign-in service refused it; choose a different password' : `it still needs ${listed(problems)}` };
 }
 
 /**
@@ -415,7 +415,7 @@ export const chooseNewPassword = publicRoute({
   params: noParams,
   input: z
     .object({ password: z.string().min(1, 'fill this in').max(256), confirm: z.string().max(256) })
-    .refine((value) => value.password === value.confirm, { path: ['confirm'], message: 'the two passwords do not match: type the same password in both fields' }),
+    .refine((value) => value.password === value.confirm, { path: ['confirm'], message: 'the two passwords do not match; type the same password in both fields' }),
   handle: async (context) => {
     const pending = pendingOf(context, 'new_password');
     return pending === undefined ? RESTART : advance(context, pending, () => context.services.signIn.newPassword(pending, context.input.password, contextOf(context)));
@@ -635,7 +635,7 @@ const mailedCode = z
  * Every code problem's one refusal (wrong, expired, used, replaced, over-tried, an unknown address, a changed hidden
  * address): never split by cause, which would tell accounts apart (docs/adr/0081, A2).
  */
-const CODE_REFUSED: StepResult = { error: 'That did not match.', issues: [{ field: 'code', message: 'the code did not match, or it has expired: check it, or send a new code' }] };
+const CODE_REFUSED: StepResult = { error: 'That did not match.', issues: [{ field: 'code', message: 'the code did not match, or it has expired; check it, or send a new code' }] };
 
 /** A reset route whose rate-limit refusals are logged by the request alone, never an address or its hash (review SEC-S1). */
 function resetRoute<R>(route: Route<R>): Route<R> {
@@ -720,7 +720,7 @@ export const resetConfirm = resetRoute(
     params: noParams,
     input: z
       .object({ email: emailAddress, code: mailedCode, password: z.string().min(1, 'fill this in').max(256), confirm: z.string().max(256) })
-      .refine((value) => value.password === value.confirm, { path: ['confirm'], message: 'the two passwords do not match: type the same password in both fields' }),
+      .refine((value) => value.password === value.confirm, { path: ['confirm'], message: 'the two passwords do not match; type the same password in both fields' }),
     handle: async (context): Promise<StepResult> => {
       const pending = pendingOf(context, 'reset');
       if (pending === undefined) {

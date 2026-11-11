@@ -3,7 +3,7 @@ import { decimal } from '@tp/money';
 import { type NarrativeFacts, PLACEHOLDER_KINDS, heldRoles, largestHeld, scopeUnstated } from '../facts';
 import { type ReadableText, type TextSpan, readableText } from '../readable';
 import { FIGURE_ROLES, type FigureReading, type FigureRole, type Scope, type SentenceParts, functionWords, quotedHolds, readFigures } from '../roles';
-import { type FigureKind, scanText, sentenceSpans } from '../scan';
+import { BRACED, type FigureKind, scanText, sentenceSpans } from '../scan';
 
 /**
  * The verifier's check itself (PRD 12: "any figure that is not in the input fails verification, and a
@@ -49,18 +49,31 @@ export const MISMATCH_CODES = [
   'hidden_character',
   'unreadable_figure',
   'identifier_in_narrative',
+  // A template's own (tp-packet-verifier/3; design lane-b-packet-figure-placeholders, section 4; ./template.ts).
+  'free_figure',
+  'number_word',
+  'unknown_fact',
+  'fact_not_canonical',
+  'fact_contradicted',
+  'fact_not_separated',
 ] as const;
 export type MismatchCode = (typeof MISMATCH_CODES)[number];
 
 export interface Mismatch {
   readonly code: MismatchCode;
-  /** The figure's kind for figure_not_in_input; placeholder or citation for those codes; identifier for identifier_in_narrative; null otherwise. */
-  readonly kind: FigureKind | 'placeholder' | 'citation' | null;
+  /**
+   * The figure's kind for figure_not_in_input, free_figure and number_word; placeholder or citation for those codes;
+   * identifier for identifier_in_narrative; fact for unknown_fact, fact_not_canonical, fact_contradicted and
+   * fact_not_separated; null otherwise.
+   */
+  readonly kind: FigureKind | 'placeholder' | 'citation' | 'fact' | null;
   /** The sentence it is in, from 0 (-1 for an empty narrative). */
   readonly sentence: number;
   /** Its position in the narrative, [start, end). */
   readonly start: number;
   readonly end: number;
+  /** For fact_not_canonical only: the canonical id of the same fact, which the editor offers in its place (a fact id, never text). */
+  readonly canonical?: string;
 }
 
 /** What the check found: how many sentences and figures it read, and every mismatch in text order. */
@@ -239,7 +252,7 @@ function originalSentences(readable: ReadableText): TextSpan[] {
 }
 
 /** The index of the sentence a position falls in, or -1 for none. */
-function sentenceFinder(sentences: readonly TextSpan[]): (position: number) => number {
+export function sentenceFinder(sentences: readonly TextSpan[]): (position: number) => number {
   return (position) => sentences.findIndex((span) => position >= span.start && position < span.end);
 }
 
@@ -282,8 +295,17 @@ export function identifierSpans(text: string, identifiers: readonly string[], sk
   return found.sort((a, b) => a.start - b.start);
 }
 
+/**
+ * Every run in double braces that is not one of the identifier placeholders read, and every lone {{ or }}. A placeholder
+ * is a braced run with no brace inside it, so the run that starts where it starts is that placeholder, whole.
+ */
+export function strayBraces(text: string, placeholders: readonly TextSpan[]): TextSpan[] {
+  const read = new Set(placeholders.map((token) => token.start));
+  return [...text.matchAll(BRACED)].map((match) => ({ start: match.index, end: match.index + match[0].length })).filter((span) => !read.has(span.start));
+}
+
 /** Figures that name a date: a month's name there is the date, never a patient's name. */
-const DATED: ReadonlySet<FigureKind> = new Set(['date', 'month', 'month_day']);
+export const DATED: ReadonlySet<FigureKind> = new Set(['date', 'month', 'month_day']);
 
 /**
  * The check. `identifiers` are the case's own (the version's schedule rows' patient names, member IDs
@@ -338,6 +360,11 @@ export function readNarrative(narrative: string, facts: NarrativeFacts, identifi
     if (!PLACEHOLDER_KINDS.has(token.kind) || token.row < 1 || token.row > facts.rows) {
       add('unknown_placeholder', 'placeholder', at(token));
     }
+  }
+  // Fail closed on anything else in double braces (a fact token of tp-packet-verifier/3, a malformed placeholder, a lone
+  // {{ or }}): this format renders none of it, so none of it passes as prose.
+  for (const span of strayBraces(text, scan.placeholders)) {
+    add('unknown_placeholder', 'placeholder', at(span));
   }
   for (const marker of scan.markers) {
     if (marker.sources.some((source) => !facts.markers.has(source))) {

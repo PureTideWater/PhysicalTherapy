@@ -1,13 +1,13 @@
 import { type PracticeScope, type ScopeClient, loadPracticeCipher, readWithAudit, rolesPermit } from '@tp/db/runtime';
 import { type Cents, centsToString, sumCents } from '@tp/money';
 import { CASE_STATES, WRITE_OFF_REASONS, writeOffSchema } from '@tp/triage';
-import { lineCorrections, practiceLedgerTotals } from '@tp/worker/ledger';
+import { lineCorrections, practiceLedgerTotals, tryLockLedger } from '@tp/worker/ledger';
 import { type VerifierNow, type VerifierStanding, caseVerifiersNow, packetOfCase } from '@tp/worker/packets';
 import { waitingPatterns } from '@tp/worker/triage';
 import { z } from 'zod';
 
 import { practiceRoute } from '../http/invoke';
-import { InputError, type MutationResult, NotFoundError } from '../http/route';
+import { BusyError, InputError, type MutationResult, NotFoundError } from '../http/route';
 import {
   type AnomalyView,
   type CaseDetail,
@@ -458,6 +458,19 @@ export const triageRunAction = practiceRoute({
   sample: { params: (refs) => ({ practiceId: refs.practiceId }), input: (refs) => ({ runId: refs.pricingRunId }) },
 });
 
+/**
+ * Takes the practice's ledger lock for the rest of the request's transaction, or refuses at once (docs/adr/0092). A
+ * write-off and a reopen change rows a reconcile pass holds locked to its commit (the case, through the case line's
+ * and the stage event's refresh), so without the lock they would wait for the length of a pass, each holding one of
+ * the web's connections; with it they run only while no pass, and no other person's ledger action, is under way, and
+ * never wait. Taken before the case line is read for update, so that read never waits on a pass either.
+ */
+async function ledgerOrBusy(scope: Parameters<typeof tryLockLedger>[0], practiceId: string): Promise<void> {
+  if (!(await tryLockLedger(scope, practiceId))) {
+    throw new BusyError();
+  }
+}
+
 /** What a write-off does, stated before it is confirmed (PRD 7: "every destructive action ... confirms with the consequence stated"). */
 export const WRITE_OFF_CONSEQUENCE =
   'The line leaves the case’s actionable total and stays in the case, struck through, with its reason. A person who works cases can reopen it, with a reason, while its dispute window is open.';
@@ -485,6 +498,7 @@ export const writeOffLineAction = practiceRoute({
     if (!checked.success) {
       throw new InputError(checked.error.issues.map((issue) => ({ field: issue.path.join('.') || 'text', message: issue.message })));
     }
+    await ledgerOrBusy(scope, practiceId);
     const line = await caseLineState(scope, practiceId, input.caseLineId);
     if (line === undefined) {
       throw new NotFoundError();
@@ -526,6 +540,7 @@ export const reopenLineAction = practiceRoute({
   input: z.object({ caseLineId: opaqueId, reason: requiredText(500) }),
   audit: { action: 'case_line_reopened', objectType: 'case_line' },
   handle: async ({ scope, practiceId, input, services }): Promise<MutationResult> => {
+    await ledgerOrBusy(scope, practiceId);
     const line = await caseLineState(scope, practiceId, input.caseLineId);
     if (line === undefined) {
       throw new NotFoundError();

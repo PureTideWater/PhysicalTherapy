@@ -1,10 +1,8 @@
-import { randomUUID } from 'node:crypto';
-
 import { expect, test } from '@playwright/test';
 import { OWNER_ROLE } from '@tp/db';
 
 import { atPhoneWidth, expectAccessible } from './a11y';
-import { withDatabase } from './helpers';
+import { runTag, withDatabase } from './helpers';
 import { MAIL_NOTICE_ADMIN, MAIL_NOTICE_PRACTICE, recordMailEventsOnce, sendSupportNoticesOnce, signInAs } from './mail';
 import { outboxFor } from './outbox';
 
@@ -18,7 +16,7 @@ import { outboxFor } from './outbox';
  */
 test('a support-access notice the suppression list stops is not delivered to 1 of 1 administrator, says so on the grant, and in the notifications, linked to it (SEC-19)', async ({ page }) => {
   test.setTimeout(120_000);
-  const ticket = `SYN-MAIL-${randomUUID().slice(0, 8)}`;
+  const ticket = `SYN-MAIL-${runTag()}`;
   const { practiceId, grantId } = await withDatabase(async (client) => {
     const practice = (await client.query<{ id: string }>('SELECT id FROM practice WHERE name = $1', [MAIL_NOTICE_PRACTICE])).rows[0]?.id ?? '';
     const support = (await client.query<{ id: string }>("SELECT id FROM \"user\" WHERE email = 'support@synthetic.test'")).rows[0]?.id ?? '';

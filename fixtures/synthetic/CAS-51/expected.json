@@ -1,0 +1,17 @@
+{
+  "case": "CAS-51",
+  "module": "CAS",
+  "title": "A reconcile pass at real size",
+  "assertion": "A step-7b pass of 2,000 lines, spread over cases, in one case and on few service dates (more on the weekly run) approves and posts every line within its time budget, its own part (the pass less the ledger's entry inserts) within its own budget and at most 1.5 times as slow a line at 2,000 as at 500, under 75% of the worker's heap",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": ["apps/worker/src/reconcile/pass.large.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Generated at size by the test from LED-06's synthetic segments: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

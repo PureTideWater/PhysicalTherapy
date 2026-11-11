@@ -1,33 +1,33 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import { type Page, expect, test } from '@playwright/test';
-import { databaseClient } from '@tp/db';
 
 import { WITHIN_REDUCTION_RANGE } from '../src/lib/screening/labels';
 import { SCREENING_GROUPS_PER_PAGE } from '../src/lib/screening/routes';
 import { atPhoneWidth, expectAccessible, expectScrollersAgree } from './a11y';
-import { e2eDatabaseUrl } from './env';
 import { withDatabase } from './helpers';
+import { holdScreeningStream } from './mail';
 import { outboxFor } from './outbox';
 import { CLEAN_ROWS, SCREENING_HEADER, SCREENING_ZIP, resultLinkIn, screeningRowsCsv, startLocalScreeningConsumer } from './screening';
 
 /**
- * The screening result on a phone and from a desktop's width (test matrix TBL-05 to TBL-07; docs/adr/0078; UX-005,
- * UX-134). A prospect, with no account, screens CLEAN_ROWS (e2e/screening.ts) at 390 px; the screening consumer prices
- * it and emails the link; the link opens the result. Loaded at 390 px, the link to the audit request under the heading
- * is in view, and followed from the keyboard it puts the focus on the form's title, from which Tab goes into the form.
- * Each of the three tables (the anomalies by code and payer product, the coverage, the rows with the largest
- * differences) is a list of stacked items named by its card's title and its table is hidden: one item for each group,
- * coverage row and top row the database returns, each group's status the database's standing in words, an anomaly in
- * the unpriced tone (P4-DR-03), and each item's terms its table's headers but the naming columns, in their order; every
- * value lies in the window, no status is cut, the page does not scroll sideways, and axe finds nothing. Without script
- * the switch is the same: it is a container query. At 820 px the anomalies and the top rows stack while the coverage
- * keeps its table. At 1280 px the three tables show, with the database's rows, and the lists are hidden; the tables
- * hidden since the first load measure again, so the synthetic result's anomalies and coverage fit their cards (each
- * status wraps in its cell above a floor; a result whose figures run wider scrolls in the region with the cue) and the
- * top rows scroll in their region with the cue; axe finds nothing. Where the cards' content is exactly 54rem, the
- * narrowest width at which the tables show (994 px without a classic scrollbar; the step adds the bar's width, P4-DR-02,
- * P4-RC-03), the anomalies and the coverage still fit.
+ * The screening result on a phone and from a desktop's width (test matrix TBL-05 to TBL-08; docs/adr/0078; UX-005,
+ * UX-040, UX-134). A prospect, with no account, screens CLEAN_ROWS (e2e/screening.ts) at 390 px; the screening
+ * consumer prices it and emails the link; the link opens the result. Loaded at 390 px, the link to the audit request
+ * under the heading is in view, and followed from the keyboard it puts the focus on the form's title, from which Tab
+ * goes into the form. Each of the three tables (the anomalies by code and payer product, the coverage, the rows with
+ * the largest differences) is a list of stacked items named by its card's title and its table is hidden: one item for
+ * each group, coverage row and top row the database returns, each group's status the database's standing in words, an
+ * anomaly in the unpriced tone in both copies (UX-040), and each item's terms its table's headers but the naming
+ * columns, in their order; every value lies in the window, no status is cut, the page does not scroll sideways, and
+ * axe finds nothing. Without script the switch is the same: it is a container query. At 820 px the anomalies and the
+ * top rows stack while the coverage keeps its table. At 1280 px the three tables show, with the database's rows, each
+ * status in its tone (an anomaly unpriced, every other standing neutral, never Short or Whole), and the lists are
+ * hidden; the tables hidden since the first load measure again, so the synthetic result's anomalies and coverage fit
+ * their cards (each status wraps in its cell above a floor; a result whose figures run wider scrolls in the region with
+ * the cue) and the top rows scroll in their region with the cue; axe finds nothing. Where the cards' content is exactly
+ * 54rem, the narrowest width at which the tables show (994 px without a classic scrollbar; the step adds the bar's
+ * width, P4-DR-02, P4-RC-03), the anomalies and the coverage still fit.
  *
  * Free of the screening journey's known races (screening.spec.ts; LANES.md "Handed to Lane A"): its own practice and
  * its own address on a .test domain of its own, so no other spec's screening is replaced and no other bucket of the
@@ -38,32 +38,20 @@ import { CLEAN_ROWS, SCREENING_HEADER, SCREENING_ZIP, resultLinkIn, screeningRow
  */
 
 /**
- * The key of the one screening stream's advisory lock: #42's SCREENING_STREAM_LOCK (e2e/mail.ts), which every
- * screening journey holds shared and #42's mail cut-off journey holds alone while it pauses the stream.
- */
-const SCREENING_STREAM_LOCK = 760_065;
-
-/**
- * The screening stream, held shared for the test (P4-DR-01): a screening sent while the cut-off journey has paused the
- * stream would wait for an email that never comes. Until #42 merges nothing else takes the key; once it has, the pull
- * request merged second may swap this for #42's holdScreeningStream('shared'). Its own time, as #42's streamTest: the
- * lock waits while the cut-off journey holds the stream alone, which may take that journey's whole 240 seconds.
+ * The screening stream, held shared for the test (holdScreeningStream, e2e/mail.ts; P4-DR-01): the mail cut-off journey
+ * pauses it and holds it alone while it does, and a screening sent during the pause would wait for an email that never
+ * comes. Its own time, as screening.spec.ts's streamTest: the lock waits while the cut-off journey holds the stream
+ * alone, which may take that journey's whole 240 seconds.
  */
 const phoneTest = test.extend<{ stream: undefined; consumer: Awaited<ReturnType<typeof startLocalScreeningConsumer>> }>({
   stream: [
     // eslint-disable-next-line no-empty-pattern -- Playwright reads a fixture's dependencies from its first parameter's pattern.
     async ({}, provide) => {
-      const client = databaseClient(e2eDatabaseUrl());
-      await client.connect();
+      const release = await holdScreeningStream('shared');
       try {
-        await client.query('SELECT pg_advisory_lock_shared($1)', [SCREENING_STREAM_LOCK]);
-        try {
-          await provide(undefined);
-        } finally {
-          await client.query('SELECT pg_advisory_unlock_shared($1)', [SCREENING_STREAM_LOCK]);
-        }
+        await provide(undefined);
       } finally {
-        await client.end();
+        await release();
       }
     },
     { auto: true, timeout: 240_000 },
@@ -286,7 +274,7 @@ phoneTest('the screening result reads on a phone: its three tables as stacked ro
     await expectScrollersAgree(page, 'the screening result at 820 px');
   });
 
-  await test.step('at 1280 px the three tables show with the database’s rows, the hidden tables measure again, the synthetic result’s anomalies and coverage fit, and axe finds nothing (TBL-06, TBL-07)', async () => {
+  await test.step('at 1280 px the three tables show with the database’s rows and every status in its tone, the hidden tables measure again, the synthetic result’s anomalies and coverage fit, and axe finds nothing (TBL-06, TBL-07, TBL-08)', async () => {
     await page.setViewportSize({ width: 1280, height: 720 });
     const rows: Readonly<Record<Section, number>> = { anomalies: listed.groups.length, coverage: listed.coverage.length, 'top-rows': listed.rows.length };
     for (const card of CARDS) {
@@ -296,6 +284,14 @@ phoneTest('the screening result reads on a phone: its three tables as stacked ro
       await expect(page.getByRole('list', { name: card.title, exact: true })).toHaveCount(0);
       await expect(copyOf(page, card.section, 'rows')).toBeHidden();
     }
+    // UX-040 in the table copy too: an anomaly in the unpriced tone, every other standing neutral, never Short or Whole.
+    for (const { grp, standing } of listed.groups) {
+      await expect(copyOf(page, 'anomalies', 'table').locator(`[data-group="${grp}"] [data-slot="status-chip"]`)).toHaveAttribute('data-tone', standing === 'anomaly' ? 'unpriced' : 'neutral');
+    }
+    for (const { row_no: rowNo, standing } of listed.rows) {
+      await expect(copyOf(page, 'top-rows', 'table').locator(`[data-row-no="${String(rowNo)}"] [data-slot="status-chip"]`)).toHaveAttribute('data-tone', standing === 'anomaly' ? 'unpriced' : 'neutral');
+    }
+    await expect(page.locator('[data-tone="short"], [data-tone="whole"]')).toHaveCount(0);
     // A table hidden since the first load measured 0 and read "fits": shown, it measures again.
     await expectScrollersAgree(page, 'the screening result at 1280 px');
     await expect.poll(() => fitOf(page, 'anomalies'), { message: `${ANOMALIES.title} fits its card at 1280 px` }).toMatchObject({ scroll: 'fits' });

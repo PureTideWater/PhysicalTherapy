@@ -33,7 +33,7 @@ function textOf(html: string, id: string): string | undefined {
   return new RegExp(`id="${id}"[^>]*>([^<]*)<`).exec(html)?.[1];
 }
 
-const ZIP = { field: 'zip', message: 'five digits, or ZIP+4 such as 27601-1234' };
+const ZIP = { field: 'zip', message: 'enter five digits, or a ZIP+4 such as 27601-1234' };
 
 describe('Field (FRM-04)', () => {
   it('shows the form’s message under the control, marked, described by the message first and then the hint', () => {

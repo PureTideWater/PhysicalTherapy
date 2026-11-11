@@ -36,7 +36,7 @@ export default async function SupportPage() {
           <CardTitle>New support grant from a ticket</CardTitle>
           <CardDescription>
             One support engineer or contract specialist, one practice, one ticket, {SUPPORT_GRANT_HOURS} hours. Every read under it is logged, and the practice administrator is
-            notified at creation and at expiry. No other path lets company staff read a practice's data. A contract specialist works only on the practice's contracts.
+            notified at creation and at expiry. No other path lets PaidWhole staff read a practice’s data. A contract specialist works only on the practice’s contracts.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -54,7 +54,14 @@ export default async function SupportPage() {
                 name="userId"
                 options={engineers.map((engineer) => ({ value: engineer.id, label: `${engineer.email} (${roleName(engineer.role)})` }))}
               />
-              <Field label="Ticket" name="ticket" required pattern="[A-Za-z0-9-]{1,64}" />
+              <Field
+                label="Ticket"
+                name="ticket"
+                required
+                maxLength={64}
+                pattern="[A-Za-z0-9-]{1,64}"
+                hint="The ticket’s number, as Support tickets shows it, such as 1042. Letters, digits and hyphens only."
+              />
               <Field label="Reason" name="reason" required maxLength={500} hint="What the ticket needs. No patient details." />
             </ActionForm>
           )}

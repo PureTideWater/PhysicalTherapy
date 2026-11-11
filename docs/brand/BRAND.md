@@ -159,6 +159,11 @@ Contract-verified calculation without cash is a line status (validated), never a
   pages with a 16 px mark in the running header; styles in `apps/worker/src/report/brand.css`.
 - Billing-firm white label: the firm's name and logo lead; PaidWhole appears only as the Verified
   badge in the footer, when earned.
+- A field's refusal names the field once, then says what is wrong and what to do in one lower-case
+  sentence joined by a semicolon, with no full stop and no colon of its own (a legal surface's wording,
+  and the founder's ZIP wording awaiting counsel, excepted until counsel rules; a step's "Refused:"
+  refusal and a form's form-wide sentences are never printed after a field's name, so they are outside
+  the rule; docs/adr/0077, amended by co-001/ux-forms-after-42, items 1 and 5).
 
 ## 8. Do not
 

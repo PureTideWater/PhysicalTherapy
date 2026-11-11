@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -6,7 +5,7 @@ import { type Page, expect, test } from '@playwright/test';
 import { assertNoPhi } from '@tp/observability';
 
 import { atPhoneWidth, expectAccessible } from './a11y';
-import { signInWithTotp, withDatabase } from './helpers';
+import { runTag, signInWithTotp, withDatabase } from './helpers';
 import { chainFrom, journeyPractice, newestDocument, until } from './journeys';
 import { MAPPING_PRACTICE_PREFIX, startLocalWorker } from './worker';
 
@@ -80,7 +79,7 @@ async function untilPriced(practiceId: string, runs: number): Promise<void> {
 
 test('one plan with no mapping no longer freezes its month: the rest prices, and once mapped, the month is priced again by hand (J6, MAP-06 to MAP-08, PRC-31)', async ({ page }) => {
   test.setTimeout(300_000);
-  const practiceId = await journeyPractice({ name: `${MAPPING_PRACTICE_PREFIX}${randomUUID().slice(0, 8)}`, settings: {} });
+  const practiceId = await journeyPractice({ name: `${MAPPING_PRACTICE_PREFIX}${runTag()}`, settings: {} });
   await signInWithTotp(page, 'mapping-manager');
   const local = await startLocalWorker();
   try {

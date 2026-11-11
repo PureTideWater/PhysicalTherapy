@@ -279,11 +279,11 @@ describe('asking for upload URLs', () => {
     const { formatId: _none, ...unnamed } = era;
     expect(await call(requestUploads, manager, practice(), { files: [csv, unnamed] })).toEqual({
       status: 'invalid',
-      issues: [{ field: 'files.1.formatId', message: "File 2 is an ERA export: choose which system's export it is." }],
+      issues: [{ field: 'files.1.formatId', message: 'file 2 is an ERA export; choose which system’s export it is' }],
     });
     expect(await call(requestUploads, manager, practice(), { files: [{ ...csv, formatId: 'spry_era_v0' }] })).toEqual({
       status: 'invalid',
-      issues: [{ field: 'files.0.formatId', message: 'File 1 has an export format but is not an ERA export.' }],
+      issues: [{ field: 'files.0.formatId', message: 'file 1 is not an ERA export, so it takes no export format; choose its kind again' }],
     });
     expect(await call(requestUploads, manager, practice(), { files: [{ ...era, formatId: 'spry_posting_v0' }] })).toMatchObject({ status: 'invalid', issues: [{ field: 'files.0.formatId' }] });
     // An ERA export is read as CSV: a workbook's declared type is refused by its place in the batch, with what to do.
