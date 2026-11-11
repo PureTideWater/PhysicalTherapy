@@ -2,7 +2,7 @@ import type { ActorScope, DirectoryPractice, MembershipRole, MfaMethod, Permissi
 import type { z } from 'zod';
 
 import type { EndedReason } from '../auth/sessions';
-import type { Services } from '../server/services';
+import type { Services, SignedInServices } from '../server/services';
 import type { RateBucket } from './rate-limit';
 
 /**
@@ -321,14 +321,15 @@ export interface ReturnPage {
  */
 export type ReturnTo = (params: Readonly<Record<string, string | undefined>>) => ReturnPage | null;
 
-interface BaseContext<P, I> {
+interface BaseContext<P, I, S> {
   readonly params: P;
   readonly input: I;
   readonly request: RouteRequest;
-  readonly services: Services;
+  readonly services: S;
 }
 
-export type PublicContext<P, I> = BaseContext<P, I>;
+/** A public route opens no scope and takes its own connections, so it has every service. */
+export type PublicContext<P, I> = BaseContext<P, I, Services>;
 
 /**
  * Work a signed-in route runs only once its transaction has committed, in the order given: a job that must read what
@@ -338,14 +339,14 @@ export type PublicContext<P, I> = BaseContext<P, I>;
  */
 export type AfterCommit = (work: () => Promise<unknown>) => void;
 
-export interface ActorContext<P, I> extends BaseContext<P, I> {
+export interface ActorContext<P, I> extends BaseContext<P, I, SignedInServices> {
   readonly actor: Actor;
   readonly scope: ActorScope<ScopeClient>;
   readonly platformRoles: readonly MembershipRole[];
   readonly afterCommit: AfterCommit;
 }
 
-export interface PracticeContext<P, I> extends BaseContext<P, I> {
+export interface PracticeContext<P, I> extends BaseContext<P, I, SignedInServices> {
   readonly actor: Actor;
   readonly scope: PracticeScope<ScopeClient>;
   readonly practiceId: string;

@@ -19,7 +19,7 @@ import { multirangeLiteral, windowsInForce } from '../releases/content-through';
 import { latestRunInEffect, runCount } from '../pricing/queries';
 import { type Download, InputError, NotFoundError } from '../http/route';
 import { type PayerOption, payerOptions } from '../remittances/queries';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 import { MODEL_NOTICES, type ModelNotice } from './models';
 import { opaqueId, optionalText } from './schemas';
 
@@ -183,7 +183,7 @@ async function letterParties(scope: PracticeScope<ScopeClient>, practiceId: stri
   return { practice, payer, contract };
 }
 
-function todayOf(services: Services): string {
+function todayOf(services: SignedInServices): string {
   return services.now().toISOString().slice(0, 10);
 }
 

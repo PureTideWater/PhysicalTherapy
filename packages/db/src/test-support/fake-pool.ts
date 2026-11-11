@@ -8,11 +8,13 @@ export interface Call {
   readonly values: unknown[] | undefined;
 }
 
-type Responder = (text: string, values: unknown[] | undefined) => unknown[] | Error | undefined;
+/** How a statement is answered: its rows, an Error to reject with, or the command tag alone (a COMMIT answered ROLLBACK). */
+type Responder = (text: string, values: unknown[] | undefined) => unknown[] | Error | { readonly command: string } | undefined;
 
 /**
- * A pool of one fake client for unit tests: records every query, answers from `respond` (rows, or an
- * Error to reject with), and records how the client was released.
+ * A pool of one fake client for unit tests: records every query, answers from `respond` (rows, an
+ * Error to reject with, or a command tag), and records how the client was released. A transaction's own statements
+ * are answered with their tags as PostgreSQL answers them in a transaction that has not failed (COMMIT with COMMIT).
  */
 export function fakePool(respond: Responder = () => undefined) {
   const calls: Call[] = [];
@@ -24,8 +26,10 @@ export function fakePool(respond: Responder = () => undefined) {
       if (answer instanceof Error) {
         return Promise.reject(answer);
       }
-      const rows = (answer ?? []) as R[];
-      return Promise.resolve({ rows, rowCount: rows.length, command: '', oid: 0, fields: [] });
+      const tagged = answer !== undefined && !Array.isArray(answer);
+      const rows = (tagged ? [] : (answer ?? [])) as R[];
+      const command = tagged ? answer.command : text === 'COMMIT' || text === 'ROLLBACK' ? text : text.startsWith('BEGIN') ? 'BEGIN' : '';
+      return Promise.resolve({ rows, rowCount: rows.length, command, oid: 0, fields: [] });
     },
     release(destroy?: boolean | Error) {
       released.push(destroy);

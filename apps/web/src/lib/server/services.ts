@@ -27,7 +27,7 @@ import { billingProvider, memoryBillingProvider } from '../billing/provider';
 import type { BillingPool } from '@tp/worker/billing';
 import { type AddressCheckServices, localAddressChecks, sesAddressInsights, systemDomainResolver } from '../screening/validation';
 import { assumedRoleCredentials } from '../screening/validation-credentials';
-import { type JobQueue, PgBossQueue } from '../uploads/queue';
+import { type JobQueue, PgBossQueue, type RequestQueue } from '../uploads/queue';
 import { LocalUploadTargets, S3UploadTargets, type UploadTargets, presigningClient } from '../uploads/targets';
 import { type AuthProviderSettings, DEFAULT_MAIL_VALIDATION_DAILY_CAP, DEFAULT_SCREENING_SLOTS, type ScreeningLaunch, type WebConfig, readWebConfig } from './config';
 import { WEB_POOL_CONNECTIONS } from './pools';
@@ -104,6 +104,48 @@ export interface Services {
    * client secret is set; the health check answers 503 while it holds a refusal. Skipped otherwise.
    */
   readonly credentialProbe: CredentialProbe;
+}
+
+/**
+ * What a signed-in route's handler runs with (ActorContext, PracticeContext; Queues item 25 (a), R4-S2): the services
+ * without the application pool, and with the queue as the request's own. A signed-in request's work runs on the one
+ * transaction the routes' wrapper opened for it (the scope's client): a second connection from the application pool
+ * would be outside that transaction's practice scope and its lock bound, and could starve the pool every practice
+ * shares, so a handler has no way to ask for one, by this type and, since the wrapper builds the object without the
+ * property (signedInServices), at run time. And a handler's send is queued with the request (RequestQueue), never by
+ * itself.
+ *
+ * The sign-in flow goes with the pool: it is built on it and commits in steps of its own, and only the public sign-in
+ * routes use it. Kept, each for its own stated use: billing's and the e-signature vendor's pools (other logins, after
+ * the person's permission is checked; docs/adr/0055) and the model gateway's pool (its rows must outlive a request
+ * that rolls back and must not wait on the request's connection; docs/adr/0055). Public routes keep Services: they
+ * open no scope.
+ */
+export type SignedInServices = Omit<Services, 'pool' | 'signIn' | 'queue'> & { readonly queue: RequestQueue };
+
+/** Each request's view of a server's services, by the services it was made from (signedInServices). */
+const servers = new WeakMap<object, object>();
+
+/**
+ * The services as a signed-in handler gets them: every property but the application pool and the sign-in flow, and the
+ * request's own queue. A new object for each request, since its queue is the request's; what a server keeps once for
+ * all its requests is kept by serverOf, never by this object.
+ */
+export function signedInServices(services: Services, queue: RequestQueue): SignedInServices {
+  const { pool: _pool, signIn: _signIn, queue: _queue, ...kept } = services;
+  const mine = Object.freeze({ ...kept, queue });
+  servers.set(mine, services);
+  return mine;
+}
+
+/**
+ * The server a set of services belongs to, as the key of what is kept once per server (the cap on model calls in
+ * flight, a test's model path, the remembered refusals; models/path.ts, models/contract-proposals.ts): the services a
+ * request's view was made from, or the services themselves. A request's view is a new object every time, so a map
+ * keyed by the view would start empty for every request: the cap would cap nothing.
+ */
+export function serverOf(services: object): object {
+  return servers.get(services) ?? services;
 }
 
 /**
@@ -204,6 +246,7 @@ export interface ServiceParts {
 const NO_QUEUE: JobQueue = {
   enqueue: () => Promise.reject(new Error('no job queue is configured for these services')),
   enqueueScreeningRun: () => Promise.reject(new Error('no job queue is configured for these services')),
+  hold: () => Promise.reject(new Error('no job queue is configured for these services')),
 };
 
 /** No billing login configured: refuses rather than falling back to the application's login. */

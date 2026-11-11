@@ -692,7 +692,7 @@ describe('a clean upload: a ZIP the pricing can use, stored, queued, priced, rea
   });
 
   it('stores the upload even when the job cannot be sent, and the sweep prices it', async () => {
-    const failing = await ScreeningWorld.create({ queue: { enqueue: () => Promise.reject(new Error('no queue')), enqueueScreeningRun: () => Promise.reject(new Error('no queue')) } });
+    const failing = await ScreeningWorld.create({ queue: { enqueue: () => Promise.reject(new Error('no queue')), enqueueScreeningRun: () => Promise.reject(new Error('no queue')), hold: () => Promise.reject(new Error('no queue')) } });
     try {
       const email = 'prospect.unsent@clinic-unsent.synthetic.test';
       expect(await failing.call(screeningSubmit, { input: submitInput({ contactEmail: email }) })).toEqual({ status: 'ok', data: { redirect: SENT } });

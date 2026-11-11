@@ -9,7 +9,7 @@ import { BusyError, InputError, type MutationResult, NotFoundError } from '../ht
 import { type UnattestedSubmissionView, submissionsSentWithoutSignOff } from '../packets/unattested';
 import { type EntryView, type ExportView, type LinkageLine, type TotalsView, type UnmatchedView, matchState, practiceExports, reconciliation, standingMatch, templateState } from '../reconciliation/queries';
 import { templateForm, templateOf } from '../reconciliation/template';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 import { CONTENT_TYPES, MAX_FILES_PER_BATCH, MAX_UPLOAD_BYTES } from '../uploads/limits';
 import { opaqueId } from './schemas';
 import { type UploadGate, uploadGate } from './uploads';
@@ -138,7 +138,7 @@ export const REFUSALS: Readonly<Record<Exclude<ReconciliationRefusal, 'not_found
 /** Runs a step of @tp/worker/ledger in the request's scope, its refusals said on the form (field and words, never a value). */
 export async function manual<T>(
   scope: Scope,
-  services: Services,
+  services: SignedInServices,
   practiceId: string,
   requestId: string,
   run: (context: ManualContext) => Promise<T>,

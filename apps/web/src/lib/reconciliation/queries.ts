@@ -20,7 +20,7 @@ import {
 } from '@tp/worker/ledger';
 
 import { type ListPage, pageWindow } from '../http/paging';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 
 /**
  * The Reconciliation screen's and the ROI statements' reads (PRD 7, Reconciliation: "ERA to posting to
@@ -473,7 +473,7 @@ export interface ReconciliationData {
  * stages in one transaction, and at READ COMMITTED one that commits between those statements would show its figure
  * beside the lines' earlier stages.
  */
-export async function reconciliation(scope: Scope, services: Services, practiceId: string, query: ReconciliationQuery, phi: boolean, requestId: string): Promise<ReconciliationData> {
+export async function reconciliation(scope: Scope, services: SignedInServices, practiceId: string, query: ReconciliationQuery, phi: boolean, requestId: string): Promise<ReconciliationData> {
   const { rows: isolation } = await scope.client.query<{ level: string }>("SELECT current_setting('transaction_isolation') AS level");
   if (isolation[0]?.level !== 'repeatable read' && isolation[0]?.level !== 'serializable') {
     throw new Error('the ledger is read in one snapshot: open the scope with oneSnapshot');
@@ -865,7 +865,7 @@ export class StatementFileIntegrityError extends Error {
 }
 
 /** The printed PDF, checked against its SHA-256, the download audited; undefined when the statement is not printed. */
-export async function statementPdf(scope: Scope, services: Services, practiceId: string, statementId: string, requestId: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
+export async function statementPdf(scope: Scope, services: SignedInServices, practiceId: string, statementId: string, requestId: string): Promise<Uint8Array<ArrayBuffer> | undefined> {
   const { rows } = await scope.client.query<{ document_key: string | null; pdf_sha256: string | null }>('SELECT document_key, pdf_sha256 FROM roi_statement WHERE id = $1 AND practice_id = $2', [
     statementId,
     practiceId,

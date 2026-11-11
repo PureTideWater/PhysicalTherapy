@@ -24,7 +24,7 @@ import { z } from 'zod';
 
 import { organizationRoute, platformRoute, publicRoute, selfRoute } from '../http/invoke';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
-import type { Services } from '../server/services';
+import type { SignedInServices } from '../server/services';
 import { opaqueId } from './schemas';
 
 /**
@@ -47,7 +47,7 @@ import { opaqueId } from './schemas';
 const organizationParams = z.object({ organizationId: opaqueId });
 
 /** Billing's own login (docs/adr/0055): the application's may not switch to tp_billing. */
-function billingServices(services: Services): BillingServices {
+function billingServices(services: Pick<SignedInServices, 'billingPool' | 'billing'>): BillingServices {
   return { pool: services.billingPool, provider: services.billing };
 }
 
@@ -78,7 +78,7 @@ function requestKeyOf(request: { readonly input?: unknown }): string {
   return key;
 }
 
-function simulatorOf(services: Services): LocalBillingProvider {
+function simulatorOf(services: SignedInServices): LocalBillingProvider {
   if (!(services.billing instanceof LocalBillingProvider)) {
     throw new InputError([{ field: 'input', message: 'only the local billing simulator takes test payment details; Stripe collects real ones in its own form' }]);
   }
