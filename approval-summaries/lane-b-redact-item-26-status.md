@@ -65,6 +65,24 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDNJ3ixNo2VHiiA93
   `name-forms.mts`, `p6.mts`, `cost-names.mts`, `k1.txt`, `ts-resolve.mjs`; run with
   `export PATH=/opt/node24/bin:$PATH NODE_OPTIONS="--import /home/user/work/ts-resolve.mjs"`). If `@tp/redact` is not
   found by vitest, run `pnpm install --frozen-lockfile --prefer-offline` with `/opt/node24/bin` and `/opt/pnpm-bin` first.
+- **The orchestrator approved the design as written** (its message queued 2026-11-11 20:16 UTC: one construction, the
+  wider reading only on a letter the base's check sends, refuse on either reading; the costs accepted as the safer
+  side). The glued-letter ID is Queues item 34, with the plus-sign name, the single piece of a stored number and the
+  drafter's check; none of them is this item's.
+- **Commands.** Gate: `cd /home/user/gate && bash run.sh /home/user/snapA /home/user/snapB /home/user/gate-out/<name>
+  --workers 4` (copy the final `redact.ts` and `confusables.ts` into `/home/user/snapB/packages/model-gateway/src`
+  first; read `report.md`'s counts and the `PHI.*` rows only). Battery: `designs/lane-b-redact-ssn-phone-leaks/battery/
+  battery.sh` after its README's layout, "head" being the final `redact.ts`.
+- **Review scopes, ready to launch once the open items 1 to 4 are done** (each about 20 tool calls, a report file under
+  `designs/lane-b-redact-item-26/reviews/`, every finding run before any fix):
+  - *Review A, PHI: what is sent.* Scope: the composition in `redactLetterForScreen`, `screenAsFirstRead`,
+    `holdsAsFirstRead`, `holdsIdentifier`, `widerMatchesIn` and `redactionSpans`. Find a synthetic letter that
+    f3f5a642 refuses and the head sends, or a span f3f5a642 replaces that the head shows (a differential fuzzer over
+    both `redact.ts` files); then forms of the three gaps the head still sends (name pieces with other white space,
+    a stored separator the class escape misreads, a CR beside other line endings).
+  - *Review B, must-stay and the other-patient screen.* Scope: new refusals and new redactions against f3f5a642 (the
+    gate's `KEEP.*` rows, names that split into words, CR LF letters, a wider match that makes the check refuse a
+    letter the base sent), time on crafted letters, and that every candidate f3f5a642 offers the screen is offered.
 - No PR is open, no subscription and no check-in is held.
 
 ## Log (UTC)
