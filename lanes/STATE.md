@@ -1,6 +1,6 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-11 04:40 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-11 05:25 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
@@ -25,7 +25,7 @@ own status file and `CLAUDE.md`, not the long history files.
 - Mechanical steps run in the session itself, not in a subagent: base merges, generators, descriptions.
 - While CI runs, subscribe to the PR and end the turn; never poll in a loop (each poll re-reads the session's whole context).
 - Large output (suites, gates, generators, renders) goes to a file; a session reads the counts and the parts it needs.
-- **The commit trailer is before the co-founder (asked 2026-11-11 04:45 UTC).** The brief's fixed trailer names a model that is not the one the sessions run. W2, W4 and W5 wrote the harness's trailer, which names the model they run: seven such commits are in the base under 4fe8bcca (#137), more are on #126's branch and on `claude/build-ops`. Nothing is rewritten (no forced push). W2, W7 and the orchestrator now end commits with a trailer that names no model, which is the orchestrator's recommendation for every session. Until the ruling each session keeps the trailer it uses, and no model is named anywhere else in a file, commit body, PR text or comment.
+- **The commit trailer (the orchestrator's ruling, 2026-11-11 05:20 UTC, under the co-founder's standing instruction; the co-founder was asked at 04:45 UTC and may overrule it):** every commit ends with `Co-Authored-By: Claude <noreply@anthropic.com>` and the session's `Claude-Session:` line, naming no model. Why: the brief's fixed trailer names a model that is not the one the sessions run, so it is untrue of their commits, and three sessions would not write it; a line that names none is true whichever model serves a turn. Earlier commits stay as they are (no forced push): some carry the brief's line, some the harness's, which names the model the sessions run (seven of those are in the base under 4fe8bcca). No model is named anywhere else in a file, commit body, PR text or comment.
 - The speed rules stand (`lanes/acting-lane-b-2026-11-04.md`, rules 1 to 5 and 2a):
   - CI is the suite of record; the full local suite runs once per PR;
   - the base is merged right before the last push;
@@ -35,14 +35,14 @@ own status file and `CLAUDE.md`, not the long history files.
 
 ## Base and open PRs (live 2026-11-11 04:32 UTC)
 - `claude/build-platform` is at **4fe8bcca** (#137, merged 2026-11-11 04:25 UTC; before it #129 as ca504674, #138 as ef3e8d20, #136 as 06cde5eb and #134 as 994ee303). Every open PR merges this base before its last push.
-- **#126**, the interest fix (schema): head ec606eff (the base ca504674 merged). **Waiting for the founder:** the approval line is posted as a suggestion, https://github.com/PureTideWater/PhysicalTherapy/pull/126#discussion_r4533967660. CI is red only on the blank approval line; `mutation` and CAS-42.5 are green on ec606eff. W2 merges it after the founder's commit and green required checks.
-- Dependabot #122, #123, #124 and #135, untriaged: one replacement PR, never merged as they stand.
+- **#126**, the interest fix (schema): head 8ee290ae. **The founder committed the approval line at 2026-11-11 05:06 UTC** (on W2's base merge 026eceba, the base 4fe8bcca). W2 merges it when the required checks are green.
+- Dependabot #123, #124, #135 and #139 (#139 replaced #122 on 2026-11-11), untriaged: one replacement PR, never merged as they stand.
 
 ## Work, in priority order (each item's status file holds its RESUME-BLOCK; Lane B's handoff §2 names them)
 | # | Item | Resume from | Lane | Notes |
 | --- | --- | --- | --- | --- |
 | 1 | MOD-16: **merged as ef3e8d20** (#138, 2026-11-11) | `lane-b-redact-range-glued-status.md` | B (acting) | Done. Residuals A, A' and B go to item 3. Four safer-reading costs are recorded in ADR 0054 and #138's description. |
-| 2 | **#126, interest credited once** (schema) | Head ec606eff; `approval-summaries/lane-a-schema-chain-status.md` (its RESUME-BLOCK) | A, W2 | **The founder commits the suggested line** (the link is above), accepting the description's trade-off D19, or asks for its exact alternative (a new ledger freeze exception). Then W2 merges. |
+| 2 | **#126, interest credited once** (schema) | Head 8ee290ae; `approval-summaries/lane-a-schema-chain-status.md` (its RESUME-BLOCK) | A, W2 | The founder's line is committed (05:06 UTC). W2 merges on green required checks. Open with the founder: whether to grant D19's exact alternative as a later schema PR (a new ledger freeze exception). |
 | 3 | **SSN and phone leaks** (`co-001/redact-ssn-phone-leaks`; MOD-21, MOD-22) | `lane-b-redact-ssn-phone-leaks-status.md` | B (acting), **W5** | **Must land before any real PHI is processed.** Started 2026-11-11 02:40 UTC: the gate reproduced. Two reviews. |
 | 4 | #134, SUITE-CAP-3: **merged as 994ee303** (2026-11-10) | `lane-b-suite-cap-3-status.md` | B (acting) | Done. No `ledger_line_net` change. |
 | 5 | #129, email plate: **merged as ca504674** (2026-11-11) | `lane-a-email-lockup-plate-status.md` | B (acting) | Done. |
@@ -53,7 +53,7 @@ own status file and `CLAUDE.md`, not the long history files.
 
 ## Founder items (bring each with the exact link or text)
 - **Granted 2026-11-07 19:26 UTC** (relayed as "Tyler approves"): the schema batching plan's PR 5 ledger freeze ask. Q1 to Q3 yes, exactly Appendices A and D, for schema PR 5 only (`approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md`).
-- **Now: #126's approval line.** Commit the suggestion at https://github.com/PureTideWater/PhysicalTherapy/pull/126#discussion_r4533967660 ("Approved by: Tyler Williams  Date: 2026-11-11  Document SHA-256: bb7662c6...6bf8"), after reading "The trade-off for the founder (D19)" in the description. Then password-changed-notice's line.
+- #126's approval line: **committed by the founder on 2026-11-11 at 05:06 UTC.** Next: password-changed-notice's line, once its PR opens after #126 merges. Optional: D19's exact alternative on #126 (one entry per PLB L6, line and chain) needs a new ledger freeze exception; if the founder wants it, the schema session drafts the ask.
 - Staging:
   - F0, before release N reaches production;
   - F1 to F5 and ruling 16, before Cognito PR 2;
