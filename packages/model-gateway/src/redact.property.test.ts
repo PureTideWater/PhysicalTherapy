@@ -1360,6 +1360,8 @@ const ssnValue = fc.stringMatching(/^9[0-9]{8}$/);
 const phoneValue = fc.tuple(fc.integer({ min: 200, max: 999 }), fc.integer({ min: 0, max: 99 })).map(([area, line]) => `${String(area)}55501${String(line).padStart(2, '0')}`);
 /** An unlabeled bare ten is a phone only with an area code 3-9, or 2 and no valid NPI: the generator writes 3-9. */
 const unlabeledPhone = fc.tuple(fc.integer({ min: 300, max: 999 }), fc.integer({ min: 0, max: 99 })).map(([area, line]) => `${String(area)}55501${String(line).padStart(2, '0')}`);
+const SURVIVOR_DIGITS = new Set(SURVIVORS.map((survivor) => survivor.replace(/[^0-9]/gu, '')));
+const notASurvivor = (value: string) => !SURVIVOR_DIGITS.has(value);
 const patternSlot = fc.record({
   kind: fc.constantFrom('ssn', 'ssn', 'phone', 'phone', 'member', 'claim', 'filler', 'survivor', 'glued', 'shielded'),
   form: fc.nat(1000),
@@ -1372,7 +1374,10 @@ const patternSlot = fc.record({
 });
 
 const ssnPhoneCase: fc.Arbitrary<PatternCase> = fc
-  .record({ member: ssnValue, claim: phoneValue, slots: fc.array(patternSlot, { minLength: 1, maxLength: 8 }) })
+  // The call's own member ID and claim number are never a fixed survivor's digits: the survivor would be read as the
+  // call's own number and replaced, and the letter rightly sent where the property expects a refusal (global seed
+  // 561949509 drew the claim number 2025550123, the digits of '202.555 0123': the re-review of round 5).
+  .record({ member: ssnValue.filter(notASurvivor), claim: phoneValue.filter(notASurvivor), slots: fc.array(patternSlot, { minLength: 1, maxLength: 8 }) })
   .map(({ member, claim, slots }): PatternCase => {
     const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042', member] };
     const claims: LetterClaim[] = [

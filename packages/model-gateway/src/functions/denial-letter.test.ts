@@ -1530,6 +1530,13 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['PHI5-1', ['JANE Q ZEPHYRA'], `Re: 3rd-4thZQ\nService January 1, 2020-2020-01-02Paid $0,000.00`, null, {}],
     ['PHI5-1', ['SIMONE VANTREE'], `${HELD}3rd-4thSV`, null, VANTREE],
     ['PHI5-1', ['JANE Q ZEPHYRA'], 'Seen 3rd-4thZQ today.', 'Seen 3rd-4thZQ today.', {}],
+    // The re-review of round 5, F4's mirror, recorded and unchanged: where a date of service's last two numbers and the
+    // number after it happen to read as the date of birth ("12/24 - 24", born 2024-12-24), they are replaced as one, a
+    // must-stay date and count lost that cc3dd7f6 sent. Reading no date from a start inside any date cc3dd7f6 read would
+    // send a date of birth written straight after another number ("12.03/14/1980", "June 103 / 03.03.61"): the safer
+    // reading is kept (docs/adr/0054).
+    ['F4-mirror', ['ZEPHYRA VANTREE'], 'DOS 11/12/24 - 24 units of 97110 billed', 'DOS 11/[DATE_OF_BIRTH] units of 97110 billed', { datesOfBirth: ['2024-12-24'] }],
+    ['F4-mirror', ['ZEPHYRA VANTREE'], 'DOS 11/12/24 - 25 units of 97110 billed', 'DOS 11/12/24 - 25 units of 97110 billed', { datesOfBirth: ['2024-12-24'] }],
     // The re-review of round 5, PHI5-2: two initials with a space, a hyphen, an apostrophe or a modifier letter between
     // them, one standing alone and the other at the near end of a word (cc3dd7f6 refused each for the range's own digits;
     // 9f953223 and dedeb35f sent them); with no range both trees send them as written.

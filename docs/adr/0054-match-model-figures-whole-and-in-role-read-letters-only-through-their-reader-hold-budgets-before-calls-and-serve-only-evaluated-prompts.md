@@ -883,6 +883,37 @@ above stays as it was decided; where it differs, this amendment holds.
     served. No boundary inside a run of letters of one case can be read, and reading only a change of case would send
     "4thzq" and "BEST": the safer reading is kept, and co-001/redact-ssn-phone-leaks, which designs how the call's own
     identifiers are matched, may narrow it with its own measurement;
+  - the re-review of the round's fixes (two reviewers, the changes since 9f953223 only), PHI5-2: a held letter sent two of
+    the initials with a space, a hyphen, an apostrophe or a modifier letter between them where one began or ended a
+    longer word or the modifier letter joined them in one run ("Z VPaid", "Z-VDenied", "ZʼV": 70 of 2,016 letters of the
+    reviewer's harness, every one refused by cc3dd7f6). Two of the initials with one to three characters between them
+    that are no letter of a word, the first not preceded by a word's letter or the second not followed by one, are now
+    read as written together and the letter refused; none of the 70 is sent;
+  - the re-review's findings recorded and unchanged, each the safer reading:
+    - F4's mirror: where the last two numbers of a written date that is no date of birth and the number after it read
+      together as the date of birth ("DOS 11/12/24 - 24 units" for a patient born 2024-12-24), they are replaced as one,
+      and a date of service and a count cc3dd7f6 sent are lost. It takes a coincidence of three numbers (5,024 of 9,990
+      letters built to coincide over a hyphen, a dash, a slash, a full stop or a bar; 0 of 10,010 others). Reading no
+      date from a start inside any date cc3dd7f6 read was tried and sent dates of birth written straight after another
+      number ("12.03/14/1980", "June 103 / 03.03.61"), so the rule stays and one row pins it;
+    - F6's neighbours: a clean letter is still refused where a range's end without a year stands across a sentence end
+      from a glued token on its far side ("This is the 2nd level appeal.<LF>Coverage 11/2025–10/8/26 was active.",
+      "Dates of service 04/02/2023-9/26. Remark MA01 applies."): 784 and 170 of 6,000 letters of two frame families, 83
+      of 70,000 of a range fuzz, none of the gate's; cc3dd7f6 sends them unchanged, reading the date over the glued
+      word. Marking every such date a barrier sends them, and sends again the gate's 12 letters with an SSN in clear
+      that cc3dd7f6 sends and this head refuses ("3rd—01|90 0-12-3456"): a person handles the refused letter, and
+      co-001/redact-ssn-phone-leaks, which changes how those numbers are read, decides it again with its patterns;
+    - a number's own last letter before the name, outside the two shapes F5 reads (an ICD-10-CM code with its dot; D, H,
+      M, S, W, Y, X or F after one to three digits), is still taken for an initial and the letter refused where
+      cc3dd7f6 sent it with the name replaced: "CPT 0054T Tina Vantree", "S83511A", "Box 24J", "Suite 4B" (8,008 of
+      28,560 sentences written with a matching initial; 0 of 1,848 with a dotted ICD-10 code);
+    - one more letter refused through F1's reading of a number with its part replaced ("…10/28/25al; Ng Therapy" for AL
+      NG with the member ID ALNG: 1 of 65,000), the recorded glued own-identifier class;
+  - the re-review's test finding: MOD-15's property failed on global seed 561949509 at cc3dd7f6 and here alike, its
+    generator drawing the call's own claim number as the digits of a fixed survivor ("202.555 0123"), which is then
+    rightly replaced and the letter sent. The generator no longer draws a survivor's digits as the call's own number;
+    nothing else it draws changes. The re-review's sweeps: the 11 named seeds, 228 to 248 fresh global seeds on each
+    property of the property file and 161 on the denial-letter file, that one failure only;
   - F10, the residual table: its text named rounds 1 to 3, and 8 of its 60 fail-safe rows tagged must-stay were not
     sent unchanged by cc3dd7f6 (below).
   The property file's properties hold on the round's 4 failing seeds, the five MOD-16 seeds and 304 fresh global seeds,
