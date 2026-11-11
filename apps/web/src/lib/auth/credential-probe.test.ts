@@ -130,6 +130,7 @@ describe('the start-up credential probe', () => {
     const cognito = (clientSecret?: ClientSecret) =>
       new CognitoAuthProvider({
         client: { send: () => Promise.reject(new Error('unscripted')) },
+        confirmClient: { send: () => Promise.reject(new Error('unscripted')), config: { maxAttempts: () => Promise.resolve(1) } },
         userPoolId: 'us-east-1_Synthetic',
         clientId: 'syntheticclient',
         verifier: { verify: () => Promise.reject(new Error('unscripted')) },
@@ -181,6 +182,7 @@ describe('the provider’s probe request', () => {
     const logger = createLogger({ sink: (line) => lines.push(line), level: 'debug' });
     const provider = new CognitoAuthProvider({
       client,
+      confirmClient: { send: () => Promise.reject(new Error('unscripted')), config: { maxAttempts: () => Promise.resolve(1) } },
       userPoolId: 'us-east-1_Synthetic',
       clientId: 'syntheticclient',
       verifier: { verify: () => Promise.reject(new Error('unscripted')) },

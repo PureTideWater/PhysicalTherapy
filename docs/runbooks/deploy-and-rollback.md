@@ -447,6 +447,65 @@ deliverability.md, 3.10); then redrive `tp-<env>-mail-events-dlq`, so the delive
 `PASSWORD_NOTICE_UNDELIVERED` they raise, are recorded. The schema is never rolled back; undoing the trigger would be a
 later migration.
 
+## A sign-in step begun before a password reset (ADR 0093; the schema pull request after Schema PR 1)
+
+**The migration's lock loop.** `20261112090000_sign_in_not_before.sql` takes `"user"`'s, `user_session`'s and
+`password_notice`'s ACCESS EXCLUSIVE locks and `audit_event`'s SHARE ROW EXCLUSIVE lock together with `NOWAIT`, once a second, up to 300 tries,
+before any of its DDL. A refused try holds and queues nothing. **It is harder to satisfy than Schema PR 1's loop**,
+which took `"user"` in a mode readers do not refuse. Here a try is refused by any open transaction that has touched
+`"user"` in any way, a read or a foreign-key check included, or `user_session`, or has written `audit_event`, or touched `password_notice` (the
+`password_notices` job, for a moment each minute); and by an autovacuum or autoanalyze of one of the four. Every signed-in request and every job reads `"user"`. A request
+holds it for milliseconds; a triage, a pricing run, an audit report or a packet export holds it to its commit; and
+one reconcile pass (about 600 seconds at 2,000 lines) outlasts the loop's five minutes by itself.
+
+So, before this deploy:
+
+- deploy outside the practices' working hours;
+- **have no reconcile queued or running**, and no triage, pricing run, audit report or packet export (the daily
+  monitoring schedule queues every practice's monitoring at 05:10 UTC), and not at 01:20 UTC, when the audit copy
+  reads;
+- check that no vacuum runs, as the section above shows.
+
+Once the migration holds the three, its DDL is catalog-only (two nullable columns with no default, six functions, two
+triggers, one grant): no rewrite and no scan, so the hold is short. Until its commit every request and job waits or,
+for a signed-in request, is refused as busy after its three-second lock timeout with nothing saved (ADR 0092).
+
+If no moment with the three free comes in five minutes, the deploy fails: cdk reports that the migration task stopped
+without migrating, and `/tp/<env>/migration` ends with
+
+> db:migrate: 20261112090000_sign_in_not_before.sql failed: "user", user_session, audit_event or password_notice stayed in use for five minutes; run the deploy again (docs/adr/0093)
+
+(`lock_not_available`, 55P03). This migration runs in one transaction, so it changed nothing, and no service moved
+(step 4). Run the deploy again at a quieter moment. Never take the locks by hand, and never end another session's
+transaction, or cancel a job or a vacuum, to make room.
+
+**The forward deploy.** From the migration's commit, every reset any web image records moves the account's mark and
+ends its sessions in the database, and a session insert that carries a start is checked against the mark. The new web
+image reads each attempt's start from the database, carries it sealed through the steps, takes the account's row
+lock first when it opens a session or records a reset, and sends a reset's confirm to Cognito once. The same deploy
+adds the alarms `SignInStepRefusedAfterReset`, `HardwareKeyRegisteredAcrossReset`, `PasswordResetOutcomeUnknown` and
+`SignInRefusedCrossedAccount` (docs/runbooks/incident-response.md).
+
+**While both web images serve** (the minutes of the rolling deploy; ADR 0093, D8):
+
+- a step an old task sealed carries no start; a new task that reads it treats it as no step, and the person starts
+  again. If the load balancer sends their next step to an old task and the one after to a new one, they may start
+  again more than once. It ends when the old tasks are gone;
+- a step a new task sealed and an old task finishes is not checked: the old task's session insert carries no start,
+  which the database neither checks nor locks. For those minutes the gap this change closes is open on old tasks;
+- nobody is told anything new: a closed step reads "That sign-in step closed. Start again from your email and
+  password."
+
+Deploy off-hours for this too, as ADR 0088's cutover does, and confirm afterwards that only new web tasks run.
+
+**Rollback across this migration** (to an earlier image, below) keeps the migration: every object is added, and it
+sets no rollback floor of its own. The previous web image runs on it: its resets still move the mark and end the
+sessions, since both are the database's. What it cannot do: carry a start, so its sessions open unchecked and a step
+begun before a reset can again open a session or register a key after it (ADR 0091, D10's two cases); and it sends a
+reset's confirm with the SDK's repeats, so a lost answer can again read as a refused code. The three alarms stay
+with the stack and count nothing while the previous web runs, since it writes none of their lines. Roll forward with
+a fix rather than staying back. The schema is never rolled back.
+
 ## Rollback
 
 Redeploy the previous image, without migrating:

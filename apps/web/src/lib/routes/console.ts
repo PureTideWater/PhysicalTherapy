@@ -796,6 +796,10 @@ export const endMembership = platformRoute({
   sample: { params: () => ({}), input: (refs) => ({ membershipId: refs.membershipId }) },
 });
 
+/** What the unlock answers while the database holds the account for a key registered across a password reset (docs/adr/0093, D6). */
+export const KEY_HOLD_REFUSAL =
+  'this account is locked because a hardware key was registered across its password reset; it stays locked until the key is removed and the removal is recorded (incident runbook, the hardware key section); then unlock it again';
+
 export const unlockUser = platformRoute({
   id: 'console.unlock_user',
   kind: 'action',
@@ -806,7 +810,18 @@ export const unlockUser = platformRoute({
   input: z.object({ organizationId: opaqueId, userId: opaqueId }),
   audit: { action: 'account_unlocked', objectType: 'user' },
   handle: async ({ scope, input }): Promise<MutationResult> => {
-    const unlocked = (await scope.client.query<{ ok: boolean }>('SELECT unlock_user($1) AS ok', [input.userId])).rows[0]?.ok === true;
+    let unlocked: boolean;
+    try {
+      unlocked = (await scope.client.query<{ ok: boolean }>('SELECT unlock_user($1) AS ok', [input.userId])).rows[0]?.ok === true;
+    } catch (error) {
+      // The database holds an account locked for a hardware key registered across its password reset until the key is
+      // cleared (docs/adr/0093, D6; docs/runbooks/incident-response.md): the ordinary unlock would hand the key a sign-in.
+      const { code, constraint } = (typeof error === 'object' && error !== null ? error : {}) as { readonly code?: unknown; readonly constraint?: unknown };
+      if (code === '23514' && constraint === 'user_key_across_reset_hold') {
+        throw new InputError([{ field: 'input', message: KEY_HOLD_REFUSAL }]);
+      }
+      throw error;
+    }
     if (!unlocked) {
       throw new NotFoundError();
     }

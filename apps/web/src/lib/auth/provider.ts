@@ -72,7 +72,13 @@ export type NewPasswordStep = AuthStep | { readonly kind: 'invalid_password'; re
 export type PasswordResetResult =
   | { readonly kind: 'reset' }
   | { readonly kind: 'rejected' }
-  | { readonly kind: 'invalid_password'; readonly problems: readonly string[] };
+  | { readonly kind: 'invalid_password'; readonly problems: readonly string[] }
+  /**
+   * The provider did not say whether it reset the password (docs/adr/0093, D9): no answer, a server fault, a trigger's
+   * failure. The confirm is sent once, never repeated, so this is never a repeat meeting its own used code. `code` is
+   * the provider error's name, for the log; never its message.
+   */
+  | { readonly kind: 'outcome_unknown'; readonly code: string };
 
 export interface TotpSetup {
   /** The base32 secret the user's authenticator app is given. */
@@ -109,6 +115,12 @@ export interface AuthProvider {
   /** Whether the hardware key was verified and registered. */
   completeKeyRegistration(grant: string, challenge: string, response: RegistrationResponseJSON): Promise<boolean>;
   /**
+   * Removes a hardware key the grant's user registered, by its credential ID (docs/adr/0093, D6: a key whose
+   * registration returned after a password reset was recorded). Best effort: answers whether the provider removed it,
+   * and never throws but for a ClientCredentialError.
+   */
+  removeHardwareKey(grant: string, credentialId: string): Promise<boolean>;
+  /**
    * Ends the provider's tokens behind a grant once the application's own session exists. A failure is logged by its
    * code and swallowed (the tokens lapse on their own), except a ClientCredentialError, which is thrown.
    */
@@ -134,7 +146,11 @@ export interface AuthProvider {
    * provider's own failures throw. The sign-in flow asks only for an active account with a second factor (SEC-B1).
    */
   requestPasswordReset(email: string, requestId?: string): Promise<void>;
-  /** Sets a new password with the mailed code, the password policy checked first. Every code problem is one 'rejected'. */
+  /**
+   * Sets a new password with the mailed code, the password policy checked first. Every code problem is one 'rejected'.
+   * Sent to the provider once (docs/adr/0093, D9): a repeat whose first answer was lost would meet its own used code
+   * and read as a refused code. An answer that does not say whether the password changed is 'outcome_unknown'.
+   */
   confirmPasswordReset(email: string, code: string, password: string): Promise<PasswordResetResult>;
   /** Signs the user out of the provider everywhere (their membership ended, their sessions were revoked). */
   globalSignOut(sub: string): Promise<void>;

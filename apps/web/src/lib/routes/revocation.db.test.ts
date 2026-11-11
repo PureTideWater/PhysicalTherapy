@@ -8,7 +8,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import type { CookieJar } from '../http/route';
 import { type Services, createServices } from '../server/services';
 import { homePage } from './index';
@@ -78,7 +79,7 @@ async function firmUser(endsIn: string): Promise<{ token: string; grantId: strin
       [grantId, firmId, world.practiceId, endsIn, world.adminUserId, agreementId],
     );
   });
-  const session = await openSession(app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' });
+  const session = await openSessionNow(app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' });
   return { token: session.sessionToken, grantId };
 }
 

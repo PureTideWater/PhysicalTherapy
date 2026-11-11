@@ -96,6 +96,8 @@ export const user = pgTable(
     lockedAt: timestamp('locked_at', { withTimezone: true }),
     /** The user's own settings: notification preferences (migration 20261020090000). */
     settings: jsonb('settings').$type<UserSettings>().notNull().default({}),
+    /** The account's latest recorded password reset, on the database's clock: no sign-in attempt begun at or before it opens a session (docs/adr/0093). NULL: never reset. */
+    signInNotBefore: timestamp('sign_in_not_before', { withTimezone: true }),
   },
   (table) => [uniqueIndex('user_email_unique').on(sql`lower(${table.email})`)],
 );

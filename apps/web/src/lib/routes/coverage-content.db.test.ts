@@ -8,7 +8,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import type { CookieJar, Outcome, Route } from '../http/route';
 import { forgetContentThrough } from '../releases/content-through';
 import { type Services, createServices } from '../server/services';
@@ -44,7 +45,7 @@ class Jar implements CookieJar {
 }
 
 async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>): Promise<Outcome<R>> {
-  const { sessionToken } = await openSession(w.app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' });
+  const { sessionToken } = await openSessionNow(w.app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' });
   return route.invoke({ cookies: new Jar(sessionToken), params, input: undefined, requestId: `test-${randomUUID()}`, userAgent: null }, services);
 }
 

@@ -183,6 +183,24 @@ the web's line `security event: password reset sessions not ended`.
    which member the user ID is, or where the membership must stay, give the user ID to the founder, whose break-glass
    session ends the sessions by user ID and disables the account at the identity provider (section 2 says what a disable
    there does not end, and what the database refuses for an organization's only practice administrator).
+
+   **Move the account's mark as well** (docs/adr/0093): the failed transaction did not record the reset, so the
+   mark that refuses sign-in steps begun before it did not move, and a step that proved the old password before the
+   reset can still open a session until it does. Nothing retries it. Give the user ID to the founder, whose
+   break-glass session runs, as the owner, the two statements the reset's trigger runs (the account's row first):
+
+   ```sql
+   BEGIN;
+   UPDATE "user" SET sign_in_not_before = GREATEST(sign_in_not_before, clock_timestamp())
+    WHERE id = '<user_id>' RETURNING id, sign_in_not_before;
+   UPDATE user_session SET ended_at = clock_timestamp(), end_reason = 'revoked'
+    WHERE user_id = '<user_id>' AND ended_at IS NULL RETURNING id;
+   COMMIT;
+   ```
+
+   One row from the first statement, then the sessions it ended. Do not insert a `password_reset_completed` event
+   in its place: that would queue a password-changed email dated at the repair, not at the change, and step 4 tells
+   the person instead.
 4. **Tell the person another way**, through their own organization's administrator or the account contact (step 3's
    organization; with no row there, through the founder), working by user ID: their password was changed at the line's
    time. If it was not them, open the record (section 1) and follow docs/runbooks/support-mail.md's "Password changed,
@@ -259,6 +277,185 @@ event: password reset provider sign-out failed`.
    outage at Cognito, or the application role without `cognito-idp:AdminUserGlobalSignOut`
    (`infra/lib/constructs/application-role.ts`).
 
+## A sign-in step refused after a password reset (`SignInStepRefusedAfterReset`; docs/adr/0093, D5)
+
+A security event alarm as well. It fires (on the operator topic, at one in five minutes) on the web's line `security
+event: sign-in step refused after a password reset`, for every step but the hardware-key sign-in step (`key`), which
+is logged and not counted.
+
+1. **What it means.** Someone began a sign-in before the account's latest password reset, got past the password, and
+   answered a later step after the reset. The step was refused: no session opened, no key was registered, and nothing
+   was counted against the account. A reset asked for in one browser replaces that browser's own pending step, so
+   the stale step came from another browser or device. It can be the person's own second tab, phone or laptop. It
+   can also be someone who held the old password.
+2. **Read the line**; the alarm names no user, and it pages when it goes into ALARM, not once a line. In Logs Insights
+   on `/tp/<env>/web`, from five minutes before the alarm was raised until it is back at OK:
+
+   ```
+   fields @timestamp, user_id, request_id, error_code
+   | filter msg = "security event: sign-in step refused after a password reset"
+   ```
+
+   Keep the user IDs, the request IDs, each line's time and its `error_code`, which is the step: `mfa` (the code
+   step), `register_key` and `key_registered` (registering a hardware key), `new_password` and `mfa_setup` (an
+   invited person's first sign-in), `key` (a hardware-key sign-in). The audit log holds the same refusal as a
+   `security_event` for the user, its purpose `step_before_reset_<step>`, once for a step and a reset: a step tried
+   again writes the line each time and no second row. The line is written only for a step begun at or before the
+   reset. A start ahead of the database's clock is refused too and logs `sign-in step start is ahead of the database
+   clock` at error instead, which is a clock fault and raises no alarm of its own.
+3. **Tell the person another way**, through their organization's administrator or the account contact, working by
+   user ID: a sign-in begun before their password reset was tried after it, at the line's time, and was refused. Ask
+   whether it was theirs.
+4. **If it was not theirs, or they cannot say**, treat it as an attempted takeover: open the record (section 1). The
+   reset already ended the sessions and changed the password. At the code step (`mfa`) the old password was proved
+   around the reset and a code was about to be answered, so tell the person their second factor may be known too. A
+   reset does not change a second factor; until a factor reset exists, the person's ticket follows
+   docs/runbooks/support-mail.md, "Sign-in help tickets". At `register_key` or `key_registered` the other party had
+   passed the code as well: tell the person the same, and look at the next section's alarm for the same user.
+5. **If it was theirs**, record it and close.
+6. **Record it** in a ticket by user ID and request ID, never an address or a name.
+
+**A mark ahead of the clock.** If a person with the right password and factor is refused as a closed step on every
+try, and this line is written for each, the account's mark may be ahead of the database's clock (the clock stepped
+forward at a reset and was then corrected). The refusals stop by themselves once the clock passes the mark. To see
+it, in a session as the operator role (`tp_operator`) where it can read the row, or else the founder's:
+
+```sql
+SELECT sign_in_not_before, sign_in_not_before > clock_timestamp() AS ahead FROM "user" WHERE id = '<user_id>';
+```
+
+If `ahead` is true and the wait is too long, give the user ID to the founder: only the owner's SQL moves a mark, and
+only back to the clock, never before a real reset.
+
+## A hardware key registered across a password reset (`HardwareKeyRegisteredAcrossReset`; docs/adr/0093, D6)
+
+A security event alarm as well. It fires (on the operator topic, at one in five minutes) on the web's line `security
+event: hardware key registered across a password reset`.
+
+1. **What it means.** A key-registration step begun before a reset had its call at the provider when the reset was
+   recorded, and the provider registered the key. The app saw that the step was stale once the provider answered,
+   asked the provider to remove the key, and closed the step. The removal is expected to fail at Cognito, because
+   the reset's own sign-out ends the token it uses. When it fails the app locks the account, as ten failed sign-ins
+   do, so the key signs in to nothing. The line says which of the three happened.
+2. **Read the line**, as above:
+
+   ```
+   fields @timestamp, user_id, request_id, error_code
+   | filter msg = "security event: hardware key registered across a password reset"
+   ```
+
+   Keep the user IDs, the request IDs, each line's time and its `error_code`: `removed`, `not_removed` or
+   `not_removed_not_locked`.
+3. **`not_removed`: the key is still on the account, and the account is locked.** A locked account is refused before
+   any credential is tried, so the key opens nothing while the lock stays. Open the record (section 1). Give the
+   user ID to the founder: nothing an operator holds removes a key (not a reset, not End membership), so the
+   founder's break-glass removes it, until `LANES.md` Queues item 29 gives the operator an action. The account
+   cannot be unlocked meanwhile: the database holds it, and the console's Unlock answers "this account is locked
+   because a hardware key was registered across its password reset; it stays locked until the key is removed and the
+   removal is recorded (incident runbook, the hardware key section); then unlock it again". An unlock before the key is gone would hand the account to whoever holds the key. The audit
+   log holds `hardware_key_registered` and a `security_event` with the purpose `account_locked_key_across_reset`
+   for the user at the line's time. The person cannot sign in meanwhile; step 5 tells them why. Then, in order:
+   1. The founder's break-glass removes the key at the provider and confirms that the user has no key left.
+   2. Only then, the founder's break-glass session records the clear, as the owner (the application role cannot
+      write this row), in one transaction that holds the account's row, so a lock for another key that is being
+      recorded at that moment is waited for and is not cleared unseen. After the first statement, check at the
+      provider once more that the user has no key, then record and commit:
+
+      ```sql
+      BEGIN;
+      SELECT 1 FROM "user" WHERE id = '<user id>' FOR UPDATE;
+      INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose)
+      VALUES (clock_timestamp(), 'system', 'security_event', 'user', '<user id>', 'key_across_reset_cleared');
+      COMMIT;
+      ```
+
+   3. A platform administrator unlocks the account in the console. If the account is locked for a key again
+      later, the hold returns and this step is done again.
+3a. **`not_removed_not_locked`: the key is still on the account and the lock failed too.** This is the urgent case:
+   a hardware key signs in without the password. Contain at once (section 2, "A user or session"), give the user ID
+   to the founder for the break-glass now, and do not add the person back until the founder has dealt with the key.
+4. **`removed`: the key is gone.** Look in the audit log for a `sign_in` by that user after the line, in a session as
+   the operator role:
+
+   ```sql
+   SELECT action, purpose, at, request_id FROM audit_event
+   WHERE actor_id = '<user_id>' AND action IN ('hardware_key_registered', 'sign_in')
+     AND at >= '<line time>'::timestamptz
+   ORDER BY at;
+   ```
+
+   A row is treated as a takeover until the person says otherwise ("A password reset whose provider sign-out
+   failed", step 4).
+5. **Tell the person another way** in both cases, by user ID: a hardware key was registered on their account at the
+   moment of their password reset, and was removed, or is being removed with their account locked until it is.
+   Whoever registered it had passed the password and the code, so their second factor may be known too. Ask whether it was theirs; a person who wanted
+   the key registers it again after signing in.
+6. **Record it** in a ticket by user ID and request ID, never an address or a name.
+
+## A sign-in refused for a crossed account (`SignInRefusedCrossedAccount`; docs/adr/0093, D5)
+
+A security event alarm as well. It fires (on the operator topic, at one in five minutes) on the web's line `security
+event: sign-in refused for a crossed account`.
+
+1. **What it means.** A person passed the password and the second factor, and the address they typed names one
+   account in the app while Cognito's subject for the person who signed in names another. A sound database never
+   holds that: it comes from a change made outside the app (an address edited at Cognito or in the database, two
+   users sharing one). The sign-in was refused outright: no session opened and no key step began, because a reset
+   marks and ends one of the two accounts and a session would open for the other.
+2. **Read the line**, as above:
+
+   ```
+   fields @timestamp, user_id, request_id
+   | filter msg = "security event: sign-in refused for a crossed account"
+   ```
+
+   `user_id` is the account Cognito's subject names. Keep the user IDs and request IDs only.
+3. **Compare the two sides by ID.** In a session as the operator role, read that user's row (its ID, status and
+   Cognito subject, never copying the address into a ticket), then in the Cognito console read the user with that
+   subject and the user with that address. Open the record (section 1) if anyone but the platform could have made
+   the change.
+4. **Let neither account sign in until they agree.** The refusal already holds for every try. Give both user IDs to
+   the founder: repairing the mapping is the owner's, until Schema PR 6 (sign-in identity) gives it a path. End the
+   sessions either account still has (section 2, "A user or session"): a reset in this state ended only the
+   address's account's.
+5. **Record it** in a ticket by user ID and request ID, never an address or a name.
+
+## A password reset whose outcome is unknown (`PasswordResetOutcomeUnknown`; docs/adr/0093, D9)
+
+A security event alarm as well. It fires (on the operator topic, at one in five minutes) on the web's line `security
+event: password reset outcome unknown`.
+
+1. **What it means.** A person confirmed a reset with a code, and Cognito did not say whether it changed the
+   password: no answer after the request may have been sent, a server fault, or a trigger's failure. (A connection
+   that never reached Cognito is not this: nothing changed, and the person saw the platform's failure.) The confirm
+   is sent once and never repeated. The app
+   took the safer reading: it ended the account's sessions, moved the account's mark so that sign-in steps begun
+   before it are refused, recorded `password_reset_outcome_unknown`, and signed the user out at Cognito. It queued
+   **no** password-changed email, since nobody has proved a change. The person was answered "Sign-in could not
+   continue. Start again.", not that the code was wrong.
+2. **Read the line**, as above:
+
+   ```
+   fields @timestamp, user_id, request_id, error_code
+   | filter msg = "security event: password reset outcome unknown"
+   ```
+
+   Keep the user IDs, the request IDs and each line's time. `error_code` is the name of the provider's error. A null
+   `user_id` is an address the app has no account for: nothing was ended or recorded; go to step 5.
+3. **Find out whether the password changed.** In the Cognito console, or with `admin-get-user` for the user's
+   subject, read the user's last-modified time: one at the line's time means the reset was applied. Where that does
+   not settle it, ask the person (step 4): the password that signs them in tells which.
+4. **Tell the person another way**, through their organization's administrator or the account contact, working by
+   user ID, as ADR 0091 D15's section does: a reset of their password was tried at the line's time, it may have
+   taken effect, and they were signed out everywhere. If the password changed and it was not them, open the record
+   (section 1) and follow docs/runbooks/support-mail.md's "Password changed, not by me". If it was them, they sign in
+   with whichever password works, or ask for a new code.
+5. **Find the cause** from the line's `error_code` and Cognito's service health in the same minutes: an outage or a
+   throttle at Cognito, a network fault between the web task and Cognito, or a failing Lambda trigger on the pool.
+   If `PasswordResetSessionsNotEnded` is raised for the same request, the transaction that ends the sessions failed
+   twice as well: follow that section's step 3.
+6. **Record it** in a ticket by user ID and request ID, never an address or a name.
+
 ## Weekly sign-in review
 
 The reset and enrolment alarms (docs/adr/0088, D7; test matrix SEC-23) tell the operator within the hour; this review
@@ -284,8 +481,9 @@ accounts, in a session as the operator role (`tp_operator`), which reads `audit_
 4. Read the week's history of the other reset and enrolment alarms (`PasswordResetNotDeliveredConfig`,
    `PasswordResetNotDeliveredThrottled`, `PasswordResetRequestFailed`, `SecondFactorEnrolmentRefused`,
    `ClientCredentialRefused`, `ClientCredentialProbeRefused`, `PasswordResetRequestOverFloor`,
-   `PasswordResetSessionsNotEnded`, `PasswordResetProviderSignOutFailed`): each one raised that no ticket or incident
-   record already explains gets one. For each `PasswordResetProviderSignOutFailed` of the week, run its section's step 3
+   `PasswordResetSessionsNotEnded`, `PasswordResetProviderSignOutFailed`, `SignInStepRefusedAfterReset`,
+   `HardwareKeyRegisteredAcrossReset`, `PasswordResetOutcomeUnknown`, `SignInRefusedCrossedAccount`): each one raised
+   that no ticket or incident record already explains gets one. For each `PasswordResetProviderSignOutFailed` of the week, run its section's step 3
    again for that user: a `sign_in` of purpose `webauthn` since the reset, by a user with none before it, is a finding,
    since a token taken at Cognito directly outlives that section's 15 minutes until the client is confidential.
 5. Check that no undelivered password-changed email was missed (docs/adr/0091, D9). Its page is a log line, and

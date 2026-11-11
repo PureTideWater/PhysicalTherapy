@@ -10,7 +10,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from '../routes/test-support/open-session';
 import type { CookieJar, Outcome, Route } from '../http/route';
 import { practiceHome } from '../routes/practice';
 import { uploadsPage } from '../routes/uploads';
@@ -52,7 +53,7 @@ class Jar implements CookieJar {
 }
 
 async function call<R>(route: Route<R>, userId: string, params: Record<string, unknown>): Promise<Outcome<R>> {
-  const token = (await openSession(w.app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+  const token = (await openSessionNow(w.app, { userId, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
   return route.invoke({ cookies: new Jar(token), params, input: undefined, requestId: `test-${randomUUID()}`, userAgent: null }, services);
 }
 
