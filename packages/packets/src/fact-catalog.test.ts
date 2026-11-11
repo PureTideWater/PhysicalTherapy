@@ -173,7 +173,7 @@ describe('the catalog of a packet', () => {
     expect(lookupFact(catalog, 'lines.3+6.service_dates')).toMatchObject({ found: { value: { from: '2026-03-04', to: '2026-03-10' } } });
   });
 
-  it('names a code by its content code lowercased, and gives a code of another shape no id', () => {
+  it('names a code by its content code lowercased, and gives a code of another shape no id (CAS-53)', () => {
     const catalog = of(FACT_CONTENTS.severalCodes());
     expect(catalog.byId.get('code.g0283')?.value).toBe('G0283');
     expect(catalog.byId.get('code.0275t')?.value).toBe('0275T');

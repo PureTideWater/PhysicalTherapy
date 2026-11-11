@@ -2,7 +2,7 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `efb8cbb297267c46606b7321742f76718224f724` on branch `co-001/password-changed-notice` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Generated at commit `c0ced87fed3ce477f1838c4edde8b9fec1516781` on branch `co-001/password-changed-notice`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
 - Migrations applied: 49; head `20261111090000_password_changed_notice.sql`
 - PostgreSQL 18; schema `public`: 101 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 41 organization- or user-scoped tables with RLS forced; 8 global tables
@@ -7514,7 +7514,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 45 | `20261107090000_mail_streams.sql` | ADR 0065 | `744437897a65a3f88c415c637184c02906427228746434cdc3c38d98cec2f3d1` |
 | 46 | `20261108090000_suspension_refusal.sql` | ADR 0009, ADR 0050, ADR 0055, ADR 0080 | `42d1885de95b0763735a856698bdc7f72822a90a4132122954bb7ba3ee7ea0f9` |
 | 47 | `20261109090000_line_status_heads.sql` | ADR 0009, ADR 0083 | `68f42516933890daa77c24a0a773cda4fd0a16ab6b5ef7870d844f0011b5f65b` |
-| 48 | `20261110090000_ledger_interest_once.sql` | ADR 0009, ADR 0083, ADR 0084 | `35e53da4b31b3c6671800eba9591db9a3b10af6a9a1f154ff28e3fb281f37741` |
+| 48 | `20261110090000_ledger_interest_once.sql` | ADR 0009, ADR 0083, ADR 0084 | `561e3001cf33c8696b37b20c146c975569c45f788b103d4aca12174240aa2097` |
 | 49 | `20261111090000_password_changed_notice.sql` | ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091 | `a8ca25aa7bd94cc4aefdce09c3c4635ffdb6f749b248139ccb71a5e2ec1a9753` |
 
 ## Cross-checks
@@ -7533,4 +7533,4 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 This document describes the schema at migration head `20261111090000_password_changed_notice.sql` (49 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `bb2672b0122db22a133a075bf5b913326054ca035718c7d5f8a70c2c2726cf47`
+Approved by: ________  Date: ________  Document SHA-256: `80d375ba9ac53dbf5c7f20c49dae5f33f2f62c8cd8fec12645744c52e1320cbe`

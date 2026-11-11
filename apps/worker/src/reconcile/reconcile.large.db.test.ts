@@ -23,11 +23,13 @@ import { LED_PLAN, LedgerWorld, ledSettings } from './test-support/ledger-world'
  * three per line, which the sampled bound catches at any size and which run the cluster's shared lock table out (53200,
  * out of shared memory) once they pass it.
  *
- * LINES is 2,000 by default, not the design's 20,000 (TP_LARGE_RECONCILE_LINES sets it): the pass itself grows faster
- * than its lines whatever its locks (it compares every open case line with the new claims of its code and date, and
- * writes each line's stage as a statement of its own that refreshes the line's whole case), so 20,000 lines take far
- * longer than a CI shard (6,000 took 342 s on a 4-CPU container; the build's report). The bound on the locks is the
- * same at every size; the pass's own time at size is handed on.
+ * LINES is 2,000 by default, not the design's 20,000 (TP_LARGE_RECONCILE_LINES sets it). The pass no longer grows
+ * faster than its lines: since SUITE-CAP-3 (docs/adr/0087) it searches its claim candidates, reads their claim lines and
+ * indexes its standing matches once per pass, never per open case line, and writes its stage events in one statement,
+ * which CAS-50 bounds per line and CAS-51 times at size. What still grows with a practice's history is the ledger
+ * triggers' share of each insert, which are Lane A's, so the default stays a CI shard's size: the weekly
+ * release-capacity run's step 7b, F at 10,000 lines, is the full-size form (SUITE-CAP-3 D14). The bound on the locks is
+ * the same at every size.
  *
  * The setup reaches that pass through the job code in steps each small enough for the base's lock table: the original
  * payments are loaded by the parse job and priced and triaged PER_CHUNK lines at a time (one run per chunk's days), and
@@ -40,7 +42,11 @@ import { LED_PLAN, LedgerWorld, ledSettings } from './test-support/ledger-world'
  * INTEREST_CENTS of interest (AMT I) and the check pays its claims' interest in one PLB L6 naming nothing, so the
  * approving reconciles credit each line's interest once, from its check's PLB L6, and the measured pass walks every
  * PLB L6 of the practice's history again and writes nothing more. Fails first without the interest path's indexes
- * (review INT-REL-2): each PLB L6's draws scanned every case line against every match, 161 s for this pass.
+ * (review INT-REL-2): each PLB L6's draws scanned every case line against every match, 161 s for this pass. A later
+ * check then takes each claim's interest back, by a PLB L6 naming its correction, beside another patient's claim, so the
+ * measured pass also walks LINES PLB L6s that take interest back, each reading the holdings of its chain's lines
+ * (PR 126 review F-M2-2: those holdings were rebuilt from every interest entry for each such PLB L6, quadratic in the
+ * practice's history; they are now kept once a pass).
  */
 
 /** The case lines the measured pass posts. */
@@ -52,15 +58,19 @@ const PER_REMITTANCE = 20;
 /** The most advisory locks any backend may hold during the pass: the practice's `ledger:` lock (section 8.4). */
 const MOST_ADVISORY_LOCKS = 1;
 /**
- * The pass's time budget: about two and a half times what 2,000 lines took on a 4-CPU container (57.7 s), the rule of
- * section 8.4, so a per-row lock or another quadratic step returning fails it without a slow runner flaking it.
+ * The pass's time budget: about two and a half times what 2,000 lines took on a 4-CPU container once SUITE-CAP-3's
+ * pass was merged onto this test's base (22.8 s, rounded up; SUITE-CAP-3 D14, its design's section 8.4, docs/adr/0087;
+ * it was 150,000 from 57.7 s before), the rule of section 8.4, so a per-row lock, a per-line query or another quadratic
+ * step returning fails it without a slow runner flaking it.
  */
-const PASS_BUDGET_MS = 150_000;
+const PASS_BUDGET_MS = 60_000;
 
 /** Each case line: LED-06's 97110 x 2 line paid 70.00 against an expected 100.00, corrected to 100.00. */
 const DIFFERENCE_CENTS = '3000';
 /** The interest each correction reports (AMT I) and its check's PLB L6 pays: 0.50 a claim. */
 const INTEREST_CENTS = 50;
+/** What the other patient's claim in each check taking interest back pays: LED-06's original, 70.00. */
+const OTHER_CENTS = 7000;
 
 let w: LedgerWorld;
 
@@ -97,8 +107,9 @@ const traceOf = (chunk: number, check: number) => `SYNEFTRCL${String(chunk).padS
 /**
  * Case line n's code and date of service. Each chunk spreads its lines over DAYS_PER_CHUNK days of its own (so its
  * run's period holds them alone) and the five codes of the contract's schedule, as a practice's month spreads them:
- * the reconcile compares each case line with the new claims of its code and date (candidatesFor), so a whole month on
- * one code and day would measure that comparison, not the pass's locks.
+ * the reconcile's patient search reads the new claims of each case line's code and date (patientCandidates in
+ * remittances.ts, once per pass; docs/adr/0087), so a whole month on one code and day would measure that search's
+ * group, which CAS-51's spread A measures, not the pass's locks.
  */
 const CODES = ['97110', '97112', '97140', '97530', '97116'] as const;
 const DAYS_PER_CHUNK = 9;
@@ -183,6 +194,32 @@ function adjusted835(chunk: number, first: number, count: number): { readonly by
   return { bytes, checks };
 }
 
+/**
+ * The chunk's checks taking interest back, one for each adjusted check: another patient's claim (LED-06's original under
+ * its own SYNTHETIC numbers, on a day no case line has) paying 70.00, and one PLB L6 of 0.50 for each of the adjusted
+ * check's claims, naming its correction: BPR02 70.00 less 0.50 a claim.
+ */
+function takenBack835(chunk: number, checks: readonly { readonly trace: string; readonly lines: readonly number[] }[]): Buffer {
+  return interchange(
+    ADJUSTED,
+    440_000_000 + chunk,
+    checks.map((check, index) => {
+      const other = `${String(chunk).padStart(2, '0')}${String(index + 1).padStart(4, '0')}`;
+      const loops = ORIGINAL.claims.map((segment) =>
+        segment
+          .replaceAll('SYNPCNLED06001', `SYNPCNRCLK${other}`)
+          .replaceAll('SYNCCNLED060001', `SYNCCNRCLK${other}`)
+          .replace(/^DTM\*472\*\d{8}$/, 'DTM*472*20260601'),
+      );
+      return {
+        trace: `SYNEFTRCLT${other}`,
+        amount: cents(OTHER_CENTS - INTEREST_CENTS * check.lines.length),
+        loops: [...loops, ...check.lines.map((n) => `PLB*${PAYEE}*20261231*L6:SYNCCNRCL${number(n)}A*${cents(INTEREST_CENTS)}`)],
+      };
+    }),
+  );
+}
+
 /** The posting export (LED-06's template, SYNTHETIC PM EXPORT v1): one line-level row per case line, its correction's payment. */
 function postingExport(rows: readonly { readonly trace: string; readonly n: number }[]): Buffer {
   const [header] = readFileSync(path.join(FIXTURES, 'LED-06/posting-export.csv'), 'utf8').split(/\r?\n/);
@@ -222,7 +259,7 @@ async function count(practice: Practice, sql: string, values: unknown[] = []): P
 }
 
 describe('a real-size reconcile (CAS-42.3)', () => {
-  it(`posts ${String(LINES)} case lines from one row each in one pass, holding at most the practice's ledger lock, their interest credited once`, async () => {
+  it(`posts ${String(LINES)} case lines from one row each in one pass, holding at most the practice's ledger lock, their interest credited once and taken back once`, async () => {
     const chunks = Math.ceil(LINES / PER_CHUNK);
     expect(chunks).toBeGreaterThan(0);
     // Every chunk's days fall before the original payment (2026-04-06).
@@ -249,21 +286,31 @@ describe('a real-size reconcile (CAS-42.3)', () => {
     // The adjusted remittances, loaded and reconciled (the ledger's approvals) one chunk at a time; then the posting
     // export, one line-level row per case line: its correction's patient control number, code, date and payment.
     const rows: { trace: string; n: number }[] = [];
+    const checks: { readonly chunk: number; readonly checks: readonly { readonly trace: string; readonly lines: readonly number[] }[] }[] = [];
     for (let chunk = 0; chunk < chunks; chunk += 1) {
       const adjusted = adjusted835(chunk, chunk * PER_CHUNK + 1, sizeOf(chunk));
       await load('LED-06/adjusted.835', adjusted.bytes);
       await w.reconcile(practice);
       rows.push(...adjusted.checks.flatMap((check) => check.lines.map((n) => ({ trace: check.trace, n }))));
+      checks.push({ chunk, checks: adjusted.checks });
     }
     expect(await count(practice, "SELECT count(*)::int AS n FROM ledger_entry WHERE practice_id = $1 AND stage = 'approved' AND amount_cents = $2", [practice.practiceId, DIFFERENCE_CENTS])).toBe(LINES);
     expect(rows).toHaveLength(LINES);
     // Each line's interest credited once, from its check's PLB L6.
     const interest = async () => ({
       entries: await count(practice, "SELECT count(*)::int AS n FROM ledger_entry WHERE practice_id = $1 AND stage = 'interest' AND amount_cents = $2", [practice.practiceId, String(INTEREST_CENTS)]),
+      takenBack: await count(practice, "SELECT count(*)::int AS n FROM ledger_entry WHERE practice_id = $1 AND stage = 'interest' AND amount_cents = $2", [practice.practiceId, String(-INTEREST_CENTS)]),
       cents: await count(practice, "SELECT coalesce(sum(amount_cents), 0)::int AS n FROM ledger_entry WHERE practice_id = $1 AND stage = 'interest'", [practice.practiceId]),
       l6s: await count(practice, "SELECT count(*)::int AS n FROM provider_adjustment WHERE practice_id = $1 AND category = 'interest'", [practice.practiceId]),
     });
-    expect(await interest()).toEqual({ entries: LINES, cents: INTEREST_CENTS * LINES, l6s: Math.ceil(LINES / PER_REMITTANCE) });
+    expect(await interest()).toEqual({ entries: LINES, takenBack: 0, cents: INTEREST_CENTS * LINES, l6s: Math.ceil(LINES / PER_REMITTANCE) });
+    // Then each claim's interest taken back by a later check's PLB L6 naming its correction, one chunk at a time.
+    for (const chunk of checks) {
+      await load('LED-06/adjusted.835', takenBack835(chunk.chunk, chunk.checks));
+      await w.reconcile(practice);
+    }
+    const afterTakeBacks = { entries: LINES, takenBack: LINES, cents: 0, l6s: Math.ceil(LINES / PER_REMITTANCE) + LINES };
+    expect(await interest()).toEqual(afterTakeBacks);
     const exportId = await w.stageExport(practice, 'LED-06/posting-export.csv', 'posting_export', postingExport(rows));
     const setupMs = performance.now() - setupStarted;
 
@@ -289,8 +336,8 @@ describe('a real-size reconcile (CAS-42.3)', () => {
     expect(sampled.peak).toBeGreaterThan(0);
     expect(sampled.peak).toBeLessThanOrEqual(MOST_ADVISORY_LOCKS);
     expect(passMs).toBeLessThan(PASS_BUDGET_MS);
-    // The pass walked every PLB L6 again and wrote no more interest.
-    expect(await interest()).toEqual({ entries: LINES, cents: INTEREST_CENTS * LINES, l6s: Math.ceil(LINES / PER_REMITTANCE) });
+    // The pass walked every PLB L6 again, those taking interest back among them, and wrote no more interest.
+    expect(await interest()).toEqual(afterTakeBacks);
 
     // Every case line holds one posted entry of its difference, proved by its own row.
     expect(

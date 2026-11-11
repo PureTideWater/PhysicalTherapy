@@ -5,7 +5,7 @@ import { OWNER_ROLE } from '@tp/db';
 
 import { SCREENING_PAUSED } from '../src/lib/screening/messages';
 import { atPhoneWidth, expectAccessible } from './a11y';
-import { withDatabase } from './helpers';
+import { runTag, withDatabase } from './helpers';
 import { until } from './journeys';
 import { MAIL_CONSOLE_ADMIN, MAIL_CONTROL, holdScreeningStream, recordMailEventsOnce, registerKeyAndSignInAs, screeningStreamSending } from './mail';
 import { outboxFor } from './outbox';
@@ -62,7 +62,7 @@ const BOUNCING = 'bounce+e2e7@simulator.amazonses.com';
 
 cutoffTest('a seventh hard bounce in a week pauses the screening stream alone; the page says so; a platform administrator resumes it with a reason, and it opens once SES and the probes confirm (SCR-21)', async ({ browser }) => {
   test.setTimeout(240_000);
-  const practice = `SYNTHETIC CUTOFF CLINIC ${randomUUID().slice(0, 8).toUpperCase()}`;
+  const practice = `SYNTHETIC CUTOFF CLINIC ${runTag().toUpperCase()}`;
 
   await test.step('six hard-bounced screening results are already in the window', async () => {
     await withDatabase(async (client) => {
@@ -140,6 +140,8 @@ cutoffTest('a seventh hard bounce in a week pauses the screening stream alone; t
       await expect(screening.locator('[data-copy="resume-review"]')).toHaveText(
         'If SES still has the account under review, the platform pauses it again within a minute. Resume only once the account’s bounce and complaint rates are under their warnings: a warning still raised does not pause it again.',
       );
+      // The note is read with the reason select it is about.
+      await expect(screening.getByLabel('Why it can resume')).toHaveAttribute('aria-describedby', /(^|\s)resume-review(\s|$)/);
       // The customer streams never pause.
       await expect(admin.locator('[data-stream="transactional"]')).toHaveAttribute('data-state', 'sending');
       await expect(admin.locator('[data-stream="notices"]')).toHaveAttribute('data-state', 'sending');

@@ -1,4 +1,3 @@
-import { locationStatusText } from '@tp/contracts';
 import { rolesPermit } from '@tp/db/runtime';
 import { UNPRICED_REASONS } from '@tp/pricing';
 import {
@@ -294,7 +293,17 @@ export const comparePricingRunsPage = practiceRoute({
 });
 
 /** A run of a practice with no pricing location (audit #33): no run is created until its billing ZIP is set. Exported for the mapping screens' re-runs (combined audit #32). */
-export const LOCATION_WAITING = `${locationStatusText('zip_missing')} A run waits until it is set in Pricing settings.`;
+export const LOCATION_WAITING = 'no run is made until the practice’s billing ZIP code is set; add it in Pricing settings';
+
+/**
+ * A rule-release mismatch as a form says it after "Rule release": the release the page asked for and the one in force,
+ * then the step. Worded here from the error's numbers, because the service's own message ("rule-release mismatch: …")
+ * carries a colon of its own. Exported for the mapping screens' re-runs.
+ */
+export function releaseMismatchMessage(error: RuleReleaseMismatchError): string {
+  const inForce = error.current === null ? 'no rule release is published' : `release ${String(error.current)} is the one in force`;
+  return `release ${String(error.requested)} was asked for, and ${inForce}; reload the page to price under the release in force`;
+}
 
 /**
  * A refusal of the re-run services, as the field a form shows it against. Every RerunRefusedError reason maps to
@@ -302,18 +311,19 @@ export const LOCATION_WAITING = `${locationStatusText('zip_missing')} A run wait
  * (superseded, newer_run_pending, changed_meanwhile, diff_changed) and the re-run rule's (not_in_effect,
  * newer_run_pending) are worded to read after the form's label, "This re-run: ..." on the Accept forms and "This
  * run: ..." (or "The run in effect: ...", for the run a superseded re-run's page offers instead) on the Re-run forms
- * (docs/adr/0037, amendment of 2026-10-26), and each ends with a full stop here (UX recheck of PR #50, N5). The release
- * mismatch reads after "Rule release".
+ * (docs/adr/0037, amendment of 2026-10-26). Each is one sentence with no full stop, as every field's message is since
+ * docs/adr/0077's amendment by co-001/ux-forms-after-42, which supersedes the full stop of the UX recheck of PR #50, N5.
+ * The release mismatch reads after "Rule release".
  */
 function refusal(error: unknown): InputError | undefined {
   if (error instanceof PricingLocationWaiting) {
     return new InputError([{ field: 'releaseNo', message: LOCATION_WAITING }]);
   }
   if (error instanceof RuleReleaseMismatchError) {
-    return new InputError([{ field: 'releaseNo', message: `${error.message}; reload the page to price under the release in force.` }]);
+    return new InputError([{ field: 'releaseNo', message: releaseMismatchMessage(error) }]);
   }
   if (error instanceof RerunRefusedError) {
-    return new InputError([{ field: 'runId', message: `${error.message}.` }]);
+    return new InputError([{ field: 'runId', message: error.message }]);
   }
   return undefined;
 }
@@ -406,12 +416,12 @@ const PERIOD_FIELDS = { period: 'fromMonth', periodFrom: 'fromMonth', periodTo: 
 /**
  * A period none of whose lines has a mapping of its plan in force on its date (MAP-07; R3N-1): a run would price
  * nothing. Shown under "First month of service" after "Error:" (ADR 0077), lower-case like the period's other messages;
- * counts and dates only. Its second sentence says when a month is priced (PR #95 review F2): at once when a mapping
+ * counts and dates only. Its parenthesis says when a month is priced (PR #95 review F2): at once when a mapping
  * completes it, or once any one plan is mapped, by the daily monitoring or a run from here, the other plans' lines then
  * needing it priced again; never "once every plan is mapped" alone.
  */
 export const NOTHING_MAPPED =
-  'none of the period’s plans has a mapping in force on its lines’ dates yet, so a run would price nothing: map them on Payer and plan mapping. A month is priced as soon as every plan it holds is mapped, or once any one is, by the daily monitoring or a run from here; its other plans’ lines then need it priced again.';
+  'none of the period’s plans has a mapping in force on its lines’ dates yet, so a run would price nothing; map them on Payer and plan mapping (a month is priced as soon as every plan it holds is mapped, or once any one is, by the daily monitoring or a run from here; its other plans’ lines then need it priced again)';
 
 export const createPricingRunAction = practiceRoute({
   id: 'practice.pricing_runs.create',
@@ -438,7 +448,7 @@ export const createPricingRunAction = practiceRoute({
       created = await createPricingRun(scope, { practiceId, periodFrom: firstDayOf(input.fromMonth), periodTo: lastDayOf(toMonth), releaseNo: input.releaseNo, requestId: request.requestId });
     } catch (error) {
       if (error instanceof RuleReleaseMismatchError) {
-        throw new InputError([{ field: 'releaseNo', message: `${error.message}; reload the page to price under the current release` }]);
+        throw new InputError([{ field: 'releaseNo', message: releaseMismatchMessage(error) }]);
       }
       if (error instanceof PricingLocationWaiting) {
         throw new InputError([{ field: 'fromMonth', message: LOCATION_WAITING }]);

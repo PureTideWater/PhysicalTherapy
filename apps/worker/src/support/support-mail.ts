@@ -54,7 +54,7 @@ const CUT = '\n\n[The rest of the message was cut: a ticket holds 4,000 characte
 export const WITHHELD_SUBJECT = 'Mail to support, withheld';
 export const WITHHELD_MESSAGE =
   'A message came to the support address from this person, and its text was withheld because it looked like it held patient information (a name, a date, a member ID, a claim number or another identifier). ' +
-  'Ask them to write again through the in-app form, naming the screen and the record’s opaque ID only.';
+  'Ask them to write again through the in-app form, naming the screen and the record’s ID only.';
 
 export interface ScreenedMail {
   readonly verdict: SupportMailVerdict;

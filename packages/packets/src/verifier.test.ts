@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { type AssemblyLine, assemblePacket } from './assemble';
 import { draftNarrative } from './draft';
+import { legacyDraftNarrative } from './legacy-draft.test-support';
 import { heldRoles, narrativeFacts } from './facts';
 import type { PacketContent, PacketContentV2 } from './format';
 import { scanText } from './scan';
@@ -438,6 +439,14 @@ const ROLE_WORDS: Readonly<Record<string, string>> = {
 const AMOUNT_ROLE_NAMES = { expected: true, allowed: true, paid: true, variance: true, patient_share: true, calculation: true } as const;
 
 describe('properties of the verifier', () => {
+  it('writes the same /2 draft as before fact tokens, byte for byte, for any pattern (docs/adr/0089, decision (a))', () => {
+    fc.assert(
+      fc.property(contentArbitrary, (generated) => {
+        expect(draftNarrative(generated)).toBe(legacyDraftNarrative(generated));
+      }),
+    );
+  });
+
   it('passes the code-built draft of any pattern', () => {
     fc.assert(
       fc.property(contentArbitrary, (generated) => {

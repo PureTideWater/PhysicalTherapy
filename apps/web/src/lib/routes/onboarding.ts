@@ -8,7 +8,7 @@ import { ESIGN_SIGNATURE_HEADER, ESignatureError } from '../agreements/esign';
 import { attributionValues, readAttribution } from '../http/attribution';
 import { publicRoute, selfRoute } from '../http/invoke';
 import { InputError, type MutationResult } from '../http/route';
-import { emailAddress, opaqueId, optionalText, requiredText } from './schemas';
+import { NO_PATIENT_INFORMATION, atMostCharacters, emailAddress, opaqueId, optionalText, requiredText } from './schemas';
 
 /**
  * Customer onboarding's own routes (PRD 5, J1 and J2; milestone 11; docs/adr/0053):
@@ -31,21 +31,25 @@ import { emailAddress, opaqueId, optionalText, requiredText } from './schemas';
 /** The fields a request names, screened for what looks like a patient's identifier. */
 function screened(field: string, text: string): string {
   if (textPhiFindings(text).length > 0) {
-    throw new InputError([{ field, message: 'this form takes no patient information: remove anything that looks like an identifier, a date or a phone number, then send it again' }]);
+    throw new InputError([{ field, message: NO_PATIENT_INFORMATION }]);
   }
   return text;
 }
 
+/** The payer list's one message, whatever is wrong with it: it names the rule whole. */
+const PAYER_LIST = 'name 1 to 50 payers, each at most 120 characters';
+
 const payerList = z
   .string()
-  .max(6000, 'at most 6,000 characters')
+  .max(6000, 'enter at most 6,000 characters')
   .transform((text) =>
     text
       .split(/[\n,;]+/)
       .map((name) => name.trim())
       .filter((name) => name !== ''),
   )
-  .pipe(z.array(z.string().max(120, 'each payer name at most 120 characters')).min(1, 'name at least one payer').max(50, 'at most 50 payers'));
+  // A long name is refused on the list, never on its element: the issue's path stays "payers", the field the form names.
+  .pipe(z.array(z.string()).min(1, PAYER_LIST).max(50, PAYER_LIST).refine((names) => names.every((name) => name.length <= 120), PAYER_LIST));
 
 export const BILLING_ARRANGEMENT_LABELS: Readonly<Record<ProspectBillingArrangement, string>> = {
   in_house: 'We bill in house',
@@ -80,7 +84,7 @@ function referringFirm(text: string | undefined): string | null {
     return null;
   }
   if (value.length > 200) {
-    throw new InputError([{ field: 'referringFirm', message: 'the firm’s name, at most 200 characters' }]);
+    throw new InputError([{ field: 'referringFirm', message: atMostCharacters(200) }]);
   }
   return screened('referringFirm', value);
 }
@@ -99,6 +103,9 @@ export const requestAuditPage = publicRoute({
     }),
 });
 
+/** The locations field's one message, whatever is wrong with it (the screening's convert form says the same). */
+const LOCATIONS = 'enter a whole number from 1 to 1,000';
+
 export const requestAudit = publicRoute({
   id: 'public.request_audit',
   kind: 'action',
@@ -110,12 +117,12 @@ export const requestAudit = publicRoute({
     contactName: requiredText(200),
     contactEmail: emailAddress,
     organizationName: requiredText(200),
-    locations: z.coerce.number({ message: 'a whole number' }).int('a whole number').min(1, 'at least 1').max(1000, 'at most 1,000'),
+    locations: z.coerce.number({ message: LOCATIONS }).int(LOCATIONS).min(1, LOCATIONS).max(1000, LOCATIONS),
     payers: payerList,
     billingArrangement: z.enum(PROSPECT_BILLING_ARRANGEMENTS, { message: 'choose how you bill' }),
     // Optional: blank is no answer.
     heardFrom: z.preprocess((value) => (value === '' ? undefined : value), z.enum(PROSPECT_SOURCES, { message: 'choose one of the listed answers, or leave it blank' }).optional()),
-    referringFirm: z.string().max(400, 'enter at most 200 characters').optional(),
+    referringFirm: z.string().max(400, atMostCharacters(200)).optional(),
   }),
   handle: async ({ input, services, request }): Promise<MutationResult> => {
     const contact = screened('contactName', input.contactName);

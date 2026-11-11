@@ -141,12 +141,32 @@ describe('every message the user pool sends (SGN-13)', () => {
 });
 
 describe('the words of each message', () => {
-  it('the reset code’s are section 2.5’s, word for word (UXR-04)', () => {
+  it('the reset code’s are section 2.5’s, word for word (UXR-04), with O-8’s newest-code sentence after the 15 minutes', () => {
     const { subject, text } = cognitoMessage('CustomMessage_ForgotPassword', PLACEHOLDERS);
     expect(subject).toBe('Your PaidWhole code');
     expect(normalized(text.replace(AUTH_MAIL_FOOTER, ''))).toBe(
-      'Your code to choose a new PaidWhole password is {####}. Enter it on the page that sent it within 15 minutes. If you did not ask for it, ignore this email: your password is unchanged.',
+      'Your code to choose a new PaidWhole password is {####}. Enter it on the page that sent it within 15 minutes. If you asked more than once, use the newest code. If you did not ask for it, ignore this email: your password is unchanged.',
     );
+  });
+
+  it('the reset code says to use the newest code (O-8), once in the HTML and once in the text, after the 15 minutes, within Cognito’s length', () => {
+    const NEWEST = 'If you asked more than once, use the newest code.';
+    for (const values of [PLACEHOLDERS, SAMPLE]) {
+      const { html, text } = cognitoMessage('CustomMessage_ForgotPassword', values);
+      expect(occurrences(text, NEWEST)).toBe(1);
+      expect(occurrences(html, NEWEST)).toBe(1);
+      expect(text).toContain(`within 15 minutes. ${NEWEST} If you did not ask for it`);
+      expect(html).toContain(`within 15 minutes. ${NEWEST} If you did not ask for it`);
+      expect(readable(html)).toBe(normalized(text));
+      expect(html.length).toBeLessThanOrEqual(COGNITO_LIMITS.message);
+    }
+    // Not verified (no user pool in this lane), so never written: that a new request voids the earlier code.
+    expect(cognitoMessage('CustomMessage_ForgotPassword', PLACEHOLDERS).text).not.toMatch(/replaces|no longer works|stops working|invalid/i);
+    // The other code messages are unchanged: only a reset is asked for more than once from the page.
+    for (const source of COGNITO_MESSAGE_SOURCES.filter((name) => name !== 'CustomMessage_ForgotPassword')) {
+      expect(cognitoMessage(source, PLACEHOLDERS).text, source).not.toContain(NEWEST);
+    }
+    expect(fallbackCodeMessage().text).not.toContain(NEWEST);
   });
 
   it('the invitation names Cognito’s {username} without saying what it is, signs in with the address the email came to, the temporary password, the plain sign-in page and its 7 days, and an authenticator', () => {

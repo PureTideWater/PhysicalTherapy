@@ -88,7 +88,7 @@ describe('the worker the test runs', () => {
 
 describe('the practices', () => {
   it('sizes the full test as the design names it, and the smoke run smaller in every part', () => {
-    expect(FULL_SIZE).toEqual({ measuredLines: 100_000, reportLines: 20_000, remittances: 4, claimsPerRemittance: 2_000, largeTogetherLines: 100_000, reconcileLines: 2_000 });
+    expect(FULL_SIZE).toEqual({ measuredLines: 100_000, reportLines: 20_000, remittances: 4, claimsPerRemittance: 2_000, largeTogetherLines: 100_000, reconcileLines: 10_000 });
     expect(SMALL_SIZE.remittances).toBe(4);
     expect(SMALL_SIZE.largeTogetherLines).toBe(2_000);
     for (const key of ['measuredLines', 'reportLines', 'claimsPerRemittance', 'largeTogetherLines', 'reconcileLines'] as const) {
@@ -356,30 +356,34 @@ describe('the reprocessing step 7b loads and posts, over a month of both plans (
   });
 });
 
-describe('step 7b’s practice, F (Lane A’s orchestrator, 2026-11-04: a practice of its own until SUITE-CAP-3 moves step 7b back to A)', () => {
+describe('step 7b’s practice, F (SUITE-CAP-3 D14: a practice of its own at 10,000 lines until Lane A’s trigger fixes move step 7b back to A)', () => {
   // Built in each test, so a scenario without F fails each test rather than the file.
   const seeded = () => {
     const claims = reconcileClaims(FULL_SIZE.reconcileLines);
     return { claims, lines: claims.flatMap((entry) => entry.lines.map((item) => ({ ...item, claimNo: entry.claimNo }))) };
   };
 
-  it('seeds F, not A, at CAS-42.3’s 2,000 lines, every claim under its contract, while A keeps its full month', () => {
+  it('seeds F, not A, at its own full size of 10,000 lines, every claim under its contract, while A keeps its full month', () => {
     const { claims, lines } = seeded();
     expect(RECONCILE_PRACTICE).toBe('F');
     expect(FULL_SIZE.measuredLines).toBe(100_000);
-    // CAS-42.3's own default (apps/worker/src/reconcile/reconcile.large.db.test.ts), so the two cannot drift apart.
+    // Step 7b is the full-size form of CAS-42.3's pass (and CAS-51's), whose default is 2,000 lines
+    // (apps/worker/src/reconcile/reconcile.large.db.test.ts). The two sizes part on purpose (SUITE-CAP-3 D14, docs/adr/0087):
+    // F reconciles 10,000 lines, sized for its first attempt to complete within 360 s, and never fewer than CAS-42.3's.
     const large = readFileSync(path.join(repositoryRoot, 'apps/worker/src/reconcile/reconcile.large.db.test.ts'), 'utf8');
-    expect(FULL_SIZE.reconcileLines).toBe(Number.parseInt(/TP_LARGE_RECONCILE_LINES \?\? '(\d+)'/.exec(large)?.[1] ?? '0', 10));
-    expect(FULL_SIZE.reconcileLines).toBe(2_000);
-    expect(lines).toHaveLength(2_000);
+    const largeDefault = Number.parseInt(/TP_LARGE_RECONCILE_LINES \?\? '(\d+)'/.exec(large)?.[1] ?? '0', 10);
+    expect(largeDefault).toBeGreaterThan(0);
+    expect(FULL_SIZE.reconcileLines).toBe(10_000);
+    expect(FULL_SIZE.reconcileLines).toBeGreaterThanOrEqual(largeDefault);
+    expect(lines).toHaveLength(FULL_SIZE.reconcileLines);
     expect(reconcileClaims(SMALL_SIZE.reconcileLines).flatMap((entry) => entry.lines)).toHaveLength(SMALL_SIZE.reconcileLines);
     expect(claims.every((entry) => !entry.medicareAdvantage)).toBe(true);
     // A's shape, under F's own seed: F's month is not A's.
-    expect(claims.map((entry) => entry.lines)).toEqual(practiceClaims(2_000, 'F').map((entry) => entry.lines));
-    expect(claims.map((entry) => entry.lines)).not.toEqual(practiceClaims(2_000, 'A').map((entry) => entry.lines));
+    expect(claims.map((entry) => entry.lines)).toEqual(practiceClaims(FULL_SIZE.reconcileLines, 'F').map((entry) => entry.lines));
+    expect(claims.map((entry) => entry.lines)).not.toEqual(practiceClaims(FULL_SIZE.reconcileLines, 'A').map((entry) => entry.lines));
     // Its reprocessing, every line paid its expected amount, names F's claims and plan alone.
     const built = reprocessing(RECONCILE_PRACTICE, claims, new Map(lines.map((item) => [lineKey(item.claimNo, item.lineNo), BigInt(item.units * FIXED_UNIT_CENTS)])));
-    expect(built.lines).toBe(2_000);
+    expect(built.lines).toBe(FULL_SIZE.reconcileLines);
     const text = built.files.map((file) => file.toString('latin1')).join('');
     expect(text).toContain(`CLP*SYNPCN${claimNumber('F', 1)}*22*`);
     expect(text).not.toContain('SYNCAPA');
@@ -409,7 +413,7 @@ describe('step 7b’s practice, F (Lane A’s orchestrator, 2026-11-04: a practi
         ),
       ),
     );
-    expect(priced).toHaveLength(2_000);
+    expect(priced).toHaveLength(FULL_SIZE.reconcileLines);
     expect(priced.filter((result) => result.outcome !== 'priced')).toEqual([]);
     const materiality = DEFAULT_TRIAGE_SETTINGS.lineMaterialityCents;
     for (const [index, result] of (priced as PricedLine[]).entries()) {

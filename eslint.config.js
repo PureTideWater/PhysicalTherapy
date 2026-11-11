@@ -38,6 +38,31 @@ const restrictedImports = {
   patterns: [{ group: MODEL_SDK_PATTERNS.flatMap((pattern) => [pattern, `${pattern}/**`]), message: MODEL_SDK_MESSAGE }, googleFontImports],
 };
 
+/**
+ * The per-line reconcile pass (apps/worker/src/reconcile/test-support/per-line.ts) is CAS-49's reference and nothing
+ * else (SUITE-CAP-3 D13; docs/adr/0087): a production file importing it would bring back the per-line candidate queries
+ * and their decrypts with no failing check. Refused by its path however it is written (./, ../ or through the package,
+ * with or without an extension), statically by no-restricted-imports and dynamically or by require() by the syntax
+ * selectors after it, in every file but tests and test support, which the blocks at the end allow; no other
+ * test-support module is named, so the packages' existing test-support imports are untouched. The rule reads one
+ * file's own imports: a production file that imports another test-support module which imports the reference reaches it
+ * through that module (packages/packets/src/role-examples.ts imports its ./test-support today, so test support is not
+ * production-free), which no import rule here sees; the scope is the design's (D13), and the gap is recorded for ADR 0087.
+ */
+const PER_LINE_MESSAGE = 'The per-line reconcile pass is CAS-49’s reference only (docs/adr/0087): import it from tests and test support, never from production code.';
+const perLineImports = { regex: String.raw`(^|/)test-support/per-line(\.[cm]?[jt]sx?)?$`, message: PER_LINE_MESSAGE };
+const PER_LINE_SOURCE = String.raw`/(^|\/)test-support\/per-line(\.[cm]?[jt]sx?)?$/`;
+const perLineSyntax = [
+  { selector: `ImportExpression[source.value=${PER_LINE_SOURCE}]`, message: PER_LINE_MESSAGE },
+  { selector: `CallExpression[callee.name='require'][arguments.0.value=${PER_LINE_SOURCE}]`, message: PER_LINE_MESSAGE },
+];
+
+/** Outside tests and test support, the per-line reference is refused beside the rest. */
+const productionImports = { patterns: [...restrictedImports.patterns, perLineImports] };
+
+/** Where the per-line reference may be imported: tests and test support (the blocks at the end of the config). */
+const TEST_FILES = ['**/*.test.{ts,tsx}', '**/test-support/**'];
+
 const googleFontSyntax = [
   { selector: `ImportExpression[source.value=${GOOGLE_FONT_SOURCE}]`, message: GOOGLE_FONT_MESSAGE },
   { selector: `CallExpression[callee.name='require'][arguments.0.value=${GOOGLE_FONT_SOURCE}]`, message: GOOGLE_FONT_MESSAGE },
@@ -53,6 +78,8 @@ const modelSdkSyntax = [
 
 /** The same two, imported dynamically or required. */
 const restrictedSyntax = [...modelSdkSyntax, ...googleFontSyntax];
+/** Outside tests and test support, the per-line reference imported dynamically or required is refused beside them. */
+const productionSyntax = [...restrictedSyntax, ...perLineSyntax];
 
 /**
  * No floats on amounts in the money packages (CLAUDE.md rule 2): amounts are bigint cents and rates
@@ -122,8 +149,8 @@ export default defineConfig(
     },
     linterOptions: { reportUnusedDisableDirectives: 'error' },
     rules: {
-      '@typescript-eslint/no-restricted-imports': ['error', restrictedImports],
-      'no-restricted-syntax': ['error', ...restrictedSyntax],
+      '@typescript-eslint/no-restricted-imports': ['error', productionImports],
+      'no-restricted-syntax': ['error', ...productionSyntax],
       '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/switch-exhaustiveness-check': 'error',
@@ -136,14 +163,15 @@ export default defineConfig(
   },
   {
     files: [`{${MONEY_PACKAGES.join(',')}}/**/*.{ts,tsx,js,mjs}`],
-    rules: { 'no-restricted-syntax': ['error', ...restrictedSyntax, ...moneySyntax] },
+    rules: { 'no-restricted-syntax': ['error', ...productionSyntax, ...moneySyntax] },
   },
   {
-    // The only code that calls a model: the provider SDKs are allowed here, the money and font rules still hold.
+    // The only code that calls a model: the provider SDKs are allowed here, the money and font rules still hold, and
+    // so does the per-line reference's refusal.
     files: ['packages/model-gateway/**'],
     rules: {
-      '@typescript-eslint/no-restricted-imports': ['error', { patterns: [googleFontImports] }],
-      'no-restricted-syntax': ['error', ...googleFontSyntax, ...moneySyntax],
+      '@typescript-eslint/no-restricted-imports': ['error', { patterns: [googleFontImports, perLineImports] }],
+      'no-restricted-syntax': ['error', ...googleFontSyntax, ...perLineSyntax, ...moneySyntax],
     },
   },
   {
@@ -160,5 +188,26 @@ export default defineConfig(
     // Vitest's matchers return `any` by design (expect.stringContaining and friends).
     files: ['**/*.test.{ts,tsx}', '**/e2e/**/*.ts'],
     rules: { '@typescript-eslint/no-unsafe-assignment': 'off' },
+  },
+  {
+    // Tests and test support may import the per-line reference (CAS-49, D13). A later block replaces a rule's options,
+    // so each block above that declares the two rules is declared again here for its tests with the per-line refusal
+    // left out and everything else as it was: everywhere, then the money packages, then packages/model-gateway.
+    files: TEST_FILES,
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', restrictedImports],
+      'no-restricted-syntax': ['error', ...restrictedSyntax],
+    },
+  },
+  {
+    files: MONEY_PACKAGES.flatMap((pkg) => TEST_FILES.map((glob) => `${pkg}/${glob}`)),
+    rules: { 'no-restricted-syntax': ['error', ...restrictedSyntax, ...moneySyntax] },
+  },
+  {
+    files: TEST_FILES.map((glob) => `packages/model-gateway/${glob}`),
+    rules: {
+      '@typescript-eslint/no-restricted-imports': ['error', { patterns: [googleFontImports] }],
+      'no-restricted-syntax': ['error', ...googleFontSyntax, ...moneySyntax],
+    },
   },
 );

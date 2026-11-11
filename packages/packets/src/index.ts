@@ -42,7 +42,8 @@ export {
   phoneText,
 } from './correspondence';
 export { addDays, daysFrom, isIsoDate } from './dates';
-export { draftNarrative } from './draft';
+export { type DraftOptions, draftNarrative } from './draft';
+export { type DraftOutput, type DraftParagraph, type DraftSegment, type DraftSentence, serializeDraft, serializeSentence } from './serialize';
 export { type ExplainBindingReason, ExplainBindingError, type PacketWords, type RowWords, explainPacket } from './explain';
 export {
   AUDIENCES,
@@ -142,6 +143,9 @@ export {
   type SourceKind,
   type SubmissionChannel,
   VERIFIER_FORMAT,
+  VERIFIER_FORMATS,
+  VERIFIER_FORMAT_V3,
+  type VerifierFormat,
   isPacketV2,
 } from './format';
 export { canonicalJson, versionSha256 } from './hash';
@@ -177,7 +181,51 @@ export {
 export { type ReadableText, type TextSpan, readableText } from './readable';
 export { FIGURE_ROLES, type FigureReading, type FigureRole, type ReadKind, readFigures } from './roles';
 export { PACKET_REFERENCE_PATTERN, exportFileName, normalizePacketReference, packetReference, packetReferencePrefix, withPacketReference } from './reference';
-export { type Figure, type FigureKind, type Span, canonicalNumber, isoDate, numbersInWords, romanValue, scanText, sentenceSpans } from './scan';
-export { type CheckedFigure, type FigureNeeds, MISMATCH_CODES, type Mismatch, type MismatchCode, type VerifierReport, checkedFigures, identifierForms, narrativeSha256, verifyNarrative } from './verifier';
+export {
+  CURRENCY_WORDS,
+  type FactToken,
+  type Figure,
+  type FigureKind,
+  MULTIPLES,
+  MULTIPLIERS,
+  NUMBER_WORDS,
+  ORDINALS,
+  SCALES,
+  STRICT_NUMBER_WORDS,
+  STRICT_PLURALS,
+  type ScanOptions,
+  type Span,
+  type StrictFigure,
+  type StrictScan,
+  TEENS,
+  TENS,
+  UNITS,
+  ZERO_AMOUNT_PHRASES,
+  canonicalNumber,
+  isoDate,
+  numbersInWords,
+  romanValue,
+  scanText,
+  sentenceSpans,
+} from './scan';
+export {
+  type CheckedFigure,
+  type FigureNeeds,
+  MISMATCH_CODES,
+  type Mismatch,
+  type MismatchCode,
+  type TemplateReading,
+  type VerifierReport,
+  type VerifierReportV2,
+  type VerifierReportV3,
+  checkedFigures,
+  identifierForms,
+  narrativeSha256,
+  readTemplate,
+  templateSentenceSpans,
+  verifyAtFormat,
+  verifyNarrative,
+  verifyTemplate,
+} from './verifier';
 export { wordsVersionOf } from './words-version';
 export { type AppealLevel, type NextWindow, type NextWindowBasis, type WindowLength, nextDisputeWindow } from './windows';

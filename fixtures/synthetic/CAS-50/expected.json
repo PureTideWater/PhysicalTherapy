@@ -1,0 +1,17 @@
+{
+  "case": "CAS-50",
+  "module": "CAS",
+  "title": "A reconcile pass's reads do not grow per line",
+  "assertion": "Between 200 and 800 lines the pass's candidate searches and claim-line reads stay a fixed number of statements, none of them reads the ledger's matches, its stage events are one statement, and it decrypts each claim's patient control number at most once per phase",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": ["apps/worker/src/reconcile/pass-bounds.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Generated at two sizes by the test: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

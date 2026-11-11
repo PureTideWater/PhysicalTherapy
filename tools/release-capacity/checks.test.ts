@@ -475,15 +475,15 @@ describe('the worker’s memory: the working set judged, memory.peak and the mem
   });
 });
 
-describe('the Known gap line (Lane A’s orchestrator, 2026-11-04: step 7b on a practice of its own until SUITE-CAP-3)', () => {
+describe('the Known gap line (SUITE-CAP-3 D14, ruled 2026-11-06: step 7b on F at 10,000 lines until Lane A’s trigger fixes move it back to A)', () => {
   const GAP =
-    'Known gap: reconcile at full size is SUITE-CAP-3’s tracked item. Step 7b reconciles F, a practice of its own at CAS-42.3’s 2,000 lines (fewer at the smoke size), while A keeps its full month for triage and reports: the reconcile pass’s last measured figure at size is 10,000 lines in 3,412 s, far past a job’s 15-minute attempt. Revisit when SUITE-CAP-3 lands: moving step 7b back to A’s full month is its acceptance step (docs/adr/0083).';
+    'Known gap: reconcile at A’s full month waits on the ledger trigger fixes (docs/adr/0087). Step 7b reconciles F, a practice of its own, at 10,000 lines (fewer at the smoke size), sized for its first attempt to finish within 360 s; A keeps its full month for triage and reports. A’s full month (its 30,795 actionable lines) was last measured at 1,653 s, past a job’s 15-minute attempt, 89% of it in the ledger triggers. Revisit when the ledger trigger fixes land: moving step 7b back to A’s full month is their acceptance step (docs/adr/0087).';
 
-  it('names SUITE-CAP-3, its last measured figure and the revisit condition, word for word', () => {
+  it('names F’s size, A’s full month’s measured figure, who closes the gap and the revisit condition, word for word', () => {
     expect(KNOWN_GAP).toBe(GAP);
   });
 
-  // The fixed words around the run's own figure: the full-size figure, then this run's margin, then the revisit condition.
+  // The fixed words around the run's own figure: A’s full month’s measured figure, then this run's margin, then the revisit condition.
   const FIGURE = GAP.slice(0, GAP.indexOf(' Revisit when'));
   const REVISIT = GAP.slice(GAP.indexOf('Revisit when'));
   const printed = (full: ReturnType<typeof report>) => markdown(full).split('\n').filter((text) => text.startsWith('Known gap:'));
@@ -499,7 +499,7 @@ describe('the Known gap line (Lane A’s orchestrator, 2026-11-04: step 7b on a 
     }
   });
 
-  it('shows F’s reconcile time against its attempt, the margin, beside the full-size figure (Lane A’s orchestrator, 2026-11-04, ~22:27 UTC)', () => {
+  it('shows F’s reconcile time against its attempt, the margin, beside A’s full month’s measured figure (Lane A’s orchestrator, 2026-11-04, ~22:27 UTC)', () => {
     // pg-boss's fifteen minutes, which the reconcile queue keeps (apps/worker/src/jobs/registry.ts queueOptions).
     expect(RECONCILE_ATTEMPT_SECONDS).toBe(900);
     // CAS-42.5 on 3ac856d5 (run 41901463895): 615.7 s at 2,000 lines.

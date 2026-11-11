@@ -91,6 +91,13 @@ export interface PaidInterestLine {
   readonly approved: boolean;
   /** The line's approval remaining (zero or more). */
   readonly weightCents: Cents;
+  /**
+   * Another PLB L6 still owes a take-back of the chain and can no longer write it here (interestOutOfReach; PR 126
+   * review MONEY-R4-1), or the line holds another chain's interest (interestOfOthersOn; PR 126 review RVM5-1): the
+   * line is still one of the draw's lines when the approved ones are chosen and the draw is split, but its share is
+   * written nowhere (PR 126 review RV-DB2-1).
+   */
+  readonly outOfReach: boolean;
 }
 
 /** A line a take-back may reach: one holding interest of the chain. */
@@ -105,6 +112,19 @@ export interface HeldInterestLine {
 export interface ChainInterestLines {
   readonly paid: readonly PaidInterestLine[];
   readonly takenBack: readonly HeldInterestLine[];
+  /**
+   * The chain may yet come to hold interest on a case line: its root is a reversal the moment links to no claim (its
+   * claim not uploaded yet), or a claim of it has a standing claim match on a case line. A take-back of such a chain
+   * that is not written whole holds back the PLB L6's payments (PR 126 review F1).
+   */
+  readonly mayYetHold: boolean;
+  /**
+   * For a take-back of a chain that may yet hold interest: what of the chain's interest other PLB L6s paid and can pay
+   * to no line, less what other PLB L6s still owe of take-backs of it (interestUnplaced; zero when nothing is read). A
+   * take-back short of whole by no more than this holds nothing back: the rest of what it owes was never credited, so
+   * there is nothing more for it to find (PR 126 review R2M2-1).
+   */
+  readonly unplacedCents: Cents;
 }
 
 /** One interest match and entry to write: the PLB L6's, for the claim on the line. */
@@ -321,6 +341,30 @@ export function attributeInterest({ remittances, adjustments }: { readonly remit
  * chain's interest and a payment any line matched to a claim it is for, so a payment goes to the lines the take-backs
  * left. When two chains' draws of opposite signs meet on a line no other line can take, the payment is the one left
  * unwritten, so the figure errs low and never above the cash (LED-24 two-chains.835).
+ *
+ * The payments also wait for the take-backs (PR 126 review F1): while a take-back of a chain that may yet hold interest
+ * on a case line is not written whole, the L6 writes none of its payments, now or in a later reconcile, unless what it
+ * still owes is interest other PLB L6s paid the chain and can pay to no line (`unplacedCents`; PR 126 review R2M2-1),
+ * which was never credited and so leaves nothing for it to find. The interest that chain is still to hold arrives with
+ * a later upload (a remittance dated earlier, uploaded later): landing on lines the take-back has not reached, it is
+ * taken back there before any payment of the L6 is written; landing nowhere, because nothing remains on its lines or
+ * they are the take-back's own, it completes the take-back as unplaced. Either way the take-back reaches the lines the
+ * remittances uploaded in date order give it, so a later payment of the chain and its netting L6 come out the same in
+ * either order while the payment is split by the same weights in both, or can reach no line (LED-24 two-chains.835 and
+ * paired.835; netted-elsewhere.835 between partly-paid.835 and rest-paid.835). A take-back that no interest arriving
+ * completes (the uploads pay the chain less than it takes back) holds them back for good, so the figure errs low. A
+ * take-back of a chain that can come to hold no interest on a case line holds nothing back.
+ *
+ * A chain can also come to a case line with no upload, after the L6 wrote its payments (PR 126 review MONEY-R4-1): a
+ * person matches a claim of it by hand, or a written-off line is reopened. The take-back it still owes then follows that
+ * chain's interest only to the lines it has not reached, so the reconcile marks those it has out of reach for every
+ * other L6's payment of the chain (interestOutOfReach). Such a line is still one of the payment's lines when the
+ * approved ones are chosen and the payment is split, and its share is written nowhere, so a payment is never moved onto
+ * a line it would not reach uploaded in order (PR 126 review RV-DB2-1).
+ *
+ * Two take-backs of one PLB L6 never meet on a line (PR 126 review RVM5-1): the second would find the line reached and
+ * leave its chain's interest there. The reconcile keeps a payment off a line holding another chain's interest
+ * (interestOfOthersOn), so no line it wrote holds two chains' interest for them to meet on.
  */
 export function interestWrites({
   draws,
@@ -345,36 +389,34 @@ export function interestWrites({
     }
   }
 
-  const drawn = draws.map((draw) => draw.cents as bigint);
-  const done = written.map((entry) => entry.cents as bigint);
-  const left = new Map([1n, -1n].map((sign) => [sign, towards(drawn, sign) - towards(done, sign)]));
+  const left = leftOf(draws, written);
   const reached = new Set(written.map((entry) => entry.serviceLineId));
   const parts: InterestPart[] = [];
+  // A take-back of a chain that may yet hold interest is not written whole: the payments wait (PR 126 review F1).
+  let waiting = false;
   for (const [sign, draw] of [-1n, 1n].flatMap((ofSign) => draws.filter((item) => item.cents / size(item.cents) === ofSign).map((item) => [ofSign, item] as const))) {
     const chainLines = lines.get(draw.chain);
     if (chainLines === undefined) {
       continue;
     }
-    const given = towards(
-      written.filter((entry) => entry.chain === draw.chain).map((entry) => entry.cents),
-      sign,
-    );
-    const due = maxCents(ZERO_CENTS, minCents(cents(size(draw.cents) - given), cents(left.get(sign) as bigint)));
-    let chosen: readonly { readonly serviceLineId: string; readonly claimId: string }[];
+    const due = owed(draw, sign, written, left.get(sign) as bigint);
+    let chosen: readonly { readonly serviceLineId: string; readonly claimId: string; readonly outOfReach: boolean }[];
     let weights: Cents[];
     let amount: Cents;
     if (sign === 1n) {
-      const forDraw = chainLines.paid.filter((line) => draw.claimIds.includes(line.claimId));
-      const approved = forDraw.filter((line) => line.approved);
-      const paidLines = (approved.length > 0 ? approved : forDraw).filter((line) => !reached.has(line.serviceLineId));
+      if (waiting) {
+        continue;
+      }
+      const paidLines = paidLinesOf(draw, chainLines.paid, reached);
       chosen = paidLines;
       weights = paidLines.map((line) => line.weightCents);
       amount = due;
     } else {
       const heldLines = chainLines.takenBack.filter((line) => !reached.has(line.serviceLineId));
-      chosen = heldLines;
+      chosen = heldLines.map((line) => ({ serviceLineId: line.serviceLineId, claimId: line.claimId, outOfReach: false }));
       weights = heldLines.map((line) => maxCents(line.heldCents, ZERO_CENTS));
       amount = minCents(due, cents(total(weights)));
+      waiting ||= chainLines.mayYetHold && amount + chainLines.unplacedCents < due;
     }
     if (total(weights) === 0n) {
       continue;
@@ -383,15 +425,186 @@ export function interestWrites({
     const allocated = draw.shared || split.filter((share) => share > 0n).length >= 2;
     for (const [index, line] of chosen.entries()) {
       const share = split[index] as Cents;
-      if (share === ZERO_CENTS) {
+      // A line kept off the payment takes its share of nothing (PR 126 review RV-DB2-1).
+      if (share === ZERO_CENTS || line.outOfReach) {
         continue;
       }
       parts.push({ chain: draw.chain, serviceLineId: line.serviceLineId, claimId: line.claimId, cents: signed(share, sign), allocated });
       reached.add(line.serviceLineId);
+      left.set(sign, (left.get(sign) as bigint) - share);
     }
-    left.set(sign, (left.get(sign) as bigint) - total(split));
   }
   return parts;
+}
+
+/**
+ * The lines a paid draw is split over (D5): those matched to a claim it is for, the approved ones when there are any,
+ * less those its PLB L6 has reached. A line kept off the draw (outOfReach) stays among them (PR 126 review RV-DB2-1).
+ */
+function paidLinesOf(draw: InterestDraw, paid: readonly PaidInterestLine[], reached: ReadonlySet<string>): PaidInterestLine[] {
+  const forDraw = paid.filter((line) => draw.claimIds.includes(line.claimId));
+  const approved = forDraw.filter((line) => line.approved);
+  return (approved.length > 0 ? approved : forDraw).filter((line) => !reached.has(line.serviceLineId));
+}
+
+/** What a PLB L6 has left to write of each sign (1n and -1n): its draws of that sign less its entries of that sign, gross (D6). */
+function leftOf(draws: readonly InterestDraw[], written: readonly InterestWritten[]): Map<bigint, bigint> {
+  const drawn = draws.map((draw) => draw.cents as bigint);
+  const done = written.map((entry) => entry.cents as bigint);
+  return new Map([1n, -1n].map((sign) => [sign, towards(drawn, sign) - towards(done, sign)]));
+}
+
+/** What a PLB L6 still owes its draw of `sign` (D6): the draw less what it has given the draw's chain that way, within `left`, what it has left of that sign. */
+function owed(draw: InterestDraw, sign: bigint, written: readonly InterestWritten[], left: bigint): Cents {
+  const given = towards(
+    written.filter((entry) => entry.chain === draw.chain).map((entry) => entry.cents),
+    sign,
+  );
+  return maxCents(ZERO_CENTS, minCents(cents(size(draw.cents) - given), cents(left)));
+}
+
+/**
+ * Where a payment of each chain must not go, read from one PLB L6 (PR 126 review MONEY-R4-1): for each chain the L6
+ * takes interest back from and still owes (its draw less what it has taken back from that chain, within what is left of
+ * its take-backs, as interestWrites reads them), the lines it has written an entry on, in the order it first reached
+ * them. It never writes on those lines again, so interest of that chain landing there could never be taken back by it.
+ * The reconcile keeps every other PLB L6's payment of the chain off them (PaidInterestLine.outOfReach: a line's share is
+ * written nowhere), whatever brought the chain to those lines after the L6 wrote (a person's match by hand, a
+ * written-off line reopened, a later upload), so the chain's interest goes only where the take-back can still follow
+ * it. A take-back written whole, or owed no more because the L6's take-backs are spent, keeps nothing off.
+ */
+export function interestOutOfReach({ draws, written }: { readonly draws: readonly InterestDraw[]; readonly written: readonly InterestWritten[] }): Map<string, string[]> {
+  const left = leftOf(draws, written).get(-1n) as bigint;
+  const reached = [...new Set(written.map((entry) => entry.serviceLineId))];
+  return new Map(draws.filter((draw) => draw.cents / size(draw.cents) === -1n && owed(draw, -1n, written, left) > ZERO_CENTS).map((draw) => [draw.chain, reached]));
+}
+
+/** A PLB L6 as interestUnplaced reads it: its draws under the moment's attribution and every interest entry it has written. */
+export interface InterestOfL6 {
+  readonly draws: readonly InterestDraw[];
+  readonly written: readonly InterestWritten[];
+}
+
+/**
+ * What of `chain`'s interest other PLB L6s paid and can pay to no line, read for a take-back of the chain that may yet
+ * hold interest (PR 126 review R2M2-1; ChainInterestLines.unplacedCents). For each L6 in `payments` (its draws, its
+ * entries, and its draw's lines as the reconcile reads them, each out of reach where another L6's take-back keeps the
+ * chain's payments off it): what it still owes its payment of the chain, within what its draws of that sign leave once
+ * its other payments are written whole, when no line of the payment has a weight, or else the shares that fall on the
+ * lines kept off it (interestWrites writes those nowhere). Less what each L6 in `takeBacks` still owes of its take-back
+ * of the chain, which is taken to find that interest first; never below zero. That interest was never credited, so a
+ * take-back that owes no more than it has nothing more to find, and every count errs toward the take-back waiting.
+ */
+export function interestUnplaced({
+  chain,
+  payments,
+  takeBacks,
+}: {
+  readonly chain: string;
+  readonly payments: readonly (InterestOfL6 & { readonly paid: readonly PaidInterestLine[] })[];
+  readonly takeBacks: readonly InterestOfL6[];
+}): Cents {
+  const drawOfChain = (draws: readonly InterestDraw[], sign: bigint) => draws.find((item) => item.chain === chain && item.cents / size(item.cents) === sign);
+  let unplaced = 0n;
+  for (const { draws, written, paid } of payments) {
+    const draw = drawOfChain(draws, 1n);
+    if (draw === undefined) {
+      continue;
+    }
+    const left = leftOf(draws, written).get(1n) as bigint;
+    // What its other payments still owe their chains, each taken to be written whole first (a take-back's draw, below
+    // zero, owes none): read once, in one pass over its entries, so a check paying many chains reads each take-back of
+    // them in time linear in its size.
+    const given = new Map<string | null, bigint>();
+    for (const entry of written) {
+      given.set(entry.chain, (given.get(entry.chain) ?? 0n) + maxCents(entry.cents, ZERO_CENTS));
+    }
+    const others = total(draws.filter((item) => item !== draw).map((item) => maxCents(ZERO_CENTS, cents(item.cents - (given.get(item.chain) ?? 0n)))));
+    const due = owed(draw, 1n, written, maxCents(ZERO_CENTS, cents(left - others)));
+    const lines = paidLinesOf(draw, paid, new Set(written.map((entry) => entry.serviceLineId)));
+    const weights = lines.map((line) => line.weightCents);
+    if (total(weights) === 0n) {
+      unplaced += due;
+      continue;
+    }
+    const split = allocateByWeight(due, weights);
+    for (const [index, line] of lines.entries()) {
+      if (line.outOfReach) {
+        unplaced += split[index] as bigint;
+      }
+    }
+  }
+  for (const { draws, written } of takeBacks) {
+    const draw = drawOfChain(draws, -1n);
+    if (draw !== undefined) {
+      unplaced -= owed(draw, -1n, written, leftOf(draws, written).get(-1n) as bigint);
+    }
+  }
+  return maxCents(ZERO_CENTS, cents(unplaced));
+}
+
+/**
+ * What lines hold of each chain's interest, net and before the floor: by chain, then by line, each in the order the
+ * entries first reach it (addInterestHeld). A reconcile pass builds it once from the entries it reads and adds each
+ * entry it writes, so a take-back reads its chain's lines without reading every entry again (PR 126 review F-M2-2).
+ */
+export type InterestHeldSums = Map<string, Map<string, bigint>>;
+
+/**
+ * Adds `entries` to `sums` (D5): each interest entry from a match naming a claim of a chain (`chainOfMatch`, by match),
+ * and each correction under the entry it corrects, to that chain's line. A match that names no claim (one written
+ * before docs/adr/0084 from the PLB L6 alone) is in no chain. `entries` holds every entry a correction among them
+ * corrects. With `byLine`, the same sums are kept there by line, then by chain, for interestOfOthersOn.
+ */
+export function addInterestHeld(sums: InterestHeldSums, entries: readonly MatchedLedgerEntry[], chainOfMatch: ReadonlyMap<string, string>, byLine?: InterestHeldSums): void {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  for (const entry of entries) {
+    const root = correctedEntry(entry, byId) as MatchedLedgerEntry;
+    const chain = chainOfMatch.get(root.matchId);
+    if (root.stage !== 'interest' || root.serviceLineId === null || chain === undefined) {
+      continue;
+    }
+    const ofChain = sums.get(chain) ?? new Map<string, bigint>();
+    sums.set(chain, ofChain);
+    ofChain.set(root.serviceLineId, (ofChain.get(root.serviceLineId) ?? 0n) + entry.amountCents);
+    if (byLine !== undefined) {
+      const onLine = byLine.get(root.serviceLineId) ?? new Map<string, bigint>();
+      byLine.set(root.serviceLineId, onLine);
+      onLine.set(chain, (onLine.get(chain) ?? 0n) + entry.amountCents);
+    }
+  }
+}
+
+/**
+ * Whether a line holds interest of a chain other than `chain` (PR 126 review RVM5-1): a net above zero, read chain by
+ * chain from `byLine`, addInterestHeld's sums by line. One PLB L6 writes one entry on a line, so two chains' interest
+ * held on one line could not both be taken back by a PLB L6 netting both. The reconcile therefore keeps a payment of a
+ * chain off a line while another chain holds interest there (PaidInterestLine.outOfReach: the line's share is written
+ * nowhere), and a line holds one chain's interest at a time; the share lands in a later walk or reconcile once the
+ * line holds none of another's, if its PLB L6 still owes it. The figure errs low by that share until then, for good
+ * while the other chain's interest stays, and is never above the cash.
+ */
+export function interestOfOthersOn(byLine: ReadonlyMap<string, ReadonlyMap<string, bigint>>, chain: string, serviceLineId: string): boolean {
+  const onLine = byLine.get(serviceLineId);
+  if (onLine === undefined) {
+    return false;
+  }
+  for (const [other, amount] of onLine) {
+    if (other !== chain && amount > 0n) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** What each line holds of the chain's interest in `sums`, in their order, floored at zero (D5). */
+export function interestHeldOf(sums: ReadonlyMap<string, ReadonlyMap<string, bigint>>, chain: string): InterestHolding[] {
+  return [...(sums.get(chain) ?? [])].map(([serviceLineId, amount]) => ({ chain, serviceLineId, heldCents: maxCents(cents(amount), ZERO_CENTS) }));
+}
+
+/** What one line holds of the chain's interest in `sums`, floored at zero: zero when it holds none (D5). */
+export function interestHeldOn(sums: ReadonlyMap<string, ReadonlyMap<string, bigint>>, chain: string, serviceLineId: string): Cents {
+  return maxCents(cents(sums.get(chain)?.get(serviceLineId) ?? 0n), ZERO_CENTS);
 }
 
 /**
@@ -401,17 +614,7 @@ export function interestWrites({
  * a correction among them corrects.
  */
 export function interestHeld(entries: readonly MatchedLedgerEntry[], chainOfMatch: ReadonlyMap<string, string>): InterestHolding[] {
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  const held = new Map<string, Map<string, bigint>>();
-  for (const entry of entries) {
-    const root = correctedEntry(entry, byId) as MatchedLedgerEntry;
-    const chain = chainOfMatch.get(root.matchId);
-    if (root.stage !== 'interest' || root.serviceLineId === null || chain === undefined) {
-      continue;
-    }
-    const ofChain = held.get(chain) ?? new Map<string, bigint>();
-    held.set(chain, ofChain);
-    ofChain.set(root.serviceLineId, (ofChain.get(root.serviceLineId) ?? 0n) + entry.amountCents);
-  }
-  return [...held].flatMap(([chain, ofChain]) => [...ofChain].map(([serviceLineId, amount]) => ({ chain, serviceLineId, heldCents: maxCents(cents(amount), ZERO_CENTS) })));
+  const sums: InterestHeldSums = new Map();
+  addInterestHeld(sums, entries, chainOfMatch);
+  return [...sums.keys()].flatMap((chain) => interestHeldOf(sums, chain));
 }

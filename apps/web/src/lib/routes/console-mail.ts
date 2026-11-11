@@ -197,7 +197,7 @@ export const resumeMailStream = platformRoute({
   params: z.object({}),
   input: z.object({
     stream: z.literal('screening', { message: 'only the screening stream pauses' }),
-    reason: z.enum(MAIL_RESUME_REASONS, { message: 'say why: the cause is fixed, or it was a false alarm' }),
+    reason: z.enum(MAIL_RESUME_REASONS, { message: 'choose why it can resume; the cause is fixed, or it was a false alarm' }),
   }),
   audit: { action: 'mail_stream_resume_requested', objectType: 'mail_stream' },
   handle: async ({ scope, input }): Promise<MutationResult> => {

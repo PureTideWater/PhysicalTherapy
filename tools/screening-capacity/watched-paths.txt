@@ -464,8 +464,11 @@ packages/packets/src/roles-words/labels.ts
 packages/packets/src/roles-words/prose.ts
 packages/packets/src/roles.ts
 packages/packets/src/scan.ts
+packages/packets/src/serialize.ts
+packages/packets/src/verifier/contradiction.ts
 packages/packets/src/verifier/index.ts
 packages/packets/src/verifier/mismatches.ts
+packages/packets/src/verifier/template.ts
 packages/packets/src/windows.ts
 packages/packets/src/words-version.ts
 packages/pricing/src/dates.ts

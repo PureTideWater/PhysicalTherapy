@@ -101,7 +101,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
                 inputMode="numeric"
                 autoComplete="off"
                 maxLength={10}
-                hint="Five digits, or ZIP+4 such as 27601-1234. A ZIP that needs its ZIP+4, or one the release in force does not list, is accepted and its status shown."
+                hint="Five digits, or a ZIP+4 such as 27601-1234. A ZIP that needs its ZIP+4, or one the release in force does not list, is accepted and its status shown."
               />
             </ActionForm>
           </CardContent>

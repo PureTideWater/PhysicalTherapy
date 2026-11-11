@@ -45,7 +45,7 @@ import { type Environment, SCREENING_LEGAL_SURFACES, showsLegalSurfaces } from '
 import { platformRoute, publicRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
 import { BILLING_ARRANGEMENT_LABELS, PROSPECT_SOURCE_OPTIONS } from '../routes/onboarding';
-import { optionalText } from '../routes/schemas';
+import { FILL_THIS_IN, NO_PATIENT_INFORMATION, atMostCharacters, optionalText } from '../routes/schemas';
 import type { ScreeningLaunch } from '../server/config';
 import { ZIP_CODE_FORMAT, parseZipCode } from '../zip';
 import { ADDRESS_REFUSED, MAILBOX_UNCONFIRMED, addressHint } from './address';
@@ -120,7 +120,7 @@ import { checkScreeningAddress } from './validation';
 export const SCREENING_EMAIL = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 /** A form field as the wrapper receives it: bounded text, blank when missing, so the rate limit counts first. */
-const field = (max: number) => z.string().max(max, `at most ${String(max)} characters`).default('');
+const field = (max: number) => z.string().max(max, atMostCharacters(max)).default('');
 
 export interface ScreeningLimits {
   readonly maxRows: number;
@@ -172,6 +172,12 @@ export interface ScreeningPageData {
    * browser leaves a Medicare row of any other quarter out. None while screening is closed.
    */
   readonly contentQuarters: readonly ContentQuarterRun[];
+  /**
+   * The application's own origin (APP_ORIGIN, services.origin): the address the origin check compares a post with. The
+   * upload form names it when that check refuses an upload ("Open {appOrigin}/screening"), never the browser's own
+   * location, which on a translated, proxied or saved copy names the copy. Configuration, never a person's data.
+   */
+  readonly appOrigin: string;
 }
 
 async function withClient<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeClient) => Promise<T>): Promise<T> {
@@ -216,13 +222,14 @@ export const screeningPage = publicRoute({
       serverTime: now.toISOString(),
       sources: PROSPECT_SOURCE_OPTIONS,
       contentQuarters: releaseNo === null ? [] : await withClient(services.pool, (client) => contentQuarters(client, releaseNo, now)),
+      appOrigin: services.origin,
     };
   },
 });
 
-/** The column a server message names: its position, never the header the person typed. */
+/** The column a server message names, lower-case: its position ("column 4"), never the header the person typed. */
 function columnName(reason: ScreeningRejection): string {
-  return reason.column === undefined ? 'A column' : `Column ${String(reason.column)}`;
+  return reason.column === undefined ? 'a column' : `column ${String(reason.column)}`;
 }
 
 const FIELD_NAMES: Readonly<Record<ScreeningColumn, string>> = {
@@ -236,43 +243,56 @@ const FIELD_NAMES: Readonly<Record<ScreeningColumn, string>> = {
   claim_count: 'claim count',
 };
 
-/** A refusal's reason as the server words it: positions, rows, fields and kinds only. */
+/**
+ * A refusal's reason as the server words it: positions, rows, fields and kinds only. Each is one lower-case sentence
+ * read after "File to screen:" (the issue's field is `upload`), with no colon of its own: what is wrong, the row or column
+ * first as its subject, then the step, joined by a semicolon (ADR 0077). The file is never uploaded, so the step is to
+ * choose it again, never to upload it again.
+ */
 export function screeningReasonMessage(reason: ScreeningRejection): string {
-  const row = reason.row === undefined ? 'A row' : `Row ${reason.row.toLocaleString('en-US')}`;
+  const row = reason.row === undefined ? 'a row' : `row ${reason.row.toLocaleString('en-US')}`;
+  const column = columnName(reason);
   const fieldName = reason.field === undefined ? 'a column' : FIELD_NAMES[reason.field];
   switch (reason.code) {
     case 'phi_column':
-      return `${columnName(reason)} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove it and upload again`;
+      return `${column} holds ${reason.phi === undefined ? 'patient information' : PHI_KIND_LABELS[reason.phi]}; remove the column, then choose the file again`;
     case 'unknown_column':
-      return `${columnName(reason)} is not one of the eight screening columns; remove it`;
+      return `${column} is not one of the eight screening columns; remove it`;
     case 'duplicate_column':
-      return `${columnName(reason)} is a second ${fieldName} column; keep one`;
+      return `${column} is a second ${fieldName} column; keep one`;
     case 'missing_column':
-      return `The file has no ${fieldName} column; add it`;
+      return `the file has no ${fieldName} column; add it`;
     case 'row_shape':
-      return `${row} does not have one cell for each column`;
+      return `${row} does not have one cell for each column; save the file again as CSV, then choose it again`;
     case 'invalid_value':
-      return `${row}: the ${fieldName} is not in the screening’s format`;
+      // No article before the field's name ("the allowed total column"), and its own words with no field.
+      return reason.field === undefined
+        ? `${row} has a value that is not in the screening’s format; correct it, or leave the row out`
+        : `${row} has a value in the ${FIELD_NAMES[reason.field]} column that is not in the screening’s format; correct it, or leave the row out`;
     case 'band_holds_date':
-      return `${row}: ${columnName(reason).toLowerCase()} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1`;
+      return `${row}’s ${reason.column === undefined ? 'service band column' : column} holds dates of service; a screening takes a calendar quarter, such as 2026-Q1, so remove the dates, then choose the file again`;
     case 'band_in_future':
-      return `${row}: the service band’s quarter has not started yet`;
+      return `${row}’s service band is a quarter that has not started yet; leave the row out`;
     case 'band_outside_content':
       return reason.row === undefined
-        ? 'Every Medicare row is in a quarter outside the Medicare content PaidWhole has loaded'
-        : `${row}: the service band’s quarter is outside the Medicare content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out`;
+        ? 'every Medicare row is in a quarter outside the Medicare content PaidWhole has loaded, so there is nothing to screen; choose a file with rows in a screened quarter'
+        : `${row}’s service band is a quarter outside the Medicare content PaidWhole has loaded, so a Medicare row in it cannot be screened; leave it out`;
     case 'duplicate_row':
-      return `${row} repeats row ${reason.first_row === undefined ? 'above' : reason.first_row.toLocaleString('en-US')}; add the two into one row`;
+      return `${row} repeats ${reason.first_row === undefined ? 'a row above' : `row ${reason.first_row.toLocaleString('en-US')}`}; add the two into one row`;
     case 'no_rows':
-      return 'The file has no rows under its header';
-    case 'too_many_rows':
-      return `A screening takes at most ${SCREENING_MAX_ROWS.toLocaleString('en-US')} rows`;
+      return 'the file has no rows under its header; add the rows, then choose the file again';
+    case 'too_many_rows': {
+      // Never a second screening: a later one replaces the earlier (the upload form's About card), so the step fits one file.
+      const max = SCREENING_MAX_ROWS.toLocaleString('en-US');
+      return `a screening takes at most ${max} rows; add together rows that repeat a code, modifiers, units, place of service, payer product and quarter, or leave rows out, such as a quarter or a payer product, until ${max} or fewer remain, then choose the file again`;
+    }
     case 'row_count_mismatch':
-      return 'The rows sent do not match the file; choose the file again';
+      return 'the rows sent do not match the file; choose the file again';
     case 'too_few_claim_lines': {
       const floor = String(SCREENING_MIN_CLAIM_LINES);
-      const why = `a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care`;
-      return reason.row === undefined ? `Every row sums fewer than ${floor} claim lines, so there is nothing to screen: ${why}` : `${row} sums fewer than ${floor} claim lines; ${why}: leave it out`;
+      return reason.row === undefined
+        ? `every row sums fewer than ${floor} claim lines, so there is nothing to screen; a screening takes a row of at least ${floor} claim lines, because a row of fewer can describe one patient’s care, so choose a file with rows of at least ${floor} claim lines`
+        : `${row} sums fewer than ${floor} claim lines; a screening takes rows of at least ${floor}, because fewer can describe one patient’s care, so leave it out`;
     }
   }
 }
@@ -290,8 +310,14 @@ interface ProspectFields {
   readonly referringFirm: string | null;
 }
 
-/** The message a form gives text that looks like an identifier, a date or a phone number. */
-export const NO_PATIENT_INFORMATION = 'this form takes no patient information: remove anything that looks like an identifier, a date or a phone number';
+/** The message a form gives text that looks like an identifier, a date or a phone number: the public forms' one (schemas.ts). */
+export { NO_PATIENT_INFORMATION };
+
+/** A name or firm over its 200 characters: requiredText(200)'s words, as the audit request says them. */
+const AT_MOST_200 = atMostCharacters(200);
+
+/** An address the mail service cannot send to: what to enter, and why it matters. */
+const CONTACT_EMAIL = 'enter an email address; the result’s link is sent there';
 
 /** How the prospect heard of us, as the form sent it: blank is none; anything off the list is an issue. */
 export function heardFromField(text: string, issues: Issue[]): ProspectSource | null {
@@ -313,7 +339,7 @@ export function referringFirmField(text: string, issues: Issue[]): string | null
     return null;
   }
   if (value.length > 200) {
-    issues.push({ field: 'referringFirm', message: 'the firm’s name, at most 200 characters' });
+    issues.push({ field: 'referringFirm', message: AT_MOST_200 });
     return null;
   }
   if (textPhiFindings(value).length > 0) {
@@ -335,7 +361,7 @@ function prospectFields(input: {
   const issues: Issue[] = [];
   const practiceName = input.practiceName.trim();
   if (practiceName === '' || practiceName.length > 200) {
-    issues.push({ field: 'practiceName', message: 'the practice’s name, at most 200 characters' });
+    issues.push({ field: 'practiceName', message: practiceName === '' ? FILL_THIS_IN : AT_MOST_200 });
   } else if (textPhiFindings(practiceName).length > 0) {
     issues.push({ field: 'practiceName', message: NO_PATIENT_INFORMATION });
   }
@@ -345,11 +371,11 @@ function prospectFields(input: {
   }
   const zipCode = parseZipCode(input.zip);
   if (zipCode === null) {
-    issues.push({ field: 'zip', message: `the practice’s ZIP code: ${ZIP_CODE_FORMAT}` });
+    issues.push({ field: 'zip', message: ZIP_CODE_FORMAT });
   }
   const contactEmail = input.contactEmail.trim().toLowerCase();
   if (!SCREENING_EMAIL.test(contactEmail) || contactEmail.length > 254 || contactEmail.indexOf('@') > 64) {
-    issues.push({ field: 'contactEmail', message: 'an email address: the result’s link is sent there' });
+    issues.push({ field: 'contactEmail', message: CONTACT_EMAIL });
   }
   const heardFrom = heardFromField(input.heardFrom, issues);
   const referringFirm = referringFirmField(input.referringFirm, issues);
@@ -367,7 +393,8 @@ function reasonIssues(reasons: readonly ScreeningRejection[], total: number): Is
   }
   const kept = issues.slice(0, SCREENING_MAX_REASONS - 1);
   const more = total - kept.length;
-  return [...kept, { field: 'upload', message: `And ${more.toLocaleString('en-US')} more ${more === 1 ? 'problem' : 'problems'} like these` }];
+  const one = more === 1;
+  return [...kept, { field: 'upload', message: `and ${more.toLocaleString('en-US')} more ${one ? 'problem' : 'problems'} like these; fix ${one ? 'it' : 'them'} too, then choose the file again` }];
 }
 
 const SCREENING_CLOSED: Issue = { field: 'input', message: 'screening is not open yet; try again later' };
@@ -611,7 +638,7 @@ export const screeningSubmit = publicRoute({
     // address or the domain (the database sums the account's rows of the day by it; the founder's Q7).
     const account = screeningRateAccount(input.contactEmail);
     if (account === null) {
-      throw new InputError([{ field: 'contactEmail', message: 'an email address: the result’s link is sent there' }]);
+      throw new InputError([{ field: 'contactEmail', message: CONTACT_EMAIL }]);
     }
     const rateAccountSubject = rateSubjectHash(services.sealer, 'screening', 'account', account);
     // The client the rate limiter counts, as it keeps it: its keyed hash, or null where no trusted proxy names one. The
@@ -1269,13 +1296,13 @@ export const screeningConvert = publicRoute({
     const issues: Issue[] = [];
     const contactName = input.contactName.trim();
     if (contactName === '' || contactName.length > 200) {
-      issues.push({ field: 'contactName', message: 'your name, at most 200 characters' });
+      issues.push({ field: 'contactName', message: contactName === '' ? FILL_THIS_IN : AT_MOST_200 });
     } else if (textPhiFindings(contactName).length > 0) {
       issues.push({ field: 'contactName', message: NO_PATIENT_INFORMATION });
     }
     const locations = /^[0-9]{1,4}$/.test(input.locations.trim()) ? Number(input.locations.trim()) : 0;
     if (locations < 1 || locations > 1000) {
-      issues.push({ field: 'locations', message: 'a whole number of locations from 1 to 1,000' });
+      issues.push({ field: 'locations', message: 'enter a whole number from 1 to 1,000' });
     }
     const payers = input.payers;
     if (payers.length < 1 || payers.length > 50 || payers.some((name) => name.length > 120)) {

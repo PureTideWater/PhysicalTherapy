@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -6,6 +7,15 @@ import { type CDPSession, type Page, expect } from '@playwright/test';
 
 import { SYNTHETIC_PRACTICES, personaEmail, personaPassword, personaTotpCode } from '../scripts/synthetic-personas';
 import { E2E_DEV_AUTH_DIR, e2eDatabaseUrl } from './env';
+
+/**
+ * A run's tag for a synthetic name or address: 8 lower-case letters from randomBytes, never a digit. A hex slice of a
+ * UUID is all digits about once in 40,000 runs, and eight digits read as a date to the no-patient-information check,
+ * which then refuses the journey's own synthetic name.
+ */
+export function runTag(): string {
+  return Array.from(randomBytes(8), (byte) => String.fromCharCode(97 + (byte % 26))).join('');
+}
 
 /** The e2e database, as its superuser: to find records and to move clocks the tests cannot wait for. */
 export async function withDatabase<T>(run: (client: DatabaseClient) => Promise<T>): Promise<T> {

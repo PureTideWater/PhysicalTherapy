@@ -62,21 +62,24 @@ artifact.
 | `content-calendar`, `check` | daily at 07:17 UTC, on request, and on a push to `claude/build-platform` or a pull request touching the calendar, `records.ts`, `tools/content-calendar` or `content/`: `tools/content-calendar/index.ts` over the calendar, the newest published release's `COVERAGE.md`, the prepared releases, the drafts and the source pages; the findings to its summary and to this run's `findings` artifact, kept one day (docs/runbooks/content-updates.md). Read-only, no secret | 15 min |
 | `content-calendar`, `handoff` | on a pull request only, after the check: downloads this run's `findings` artifact and checks it reads as one findings list (a single JSON document, read whole) with the notify job's own lines, logging its count, size and SHA-256, each failed try logged as one fixed line with its exit status and none of gh's output, which can name the artifact's signed address. It holds `actions: read` alone, checks nothing out, runs no repository code and writes nothing | 5 min |
 | `content-calendar`, `notify` | not on a pull request: one `content-due` issue per finding not already open under the same title (every page of the open issues read), at most 20 new ones a run with the rest listed in one "findings not filed" issue, or one saying the check failed or handed on no findings list, commented on at each later failing run. It alone holds `issues: write`, with `actions: read` to download this run's `findings` artifact, each failed try logged as one fixed line with its exit status and none of gh's output, which can name the artifact's signed address; it checks nothing out, runs no action and runs no repository code | 5 min |
-| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built and its headless shell held to `browser.json` (`browser-build.ts --image`), the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07), then F's reconcile of a SYNTHETIC posting export (step 7b, on a practice of its own at CAS-42.3's 2,000 lines until SUITE-CAP-3; the summary's "Known gap" line), then the large jobs together (A's second report, D's triage, E's price job and C's second four parses, queued at once; CAS-42); it fails on a measured job that completed only on a later attempt, a backend above 64 advisory locks at any sample, a job's live heap above 420 MiB (75% of the worker's 560 MiB `--max-old-space-size`) or a measured job with no `job heap` line, the worker's working set (`memory.current` less `inactive_file`) above 90% of the task over the run or in a phase or chain job, any `memory.events` oom or oom_kill during the run, any job not completed, A's triage making other than the lines its scenario makes actionable (each of its contract lines at least the line materiality short, read from its priced lines; none of its Medicare Advantage lines) or none, F's triage making other than each of its lines actionable, or F's reconcile posting other than each of them in full (its contract pays a fixed rate a unit and states its dispute window, cited and verified; the monitoring chain the reprocessing parses queue is cancelled before it starts); its report kept as `release-capacity` | 180 min |
+| `release-capacity`, `capacity` | weekly on Tuesday at 03:29 UTC and on request: the worker image built and its headless shell held to `browser.json` (`browser-build.ts --image`), the quarterly scale release 900110 built outside the repository, and `tools/release-capacity/run.ts`, the real-size price job, triage and reports at the worker task's limits (RCC-07), then F's reconcile of a SYNTHETIC posting export (step 7b, on a practice of its own at 10,000 lines until Lane A's ledger trigger fixes land; ADR 0087; the summary's "Known gap" line), then the large jobs together (A's second report, D's triage, E's price job and C's second four parses, queued at once; CAS-42); it fails on a measured job that completed only on a later attempt, a backend above 64 advisory locks at any sample, a job's live heap above 420 MiB (75% of the worker's 560 MiB `--max-old-space-size`) or a measured job with no `job heap` line, the worker's working set (`memory.current` less `inactive_file`) above 90% of the task over the run or in a phase or chain job, any `memory.events` oom or oom_kill during the run, any job not completed, A's triage making other than the lines its scenario makes actionable (each of its contract lines at least the line materiality short, read from its priced lines; none of its Medicare Advantage lines) or none, F's triage making other than each of its lines actionable, or F's reconcile posting other than each of them in full (its contract pays a fixed rate a unit and states its dispute window, cited and verified; the monitoring chain the reprocessing parses queue is cancelled before it starts); its report kept as `release-capacity` | 180 min |
 | `release-capacity`, `notify` | on its failure or cancel (the 180-minute timeout among them): opens or comments on the issue "Release capacity test failing"; on a pass with an advisory (the windows query over its 5 s budget): "Release capacity advisory" (label `release-capacity`), the advisory lines in the body. It alone holds `issues: write` and checks nothing out | 5 min |
 
 Reading a red `release-capacity` run (SUITE-CAP-1b, ADR 0083). The summary's table names each job with its phase,
 "Attempts" and "Live heap" (the peak beside the limit the check holds it to), and the "Memory by kind" table gives the
 whole run's and each phase's and chain job's working set; a failing check names the job by its label in the run
 (`A triage`), its type and its pg-boss ID (also in release-capacity.json, `jobs[].jobId`), and the phase it ran in.
-Every summary, red or green, also prints a "Known gap" line: step 7b reconciles F, a practice of its own at CAS-42.3's
-2,000 lines, not A's month, until SUITE-CAP-3 lands and moves it back (ADR 0083). It is not a failure. Beside the
-full-size figure it gives this run's F reconcile time against the job's 900 s attempt, with its share and the seconds to
-spare: that margin is what SUITE-CAP-3's item leaves step 7b (CI measured 526.3 and 615.7 s on 3ac856d5). A margin that
-shrinks run over run points at the runner or at SUITE-CAP-3's code, never at a longer attempt; past 900 s pg-boss
-expires the attempt, and the run fails on the job's later attempt. pg-boss times only a job's last attempt, so when a
-later attempt completed F's reconcile the line prints no margin: it names the attempt and what the earlier attempts
-logged (`JOB_EXPIRED` for one past its 900 s), since the first attempt is the one that did not fit.
+Every summary, red or green, also prints a "Known gap" line: step 7b reconciles F, a practice of its own at 10,000
+lines, not A's month, until Lane A's ledger trigger fixes land, whose pull request moves it back to A as its acceptance
+step (SUITE-CAP-3's D14, ADR 0087 and ADR 0083's dated note of 2026-11-07). It is not a failure. Beside A's full month's
+measured figure (its 30,795 actionable lines in 1,653 s, 89% of it in the ledger triggers) it gives this run's F reconcile time
+against the job's 900 s attempt, with its share and the seconds to spare. F's size was chosen for its first attempt to
+complete within 360 s (SUITE-CAP-3 measured 220 s on 4 CPUs); 360 s is a sizing bound, not a check, so a run past it
+still passes and the line shows its time. A margin that shrinks run over run points at the runner, the reconcile's
+code or the ledger triggers, never at a longer attempt; past 900 s pg-boss expires the attempt, and the run fails on the
+job's later attempt. pg-boss times only a job's last attempt, so when a later attempt completed F's reconcile the line
+prints no margin: it names the attempt and what the earlier attempts logged (`JOB_EXPIRED` for one past its 900 s),
+since the first attempt is the one that did not fit.
 - **A job completed on attempt 2 or 3.** An earlier attempt failed and pg-boss retried it, which a person in production
   would have waited on. Each failed attempt logs `job attempt failed` (warn) with the job's ID and type and an
   `error_code`, never the error's text (`attemptErrorCode`, apps/worker/src/worker.ts): `DB_POOL_TIMEOUT` means the job
@@ -278,7 +281,7 @@ there: actions on Tuesdays at 04:37 UTC, the two images and compose's postgres o
 at 04:31 (up to eight groups). Each runs every workflow a lane's pull request runs: ci.yml (about 38 to 39
 runner-minutes), the capacity measurement on a watched path (every npm and actions pull request touches one), and
 mutation only for what a shard reads (docs/adr/0066, Part 7): every shard (about 54 runner-minutes with the seven
-shards before #84; eighteen since `packets-figures`, re-measured on the push runs) when it moves the
+shards before #84; eighteen since `packets-figures`, nineteen since `packets-template`, re-measured on the push runs) when it moves the
 test tooling (typescript among it), `packageManager` or an artifact action; a package's shards when the lockfile moves,
 or a catalog or manifest line names, a package its closure imports; `money-ledger` alone, about 4.5 minutes, for an
 actions pull request that moves only step SHAs; and nothing when no closure and none of the mutation tooling imports
@@ -589,8 +592,8 @@ checks above.
 
 ### What runs
 
-- **On a push to `claude/build-platform`, weekly, and on request:** every package, every shard (eighteen since `packets-figures`;
-  seventeen with #84, seven before it).
+- **On a push to `claude/build-platform`, weekly, and on request:** every package, every shard (nineteen since `packets-template`;
+  eighteen since `packets-figures`, seventeen with #84, seven before it).
 - **On a pull request:** every shard of each package whose closure the change touches, and nothing else. The
   `changes` job prints which packages it chose and why (the first changed paths that reach each one) to its log and
   summary (`tools/stryker/affected.ts`). A package's closure is:
@@ -671,11 +674,12 @@ checks above.
 | `packets-words-days` | the day counts', pages' and percentages' cues (`roles-words/days.ts`) | 3 min 34 s (local, 2026-11-04) |
 | `packets-words-dates` | the dates' cues (`roles-words/dates.ts`) | 3 min 14 s (local, 2026-11-04) |
 | `packets-words-prose` | the prose words (`roles-words/prose.ts`, `index.ts`) | 4 min 35 s (local, 2026-11-04) |
-| `packets-verifier` | the verifier's check (`verifier/`) and the text it reads (`readable.ts`) | 8 min 12 s (local, 2026-11-04) |
+| `packets-verifier` | the verifier's check (`verifier/index.ts`, `verifier/mismatches.ts`) and the text it reads (`readable.ts`) | 8 min 12 s (local, 2026-11-04) |
 | `packets-facts` | the facts a narrative is held to (`facts.ts`), the payer's names (`payer.ts`) and the placeholders | 6 min 38 s (local, 2026-11-04) |
 | `packets-rest` | the rest of packets' set: the arithmetic (`assemble.ts`, `calculation.ts`, `interest.ts`, `dates.ts`, `windows.ts`) | 6 min 7 s (local, 2026-11-04) |
 | `packets-explain` | the calculation words (`explain.ts`, `explain/`, `words-version.ts`; docs/adr/0072) | 8 min 40 s (local, 2026-11-04) |
 | `packets-figures` | a narrative's facts' catalog and renderer (`fact-catalog.ts`, `fact-words.ts`, `render.ts`) | 5 min 46 s (local, 2026-11-05) |
+| `packets-template` | a narrative template's check at verifier format /3 (`verifier/template.ts`, `verifier/contradiction.ts`), its serialization (`serialize.ts`) and the code's draft at /2 and /3 (`draft.ts`; docs/adr/0089) | 2 min 57 s (local, 2026-11-07) |
 | `pricing-engine` | pricing's `engine.ts` | 7 min 25 s |
 | `pricing-recompute` | pricing's `recompute.ts` | 4 min 9 s |
 | `pricing-rest` | the rest of pricing | 5 min 38 s |
@@ -684,8 +688,8 @@ The times of `money-ledger` and pricing's three shards are each shard job's, set
 `stryker/shards.json` last changed before #84 (#51's merge, 2026-10-26); those seven shards took 53.4 runner-minutes,
 54.2 with `changes` and `mutation`. #84 split packets' three shards into thirteen (docs/adr/0086), so the packets rows
 are Stryker's own times in #84's one full local suite (4 shared CPUs, 2026-11-04) until push runs measure them, and
-the shards' total (eighteen with `packets-figures`) is re-measured on the push runs after #84's merge. `packets-figures` (the
-eighteenth) is its Stryker time in its own local run, on the same machine, until push runs measure it.
+the shards' total (nineteen with `packets-template`) is re-measured on the push runs after #84's merge. `packets-figures` (the
+eighteenth) and `packets-template` (the nineteenth) are each its Stryker time in its own local run, on the same machine, until push runs measure it.
 
 Each shard job runs the canary first (`tools/stryker/canary`, about 7 s). It then runs its packages
 (`pnpm -s exec tsx tools/stryker/shards.ts <shard>`), prints its files' scores and survivors, and uploads

@@ -176,6 +176,13 @@ describe('the route-handler adapter', () => {
     expect(await response.json()).toEqual({ status: 'rate_limited', retryAfterSeconds: 42 });
   });
 
+  it('answers a busy refusal with 409, a short wait and the status alone (docs/adr/0092)', async () => {
+    const response = outcomeResponse({ status: 'busy' }, new ResponseCookies(null));
+    expect(response.status).toBe(409);
+    expect(response.headers.get('retry-after')).toBe('5');
+    expect(await response.json()).toEqual({ status: 'busy' });
+  });
+
   it('passes the URL’s and the route’s parameters and a JSON body to the route', async () => {
     const seen: unknown[] = [];
     const route = publicRoute({
@@ -711,7 +718,7 @@ describe('the development outbox', () => {
       subject: 'Your PaidWhole code',
       body: [
         'Your code to choose a new PaidWhole password is 012345.',
-        'Enter it on the page that sent it within 15 minutes. If you did not ask for it, ignore this email: your password is unchanged.',
+        'Enter it on the page that sent it within 15 minutes. If you asked more than once, use the newest code. If you did not ask for it, ignore this email: your password is unchanged.',
         'PaidWhole never asks you to send your password or a code to anyone, by email, phone or chat: enter a code only on the PaidWhole page that asked for it.',
       ].join('\n\n'),
       html: cognitoMessage('CustomMessage_ForgotPassword', { code: '012345' }).html,
