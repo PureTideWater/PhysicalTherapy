@@ -2,7 +2,6 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, holdsNameOrNumber, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
-import { timed } from './test-support/time-budget';
 
 import { timed } from './test-support/time-budget';
 
