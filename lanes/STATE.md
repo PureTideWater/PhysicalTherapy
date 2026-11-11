@@ -39,8 +39,8 @@ own status file and `CLAUDE.md`, not the long history files.
 - Report to the orchestrator only merges, blockers and founder asks, in one line each.
 
 ## Base and open PRs (live 2026-11-11 05:40 UTC)
-- `claude/build-platform` is at **2e26a416** (#126, merged 2026-11-11 05:37 UTC with the founder's approval line; before it #137 as 4fe8bcca, #129 as ca504674, #138 as ef3e8d20, #136 as 06cde5eb and #134 as 994ee303). Every open PR merges this base before its last push.
-- **#140**, password-changed-notice (schema; draft): head c82d2c99 (one stale test fixed by W9; no schema change). **The suggested approval line is posted (09:36 UTC):** https://github.com/PureTideWater/PhysicalTherapy/pull/140#discussion_r4536232884 . It waits for the founder's "Commit suggestion"; the co-founder was told at 09:40 UTC. **W10** merges after it, then opens item 28's PR from WIP 5222fe59 (case (d)'s fix built and reviewed in it).
+- `claude/build-platform` is at **342d6144** (#140, password-changed-notice, merged 2026-11-11 10:06 UTC with the founder's committed line 7e05e0c6). Before it: 2e26a416 (#126, merged 2026-11-11 05:37 UTC with the founder's approval line; before it #137 as 4fe8bcca, #129 as ca504674, #138 as ef3e8d20, #136 as 06cde5eb and #134 as 994ee303). Every open PR merges this base before its last push.
+- **#140: merged as 342d6144.** Next in the schema chain: item 28's PR, which **W10** opens from WIP 01746e21 and whose approval line it posts; the founder's line is then due, with the fact that its rule holds for an account only once the Cognito client is confidential.
 - **#141**, the packets verifier identifier fold (draft): head 995380b7 (a mutation-timing fix on c2c5a07c; the base 2e26a416 merged). CI is running; W7 merges it on green.
 - Dependabot #123, #124, #135 and #139 (#139 replaced #122 on 2026-11-11), untriaged: one replacement PR, never merged as they stand.
 
