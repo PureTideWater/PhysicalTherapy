@@ -16,6 +16,8 @@ flips to redacted or refused, measured on this gate.
   each class, the numbers mapped to synthetic twins and checked sent in clear), `write-repo-residuals.mts` /
   `write-repo-residuals2.mts` (the table, the review rounds' rows added), `write-residuals3.py` and `set-about3.py` (the
   judge's review round 3: the rows the held date-of-birth rule now refuses dropped, the round's harness rows added).
+  `gen-residual5.mts` and `write-residuals5.py` (review round 5: the "about" text brought to round 5, and the eight
+  failSafe rows tagged "must-stay" that cc3dd7f6 did not send unchanged re-tagged "must-stay-changed-at-base").
 - `round-harnesses/`: the judge's review round 3 harnesses whose rows are pinned or measured in ADR 0054
   (`dobperm.mts`, `gluedlabel.mts`, `frames.mts`, `lib.mts`; `natural2.mts`, `units.mts`, `units2.mts`, `extra.mts`,
   `lib-gateway.mts`).

@@ -165,6 +165,24 @@ Effect: any PR's unit job can go red at random.
   WIP `co-001/wip-redact-range-glued-b` = dedeb35f. The gate is copied to /home/user/gate in the container; outputs in
   /home/user/gate-out (not kept).
 
+## RESUME-BLOCK (W1, session_019i9if9bThP3wWKpHBiU3m8; written 2026-11-11 01:05 UTC)
+- **Head:** WIP `co-001/wip-redact-range-glued-b` = **cb2852e8** (candidate B 9f953223 + review round 5: dedeb35f PHI5-1, then
+  F3, F4, F6, F5, F1, F2, F7, F10, the ADR entry, and F8/F9 with the initials rule's cost). `co-001/redact-range-glued` is
+  still cc3dd7f6; no PR yet.
+- **Verified at cb2852e8 (W1's own run):** gate vs cc3dd7f6 PHI ssn 385, phone 171, name 5 (the ruled residuals), no other
+  kind; must-stay other 60, after an SSN or phone word 7,014, letters with identifiers 598; changed 0; unplaced 523; slowest
+  664 ms; the four redaction test files 3,423 of 3,423; every round-5 reproduction equals the base or is refused. The
+  fixer's sweeps: the 11 named seeds and 304 + 104 fresh seeds, 0 failures.
+- **Running:** the re-review of the delta 9f953223..cb2852e8 by two fresh reviewers (PHI; gateway). Fix only verified findings.
+- **Then:** merge origin/claude/build-platform (06cde5eb or later; a trial merge at d4f52071 had no conflict) into the head,
+  the full local suite once, `git push origin <head>:co-001/redact-range-glued` (fast-forward from cc3dd7f6), the draft PR
+  from .github/pull_request_template.md (rulings A, A' and B with their counts; the classes sent-exempt none; PHI5-1's
+  cost), subscribe, CI green, the up-to-date rule, merge, one line to the orchestrator. After it: #129, then the leaks PR.
+- **Tools in the container (not kept):** the gate copied to /home/user/gate (cache for cc3dd7f6 warm), outputs in
+  /home/user/gate-out; the reviewers' harnesses in /home/user/review-phi, review-gw, review-phi2, review-gw2;
+  `residual-scripts/gen-residual5.mts` and `write-residuals5.py` (round 5's re-tag of 8 fail-safe rows) are only in
+  /home/user/gate until copied to designs/lane-b-redact-ssn-phone/gate/ here.
+
 ## Waiting on someone
 - None: classes (A) and (B) ruled 2026-11-07 10:53 UTC.
 - Previously: none. (Any leak class the hunt marks a documented design trade-off goes to the co-founder through the orchestrator, fixed
