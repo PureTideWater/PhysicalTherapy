@@ -558,6 +558,41 @@ describe('the verifier against what a narrative shows and the case’s own recor
   });
 });
 
+describe('MOD-19: the verifier reads a narrative for the records’ identifiers in every form redaction reads', () => {
+  /** Renames the first line's patient on the record: a SYNTHETIC correction. */
+  const rename = async (setup: Setup, serviceLineId: string | undefined, lastName: string) => {
+    const { rows } = await asOwner(w.owner, [setup.practice.practiceId], () =>
+      w.owner.query<{ id: string }>('SELECT c.patient_ref_id AS id FROM service_line sl JOIN claim c ON c.id = sl.claim_id WHERE sl.id = $1', [serviceLineId]),
+    );
+    await w.superuser('UPDATE patient_ref SET last_name = $2 WHERE id = $1', [rows[0]?.id, setup.practice.cipher.encrypt('patient_ref.last_name', lastName)]);
+  };
+
+  it('stores a failing report for a name written without its mark and a claim number written with dashes, each read from its own column', async () => {
+    const setup = await cas08('MOD-19-write');
+    const draft = await write(setup, setup.practice.manager);
+    expect(draft.verifier.passed).toBe(true);
+    await rename(setup, draft.content.lines[0]?.service_line_id, 'ZOË-QUARRINGTON');
+    // The name as a keyboard writes it, and the first line's claim number (SYNCCNCAS080001) with dashes.
+    const narrative = 'Zoe Quarrington’s claim SYN-CCN-CAS08-0001 fell short of the contract [3].';
+    const version = await write(setup, setup.practice.manager, { narrative, basedOn: draft.versionId });
+    expect(version.verifier.passed).toBe(false);
+    expect(version.verifier.mismatches.filter((item) => item.code === 'identifier_in_narrative').map((item) => narrative.slice(item.start, item.end))).toEqual(['Zoe Quarrington', 'SYN-CCN-CAS08-0001']);
+    // The report says where, never what.
+    expect(JSON.stringify(version.verifier).toLowerCase()).not.toMatch(/zoe|quarrington|syn-ccn|synccncas08/);
+    expect((await refusal(approve(setup, setup.second, version.versionId, version.contentSha256))).message).toBe('a packet version the verifier failed cannot be approved');
+  });
+
+  it('refuses the export of a stored pass once the record is corrected to a name the narrative holds without its mark', async () => {
+    const setup = await cas08('MOD-19-export');
+    const version = await write(setup, setup.practice.manager, { narrative: 'The payer paid these lines short of the contract [3].' });
+    expect(version.verifier.passed).toBe(true);
+    await approve(setup, setup.second, version.versionId, version.contentSha256);
+    // "paid" is the patient's name PÁID only as the letter reader's matcher reads it: no whole word of the narrative is "PÁID".
+    await rename(setup, version.content.lines[0]?.service_line_id, 'PÁID');
+    expect(await w.export(setup.practice, version.versionId)).toEqual({ outcome: 'not_exportable', reason: 'verifier_failed' });
+  });
+});
+
 describe('CO-05: the export runs the verifier again over what it prints, and records the hash of the bytes it wrote', () => {
   it('refuses a narrative that fails the verifier now (an identifier of the case in it), and Postgres refuses an export without the passing report', async () => {
     const setup = await cas08('export-verifier');

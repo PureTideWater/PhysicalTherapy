@@ -115,6 +115,7 @@
       "mutate": {
         "packets": [
           "packages/packets/src/readable.ts",
+          "packages/packets/src/verifier/identifiers.ts",
           "packages/packets/src/verifier/index.ts",
           "packages/packets/src/verifier/mismatches.ts"
         ]

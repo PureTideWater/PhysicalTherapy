@@ -601,7 +601,12 @@ describe('pass 1 at its edges', () => {
     ]);
   });
 
-  it('never reads a date as the case’s identifier: a date is a figure, never a name or a number of the case', () => {
+  it('reads a date as a figure, and as a number of the case only after a label that says it is one', () => {
     expect(codes('Seen on 2026-03-02 here [1].', { names: [], numbers: ['2026-03-02'] })).toEqual([['free_figure', 'date', '2026-03-02']]);
+    expect(codes('Seen on 2026-03-02 here [1].', { names: [], numbers: ['2026', '0302'] })).toEqual([['free_figure', 'date', '2026-03-02']]);
+    expect(codes('Claim 2026-03-02 here [1].', { names: [], numbers: ['2026-03-02'] })).toEqual([
+      ['free_figure', 'date', '2026-03-02'],
+      ['identifier_in_narrative', 'identifier', '2026-03-02'],
+    ]);
   });
 });

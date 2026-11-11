@@ -41,10 +41,10 @@ export const NO_CASE_IDENTIFIERS: CaseIdentifiers = Object.freeze({ names: Objec
 const overlaps = (a: TextSpan, b: TextSpan) => a.start < b.end && b.start < a.end;
 const covers = (outer: TextSpan, inner: TextSpan) => outer.start <= inner.start && inner.end <= outer.end;
 
-/** The spans in text order, each run of overlapping spans as one. */
-function joined(spans: readonly TextSpan[]): TextSpan[] {
+/** The spans in text order, each run of overlapping spans as one (two that only touch stay two). */
+export function joinedSpans(spans: readonly TextSpan[]): TextSpan[] {
   const out: TextSpan[] = [];
-  for (const span of [...spans].sort((a, b) => a.start - b.start || a.end - b.end)) {
+  for (const span of [...spans].sort((a, b) => a.start - b.start)) {
     const last = out.at(-1);
     if (last !== undefined && span.start < last.end) {
       out[out.length - 1] = { start: last.start, end: Math.max(last.end, span.end) };
@@ -56,12 +56,42 @@ function joined(spans: readonly TextSpan[]): TextSpan[] {
 }
 
 /**
- * The reading for a case's identifiers: both readings' spans, joined where they overlap, so it never finds less than
- * either. Of the letter reader's matches it keeps:
+ * What a token is to the matcher's second reading: one invisible character. The soft hyphen is the matcher's own
+ * character for "something invisible was here", and a narrative's readable text never holds one (../readable.ts leaves
+ * hidden characters out), so each one in the prose below is a token.
+ */
+const INVISIBLE = '­';
+
+/** The text with each token as one invisible character, and where each of them stands in it with the length it had. */
+function tokensAsInvisible(text: string, tokens: readonly TextSpan[]): { readonly prose: string; readonly places: readonly { readonly at: number; readonly length: number }[] } {
+  const places: { readonly at: number; readonly length: number }[] = [];
+  let prose = '';
+  let cursor = 0;
+  for (const token of joinedSpans(tokens)) {
+    prose += text.slice(cursor, token.start);
+    places.push({ at: prose.length, length: token.end - token.start });
+    prose += INVISIBLE;
+    cursor = token.end;
+  }
+  return { prose: prose + text.slice(cursor), places };
+}
+
+/**
+ * The reading for a case's identifiers: the whole-word reading's spans and the letter reader's matcher's, joined where
+ * they overlap, so it never finds less than either. The matcher reads the text twice.
+ *
+ * As it is written, where of its matches it keeps:
  * - none that touches a token (a placeholder, a citation marker, a fact token): nothing there is the narrative's words;
  * - no name in a dated figure: a month's name in a date is the date (docs/adr/0047);
  * - a number in a dated figure only when it holds the whole figure, which the matcher reads as the number only after a
  *   label that says so. A part of a date ("2026" in "2026-03-05", "03-05" there) is the date.
+ *
+ * And with each token as one invisible character, for an identifier written across a token ("Quar[1]rington",
+ * "QQRS{{member_id:1}} TUVW"): a letter holds no token, so the matcher alone never reads across one, and it reads across
+ * an invisible character as redaction does. Only a match that holds a token is kept from this reading (its span holds
+ * the token too), under the same two rules for dated figures: the words around a token are otherwise read as written,
+ * so a label is not a number's label through a placeholder ("Member ID {{member_id:1}} 2026-03-05" is a date).
+ *
  * The whole-word reading skips tokens and dated figures alike, as it always has.
  */
 export function identifierReader(identifiers: CaseIdentifiers): IdentifierReader {
@@ -71,16 +101,24 @@ export function identifierReader(identifiers: CaseIdentifiers): IdentifierReader
   }
   return (text, skip) => {
     const found = identifierSpans(text, all, [...skip.tokens, ...skip.dated]);
+    const isDate = (span: TextSpan, kind: 'name' | 'number') => {
+      const dated = skip.dated.filter((figure) => overlaps(figure, span));
+      return dated.length > 0 && (kind === 'name' || !dated.every((figure) => covers(span, figure)));
+    };
     for (const match of nameOrNumberMatches(text, identifiers)) {
-      if (skip.tokens.some((token) => overlaps(token, match))) {
-        continue;
+      if (!skip.tokens.some((token) => overlaps(token, match)) && !isDate(match, match.kind)) {
+        found.push({ start: match.start, end: match.end });
       }
-      const dated = skip.dated.filter((figure) => overlaps(figure, match));
-      if (dated.length > 0 && (match.kind === 'name' || !dated.every((figure) => covers(match, figure)))) {
-        continue;
-      }
-      found.push({ start: match.start, end: match.end });
     }
-    return joined(found);
+    const { prose, places } = tokensAsInvisible(text, skip.tokens);
+    /** Where a character of the prose is in the text: past each token before it, by the length the token had. */
+    const inText = (position: number) => places.reduce((at, place) => (place.at < position ? at + place.length - 1 : at), position);
+    for (const match of nameOrNumberMatches(prose, identifiers)) {
+      const span = { start: inText(match.start), end: inText(match.end - 1) + 1 };
+      if (prose.slice(match.start, match.end).includes(INVISIBLE) && !isDate(span, match.kind)) {
+        found.push(span);
+      }
+    }
+    return joinedSpans(found);
   };
 }
