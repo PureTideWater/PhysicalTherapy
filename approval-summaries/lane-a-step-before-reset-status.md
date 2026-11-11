@@ -12,15 +12,18 @@ W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this 
   Document hash **8943735cce8983b651d83e86a15a6fb3e8712686a6db070e494a1c52025af259**; the approval line is the last
   line of `docs/product/domain-model.md`. The description equals `lane-a-wip/step-before-reset/pr/body-v1.md` (checked
   by diff; GitHub rewrote only the footer). W10 is subscribed to #142.
-- **Running:** the full local suite once on 69c6f4bb (W10's scratchpad; typecheck passed so far). CI on 69c6f4bb.
-- **Next:** when CI is green but for `domain model` and `all green`, and the local suite passed: replace the two
-  Checks rows ("The full local suite on 69c6f4bb", "CI on 69c6f4bb") in the description (connector's
-  `update_pull_request`, whole body); post the approval line as one suggested-change comment on the document's last
-  line (`gh api .../pulls/142/comments`, the skill's form: `Approved by: Tyler Williams  Date: <day posted>  Document
-  SHA-256: \`8943735c...f259\``), with one sentence and the footer; send the orchestrator the comment's link with the
-  one fact: the rule holds for an account only once the Cognito client is confidential (Cognito PR 2, which waits on
-  F1 to F5 and ruling 16). Then wait for the founder's commit, check it, merge on green with a merge commit, one line
-  to the orchestrator, ADR 0093's Status (accepted) rides in the next PR or a records commit as the orchestrator rules.
+- **Done at 10:45 UTC:** CI on 69c6f4bb green but for `domain model` and `all green` (the blank line; one PR comment
+  explains it, issuecomment-6793089945). The full local suite ran once: all passed except one unit test in
+  `packages/contracts` (the page reader's heap case, under load; it passed alone, and CI's unit passed). The
+  description is final (`lane-a-wip/step-before-reset/pr/body-final.md`). **The approval line is posted** on line 7550:
+  https://github.com/PureTideWater/PhysicalTherapy/pull/142#discussion_r4537054351 . The orchestrator has the link and
+  the one fact (the Cognito client).
+- **Next:** wait for the founder's "Commit suggestion" (W10 is subscribed; one check-in is armed). Then: the commit
+  must change only line 7550 to exactly the suggested line; `--check --strict --require-approval` on a fresh database;
+  the base must be an ancestor (merge it with a merge commit if it moved; a new migration there needs a regenerated
+  document and a new line); green required checks; mark ready (that re-runs `approval-of-record`: wait for it); merge
+  with a merge commit ("Merge pull request #142: ..."); one line to the orchestrator; ADR 0093's Status still reads
+  proposed (it rides in the next schema PR, as ADR 0091's did here); stand down.
 - The earlier block's notes on the trial merge still describe 01746e21, now an ancestor of 69c6f4bb.
 
 ## W10's earlier block (09:50 UTC), kept for its notes
