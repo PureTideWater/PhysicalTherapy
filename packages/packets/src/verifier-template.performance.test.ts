@@ -10,9 +10,9 @@ import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
 
 import { FACT_CONTENTS } from './fact-contents.test-support';
-import { verifyTemplate } from './verifier';
+import { NO_CASE_IDENTIFIERS, verifyTemplate } from './verifier';
 
-const verify = (template: string) => verifyTemplate(template, FACT_CONTENTS.base(), []);
+const verify = (template: string) => verifyTemplate(template, FACT_CONTENTS.base(), NO_CASE_IDENTIFIERS);
 
 describe('CAS-52: a fact token stands apart, so nothing typed against it prints as part of its figure', () => {
   it('reads the text before each token once: 100k-character templates with long runs before tokens check in well under a second each', () => {

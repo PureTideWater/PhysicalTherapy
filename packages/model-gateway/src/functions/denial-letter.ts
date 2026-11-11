@@ -6,7 +6,7 @@ import { InputRefusedError } from '../errors';
 import { figureInQuote, inQuote, normalized, readDate, wholeInQuote } from '../figures';
 import { isSha256, sha256Hex } from '../hash';
 import { PROMPTS } from '../prompts';
-import { type LetterClaim, type PatientIdentifiers, compactIdentifier, holdsIdentifier, redactLetterForScreen } from '../redact';
+import { type LetterClaim, type PatientIdentifiers, compactIdentifier, holdsIdentifier, redactLetterForScreen } from '@tp/redact';
 import type { PurposeSpec, Verified } from '../spec';
 import { frameText } from '../untrusted';
 
@@ -17,7 +17,7 @@ import { frameText } from '../untrusted';
  *
  * Before the call: one patient's material only, and the patient's names, dates of birth and member IDs
  * and the claims' numbers replaced by placeholders, and every Social Security number and phone number the
- * letter writes replaced by [SSN] or [PHONE], whoever's it is (../redact.ts; the founder's ruling of
+ * letter writes replaced by [SSN] or [PHONE], whoever's it is (@tp/redact; the founder's ruling of
  * 2026-11-01, docs/adr/0054, amendment of 2026-11-04). The call is refused when:
  * - the input names no patient identifier to strip (no name, no member ID) or no claim with a number:
  *   with nothing to strip, the letter would go as it is;

@@ -3,7 +3,7 @@ import { PAGE_READ_LIMITS } from '@tp/contracts/pages';
 import { InputRefusedError } from '../errors';
 import { MAX_REQUEST_BYTES, contractTermsSpec } from '../functions/contract-terms';
 import { SCREEN_MAX_IDENTIFIERS, identifierEntries, pagesName, screenSet } from '../patient-records';
-import { SCREEN_MAX_RUN, screenedBytes } from '../redact';
+import { SCREEN_MAX_RUN, screenedBytes } from '@tp/redact';
 import { syntheticEvaluationContractInput } from '../testing';
 import { framePages } from '../untrusted';
 

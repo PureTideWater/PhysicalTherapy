@@ -3000,13 +3000,95 @@ function nameGlued(normal: string, subject: Subject, inOtherDate: (range: Range)
   return false;
 }
 
+/** The letters and digits of NFKC text as the matcher compares them: folded, with everything a form's gaps may hold left out. */
+const lettersOf = (normal: string) => compactFolded(viewOf(normal, 'join').text);
+
+/**
+ * What the narrative's reading matches: the names as names and the numbers (member IDs and claim numbers) as numbers.
+ * A narrative's check is told only that a value is a number, so each is read as a member ID, and a number of digits
+ * alone as a claim number too: the kind is consulted for those alone (matchesIn), where it decides one thing, that the
+ * digits written as a calendar date are the number after a label of that kind ("Claim 2026-03-05", "Member ID
+ * 2026-03-05"), a date otherwise. Read as a member ID a number is never an amount. No date is a date of birth, no
+ * initial is looked for, and no Social Security or phone number is read by pattern (docs/adr/0054, amendment of
+ * 2026-11-04, Scope).
+ */
+const narrativeSubject = (names: readonly string[], numbers: readonly string[]): Subject => ({
+  names,
+  memberIds: numbers,
+  claims: [numbers.filter((number) => /^\p{N}+$/u.test(lettersOf(number.normalize('NFKC'))))],
+  datesOfBirth: null,
+  initials: false,
+  patterns: false,
+});
+
 /**
  * Whether the text holds any of the names (read as names) or numbers (member IDs and claim numbers, read
- * as numbers) in a form redaction reads: the narrative drafter's check of its facts. No date there is a
- * date of birth, and no initial is looked for (a whole name or part is).
+ * as numbers) in a form redaction reads: the narrative drafter's check of its facts, over the text with the gateway's
+ * own placeholders masked. No date there is a date of birth, and no initial is looked for (a whole name or part is).
+ * Every form counts here, a part of two letters too: what is checked is sent to a model. It is the narrative's reading
+ * asked plainly, of every identifier; nameOrNumberMatches below is the same reading for a caller that needs where, and
+ * a test holds the two to one answer (packages/redact/src/narrative.test.ts).
  */
 export function holdsNameOrNumber(text: string, identifiers: { readonly names: readonly string[]; readonly numbers: readonly string[] }): boolean {
-  return matchesIn(masked(text), { names: identifiers.names, memberIds: identifiers.numbers, claims: [], datesOfBirth: null, initials: false, patterns: false }).length > 0;
+  return matchesIn(masked(text), narrativeSubject(identifiers.names, identifiers.numbers)).length > 0;
+}
+
+/** Where a text holds a name or a number of the narrative's reading (nameOrNumberMatches). */
+export interface NameOrNumberMatch {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * The narrative's reading of a text, match by match: every place it holds one of the names (the whole name, each word
+ * and each part of a word) or one of the numbers in a form redaction reads (narrativeSubject above). The packet
+ * verifier (@tp/packets, verifier/identifiers.ts) reads a narrative through this.
+ *
+ * `shortestPart` is the fewest letters at which a part of a name's word counts by itself (a part is what a dash, an
+ * apostrophe, a period or an underscore sets off inside a word: IN of HYE-IN). At 2, the default, every form counts,
+ * as in holdsNameOrNumber. A caller that fails a text for a match asks for 4, the letter path's own floor for a part
+ * read by itself (ownIdentifierGlued): a part of two or three letters is as often a word of the text ("in", "to",
+ * "the", "van"). The whole name, each whole word of it and each number count at any length.
+ *
+ * An identifier is read only if the text holds the letters and digits of one of its forms in order with nothing else
+ * between them: no form matches otherwise, since a form's gaps hold no letter or digit. So a case of thousands of
+ * identifiers costs a narrative that holds none of them a search each, not a pattern each.
+ *
+ * The text is read as it is given, which must be NFKC text, and the ranges are that text's own, one for each form that
+ * matched (they may overlap, and a number of digits alone is found once for each kind). Nothing is masked here: a
+ * caller with placeholders of its own masks them first or drops the matches inside them.
+ */
+export function nameOrNumberMatches(normal: string, identifiers: { readonly names: readonly string[]; readonly numbers: readonly string[] }, shortestPart = 2): NameOrNumberMatch[] {
+  const text = lettersOf(normal);
+  const held = (letters: string) => [...letters].length >= 2 && text.includes(letters);
+  /** The letters and digits of each whole name, whole word of a name and number that is read. */
+  const whole = new Set<string>();
+  const names = identifiers.names.filter((name) => {
+    const words = nameWords(name);
+    const forms = [words.flat().join(''), ...words.map((word) => word.join(''))];
+    if (![...forms, ...words.flat()].some(held)) {
+      return false;
+    }
+    forms.forEach((form) => whole.add(form));
+    return true;
+  });
+  const numbers = identifiers.numbers.filter((number) => {
+    const letters = lettersOf(number.normalize('NFKC'));
+    if (!held(letters)) {
+      return false;
+    }
+    whole.add(letters);
+    return true;
+  });
+  if (names.length === 0 && numbers.length === 0) {
+    return [];
+  }
+  return matchesIn(normal, narrativeSubject(names, numbers))
+    .filter((match) => {
+      const letters = lettersOf(normal.slice(match.start, match.end));
+      return whole.has(letters) || [...letters].length >= shortestPart;
+    })
+    .map(({ start, end }) => ({ start, end }));
 }
 
 /**

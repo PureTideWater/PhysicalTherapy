@@ -5,7 +5,7 @@ import { InputRefusedError } from '../errors';
 import { type RoleMismatch, roleMismatches } from './narrative-roles';
 import { jsonSha256 } from '../hash';
 import { PROMPTS } from '../prompts';
-import { holdsNameOrNumber } from '../redact';
+import { holdsNameOrNumber } from '@tp/redact';
 import type { PurposeSpec, Verified } from '../spec';
 import { frameFacts } from '../untrusted';
 
@@ -44,6 +44,12 @@ export interface NarrativeInput {
    * value with no digit is read as a name.
    */
   readonly names?: readonly string[];
+  /**
+   * Which of the identifiers are numbers (member IDs and claim numbers), as the records' columns say: the worker
+   * gives both lists, so the drafter's checks read each value exactly as the packet verifier will when the version is
+   * written. Absent, every identifier that is not a name.
+   */
+  readonly numbers?: readonly string[];
 }
 
 export interface NarrativeProposal {
@@ -101,15 +107,19 @@ export function narrativeInputs(content: PacketContent) {
   };
 }
 
-/** The case's identifiers as names and numbers (member IDs and claim numbers), as the check before the call reads them. */
-export function identifierKinds(input: Pick<NarrativeInput, 'identifiers' | 'names'>): { readonly names: readonly string[]; readonly numbers: readonly string[] } {
+/**
+ * The case's identifiers as names and numbers (member IDs and claim numbers), as the check before the call and the
+ * verifier of the draft read them: the two lists as given, or, for a caller that does not know which is which (an
+ * evaluation case), a value with no digit as a name and the rest as numbers.
+ */
+export function identifierKinds(input: Pick<NarrativeInput, 'identifiers' | 'names' | 'numbers'>): { readonly names: readonly string[]; readonly numbers: readonly string[] } {
   const names = new Set(input.names ?? input.identifiers.filter((value) => !/\p{N}/u.test(value)));
-  return { names: [...names], numbers: input.identifiers.filter((value) => !names.has(value)) };
+  return { names: [...names], numbers: input.numbers ?? input.identifiers.filter((value) => !names.has(value)) };
 }
 
 /**
  * Whether any of the identifiers is in the text in a form the letter reader's redaction reads
- * (../redact.ts): a name with its case, marks, dashes and apostrophes written any way, a number with
+ * (@tp/redact): a name with its case, marks, dashes and apostrophes written any way, a number with
  * its spaces, dashes, invisible characters, or a period, underscore, slash or colon next to a letter.
  * Every number is read as a member ID is, never as an amount ("$12345678" is number 12345678). A period
  * never joins digits, and a date written with its dashes that a calendar holds is a date, so the facts'
@@ -133,7 +143,7 @@ export const narrativeSpec = Object.freeze<PurposeSpec<NarrativeInput, Narrative
   },
   verify(input, output): Verified<NarrativeProposal> {
     const narrative = output.paragraphs.join('\n\n');
-    const report = verifyNarrative(narrative, narrativeFacts(input.content), input.identifiers);
+    const report = verifyNarrative(narrative, narrativeFacts(input.content), identifierKinds(input));
     const roles = roleMismatches(narrative, input.content);
     const markers = [...new Set([...narrative.matchAll(/\[(\d{1,4})\]/g)].map((match) => Number.parseInt(match[1] ?? '', 10)))].filter((marker) => marker >= 1).sort((a, b) => a - b);
     return { proposal: { narrative, report, roles }, passed: report.passed && roles.length === 0, citations: markers.map((marker) => ({ marker })) };

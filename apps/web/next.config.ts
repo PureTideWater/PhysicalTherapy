@@ -43,6 +43,7 @@ const config: NextConfig = {
     '@tp/observability',
     '@tp/packets',
     '@tp/pricing',
+    '@tp/redact',
     '@tp/rules',
     '@tp/tools',
     '@tp/triage',

@@ -6,7 +6,7 @@ import { FACT_CONTENTS } from './fact-contents.test-support';
 import { VERIFIER_FORMAT_V3 } from './format';
 import { MARKER_PATTERN } from './scan';
 import { type DraftOutput, type DraftSegment, type DraftSentence, serializeDraft, serializeSentence } from './serialize';
-import { templateSentenceSpans, verifyTemplate } from './verifier';
+import { NO_CASE_IDENTIFIERS, templateSentenceSpans, verifyTemplate } from './verifier';
 
 /**
  * serializeDraft (design lane-b-packet-figure-placeholders, section 2.3; docs/adr/0089; test matrix CAS-52): a drafted narrative's segments
@@ -65,7 +65,7 @@ describe('serializeDraft', () => {
     };
     const template = serializeDraft(output);
     expect(draftNarrative(content, { format: VERIFIER_FORMAT_V3 })).toContain(template);
-    expect(verifyTemplate(template, content, []).mismatches).toEqual([]);
+    expect(verifyTemplate(template, content, NO_CASE_IDENTIFIERS).mismatches).toEqual([]);
   });
 });
 

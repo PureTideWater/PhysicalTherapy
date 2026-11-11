@@ -13,7 +13,7 @@ import {
   withJobScope,
 } from '@tp/db/runtime';
 
-import { type RunIndex, SCREEN_FLOORS, SCREEN_MAX_RUN, SCREEN_MIN_RUN, type ScreenIdentifierKind, runIndex, screenIdentifier, someIdentifierRun, storedSeparators } from './redact';
+import { type RunIndex, SCREEN_FLOORS, SCREEN_MAX_RUN, SCREEN_MIN_RUN, type ScreenIdentifierKind, runIndex, screenIdentifier, someIdentifierRun, storedSeparators } from '@tp/redact';
 
 /**
  * The contract PHI check (combined audit item 120; docs/adr/0070, Part 3): before a contract's or exhibit's pages are

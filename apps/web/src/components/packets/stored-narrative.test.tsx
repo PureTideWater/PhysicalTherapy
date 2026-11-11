@@ -1,4 +1,4 @@
-import { assemblePacket, checkedFigures, draftNarrative, narrativeFacts, verifyNarrative } from '@tp/packets';
+import { NO_CASE_IDENTIFIERS, assemblePacket, checkedFigures, draftNarrative, narrativeFacts, verifyNarrative } from '@tp/packets';
 import { assemblyInput } from '@tp/packets/testing';
 import { verifierNow } from '@tp/worker/packets';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -19,7 +19,7 @@ const facts = narrativeFacts(content);
 
 function rendered(narrative: string, stored: ReturnType<typeof verifyNarrative>, state: FailsNowState = 'unapproved'): string {
   return renderToStaticMarkup(
-    <StoredNarrative narrative={narrative} verifier={verifierNow(narrative, content, stored, [])} figures={checkedFigures(narrative, facts).filter((figure) => !figure.passed)} state={state} />,
+    <StoredNarrative narrative={narrative} verifier={verifierNow(narrative, content, stored, NO_CASE_IDENTIFIERS)} figures={checkedFigures(narrative, facts).filter((figure) => !figure.passed)} state={state} />,
   );
 }
 
@@ -29,7 +29,7 @@ const text = (markup: string) => markup.replace(/<[^>]+>/g, '');
 describe('the stored narrative', () => {
   it('shows "Verifier passed" for a version the verifier passes now, its counts in mono', () => {
     const narrative = draftNarrative(content);
-    const markup = rendered(narrative, verifyNarrative(narrative, facts, []));
+    const markup = rendered(narrative, verifyNarrative(narrative, facts, NO_CASE_IDENTIFIERS));
     expect(markup).toContain('data-verifier="passed"');
     expect(text(markup)).toContain('Verifier passed');
     expect(markup).toMatch(/<span class="font-mono tabular-nums">\d+<\/span> sentences/);
@@ -39,7 +39,7 @@ describe('the stored narrative', () => {
   it('never shows "Verifier passed" for a version it passed when written and fails now, and says why, what to do and each figure (CORR-5)', () => {
     const narrative = 'The payer paid $100.00 for each line [1].';
     // The report a reading that held figures to no role stored.
-    const stored = { ...verifyNarrative(narrative, facts, []), passed: true, mismatches: [] };
+    const stored = { ...verifyNarrative(narrative, facts, NO_CASE_IDENTIFIERS), passed: true, mismatches: [] };
     const markup = rendered(narrative, stored);
     expect(markup).toContain('data-verifier="fails_now"');
     expect(text(markup)).not.toContain('Verifier passed');
@@ -53,7 +53,7 @@ describe('the stored narrative', () => {
 
   it('says what to do by where the version stands: approved, exported or earlier, never "cannot be approved" beside an approval (UX-D1)', () => {
     const narrative = 'The payer paid $100.00 for each line [1].';
-    const stored = { ...verifyNarrative(narrative, facts, []), passed: true, mismatches: [] };
+    const stored = { ...verifyNarrative(narrative, facts, NO_CASE_IDENTIFIERS), passed: true, mismatches: [] };
     const approved = text(rendered(narrative, stored, 'approved'));
     expect(approved).toContain('This version was approved when the verifier passed it; the verifier fails it now, so it cannot be exported: correct the marked figures and save a new version, which needs approval again.');
     expect(approved).not.toContain('cannot be approved');
@@ -68,7 +68,7 @@ describe('the stored narrative', () => {
 
   it('asks to save again, not to correct marked figures, when nothing is marked (its report is not of this narrative; UX-D3)', () => {
     const narrative = draftNarrative(content);
-    const stored = { ...verifyNarrative(narrative, facts, []), narrative_sha256: 'f'.repeat(64) };
+    const stored = { ...verifyNarrative(narrative, facts, NO_CASE_IDENTIFIERS), narrative_sha256: 'f'.repeat(64) };
     const shown = text(rendered(narrative, stored));
     expect(shown).toContain('Verifier fails it now');
     expect(shown).toContain(failsNowText('unapproved', 'stale'));
@@ -79,7 +79,7 @@ describe('the stored narrative', () => {
 
   it('shows a stored failure as stored', () => {
     const narrative = 'The payer withheld 1234.56 on these claims [3].';
-    const markup = rendered(narrative, verifyNarrative(narrative, facts, []));
+    const markup = rendered(narrative, verifyNarrative(narrative, facts, NO_CASE_IDENTIFIERS));
     expect(markup).toContain('data-verifier="failed"');
     expect(text(markup)).toContain('Verifier failed');
     expect(markup).not.toContain('data-verifier-now');

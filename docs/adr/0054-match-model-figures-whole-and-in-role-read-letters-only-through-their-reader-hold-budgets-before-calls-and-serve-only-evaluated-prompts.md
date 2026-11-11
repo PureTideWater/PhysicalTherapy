@@ -1123,3 +1123,71 @@ the contract screen refuses a page holding a dash-, period- or invisible-joined 
 nine). A slash or a closing parenthesis between groups (`202/555-0123`, `202)555-0123`), an OCR space inside a group, a
 semicolon with no space, a number after a digit and an invisible run that also holds an invisible run inside a group,
 and two numbers each wrapped inside a group on lines next to each other are refused by the survivor scan, never sent.
+
+## Amendment (`co-001/packets-verifier-identifier-fold`, 2026-11-11): the reader in a package of its own, and the packet verifier reading through it
+
+**`packages/model-gateway/src/redact.ts` moved, unchanged, to `packages/redact/src/redact.ts` (`@tp/redact`).** The
+packet verifier failed a narrative only for a whole-word occurrence of an identifier, so it passed every form this
+reader folds ([0047](0047-read-narratives-as-they-show-refuse-the-cases-identifiers-bound-ledger-corrections-and-give-them-and-the-regulation-to-the-specialist.md),
+amendment of this date). The verifier cannot import the gateway: the gateway imports `@tp/packets` (a cycle), and its
+entry brings the provider SDKs and the database with it. The reader has no import, so it moved whole into a package
+with no dependency, which the gateway and `@tp/packets` both import. Whole, not cut: the narrative's reading runs
+through `matchesIn`, which shares its views, forms, labels and date reading with the letter's, and a file moved
+unchanged can be checked byte for byte. The gateway's modules import it from `@tp/redact`; the reader's tests stay in
+the gateway, since they need the gateway's functions. `@tp/redact` is under the money-syntax lint rule the file was
+under, and in the web app's `transpilePackages`.
+
+**The narrative's reading has one subject (`narrativeSubject`) and is asked two ways.** `holdsNameOrNumber` (the
+drafter's check of its facts) asks it plainly: every identifier, every form, over the text with the gateway's
+placeholders masked. `nameOrNumberMatches` asks where, for the packet verifier: each match as a range of the text as
+given, which the caller gives in its NFKC form (the plain check normalizes for itself) and in which it masks nothing
+(the verifier drops a match that overlaps a token of its own). Beside those it differs from the plain check in two
+ways only, each held by a test of `packages/redact/src/narrative.test.ts`:
+
+- it reads an identifier only if the text holds the letters and digits of one of its forms in order with nothing else
+  between them. No form can match otherwise (a form's gaps hold no letter or digit), so the answer is the plain
+  check's, and a case of thousands of identifiers costs a narrative that holds none of them a search each, not a
+  pattern each (17 ms for 10,000 identifiers, where the unfiltered reading took seconds);
+- a caller may ask that a part of a name's word count by itself only from a given number of letters
+  (`shortestPart`; ADR 0047's amendment says why the verifier asks for four). The default is every form, as the plain
+  check reads.
+
+What a later amendment adds to the matcher reaches both.
+
+**Each number is read as a member ID, and one of digits alone as a claim number too.** The narrative's check is told
+only that a value is a number. The kind decides one thing, and only for a number of digits alone: its digits written
+as a calendar date are the number only after a label of its kind. Read as both, `Claim 2026-03-05` and `Member ID
+2026-03-05` are both the number 20260305. The drafter's check read numbers as member IDs only, so it is wider by that
+one case; nothing it read before is lost (a member ID's form has no amount exclusion, and a match of either kind
+counts). `NarrativeInput` gains `numbers` beside `names`, which the worker fills from the records' columns.
+
+**The drafter's check still takes every part of a name from two letters**, so it refuses to draft for a case whose
+patient's name has such a part that is a word of the facts ("in" of HYE-IN): what it checks is sent to a model, and
+the floor that suits a narrative's verifier is not this change's to give it. It is recorded for the letter reader's
+next change.
+
+**Scope is unchanged**: the narrative's reading takes no date of birth, no initial and no Social Security or phone
+number by pattern (amendment of 2026-11-04).
+
+**Still not covered by the narrative's reading** (found by this change's reviews; the letter path's own checks after
+redaction are not part of it):
+
+- a name's letters with a character between them that joins no name: a middle dot or the bullet U+2022
+  (`Quar·rington`: with U+00B7, U+2027 and U+30FB it joins a number, not a name; the hyphen bullet U+2043 joins
+  both), a slash, an asterisk, a square bracket or a brace
+  (`Quar*rington`, `Quar{rington`, `Quar[x]rington`; a number's letters split by one of the last three are not read
+  either, while a slash beside a letter joins a number, as a period, a colon, a number sign and an opening parenthesis
+  do: `QQRS/TUVW`, `QQRS(TUVW`);
+- a part written in a lower-case piece after a space or a period (`Quarring ton`, `Quar.rington`: the rule that keeps
+  "in a" from being INA), and its letters spaced one by one;
+- a name glued to other letters (`DearQuarrington`): the letter path refuses such a letter after redaction
+  (`ownIdentifierGlued`), which is no reading of a narrative.
+
+Each needs a person or a model to mean it; they are recorded for the letter reader's next change, since a joiner
+added to a name there changes what a letter redacts and, through this function, which stored narratives fail. The
+packet verifier's tests pin them as not read (`packages/packets/src/verifier-identifiers.test.ts`), so that change
+shows there. The verifier does not widen them by itself: every joiner it added would be a second definition of how an
+identifier is written, and a slash or a period between letters is ordinary prose ("N/A" beside a patient named NA).
+
+**A change to the reader is now a change to the verifier**: `@tp/redact` is in the closure of `@tp/packets`, so the
+mutation workflow runs the packets shards for it (docs/adr/0066, Part 4, amendment of this date).

@@ -28,10 +28,11 @@ import { BRACED, type FigureKind, scanText, sentenceSpans } from '../scan';
  * - every hidden character (one that prints as nothing or as something else), and every figure written
  *   in digits other than 0 to 9, which the verifier does not read;
  * - every occurrence of one of the case's own identifiers (a patient's name, a member ID, a claim
- *   number), compared without regard to case: identifiers are placeholders in the narrative, inserted
- *   at export, and a draft never carries one (PRD 12). The server passes the identifiers of the
- *   version's schedule rows, read from the canonical records; the browser never holds them, so there
- *   the stored result alone says so;
+ *   number), as a whole word without regard to case and in every form the letter reader's redaction reads
+ *   (./identifiers.ts): identifiers are placeholders in the narrative, inserted at export, and a draft never
+ *   carries one (PRD 12). The server reads for the identifiers of the version's schedule rows, from the
+ *   canonical records; the browser never holds them and reads for none (readsNoIdentifier), so there the
+ *   stored result alone says so, and the code that reads for them is never in the browser;
  * - every sentence without a citation marker, and every marker naming no source of the version;
  * - every placeholder naming an identifier kind or a schedule row that does not exist;
  * - an empty narrative.
@@ -279,7 +280,10 @@ export function identifierForms(identifiers: readonly string[]): string[] {
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Where the text holds one of the forms as a whole word, without regard to case, outside the spans to skip. */
+/**
+ * Where the text holds one of the forms as a whole word, without regard to case, outside the spans to skip: the
+ * verifier's first reading of identifiers (docs/adr/0047), which ./identifiers.ts keeps beside the letter reader's.
+ */
 export function identifierSpans(text: string, identifiers: readonly string[], skip: readonly TextSpan[]): TextSpan[] {
   const found: TextSpan[] = [];
   for (const form of identifierForms(identifiers)) {
@@ -308,10 +312,30 @@ export function strayBraces(text: string, placeholders: readonly TextSpan[]): Te
 export const DATED: ReadonlySet<FigureKind> = new Set(['date', 'month', 'month_day']);
 
 /**
- * The check. `identifiers` are the case's own (the version's schedule rows' patient names, member IDs
- * and claim numbers), which the server reads from the canonical records; the browser passes none.
+ * What a narrative's identifier check does not read as prose: `tokens`, the placeholders, citation markers and (at
+ * format /3) fact tokens and stray braces, where nothing written is the narrative's own words; and `dated`, the figures
+ * that name a date (DATED), where a month's name is the date and a number is the date unless it is the whole of it.
  */
-export function findMismatches(narrative: string, facts: NarrativeFacts, identifiers: readonly string[]): NarrativeCheck {
+export interface IdentifierSkip {
+  readonly tokens: readonly TextSpan[];
+  readonly dated: readonly TextSpan[];
+}
+
+/**
+ * A reading of a narrative's text (as it shows: ../readable.ts) for the case's own identifiers: the spans that hold
+ * one, in text order, none overlapping another. The server's is ./identifiers.ts's identifierReader, made from the
+ * identifiers of the version's schedule rows; the browser's is readsNoIdentifier.
+ */
+export type IdentifierReader = (text: string, skip: IdentifierSkip) => TextSpan[];
+
+/** The browser's reading, and a screen's: it holds no identifier, so it finds none. */
+export const readsNoIdentifier: IdentifierReader = () => [];
+
+/**
+ * The check. `identifiers` reads for the case's own (the version's schedule rows' patient names, member IDs
+ * and claim numbers), which the server reads from the canonical records; the browser's reads for none.
+ */
+export function findMismatches(narrative: string, facts: NarrativeFacts, identifiers: IdentifierReader): NarrativeCheck {
   return readNarrative(narrative, facts, identifiers).check;
 }
 
@@ -325,7 +349,7 @@ export interface NarrativeReading {
  * The check and every figure as it read them, from one reading of the narrative (the review of 2026-11-01, PE-9): the
  * editor's two answers on each keystroke, so it reads the text once.
  */
-export function readNarrative(narrative: string, facts: NarrativeFacts, identifiers: readonly string[]): NarrativeReading {
+export function readNarrative(narrative: string, facts: NarrativeFacts, identifiers: IdentifierReader): NarrativeReading {
   const readable = readableText(narrative);
   const { text } = readable;
   const scan = scanText(text);
@@ -352,8 +376,8 @@ export function readNarrative(narrative: string, facts: NarrativeFacts, identifi
       mismatches.push({ code: 'figure_not_in_input', kind: figure.kind, sentence: figure.sentence, start: figure.start, end: figure.end });
     }
   }
-  const skip = [...scan.placeholders, ...scan.markers, ...scan.figures.filter((figure) => DATED.has(figure.kind))];
-  for (const span of identifierSpans(text, identifiers, skip)) {
+  const skip = { tokens: [...scan.placeholders, ...scan.markers], dated: scan.figures.filter((figure) => DATED.has(figure.kind)) };
+  for (const span of identifiers(text, skip)) {
     add('identifier_in_narrative', 'identifier', at(span));
   }
   for (const token of scan.placeholders) {

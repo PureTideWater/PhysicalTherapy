@@ -205,4 +205,4 @@ export {
   KNOWN_REASON_CODES,
   verifyEvidenceRequests,
 } from './functions/evidence-requests';
-export { type LetterClaim, type PatientIdentifiers, SCREEN_FLOORS, compactIdentifier, identifierCandidates, identifierRuns, redactLetter } from './redact';
+export { type LetterClaim, type PatientIdentifiers, SCREEN_FLOORS, compactIdentifier, identifierCandidates, identifierRuns, redactLetter } from '@tp/redact';
