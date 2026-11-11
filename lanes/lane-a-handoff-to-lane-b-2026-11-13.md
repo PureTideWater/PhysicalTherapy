@@ -1,12 +1,12 @@
 # Lane A's handoff to Lane B, 2026-11-13
 
-Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 01:20 UTC.
+Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 01:30 UTC.
 
 Read `lanes/STATE.md` first: it is the current state. This file adds only what STATE.md does not hold.
 
 ## Why this file exists early
 Lane A's weekly limit showed its warning level at about 00:30 UTC on 2026-11-11, 11 hours into its week (it resets Tue
-2026-11-17 14:00 UTC). If Lane A's account stops before the handback, nobody on it can write a handoff, so this file is
+2026-11-17 14:00 UTC). The co-founder reported it under 40% at 01:15 UTC and can reset it. If Lane A's account stops before the handback, nobody on it can write a handoff, so this file is
 kept current instead. If STATE.md is newer than this file, trust STATE.md and the status files.
 
 ## What Lane A merged as acting Lane B
@@ -16,7 +16,7 @@ kept current instead. If STATE.md is newer than this file, trust STATE.md and th
 ## Handed back to Lane B (each item's status file holds its RESUME-BLOCK)
 - STATE.md items 1, 3, 5, 8 and 9, as STATE.md shows them when you read it.
 - `LANES.md` Queues item 24 (new on 2026-11-10): a `lock_timeout` on every web mutation (CAS-57; amends ADR 0092).
-  Draft #137 at 59eb9e9d is built and not reviewed: held, not assigned. Resume from
+  Draft #137 at 59eb9e9d is built; W4 runs its reviews and merges it. Its record is
   `approval-summaries/lane-b-web-lock-timeout-status.md`.
 
 ## Lane A keeps
