@@ -371,7 +371,9 @@ account's own address, from an outbox (`password_notice`) the database writes in
 this decision's retries. `mail_send_kind` and `mail_send_stream_kind` widen to admit it on the transactional stream
 alone. The operator role, until now a real-recipient sender on the notices set alone (`NoticeEmail`), also sends on the
 transactional set through its own statement, `PasswordNoticeEmail` (`ses:SendEmail` on MailFromAddress's identity and
-that set alone, from MailFromAddress); `NoticeEmail` is unchanged. `operator_record_mail_event()` returns a seventh
+that set alone, from MailFromAddress); `NoticeEmail` is unchanged. That one kind goes with Reply-To the support
+address, which it tells its reader to write to. It is a header of the message alone: the transactional stream's sender
+keeps none, where the screening stream's sender has one by Q12. `operator_record_mail_event()` returns a seventh
 column, `password_notice_undelivered`, last, so a caller that selects the six by name is unchanged; and
 `operator_mail_expire()` also deletes notices 90 days after the change, never one still pending. A notice not
 delivered, or not sent within 24 hours, logs `PASSWORD_NOTICE_UNDELIVERED`, which pages as every mail code does; a

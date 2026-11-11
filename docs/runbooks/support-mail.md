@@ -38,6 +38,7 @@ The job logs `SUPPORT_MAIL_REFUSED` when a run read a message that opened no tic
 
 `SUPPORT_MAIL_WITHHELD` means a message looked like it held patient information. Its ticket says only that it came and
 asks the desk to have the requester write again through the form; do not open the message in the bucket to read it.
+A person who cannot sign in cannot use the form: see "Password changed, not by me".
 
 ## Sign-in help tickets
 
@@ -57,18 +58,55 @@ account's name. Work from the ticket ID and the user ID only, never the message'
 - **Mail from an address that is not the account's own.** Never act on it. The job already refuses it as
   `unknown_sender` (above); ask the person to write from the address they sign in with.
 - **Password changed, not by me.** The password-changed email (docs/adr/0091) tells an account's address that a reset
-  changed its password, and asks the person to write to the support address from that address if it was not them. The
-  operator also brings a person here after telling them another way (docs/runbooks/deliverability.md, 3.10;
-  docs/runbooks/incident-response.md, "A password reset whose sessions were not ended").
+  changed its password. If it was not them, it asks the person to write to the support address from the address they
+  sign in with, and to tell their organization's administrator, who may be the one who writes. The email goes with
+  Reply-To the support address, so a plain reply to it comes here too. The operator also brings a person here after
+  telling them another way (docs/runbooks/deliverability.md, 3.10; docs/runbooks/incident-response.md, "A password
+  reset whose sessions were not ended" and "A password reset whose provider sign-out failed").
+
+  What arrives is not always readable:
+
+  - A reply that quotes the email, a forward of it, or a message that repeats the time it gave is withheld
+    (`SUPPORT_MAIL_WITHHELD`; the ticket reads "Mail to support, withheld"): the email's own first line holds a date and
+    its last an address, which the screen takes for patient information, as it takes a signature's phone number. So a
+    withheld ticket may be this case. Answer it by email, never by sending the person to the in-app form, which needs
+    the sign-in they may not have: ask whether their password was changed without them, and ask them to answer in a
+    new message with no quoted text, no date and no phone number.
+  - An automatic reply to the email (an out-of-office answer) opens a ticket the same way, readable or withheld. It is
+    not a "not me": open no security record for it.
+  - Mail from a sender SES could not verify, or from an address that is not the account's own, opens no ticket
+    (`unverified_sender`, `unknown_sender`, above); that person's other route is their organization's administrator.
+
+  Once a person, or their administrator, says the change was not theirs:
+
   1. Treat it as a mailbox compromise: someone read the code sent to that mailbox. A changed password nobody asked for
      is a security event: open the record (docs/runbooks/incident-response.md, section 1).
-  2. With the organization's administrator, end the account's access: disable the user and end their sessions
-     (docs/runbooks/incident-response.md, section 2, "A user or session"). The second factor still guards the account
-     meanwhile, because a reset never removes it (docs/adr/0081 A5).
-  3. Ask the person to secure the mailbox. Once the administrator confirms the mailbox is the person's alone again,
-     re-enable the user (a disabled account is sent no reset code), and the person resets the password again.
-  4. Work by the ticket ID and the user ID only: the audit log's `password_reset_completed` for that user gives the
-     change's time. Never copy an address or a name into the ticket or the record.
+  2. With the organization's administrator, end the account's sessions: End membership beside the person, pressed by
+     the administrator in Settings, Users, or by a platform administrator on the organization's console page
+     (`/console/organizations/<id>`). It ends every session of the user, signs them out at the identity provider and
+     ends their role in that organization at once. It does not disable the account or change its password, and the
+     database refuses it for an organization's only practice administrator. When the membership must stay, or the
+     account must be disabled, give the user ID to the founder, whose break-glass session does it
+     (docs/runbooks/incident-response.md, section 2, "A user or session"). An enrolled second factor still guards the
+     account meanwhile, because a reset never removes it (docs/adr/0081 A5).
+  3. Ask the person to secure the mailbox, and go on by mail or through the administrator: after End membership the
+     person's mail to the support address still opens tickets, but once the account is disabled, mail from its address
+     opens none (`unknown_sender`). Once the administrator confirms the mailbox is the person's alone again, the
+     person resets the password again: an account whose membership ended can still reset, and a disabled one is sent
+     no reset code, so the founder re-enables it first. Then a platform administrator adds the person back with Send
+     invitation on the organization's console page, the same address and role (Settings refuses an address that
+     already has an account): it restores the role at once and mails nothing, since the person has a password of
+     their own.
+  4. Work by the ticket ID and the user ID only. A ticket shows the requester's address, not their user ID: find the
+     reset, and the user ID with it, by its time, in a session as the operator role (`tp_operator`):
+
+     ```sql
+     SELECT object_id AS user_id, at FROM audit_event
+     WHERE action = 'password_reset_completed' AND at > now() - interval '2 days'
+     ORDER BY at DESC;
+     ```
+
+     Never copy an address or a name into the ticket or the record.
 - **A password set, but no second factor ever enrolled, and the reset sends nothing.** A code goes only to an account
   with an enrolled second factor, so this person cannot reset, and a second factor is set up only inside a live
   invitation (docs/adr/0088 D3). Check with the organization's administrator that the request is genuine. If the person

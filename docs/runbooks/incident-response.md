@@ -9,8 +9,8 @@ a real file, a key or a token into the incident record, a ticket, a chat or a se
 
 A security event alarm (failed-MFA burst, sign-in burst, WAF block surge, GuardDuty finding, a bulk export, a grant
 change or role escalation outside a ticket, a refused second-factor enrolment, a refused client credential, one
-account's reset requests reaching five in an hour, a password reset whose sessions were not ended), a finding of the
-weekly sign-in review below, a customer's or a
+account's reset requests reaching five in an hour, a password reset whose sessions were not ended, a password reset
+whose provider sign-out failed), a finding of the weekly sign-in review below, a customer's or a
 vendor's report, a lost device, a leaked credential, or anything that suggests PHI reached someone it should not.
 
 ## 1. Open the record (within one hour)
@@ -23,8 +23,15 @@ vendor's report, a lost device, a leaked credential, or anything that suggests P
 
 Pick what fits; do the cheapest effective step first.
 
-- **A user or session:** disable the user in the identity provider and end their sessions (Console → Users, or the
-  `user_disabled` path); revoke their devices.
+- **A user or session:** press End membership beside the person on their organization's console page (Console →
+  Organizations → the organization). It ends every session of the user, signs them out at the identity provider and
+  ends their role in that organization at once, in one step: if the provider refuses the sign-out, the page shows an
+  error and nothing was ended. It does not disable the account or change its password, and the database refuses it for
+  an organization's only practice administrator. The page lists members by their sign-in email and shows no user ID,
+  so it needs the person, not only an ID. When the membership must stay, when the account must be disabled at the
+  identity provider, or when only a user ID is known, give the user ID to the founder, whose break-glass session does
+  it; a disabled user's sessions end at their next request (`user_disabled`). A device is revoked by the person
+  themself, on `/account/devices`.
 - **A grant:** revoke it (Settings → Grants for the practice administrator; the console for a support grant). The next
   request is denied.
 - **A credential or key:** rotate it in Secrets Manager and force a new deployment of the web and worker services
@@ -155,9 +162,10 @@ the web's line `security event: password reset sessions not ended`.
 1. **What it means.** A reset was completed with the code sent to the account's mailbox, so Cognito holds the new
    password; but the transaction that ends the app's sessions of that account and records the reset failed twice, so
    those sessions were not ended, the reset was not recorded (no `password_reset_completed`), and no password-changed
-   email was queued (docs/adr/0091). The person was answered "could not continue". The second factor still guards the
-   account (docs/adr/0081 A5).
-2. **Read the line**; the alarm names no user. In Logs Insights on `/tp/<env>/web`, for the alarm's period:
+   email was queued (docs/adr/0091). The person was answered "could not continue". An enrolled second factor still
+   guards the account (docs/adr/0081 A5).
+2. **Read the line**; the alarm names no user, and it pages when it goes into ALARM, not once a line. In Logs Insights
+   on `/tp/<env>/web`, from five minutes before the alarm was raised until it is back at OK:
 
    ```
    fields @timestamp, user_id, request_id
@@ -165,15 +173,63 @@ the web's line `security event: password reset sessions not ended`.
    ```
 
    Keep the user IDs and request IDs only.
-3. **Contain at once** (section 2, "A user or session"): disable the user and end their sessions, by user ID. This does
-   what the failed transaction did not.
+3. **Contain at once** (section 2, "A user or session"): end the user's sessions, which is what the failed transaction
+   did not do. Find the person's organization from the user ID (docs/runbooks/deliverability.md, 3.10, "In every
+   case", step 1) and press End membership beside them; where the page does not make plain which member the user ID
+   is, or the membership must stay, give the user ID to the founder, whose break-glass session ends the sessions by
+   user ID.
 4. **Tell the person another way**, through their organization's administrator or the account contact, working by user
    ID: their password was changed at the line's time. If it was not them, open the record (section 1) and follow
-   docs/runbooks/support-mail.md's "Password changed, not by me"; if it was, re-enable the user once the administrator
-   confirms it, and the person signs in with the new password.
+   docs/runbooks/support-mail.md's "Password changed, not by me". If it was, once the administrator confirms it, a
+   platform administrator adds the person back with Send invitation on the organization's console page, the same
+   address and role (or the founder re-enables an account the break-glass session disabled), and the person signs in
+   with the new password.
 5. **Find the cause.** The line carries no error code (the flow's retry drops it), so read the web's and the database's
    errors and alarms in the same minutes (the database's connections, above, for example).
 6. **Record it** in a ticket by user ID and request ID, never an address or a name.
+
+## A password reset whose provider sign-out failed (`PasswordResetProviderSignOutFailed`; docs/adr/0091, D10)
+
+A security event alarm as well. It fires (on the operator topic, at one in five minutes) on the web's line `security
+event: password reset provider sign-out failed`.
+
+1. **What it means.** A reset was completed, and the sign-out at Cognito that follows every completed reset failed.
+   Unless `PasswordResetSessionsNotEnded` is raised for the same request, the app's sessions of the account ended and
+   the reset was recorded as usual, and its password-changed email is queued. What the failed sign-out leaves open is
+   a sign-in step begun before the reset that had passed the password and the code and stopped at registering a
+   hardware key: its grant from Cognito still works for up to 15 minutes, so a key can be registered after the reset,
+   and that key then signs in without the password (docs/adr/0091, D10).
+2. **Read the line**; the alarm names no user, and it pages when it goes into ALARM, not once a line. In Logs Insights
+   on `/tp/<env>/web`, from five minutes before the alarm was raised until it is back at OK:
+
+   ```
+   fields @timestamp, user_id, request_id, error_code
+   | filter msg = "security event: password reset provider sign-out failed"
+   ```
+
+   Keep the user IDs, the request IDs and each line's time only. `error_code` is the name of the provider's error.
+3. **Look for a key or a sign-in after the line**, for the next 15 minutes, in a session as the operator role
+   (`tp_operator`):
+
+   ```sql
+   SELECT action, purpose, at, request_id FROM audit_event
+   WHERE actor_id = '<user_id>' AND action IN ('hardware_key_registered', 'sign_in')
+     AND at >= '<line time>'::timestamptz
+   ORDER BY at;
+   ```
+
+4. **If there is a row**, treat it as a takeover until the person says otherwise: the log cannot tell the person's own
+   sign-in after their reset from another party's. Open the record (section 1) and contain (section 2, "A user or
+   session"). If End membership answers with an error, the provider is still refusing the sign-out and nothing was
+   ended: give the user ID to the founder. A `hardware_key_registered` row is a key that neither a reset nor End
+   membership removes, and that signs in without the password: tell the founder of it in every case, and do not add
+   the person back until the founder has dealt with that key. Then tell the person another way, through their
+   organization's administrator or the account contact, and ask whether the key or the sign-in was theirs.
+5. **If there is none after 15 minutes**, record it and close: a ticket by user ID and request ID, never an address or
+   a name.
+6. **Find the cause** from the line's `error_code` and Cognito's service health in the same minutes: a throttle, an
+   outage at Cognito, or the application role without `cognito-idp:AdminUserGlobalSignOut`
+   (`infra/lib/constructs/application-role.ts`).
 
 ## Weekly sign-in review
 
@@ -200,8 +256,20 @@ accounts, in a session as the operator role (`tp_operator`), which reads `audit_
 4. Read the week's history of the other reset and enrolment alarms (`PasswordResetNotDeliveredConfig`,
    `PasswordResetNotDeliveredThrottled`, `PasswordResetRequestFailed`, `SecondFactorEnrolmentRefused`,
    `ClientCredentialRefused`, `ClientCredentialProbeRefused`, `PasswordResetRequestOverFloor`,
-   `PasswordResetSessionsNotEnded`): each one raised that no ticket or incident record already explains gets one.
-5. Record the review in its ticket: the date, the environment, the number of rows, and the user IDs, never an address
+   `PasswordResetSessionsNotEnded`, `PasswordResetProviderSignOutFailed`): each one raised that no ticket or incident
+   record already explains gets one.
+5. Check that no undelivered password-changed email was missed (docs/adr/0091, D9). Its page is a log line, and
+   several can share one page; the audit log keeps one `password_notice_undelivered` a notice whether or not its line
+   was read:
+
+   ```sql
+   SELECT object_id AS user_id, at, request_id FROM audit_event
+   WHERE action = 'password_notice_undelivered' AND at > now() - interval '7 days'
+   ORDER BY at;
+   ```
+
+   Each row has a ticket (docs/runbooks/deliverability.md, 3.10); one that has none is worked now, by its user ID.
+6. Record the review in its ticket: the date, the environment, the number of rows, and the user IDs, never an address
    or a name.
 
 ## The yearly tabletop
