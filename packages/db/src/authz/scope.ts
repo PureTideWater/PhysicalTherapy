@@ -37,6 +37,67 @@ export interface ScopeClient {
   release(destroy?: boolean | Error): void;
 }
 
+/**
+ * A transaction's COMMIT was answered, and the answer was not COMMIT: PostgreSQL ends a transaction in which a
+ * statement failed with the tag ROLLBACK and no error, so work whose code swallowed a statement's error would be
+ * reported as done with nothing written. Nothing of the transaction was saved, its audit event included. The message
+ * holds no statement, value or identifier.
+ */
+export class TransactionNotCommittedError extends ScopeError {
+  override readonly name = 'TransactionNotCommittedError';
+  constructor() {
+    super('the transaction was rolled back at its commit: nothing was saved');
+  }
+}
+
+/**
+ * A transaction's COMMIT ended without the server's word on it (the connection ended, or the server ended the
+ * session): the commit may or may not have been made, so the work is neither done nor undone as far as its caller can
+ * know. The cause is kept for a debugger and is never logged: pg's words can hold a statement.
+ */
+export class CommitOutcomeUnknownError extends ScopeError {
+  override readonly name = 'CommitOutcomeUnknownError';
+  constructor(cause: unknown) {
+    super('the transaction’s commit ended without an answer: whether it was saved is not known', { cause });
+  }
+}
+
+/** An SQLSTATE: five characters of digits and upper-case letters (a connection's failure carries words like ECONNRESET, or nothing). */
+const SQLSTATE = /^[0-9A-Z]{5}$/;
+
+/**
+ * Whether the server itself refused the statement with an ERROR, which rolls its transaction back for certain: an
+ * SQLSTATE, and a severity that is not one that ends the session (FATAL, PANIC: the commit may have been made before
+ * the session ended). A stand-in's error with an SQLSTATE and no severity is read as the server's.
+ */
+function refusedByServer(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const { code, severity } = error as { readonly code?: unknown; readonly severity?: unknown };
+  return typeof code === 'string' && SQLSTATE.test(code) && severity !== 'FATAL' && severity !== 'PANIC';
+}
+
+/**
+ * Commits the client's open transaction and reads the answer, which a bare `COMMIT` does not (docs/adr/0092, the
+ * amendment of 2026-11-11, item 4 of its follow-ups): returns only when the server answered COMMIT. A transaction
+ * that had failed is answered ROLLBACK, and this throws TransactionNotCommittedError; an ERROR of the server's own
+ * (a deferred constraint, a serialization failure, a lock timeout) is rethrown as it is, the transaction rolled back
+ * for certain; any other end is CommitOutcomeUnknownError. Every scope here commits through it; a caller that writes
+ * its own transaction may too.
+ */
+export async function committed(client: Pick<ScopeClient, 'query'>): Promise<void> {
+  let answer: { readonly command?: unknown } | undefined;
+  try {
+    answer = await client.query('COMMIT');
+  } catch (error) {
+    throw refusedByServer(error) ? error : new CommitOutcomeUnknownError(error);
+  }
+  if (answer?.command !== 'COMMIT') {
+    throw new TransactionNotCommittedError();
+  }
+}
+
 /** A pg Pool, or anything that hands out clients the same way. */
 export interface ScopePool<C extends ScopeClient> {
   connect(): Promise<C>;
@@ -123,7 +184,9 @@ function lockTimeoutText(bound: LockWaitBound): string | undefined {
 
 /**
  * Runs `open` then `run` in one transaction on one connection. A failure anywhere rolls back; a
- * connection whose rollback fails is destroyed rather than returned to the pool. With `lockTimeout`, the transaction's
+ * connection whose rollback fails is destroyed rather than returned to the pool. The work's result is returned only
+ * when the server answered COMMIT (committed): a transaction rolled back at its commit throws, so no caller reports
+ * work as saved that was not. With `lockTimeout`, the transaction's
  * lock waits are bounded from its first statement (LockWaitBound).
  */
 async function transaction<P extends ScopePool<ScopeClient>, S, T>(
@@ -146,7 +209,7 @@ async function transaction<P extends ScopePool<ScopeClient>, S, T>(
       await client.query(SET_LOCK_TIMEOUT, [lockTimeout]);
     }
     const result = await run(await open(client));
-    await client.query('COMMIT');
+    await committed(client);
     return result;
   } catch (error) {
     try {

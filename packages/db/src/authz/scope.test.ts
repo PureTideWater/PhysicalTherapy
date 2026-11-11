@@ -4,7 +4,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { openPool, openedPool } from '../connect';
 import { fakePool } from '../test-support/fake-pool';
 import { ScopeError, isUuid, requireUuid } from './ids';
-import { JobActorIsPersonError, OnePracticePerJobError, type PracticeScope, type ScopeClient, accessByPractice, onePracticeJob, openScopeReaches, withActor, withJobScope, withPracticeScope, withPublicSnapshot } from './scope';
+import {
+  CommitOutcomeUnknownError,
+  JobActorIsPersonError,
+  OnePracticePerJobError,
+  type PracticeScope,
+  type ScopeClient,
+  TransactionNotCommittedError,
+  accessByPractice,
+  committed,
+  onePracticeJob,
+  openScopeReaches,
+  withActor,
+  withJobScope,
+  withPracticeScope,
+  withPublicSnapshot,
+} from './scope';
 
 const ACTOR = '3f0b8c1e-5d2a-4e7f-9a6b-1c2d3e4f5a60';
 const PRACTICE_A = '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c01';
@@ -72,10 +87,67 @@ describe('transaction handling', () => {
     expect(released).toEqual([false]);
   });
 
-  it('rolls back when the commit fails (a deferred constraint), and rethrows', async () => {
-    const { pool, texts } = fakePool((text) => (text === 'COMMIT' ? new Error('deferred check failed') : undefined));
-    await expect(withActor(pool, ACTOR, () => Promise.resolve(1))).rejects.toThrow('deferred check failed');
+  it('rolls back when the server refuses the commit (a deferred constraint), and rethrows the server’s own error', async () => {
+    const refused = Object.assign(new Error('deferred check failed'), { code: '23514', severity: 'ERROR' });
+    const { pool, texts } = fakePool((text) => (text === 'COMMIT' ? refused : undefined));
+    await expect(withActor(pool, ACTOR, () => Promise.resolve(1))).rejects.toBe(refused);
     expect(texts().slice(-2)).toEqual(['COMMIT', 'ROLLBACK']);
+  });
+
+  it('reads COMMIT’s answer: a transaction the server ended with ROLLBACK is not reported as done, in any scope (Queues item 25 (a))', async () => {
+    // PostgreSQL answers COMMIT in a failed transaction with the tag ROLLBACK and no error.
+    const rolledBack = (text: string) => (text === 'COMMIT' ? { command: 'ROLLBACK' } : text.includes('app_actor_is_person') ? [{ person: false }] : undefined);
+    const ran: string[] = [];
+    const work = (name: string) => () => {
+      ran.push(name);
+      return Promise.resolve('saved');
+    };
+    for (const [name, open] of [
+      ['actor', (pool: ReturnType<typeof fakePool>['pool']) => withActor(pool, ACTOR, work('actor'))],
+      ['practice', (pool: ReturnType<typeof fakePool>['pool']) => withPracticeScope(pool, { actorId: ACTOR, practiceIds: [PRACTICE_A] }, work('practice'))],
+      ['job', (pool: ReturnType<typeof fakePool>['pool']) => withJobScope(pool, { jobId: JOB, practiceId: PRACTICE_A }, work('job'))],
+      ['public', (pool: ReturnType<typeof fakePool>['pool']) => withPublicSnapshot(pool, work('public'))],
+    ] as const) {
+      const { pool, texts, released } = fakePool(rolledBack);
+      const outcome = await open(pool).then(
+        (value) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
+      expect(outcome, name).toEqual({ error: new TransactionNotCommittedError() });
+      expect((outcome as { error: Error }).error.message).toBe('the transaction was rolled back at its commit: nothing was saved');
+      expect(texts().slice(-2)).toEqual(['COMMIT', 'ROLLBACK']);
+      // The connection is sound: it goes back to the pool.
+      expect(released).toEqual([false]);
+    }
+    expect(ran).toEqual(['actor', 'practice', 'job', 'public']);
+  });
+
+  it('takes no answer but COMMIT as a commit: an answer with another tag, or none, is not one', async () => {
+    for (const command of ['ROLLBACK', '', 'SELECT']) {
+      await expect(committed({ query: () => Promise.resolve({ rows: [], rowCount: 0, command, oid: 0, fields: [] }) })).rejects.toBeInstanceOf(TransactionNotCommittedError);
+    }
+    await expect(committed({ query: () => Promise.resolve(undefined as never) })).rejects.toBeInstanceOf(TransactionNotCommittedError);
+    await expect(committed({ query: () => Promise.resolve({ rows: [], rowCount: 0, command: 'COMMIT', oid: 0, fields: [] }) })).resolves.toBeUndefined();
+  });
+
+  it('says a commit’s outcome is unknown when it ends without the server’s refusal: a lost connection, or a session the server ended', async () => {
+    const lost = Object.assign(new Error('SYNTHETIC socket words'), { code: 'ECONNRESET' });
+    const ended = Object.assign(new Error('SYNTHETIC shutdown words'), { code: '57P01', severity: 'FATAL' });
+    for (const cause of [lost, ended, new Error('SYNTHETIC no code'), 'SYNTHETIC not an error']) {
+      const { pool, released } = fakePool((text) => (text === 'COMMIT' ? (cause instanceof Error ? cause : new Error(cause)) : text === 'ROLLBACK' ? new Error('connection lost') : undefined));
+      const error = await withActor(pool, ACTOR, () => Promise.resolve(1)).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(CommitOutcomeUnknownError);
+      // Its words never hold pg's: those can carry a statement.
+      expect((error as Error).message).toBe('the transaction’s commit ended without an answer: whether it was saved is not known');
+      expect((error as Error).message).not.toContain('SYNTHETIC');
+      expect(released).toEqual([true]);
+    }
+    await expect(committed({ query: () => Promise.reject('SYNTHETIC not an object' as unknown as Error) })).rejects.toBeInstanceOf(CommitOutcomeUnknownError);
+    // The server's own ERROR, by its SQLSTATE, is certain: the transaction is rolled back.
+    const serialization = Object.assign(new Error('could not serialize'), { code: '40001', severity: 'ERROR' });
+    await expect(committed({ query: () => Promise.reject(serialization) })).rejects.toBe(serialization);
+    const standIn = Object.assign(new Error('a stand-in with a code and no severity'), { code: '55P03' });
+    await expect(committed({ query: () => Promise.reject(standIn) })).rejects.toBe(standIn);
   });
 
   it('destroys a connection whose rollback fails', async () => {
