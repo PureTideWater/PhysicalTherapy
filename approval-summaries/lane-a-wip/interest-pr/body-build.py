@@ -1,87 +1,81 @@
-import re, sys, json
-D='/tmp/claude-0/-home-user-PhysicalTherapy/e935a935-d2ff-5a27-860c-22677590c441/scratchpad/intfix'
-before=open(f'{D}/body/body-before.md').read()
-summary=open(f'{D}/logs/dm-summary.log').read().strip()
-checks=open(f'{D}/body/checks.md').read().strip()
-findings=open(f'{D}/body/findings.md').read().strip()
+import re,sys
+S='/tmp/claude-0/-home-user-PhysicalTherapy/8410bd9b-2512-5777-b6c2-5d26543110f9/scratchpad'
+b=open(f'{S}/body-before.md').read()
+summary=open(f'{S}/dm-summary.md').read().strip()
+CAS=open(f'{S}/cas425.txt').read().strip()
+MUT=open(f'{S}/mutation.txt').read().strip()
+def sec(title):
+    m=re.search(r'^## '+re.escape(title)+r'\n(.*?)(?=^## |\Z)', b, re.S|re.M); assert m, title; return m.group(0).rstrip()+'\n'
+what=sec('What changes')
+later='''
+**Rounds 3 to 6 (after 9824f4e9; ADR 0084 D13 to D19).** No migration, table, index or grant changed in them; the migration's header wording did, which is why the document's hash is now `bb7662c6…`.
 
-def section(text, title):
-    m=re.search(r'^## '+re.escape(title)+r'\n(.*?)(?=^## |\Z)', text, re.S|re.M)
-    return m.group(0)
+- **Interest never ends a reconcile above the cash (D18).** Within one reconcile the PLB L6s are walked again until a walk writes nothing, at most (the entries they can still write) + 1 walks. A walk that still writes at the limit is a defect: the reconcile is refused (`InterestUnsettled`), its transaction rolls back whole, the job is retried, and the log names the job, the practice and the walk count, never an amount.
+- **A take-back written in part, and a person's later match (MONEY-R4-1, R2M2-1).** A take-back counts whole only when written whole; interest a later hand match would put out of the PLB L6's reach is kept off the line.
+- **One chain's interest on a line at a time (D19; RVM5-1, blocking, found in round 5).** One PLB L6 taking back two chains' interest held on the same line could write only one entry there (one entry per PLB L6 and line, as granted), leaving the second above the cash. A payment of a chain is now kept off a line while the line holds another chain's interest; it is written once the line is free, if the PLB L6 still owes it. See "The trade-off for the founder" below.
+- **The chain walk reads each step's claim by its key, whatever the planner's statistics (round 6).** With no column statistics on `claim` (just loaded, not yet analyzed) the walk was planned as a hash of every claim of the practice once a step, and a 2,000-line reconcile did not end (CI's `db (1/4)`, cancelled twice). Same rows, a fenced keyed read; 32.5 s with no statistics, 21.1 s with (budget 60 s).
+- **The base's pass-level reconcile (#134, ADR 0087) and lock rule (#136, ADR 0092) are merged in.** #134's per-line reference (CAS-49) now runs this pull request's interest step and reads `ledger_match.seq`; CAS-49.1 holds at zero the runs whose settle entries would differ row for row.
+'''
+what=what.rstrip()+'\n'+later
+checks=f'''## Checks
 
-what=section(before,'What changes')
-# words: the reported group's label and note
-old_words="""then once: "Interest is counted only as a check pays it or takes it back (PLB L6), in the list above." The empty text stays "No interest paid.\""""
-new_words="""set apart as a group of their own under the label "Reported on the claim (AMT I), not counted" (its list named the same), then once: "Interest is counted only as a check pays it or takes it back (PLB L6), in the Interest list above." The empty text stays "No interest paid." (review UX-INT-1)"""
-assert old_words in what, 'words'
-what=what.replace(old_words,new_words)
-old_once="""- **Once, however many reconciles run (D6).**"""
-new_once="""- **Whom a named PLB L6 reaches (D5; review LED-R1).** A PLB L6 that names a chain reaches the case lines matched to any claim of that chain, whichever claim the reference carries: one naming the original, whose control number its reversal carries too, credits the lines its correction approved, as naming the correction or nothing does. Before the fix round it credited nothing.
-- **Take-backs first (D5; review LED-R2).** One PLB L6 writes one entry on a line, so its take-backs are written before its payments, and a payment goes to the lines they left. When two chains' draws of opposite signs meet on a line no other line can take (an unlinked correction beside a linked chain's take-back, LED-24 `two-chains.835`), the payment is the one left unwritten: the figure errs low, never above the cash.
-- **Once, however many reconciles run (D6).**"""
-assert old_once in what
-what=what.replace(old_once,new_once)
-old_words_hdr="""- **What a person reads** (design section 7, word for word; `pnpm lint:copy` reads every one):"""
-new_words_hdr="""- **What a person reads** (design section 7, word for word, but for the two marked as the fix round's; `pnpm lint:copy` reads every one):"""
-assert old_words_hdr in what
-what=what.replace(old_words_hdr,new_words_hdr)
-old_nolist="""  - No screen offers the reversal of an interest match."""
-new_nolist="""  - No screen offers the reversal of an interest match.
-  - **Words the design did not list** (the fix round, review UX-INT-1): the group label "Reported on the claim (AMT I), not counted", and "in the Interest list above" where section 7 has "in the list above". Design section 7 is to be amended to match."""
-assert old_nolist in what
-what=what.replace(old_nolist,new_nolist)
-old_mig="""  - A preflight checks that `ledger_match_rules()` is the body of 20261023120000 it replaces, that `ledger_entry_within_interest()` does not exist yet, and that `claim_by_superseded` exists."""
-new_mig="""  - A preflight checks that `ledger_match_rules()` is the body of 20261023120000 it replaces, that `ledger_entry_within_interest()` does not exist yet, and that `claim_by_superseded` exists.
-  - The table locks, without a queue (review INT-REL-3): it takes `ledger_entry`'s and `ledger_match`'s ACCESS EXCLUSIVE locks together with NOWAIT, once a second, up to 300 tries, as SUITE-CAP-1b's migration takes its own (ADR 0083). A refused try holds and queues nothing, so a reconcile caught between its read of `ledger_entry` and of `ledger_match`, or a page reading them the other way round, goes on and never deadlocks (40P01); if the tables stay in use for five minutes it fails with "ledger_entry or ledger_match stayed in use for five minutes; run the deploy again (docs/adr/0084)" before any service moves."""
-assert old_mig in what
-what=what.replace(old_mig,new_mig)
-old_win="""  - In the deploy window, adding `seq` and validating the two CHECKs hold ACCESS EXCLUSIVE locks on `ledger_match` and `ledger_entry` to the migration's end; a reconcile or ledger page waits, then proceeds (well under a second at launch size)."""
-new_win="""  - In the deploy window, once the loop holds them, the two locks last to the migration's end (adding `seq` and validating the two CHECKs); a reconcile or ledger page waits, then proceeds (well under a second at launch size)."""
-assert old_win in what
-what=what.replace(old_win,new_win)
-old_rec="""Since 74a6b290, a take-back is also cut to the line's interest as a whole, so two chains on one line after a specialist's correction can never meet the line floor and roll back a practice's reconcile."""
-new_rec="""Since 74a6b290, a take-back is also cut to the line's interest as a whole, so two chains on one line after a specialist's correction can never meet the line floor and roll back a practice's reconcile. The interest path reads each claim's standing claim matches, each PLB L6's entries, each interest match's chain and each line's holdings through lookups built once a pass and kept current as it writes (review INT-REL-2): a draw reads only its own claims' lines, never every case line against every match, and the attribution's rows are grouped once by remittance, hash and chain."""
-assert old_rec in what
-what=what.replace(old_rec,new_rec)
-old_tests="""and the new journey `apps/web/e2e/ledger-interest.spec.ts`."""
-new_tests="""and the new journey `apps/web/e2e/ledger-interest.spec.ts`, which signs in a billing manager of its own, `interest-manager` (`apps/web/scripts/synthetic-personas.ts`; review INT-REL-1). The fix round adds LED-23 `named-original.835` and `later-l6-original.835`, LED-24 `two-chains.835`, the deploy-window test `packages/db/src/ledger-interest.db.test.ts`, and CAS-42.3 (`reconcile.large.db.test.ts`) with the implementation guide's interest in every check: AMT I 0.50 on each correction and one PLB L6 per check, credited once and walked again by the measured pass within its 150 s budget."""
-assert old_tests in what
-what=what.replace(old_tests,new_tests)
-old_docs="""- **Documents:** ADR 0084 (new, with the founder's exception word for word);"""
-new_docs="""- **Documents:** ADR 0084 (new, with the founder's exception word for word; the fix round amends D5 (a named chain's claims, the take-back's cut to the line's interest as a whole, take-backs first), D16 (the lock loop) and its consequences (two chains on one line; at size));"""
-assert old_docs in what
-what=what.replace(old_docs,new_docs)
-# base merges
-m=re.search(r'- \*\*This round:\*\*.*?\n(?=- \*\*Earlier:\*\*)', what, re.S)
-assert m
-what=what.replace(m.group(0), """- **The fix round:** `claude/build-platform` 0f4a5ed5 (#125, Cognito's code emails) merged into a8b4a088 as 15f3359d, then 23b25ad0 (#127, a payer letter's SSN and phone numbers redacted) into 35e7762a as 23369ae6, the head. No conflict in either: `test-matrix.md`, the synth matrix and registry, `watched-paths.txt`, `PRD.md` and `reconciliation-001.md` auto-merged with every line either side added kept. Neither delta touches a migration, function file, ledger or reconcile file. Each time: `pnpm install` up to date, `watched.ts --write` 577 lines unchanged, `pnpm db:domain-model --out --strict` on a freshly migrated database (the provenance line only), `synth --all` 0 written.
-- **Before it:** f7d609cc (SUITE-CAP-1b merged as #110, with the founder's approval line 61fc4e6c, its provenance commit 5199c2a6 and #121's brand settlement), merged into 650a3108 as c49367c5: one conflict, in `docs/product/domain-model.md`, on the provenance and approval lines, the base's side taken and regenerated.
-""")
-what=what.replace("- **Earlier:** 1b's heads","- **Earlier still:** 1b's heads")
-old_reread="""The marker route was not used."""
-new_reread="""The marker route was not used for the merges. The fix round edited 20261110090000 once, through the new-migration marker route (shell-created, trap-removed, never committed), for its lock loop and header (review INT-REL-3), with its failing-first test; no object, body, check or grant changed, so the function files did not."""
-assert old_reread in what
-what=what.replace(old_reread,new_reread)
+The required checks report on this page by themselves: <!-- required-checks -->`all green`, `mutation`,
+`screening-capacity gate` and `approval-of-record`<!-- /required-checks -->.
 
-why=section(before,'Why')
-notchange=section(before,'What it does not change')
-nc_old="""Ledger (`packages/ledger`): changes, within the granted exception only: `interest.ts` and its tests,"""
-assert nc_old in notchange
-freeze=section(before,'Freeze exception')
-fz_old="""- **This pull request stays within it.** Of the ledger files, it changes only those section 10.1 lists (`pass.ts`, listed, needed no change). Every other changed file is a test, a synthetic fixture, a generated file or a record that design section 11 lists, plus `streamed.db.test.ts` (it reads matches by `seq`) and LED-25's generated `expected.json`."""
-fz_new="""- **This pull request stays within it.** Of the ledger files, it changes only those section 10.1 lists (`pass.ts`, listed, needed no change). Every other changed file is a test, a synthetic fixture, a generated file or a record that design section 11 lists, plus `streamed.db.test.ts` (it reads matches by `seq`) and LED-25's generated `expected.json`.
-- **The fix round stays within it too.** Its code changes are in listed files only: `packages/ledger/src/interest.ts` (take-backs first; behaviour 4's "never below zero on a line", and behaviour 1's caps, unchanged), `interest-chains.ts` and `remittances.ts` (a named chain's claims, PRD 13's granted "the claims the PLB L6 names", behaviour 2; the lookups, which change no amount), the reconciliation display and page (the reported rows' label), and the migration, whose new lock loop takes the two tables' locks and changes no object, so section 10.1's DDL is unchanged. Its other files are tests, synthetic fixtures and a synthetic e2e persona (`synthetic-personas.ts`), ADR 0084 and the generated domain model. None changes the WO's naming, the walk's order, a principal amount, recovered or the proof cap."""
-assert fz_old in freeze
-freeze=freeze.replace(fz_old,fz_new)
+CI is the suite of record. On the head, 8a61c612 (base 06cde5eb merged; the base has since moved, see the last section):
 
-dm=section(before,'Domain model')
-dm_old=re.search(r'- \*\*SHA-256 before and after\.\*\*.*?\n(?=- \*\*Function files)', dm, re.S).group(0)
-dm_new="""- **SHA-256 before and after.** Before: `e024cf9fce732e2c94795c0cacf8dfc890cef486413c92039108034854efc4df`, the base's, approved by Tyler Williams on 2026-11-05 (61fc4e6c). After: `f1b603ca24d3414d3524127e0eae134ecd5df1c67a528bcf2b88c44e94601ef7` at 23369ae6, as `--summary-since` and `--check --require-approval` print it. It moved from 47887070…eb8ef because the fix round's lock loop changed the migration's SHA-256 (now `35e53da4b31b3c6671800eba9591db9a3b10af6a9a1f154ff28e3fb281f37741`) and the ADRs its header cites (ADR 0083 joins 0009 and 0084); the schema did not change. The approval line is line 7469, the document's last line, and it is blank. Both are provisional until the final head.
-"""
-dm=dm.replace(dm_old,dm_new)
-dm=dm.replace("""- **Function files:** the 2 listed above, 1 added and 0 removed, none flagged SECURITY DEFINER, tenant scope, privileges or PUBLIC. Each diff was read:""","""- **Function files:** the 2 listed above, 1 added and 0 removed, none flagged SECURITY DEFINER, tenant scope, privileges or PUBLIC, unchanged by the fix round (`--out` wrote 0 of 382). Each diff was read:""")
-approval=section(before,"The founder's approval")
-footer = approval  # includes trailer
-body='\n\n'.join(x.strip('\n') for x in [summary, what, why, notchange, '## Checks\n\n'+checks, "## Reviewer agents' findings\n\n"+findings, freeze, dm, approval])+'\n'
-open(f'{D}/body/body-new.md','w').write(body)
-print(len(body))
+| Check | Result |
+| --- | --- |
+| `static`, `lint`, `build`, `images`, `unit`, `db (1/4)` to `db (4/4)`, `e2e (1/2)`, `e2e (2/2)` | Passed ([run 42946014889](https://github.com/PureTideWater/PhysicalTherapy/actions/runs/42946014889)). `db (1/4)` in 11.5 min; it was cancelled at 20 min on bf2fc44f and e4ed0f0a with CAS-42.3 unfinished (the planner defect above, fixed in b8b4ec0d). |
+| `domain model` | **Did not pass, expected:** `--check` and `--strict` hold; `--require-approval` fails on the blank approval line alone (SHA-256 `bb7662c681fbcc658b9845b83da6a1b8a0df13759a685849cde58d48fb456bf8`). |
+| `all green` | **Did not pass**, from `domain model` only. |
+| `mutation` | {MUT} |
+| `release-capacity` (CAS-42.5, the weekly real-size run, dispatched by hand) | {CAS} |
+
+Locally: the full suite ran once on f0a3b6ad (before the base moved), green through the end-to-end journeys and the money-ledger mutation shard, then was stopped for the base merge. On the merged tree: typecheck, lint, `lint:copy`, `lint:logs`, `check:fixtures`, `verify-content` and `db:domain-model --check --strict` passed on 97225576; db shard 1 passed 3,347 of 3,347 on e4ed0f0a; the reconcile, interest, chain, pass-equality and reconciliation-route database tests passed on 8a61c612's tree (169 of 169), CAS-42.3 at 21.1 s. No third full local run was made: the container restarted twice mid-run. Red first: RVM5-1 in the database (11.40 on the lines against 5.40 and 6.00 of cash) and in the composing property; the chain walk's plan test on the plain join.
+'''
+f=sec("Reviewer agents' findings")
+for drop in ['**F-M2-3**, **DB2-3**','**F-M2-4**, **DB2-2**']:
+    i=f.index(drop); a=f.rfind('\n',0,i)+1; e=f.index('\n',i)+1; f=f[:a]+f[e:]
+i=f.index('What the reviews did not see:')
+rounds='''Rounds 3 to 6 (each change to money or database code reviewed by two adversarial reviewers, every finding checked against the code before any fix):
+
+| Round | Finding | Resolution |
+| --- | --- | --- |
+| 3 and 4 | **F-M2-1** (should-fix, upheld by 3 of 3 judges). LED-R1's widening mis-split a PLB L6 naming the latest correction. | Fixed (c7f152cc): it reaches that correction's lines only. |
+| 4 | **MONEY-R4-1** (blocking). A person's later claim match could put interest above the cash. | Fixed: interest out of the PLB L6's reach is kept off the line. |
+| 4 | **R2M2-1 / RV-DB2-1**. A take-back first written in part left the outcome order-dependent. **R2M2-2, RVM3-2, RVM3-3**: tests missing for the holding condition, the out-of-reach rule and two take-backs of one chain. | Fixed, each with a failing-first test. |
+| 4 | A per-reconcile overshoot (169 against 168; 7 against 6) for one reconcile before the next corrected it. | Fixed: the bounded re-walk (D18); the property asserts interest at most the cash after every reconcile. |
+| 5 | **RVM5-1** (blocking, money). One PLB L6 taking back two chains' interest on one line wrote only the first. **RVM5-2, RV-DB5-1** (nits). | Fixed (1f3e2260): D19. Red first; 400,000 property runs clean. Nits fixed in 64aa14d9. |
+| 5 | **RVM6-1** (nit): ADR 0084 did not name the hand-match route for a kept-off share. | Fixed (f0a3b6ad). |
+| 6, base merge | The base's per-line reference copied the old interest code; its settle-order check and comments assumed the old match order. | Aligned (b1c1b161, 97225576, d0a46a42); CAS-49.1 30 of 30. |
+| 6 | A reviewer's suggested practice predicates inside the walk's link lookups. | **Declined after measuring:** they moved the plan off the link indexes and CAS-42.3 did not end; the walk stays scoped where it takes a claim in, under forced row-level security. `hashesOf` keeps its predicate. |
+| 6 | CI `mutation`: an equivalent mutant of `allocateByWeight`'s tie-break reported killed on bf2fc44f (it survives locally and cannot change a result). | Read as a long property failing by time under the mutation run; the four longest take an explicit limit (e4ed0f0a); 120 runs with fresh seeds clean. |
+| 6 | CI `db (1/4)` cancelled twice: the chain walk with no planner statistics. | Fixed (b8b4ec0d, 8a61c612), two reviews: same rows; tenant scope unchanged. |
+
+**The trade-off for the founder (D19).** While a line holds one chain's interest, a payment of another chain is kept off it and written later, once the line is free and if the PLB L6 still owes it. The ledger then shows less interest than the cash for that time, never more. The exact alternative, one entry per PLB L6, line and chain, needs the unique index `ledger_match_standing` to carry the claim, which is outside the freeze exception below (section 10.1) and would be a new founder exception. ADR 0084 records both. Earlier trade-off, unchanged: a payment netted against a take-back of a reversal whose claim is never uploaded is never credited.
+
+**Owed, each its own item, not in this pull request:** (1) with no statistics the walk's link lookups are still planned against a practice-wide index once a step (slower, bounded here; the durable answer is analyzing `claim` after a load); (2) CAS-50 and CAS-51 seeded with PLB L6s and the interest statements bounded; (3) the settle entries compared row for row in place of the set comparison (ADR 0087); (4) a composite foreign key (practice, link) on a claim's reversal and correction links, a migration for the schema queue.
+
+'''
+f=f[:i]+rounds+f[i:]
+approval=f'''## The founder's approval
+
+This pull request merges only after the founder's approving GitHub review of its latest commit and green required
+checks (`docs/runbooks/github-governance.md`, 3i; reconciliation 001, D4 (a)). The review is the record of the
+approval, not anything written here; a new commit dismisses it. The build then merges, and never reviews.
+
+The approval line is line 7469 of `docs/product/domain-model.md`, posted as a suggested change in one comment on that line; the founder commits it, as on #104 and #110. The document's SHA-256 is `bb7662c681fbcc658b9845b83da6a1b8a0df13759a685849cde58d48fb456bf8`.
+
+The base has moved since 06cde5eb (ef3e8d20, #138, and #129 to come), and its ruleset requires the branch up to date, so one base merge comes before the merge. Neither changes a migration or a function file, so the hash is expected to stay; if it does not, the summary is regenerated and a new line suggested.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+https://claude.ai/code/session_019i9ifDkbzUJwNMrtB7Yriz
+'''
+parts=[summary+'\n', what, sec('Why'), sec('What it does not change'), checks, f, sec('Freeze exception'), sec('Domain model'), approval]
+out='\n'.join(p.rstrip()+'\n' for p in parts)
+out=out.replace('f1b603ca24d3414d3524127e0eae134ecd5df1c67a528bcf2b88c44e94601ef7','bb7662c681fbcc658b9845b83da6a1b8a0df13759a685849cde58d48fb456bf8')
+open(f'{S}/body-after.md','w').write(out)
+print(len(out.encode()), [m.start() for m in re.finditer('f1b603ca',out)], out.count('9824f4e9'))
+for m in re.finditer('f1b603ca',out): print(repr(out[max(0,m.start()-160):m.start()+60]))
