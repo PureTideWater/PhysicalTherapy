@@ -18,6 +18,12 @@ W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this 
   description is final (`lane-a-wip/step-before-reset/pr/body-final.md`). **The approval line is posted** on line 7550:
   https://github.com/PureTideWater/PhysicalTherapy/pull/142#discussion_r4537054351 . The orchestrator has the link and
   the one fact (the Cognito client).
+- **12:40 UTC: the founder's line is committed** (dfd39ec0: only line 7550, exactly the suggested line; CI green on it).
+  The base had moved (#141 merged as edab4d4d, no migration), so the up-to-date rule needed a base merge: branch head
+  is now the merge commit pushed at 12:40 UTC (see the branch; no conflict; `--check --strict --require-approval`
+  passes on a fresh database; typecheck, the lints, fixtures, content and synth pass). **Next: when CI is green on
+  that head, mark ready, wait for `approval-of-record` to re-run, merge with a merge commit, tell the orchestrator.**
+  If the base moves again first, merge it again the same way.
 - **Next:** wait for the founder's "Commit suggestion" (W10 is subscribed; one check-in is armed). Then: the commit
   must change only line 7550 to exactly the suggested line; `--check --strict --require-approval` on a fresh database;
   the base must be an ancestor (merge it with a merge commit if it moved; a new migration there needs a regenerated
