@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { readDatabaseUrl } from './config';
 import { DOCUMENT_KINDS, ERA_FORMAT_IDS, VERSION_STATUSES } from './schema';
-import { type MigratedDatabase, type OwnerClient, RowFactory, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser, endPool } from './testing';
+import { type MigratedDatabase, type OwnerClient, RowFactory, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createTenantWorld, createUser } from './testing';
 
 /**
  * The database half of "a payer's answer and a contract's source are never the same document" (design: schema PR 4,

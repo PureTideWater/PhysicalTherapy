@@ -438,7 +438,7 @@ describe('console_contract_queue documents_awaiting (item 2)', () => {
 
   it('returns no row to a caller with neither platform permission', async () => {
     for (const actor of [manager, analyst, nobody, north.adminUserId]) {
-      expect(await asApp(actor, [north.practiceId], (client) => client.query('SELECT * FROM console_contract_queue()')).then((r) => r.rows)).toEqual([]);
+      expect(await asApp(actor, [north.practiceId], (client) => client.query<Record<string, unknown>>('SELECT * FROM console_contract_queue()')).then((r) => r.rows)).toEqual([]);
     }
   });
 
