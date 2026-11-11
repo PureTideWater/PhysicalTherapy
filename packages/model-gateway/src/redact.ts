@@ -292,7 +292,7 @@ const asWritten = (codePoint: string): string => {
 export function fold(codePoint: string): string {
   let folded = foldedCodePoints.get(codePoint);
   if (folded === undefined) {
-    folded = asWritten(codePoint).toLowerCase().toUpperCase().normalize('NFD').replace(MARKS, '');
+    folded = DECIMAL_DIGIT.test(codePoint) ? digitValue(codePoint) : asWritten(codePoint).toLowerCase().toUpperCase().normalize('NFD').replace(MARKS, '');
     foldedCodePoints.set(codePoint, folded);
   }
   return folded;
@@ -1037,8 +1037,20 @@ function writtenTokens(normal: string): WrittenToken[] {
   for (const codePoint of normal) {
     const start = offset;
     offset += codePoint.length;
+    const code = codePoint.charCodeAt(0);
+    if (code < 0x80) {
+      // ASCII: a letter or a digit is itself, anything else ends the run (no regular expression per character).
+      if ((code >= 0x30 && code <= 0x39) || (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a)) {
+        units.push(codePoint);
+        starts.push(start);
+        ends.push(offset);
+      } else {
+        close();
+      }
+      continue;
+    }
     if (IGNORABLE.test(codePoint)) continue;
-    const read = codePoint.charCodeAt(0) < 0x80 ? codePoint : asWritten(codePoint);
+    const read = DECIMAL_DIGIT.test(codePoint) ? digitValue(codePoint) : asWritten(codePoint);
     if (read === '' || ![...read].every((unit) => WORD_CHARACTER.test(unit))) {
       close();
       continue;
@@ -1053,8 +1065,8 @@ function writtenTokens(normal: string): WrittenToken[] {
   return tokens;
 }
 
-const SMALL_LETTER = /^\p{Ll}$/u;
-const WRITTEN_DIGIT = /^[0-9]$/u;
+const smallLetter = (unit: string | undefined) => unit !== undefined && unit !== '' && unit !== unit.toUpperCase() && unit === unit.toLowerCase();
+const writtenDigit = (unit: string) => unit.length === 1 && unit >= '0' && unit <= '9';
 
 /** The forms the confusable reading looks for: four letters or digits or more, six for a number of digits alone. */
 const confusableForms = (subject: Subject) => formsOf(subject).flatMap((form) => { const units = [...form.compact]; return units.length >= (form.digitsOnly ? 6 : 4) ? [{ form, units }] : []; });
@@ -1072,12 +1084,12 @@ function confusedAs(token: WrittenToken, at: number, units: readonly string[]): 
   for (let i = 0; i < units.length; i += 1) {
     const written = token.units[at + i] ?? '';
     const wanted = units[i] ?? '';
-    const besideSmall = SMALL_LETTER.test(token.units[at + i - 1] ?? '') || SMALL_LETTER.test(token.units[at + i + 1] ?? '');
+    const besideSmall = smallLetter(token.units[at + i - 1]) || smallLetter(token.units[at + i + 1]);
     if (!mayBe(written, besideSmall).includes(wanted)) return null;
     if (written.toUpperCase() === wanted) own += 1;
-    const digit = WRITTEN_DIGIT.test(written);
+    const digit = writtenDigit(written);
     if (!digit) letters += 1;
-    if (digit !== WRITTEN_DIGIT.test(wanted)) crossed = true;
+    if (digit !== writtenDigit(wanted)) crossed = true;
   }
   return own === units.length || own * 2 < units.length || letters === 0 ? null : { crossed };
 }
@@ -1409,7 +1421,7 @@ const MEDICARE_LABEL = /(?<![\p{L}\p{N}])MEDICARE(?!\p{L})/gu;
 /** Words that say a bare number is a phone number. */
 const PHONE_LABEL = /(?<![\p{L}\p{N}])(?:PHONES?|PH|TEL(?:EPHONE)?S?|FAX(?:ES)?|FACSIMILE|CALL(?:ING|ED|S)?|TTY|TDD|TOLL[\p{Pd}\u2212]?[ \t]?FREE|CELL|MOBILE|CONTACT(?:S|ED|ING)?)(?!\p{L})/gu;
 /** The labels no word ends in, glued to the word before them by a lost space ("PatientSSN", "PaidPhone", "PATIENTSSN"): read in every letter. */
-const GLUED_LONG_LABEL = /(?<=\p{L})(?:SSN|SS#|SOC(?:IAL)?\.?[ \t]*SEC(?:URITY)?|PHONES?|TELEPHONES?|FAX(?:ES)?|FACSIMILE)(?!\p{L})/gu;
+const GLUED_LONG_LABEL = /(?<=\p{L})(?:(?<!(?<!\p{L})[AI])S\.?S\.?N\.?|SS#|SS[ \t]?NO|SOC(?:IAL)?\.?[ \t]*SEC(?:URITY)?|PHONES?|TELEPHONES?|FAX(?:ES)?|FACSIMILE)(?:S|[ \t]?(?:NO|NUMBERS?|NBR|NUM))?(?!\p{L})/gu;
 /** SSN_LABEL and PHONE_LABEL glued to the word before them by a lost space ("PaidSSN", "PatientPhone"): read only in a letter whose chain only held barriers hold (survivorIn). */
 const GLUED_PERSON_LABELS = [SSN_LABEL, PHONE_LABEL].map((label) => new RegExp(label.source.replace('(?<![\\p{L}\\p{N}])', '(?<!\\p{N})'), 'gu'));
 /** Nouns that name a bare number as something that is no person's SSN or phone: a claim's, a reference's, an NPI ... */
@@ -1474,10 +1486,8 @@ function decideBare(window: string, length: number, digits: string): Decision {
       return 'keep';
     }
   }
-  const gluedLong = lastNear(GLUED_LONG_LABEL);
-  const gluedPhone = gluedLong !== null && /^(?:P|T|F)/u.test(gluedLong[0]);
-  const ssn = Math.max(end(lastNear(SSN_LABEL)), length === 9 ? end(lastNear(MEDICARE_LABEL)) : -1, gluedPhone ? -1 : end(gluedLong));
-  const phone = Math.max(end(lastNear(PHONE_LABEL)), gluedPhone ? end(gluedLong) : -1);
+  const ssn = Math.max(end(lastNear(SSN_LABEL)), length === 9 ? end(lastNear(MEDICARE_LABEL)) : -1);
+  const phone = end(lastNear(PHONE_LABEL));
   if (ssn >= 0 || phone >= 0) {
     return ssn >= phone || length === 9 ? 'ssn' : 'phone';
   }
@@ -1487,9 +1497,9 @@ function decideBare(window: string, length: number, digits: string): Decision {
 /** What the call's own identifier's placeholder becomes for the survivor scan: a BARRIER to every reader but the label window, which reads through it. */
 const OWN_MARK = '\u0003';
 /** After a label's own list number: an ordinal's suffix and a space, or ":", ")" or a full stop with no digit after it. */
-const LIST_NUMBER_AFTER = /^[:)]/u;
+const LIST_NUMBER_AFTER = /^(?:ST|ND|RD|TH)?[ \t]?[:)]/u;
 /** An SSN or phone label right before its own list number. */
-const PERSON_LABEL_BEFORE = new RegExp(`(?:${SSN_LABEL.source}|${PHONE_LABEL.source})[ \\t]{0,2}[:#]?[ \\t]{0,2}$`, 'u');
+const PERSON_LABEL_BEFORE = new RegExp(`(?:${SSN_LABEL.source}|${PHONE_LABEL.source})(?:[ \\t]{0,2}(?:NO|NUMBER|NBR|NUM)\\b\\.?)?[ \\t]{0,2}[:#\\p{Pd}\\u2212]?[ \\t]{0,2}$`, 'u');
 const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
 
 /**
@@ -1502,8 +1512,8 @@ const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
  * 711\n150.00 120.00" (re-review GATEWAY1-1); with `spansOnly` as well, no plain digit is read through (review
  * GATEWAY2-1).
  */
-function labelWindow(text: string, start: number, stops: (index: number) => boolean, read: { readonly spanned?: (index: number) => boolean; readonly spansOnly?: boolean; readonly own?: (index: number) => boolean } = {}): string {
-  const { spanned, spansOnly = false, own } = read;
+function labelWindow(text: string, start: number, stops: (index: number) => boolean, read: { readonly spanned?: (index: number) => boolean; readonly spansOnly?: boolean; readonly through?: boolean; readonly own?: (index: number) => boolean } = {}): string {
+  const { spanned, spansOnly = false, through = false, own } = read;
   let from = start;
   let breaks = 0;
   // Whether a letter, or a digit where `spanned` holds, has been read since the start: past one, a plain digit ends the window.
@@ -1516,13 +1526,13 @@ function labelWindow(text: string, start: number, stops: (index: number) => bool
     const digit = DIGIT.test(character);
     const inSpan = digit && spanned !== undefined && spanned(index);
     // The call's own identifier (its placeholder in masked text) between a label and its number, on the number's line.
-    if (breaks === 0 && (character === OWN_MARK || (own !== undefined && own(index)))) {
+    if (through && breaks === 0 && (character === OWN_MARK || (own !== undefined && own(index)))) {
       if (units[units.length - 1] !== ' ') units.push(' ');
       from = index;
       continue;
     }
-    if (digit && !inSpan && breaks === 0) {
-      // A label's own list number ("Phone 1: 555-0100", "Tel: 1st ..."): one or two digits right after an SSN or phone label.
+    if (through && digit && !inSpan && breaks === 0) {
+      // A label's own list number ("Phone 1: 555-0100", "Fax No. 2) ..."): one or two digits right after an SSN or phone label.
       let first = index;
       while (first > 0 && DIGIT.test(text[first - 1] ?? '')) first -= 1;
       if (index - first < 2 && LIST_NUMBER_AFTER.test(text.slice(index + 1, index + 6)) && PERSON_LABEL_BEFORE.test(text.slice(Math.max(0, first - 32), first))) {
@@ -1563,8 +1573,10 @@ const LIST_REACH = 16;
  * inside the list ("Claim 900123456 and SSN 900551234"), any other word or a sentence end ends the list, and a list
  * after an SSN or phone label is no keep.
  */
-function decideNamed(text: string, start: number, stops: (index: number) => boolean, length: number, digits: string, own?: (index: number) => boolean): Decision {
-  const decision = decideBare(labelWindow(text, start, stops, { own }), length, digits);
+function decideNamed(text: string, start: number, stops: (index: number) => boolean, length: number, digits: string, through = false, own?: (index: number) => boolean): Decision {
+  // The number's own words, read through the call's own identifier and a label's list number where asked; a list is followed
+  // back on the words as they stand.
+  const decision = decideBare(labelWindow(text, start, stops, { through, own }), length, digits);
   let at = start;
   for (let hop = 0; decision === 'none' && hop < LIST_REACH; hop += 1) {
     const window = labelWindow(text, at, stops);
@@ -1627,6 +1639,20 @@ function ownNumbers(subject: Subject): Map<string, { readonly kind: 'claim' | 'm
     }
   }
   return own;
+}
+
+/** A label's list number and what follows it, up to a position: "1: ", "2) ", "1st: ". */
+const LIST_NUMBER_BEFORE = /(?<![0-9])[0-9]{1,2}(?:ST|ND|RD|TH)?[ \t]?:[ \t]{0,16}$/u;
+
+/**
+ * Whether a number at a view range stands alone: no digit joined to either end as a chain joins (a letter may touch it, as
+ * it may touch any match), but a digit of the call's own identifier or of a label's list number before it.
+ */
+function standsAlone(text: string, start: number, end: number, own: (index: number) => boolean): boolean {
+  if (JOINED_AFTER.test(text.slice(end, end + 48))) return false;
+  const before = text.slice(Math.max(0, start - 48), start);
+  const joined = JOINED_BEFORE.exec(before);
+  return joined === null || own(start - before.length + joined.index) || LIST_NUMBER_BEFORE.test(before);
 }
 
 /** A compact the screen may be offered: a digit, five characters or more (identifierCandidates' own rule). */
@@ -1761,7 +1787,17 @@ function patternMatchesIn(normal: string, found: readonly Found[], subject: Subj
         if (form !== 'mask5' && form !== 'local' && pushOwn(view, readingsOf(view, start, end, core))) {
           continue;
         }
-        const decision = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core, own);
+        const plainly = decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core);
+        let decision = plainly;
+        if (plainly !== 'ssn' && plainly !== 'phone') {
+          // A label read through the call's own identifier or its list number ("Call Zephyra at 555-0123", "Phone 1:
+          // 555-0100") takes the number only where ef3e8d20 refused nothing for it: written on one line (a number wrapped
+          // across a line break is a chain to the scan) and standing alone (no digit joined to it as a chain joins, a list
+          // number before ")" among them: "TTY 11) 555 0123" is nine digits in one chain). Elsewhere it is left as it was,
+          // for the survivor scan to refuse under that label.
+          const through = wrapped ? plainly : decideNamed(view.text, start, stops, form === 'local' ? 7 : core.length, core, true, own);
+          if ((through === 'ssn' || through === 'phone') && standsAlone(view.text, start, end, own)) decision = through;
+        }
         const labeled = decision === 'ssn' || decision === 'phone';
         let taken: PatternKind | null;
         if (wrapped) {
@@ -1804,6 +1840,9 @@ const SCAN_SPACE = `[ \\t]{0,16}(?:(?:\\r\\n|[\\n\\r\\f\\v\\u0085\\u2028\\u2029]
 const SCAN_GAP = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER})${SCAN_SPACE})?$`, 'u');
 /** Under an SSN or phone label a comma joins two groups too ("SSN 900,12 3456"); elsewhere it is an amount's or a list's. */
 const SCAN_LABELED_GAP = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER}|,)${SCAN_SPACE})?$`, 'u');
+/** A digit, then what joins two groups of a chain (white space, with one joiner or a comma at most), up to a position; and the same from a position on (standsAlone). */
+const JOINED_BEFORE = new RegExp(`([0-9])${SCAN_SPACE}(?:(?:${SCAN_JOINER}|,)${SCAN_SPACE})?$`, 'u');
+const JOINED_AFTER = new RegExp(`^${SCAN_SPACE}(?:(?:${SCAN_JOINER}|,)${SCAN_SPACE})?[0-9]`, 'u');
 const SCAN_JOINER_CHARACTER = /^[\p{Pd}\u2212\u2043\u02D7\u2796./()_|\\'\u2018\u2019\u02BC\u02B9\u02CA\u2032\u2035`~\u00B7\u2027\u2219\u22C5\u30FB\u2022"\u201C\u201D;\u30FC\u2053\u02C9\u2215\u2044\u3001]$/u;
 const SCAN_DASH = /^[\p{Pd}\u2212\u2043\u02D7\u2796]$/u;
 const SCAN_DIGIT = /^[0-9]$/u;
@@ -1969,7 +2008,7 @@ function survivorIn(text: string): Survivor {
     const key = `${String(start)}${glued ? 'g' : ''}`;
     let held = labeled.get(key);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false), glued);
+      held = scanLabeled(labelWindow(text, start, () => false, { through: true }), glued);
       labeled.set(key, held);
     }
     return held;
@@ -2003,7 +2042,7 @@ function survivorIn(text: string): Survivor {
     const key = `${String(start)}${spansOnly ? 's' : 'n'}${glued ? 'g' : ''}`;
     let held = labeledOver.get(key);
     if (held === undefined) {
-      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, spansOnly }).replace(/[0-9]/gu, ' '), glued);
+      held = scanLabeled(labelWindow(text, start, () => false, { spanned: (index) => spanned[index] === 1, spansOnly, through: true }).replace(/[0-9]/gu, ' '), glued);
       labeledOver.set(key, held);
     }
     return held;
@@ -2090,7 +2129,7 @@ function survivorIn(text: string): Survivor {
     }
     let named = false;
     if (!blocked && (match[0].length === 9 || match[0].length === 10)) {
-      blocked = decideNamed(text, start, () => false, match[0].length, match[0]) === 'keep';
+      blocked = decideNamed(text, start, () => false, match[0].length, match[0], true) === 'keep';
       held = blocked;
       named = blocked;
     }
@@ -2643,14 +2682,19 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
       return true;
     }
     // A Social Security or phone number's placeholder is a number to what is glued to it: read once more with a digit in its place.
-    return PATTERN_PLACEHOLDER.test(text) && ownIdentifierGlued(masked(text.normalize('NFKC').replace(PATTERN_PLACEHOLDERS, '0'), claims.length, NAME_MARK), subject, survivor === 'held');
+    if (!PATTERN_PLACEHOLDER_GLUED.test(text)) {
+      return false;
+    }
+    const numbered = text.normalize('NFKC').replace(PATTERN_PLACEHOLDERS, (placeholder: string, at: number, whole: string) => `${/\p{L}$/u.test(whole.slice(Math.max(0, at - 2), at)) ? '0' : ''}${BARRIER}${/^\p{L}/u.test(whole.slice(at + placeholder.length, at + placeholder.length + 2)) ? '0' : ''}`);
+    return ownIdentifierGlued(masked(numbered, claims.length, NAME_MARK), subject, survivor === 'held');
   } finally {
     viewsOfCheck = null;
     datesOfCheck = null;
   }
 }
 
-const PATTERN_PLACEHOLDER = /\[(?:SSN|PHONE)\]/u;
+/** A Social Security or phone number's placeholder with a letter against it. */
+const PATTERN_PLACEHOLDER_GLUED = /\p{L}\[(?:SSN|PHONE)\]|\[(?:SSN|PHONE)\]\p{L}/u;
 const PATTERN_PLACEHOLDERS = /\[(?:SSN|PHONE)\]/gu;
 
 /** The patient's name placeholder as the glued check reads it (ownIdentifierGlued): no letter, digit or joiner, kept by the fold. */
@@ -2771,7 +2815,7 @@ function heldBirthUnread(normal: string, subject: Subject): boolean {
       `${roman}${sep}${dd}${sep}${yearText}`,
       `${yearText}${sep}${roman}${sep}${dd}(?![0-9])`,
       `${yearText}\\s?年\\s?${mm}\\s?月\\s?${dd}(?![0-9])`,
-      `(?:${words})\\.?[\\s,.\\p{Pd}\\u2212]{0,3}${dd}(?:ST|ND|RD|TH)?(?![0-9])${noYear}`,
+      `(?:${words})\\.?[\\s,.\\p{Pd}\\u2212]{0,3}(?:THE\\s+)?${dd}(?:ST|ND|RD|TH)?(?![0-9])${noYear}`,
       `(?<![0-9])${dd}(?:ST|ND|RD|TH)?[\\s,.\\p{Pd}\\u2212]{0,3}(?:OF\\s+)?(?:${words})(?![A-Z])${noYear}`,
     ];
     const inWords = yearInWords(year);
