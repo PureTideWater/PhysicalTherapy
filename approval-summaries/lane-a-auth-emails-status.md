@@ -1,28 +1,31 @@
-ACTING (Lane B's account, https://claude.ai/code/session_01FcouKQthXdmDnPmwhFepxW, acting Lane A, S2) holds part 2 (password-changed-notice, schema PR 1 of the queue) from 2026-11-07 02:20 UTC; Lane A: read lanes/lane-b.md's latest entries before resuming.
+W6 (Lane A, https://claude.ai/code/session_019i9if9f2m3xyLBavfHUgui) holds part 2 (password-changed-notice, schema PR 1 of the queue) from 2026-11-11 04:26 UTC, assigned by the orchestrator (session_019i9ifDAzQNA3kLHozjBoeS).
 
-## RESUME-BLOCK: password-changed-notice (schema PR 1) HELD at a clean point, 2026-11-07 06:55 UTC (acting Lane A, S2)
-On the orchestrator's pacing word (06:50 UTC; the 7-day limit at warning, resets 2026-11-13 19:00 UTC): held until #126 has
-the founder's line; it cannot open before #126 merges.
-- **Heads:** branch `co-001/password-changed-notice` = f110efd9 (D, M and W pushed); **WIP ref `co-001/wip-pwnotice` =
-  c0ced87f** (the base 8a722f80 merged as 7fdbc71a; the integrator's fix I-1/I-2 c0ced87f: sign-in.db.test.ts and the
-  reset journey assert the queued notice; e2e/mail.ts sendPasswordNoticesOnce; SGN-16 assertedBy; password-notices unit and
-  db tests registered). Stacked on #126's d2fdd106 (not yet on #126's current head).
-- **Built:** migration 20261111090000_password_changed_notice.sql (marker route; marker removed), schema, 25 db tests (T1-T22,
-  T13b), grant pins; the worker's password_notices job (every minute), mail-events' seventh column, the operator role's
-  transactional send, the alarm; ADR 0091, SGN-16 rows, runbooks (deliverability, support-mail, deploy-and-rollback), ADR
-  0081/0065/0014 notes. Design addendum and its review: scratchpad `pwnotice/design-addendum.md` (copied to
-  `approval-summaries/lane-a-wip/pwnotice/`). Domain model at D's head: bb2672b0…cf47 (provisional; changes when #126's final
-  head and the base are merged).
-- **Checks so far:** D's db tests 70/70 and 1,654 db tests in its areas; W's typecheck, lint, lint:logs, worker unit 912,
-  infra 804; M's link check and verify-content; the integrator's unit run on c0ced87f: 10,065 passed + 4 skipped. **Not run:**
-  test:db shards, build, e2e (with the trigger-disabled red run), Stryker (17 shards), actions/toolchain checks, the three
-  reviews (security and sign-in; database, mail and deploy; UX and brand with renders), the fix round.
-- **Exact next step (after #126 has the founder's line):** fast-forward the branch to c0ced87f; merge #126's final head (and
-  later the base after #126 merges); regenerate with the tools on a fresh database; a NEW workflow (not a resume of
-  wf_5cf101cd-7ab: its stopped integrator returned a forced result) from the integrator's progress (`pwn-I.md`): the seam
-  read's remaining steps and the full local suite once; then the three reviews with skeptics and a completeness critic
-  (default agents reading .claude/agents checklists: the custom agent types do not return in workflows; findings passed by
-  file); the fix round; the PR (draft) once #126 merges.
+## RESUME-BLOCK: password-changed-notice (schema PR 1), W6, 2026-11-11 05:10 UTC
+- **Heads:** WIP ref `co-001/wip-pwnotice` = **f8560588**. The branch `co-001/password-changed-notice` is still f110efd9 on
+  origin and takes the one fix-round push. No PR (it opens after #126 merges).
+  - c0ced87f fast-forwarded; #126's head ec606eff (with the base ca504674) merged as bb8cc2e1: the deploy runbook keeps both
+    new sections in migration order, and the domain model is regenerated on a fresh database (49 migrations; the function
+    files needed no change).
+  - The base 4fe8bcca (#137) merged as f8560588: `reconciliation-routes.db.test.ts` keeps #126's and #137's imports. #126's
+    own head has this conflict with the base; the orchestrator was told (05:05 UTC).
+- **Built (2026-11-07, unchanged):** migration 20261111090000_password_changed_notice.sql (marker route), schema, 25 db tests
+  (T1-T22, T13b), grant pins; the worker's password_notices job (every minute), mail-events' seventh column, the operator
+  role's transactional send, the alarm; ADR 0091, SGN-16, the runbooks; the reset's own tests and e2e journey (c0ced87f).
+  Design addendum and the builders' notes: `approval-summaries/lane-a-wip/pwnotice/`.
+- **Checks on f8560588, all passing:** typecheck, lint, lint:copy, lint:logs, check:fixtures, synth --all (0 written),
+  watched.ts --write (unchanged), db:domain-model --check --strict, verify-content. The tests the change touches: db 11 files,
+  192 passed and 1 skipped (the restore drill's own skip); unit 146 files, 2,577 passed. The email rendered on #129's plate
+  (light, dark-preferred, dark-inverted at 600 and 390 px). Domain model hash at this head: 80d375ba…0cbe, provisional until
+  #126's final head and the base are merged.
+- **Running:** the three reviews as Agent subagents on f8560588 (security and sign-in; database, mail and deploy; UX and
+  brand with the renders). Their findings are copied to `approval-summaries/lane-a-wip/pwnotice/reviews/` when they return;
+  if that directory is absent, the reviews did not finish and run again.
+- **Left, in order:** verify every finding; the fix round; the full local suite once on the final tree (unit, golden, oracle,
+  db shards, build and e2e with the trigger-disabled red run, the affected Stryker shards and the gate, actions and
+  toolchain checks); a review of the fix round's delta; push the branch. After #126 merges: merge the base, regenerate the
+  domain model, open the draft PR with `pnpm db:domain-model --summary-since`, post the approval line as a suggestion,
+  one line to the orchestrator; merge after the founder's committed line and green required checks.
+- **Does not ride:** SS-01 D11 and ADR 0081 A6.
 
 ## 2026-11-07 02:20 UTC (acting Lane A, S2): part 2 building
 - Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 1 (its decisions refine the design: 24-hour cutoff;
