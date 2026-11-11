@@ -171,7 +171,20 @@ describe('MOD-19: a narrative that writes one of the case’s identifiers in a f
     ]);
   });
 
-  // The generator is the oracle: it writes the identifier, so it knows where every letter and digit of it is.
+  // The generator is the oracle: it writes the identifier, so it knows where every letter and digit of it is. These
+  // read one short sentence through the reading itself, not the whole draft through the verifier, and take few runs
+  // each: a mutation run gives a test five seconds on a machine every runner shares, and a test that runs out of them
+  // fails whatever the mutant (it "killed" six recorded equivalents on this change's first CI run). The rows above hold
+  // the verifier's own wiring, and every run of the unit job draws new cases.
+  const said = (written: string) => `The payer told ${written} so [3].`;
+  /** The reading over a narrative as the check gives it one (the text as it shows, each span mapped back): the texts it finds. */
+  const found = (narrative: string, identifiers: CaseIdentifiers) => {
+    const readable = readableText(narrative);
+    return identifierReader(identifiers)(readable.text, skipOf(readable.text)).map((span) => {
+      const original = readable.original(span.start, span.end);
+      return narrative.slice(original.start, original.end);
+    });
+  };
   const consonants = fc.string({ unit: fc.constantFrom(...'BCDFGHJKLMNPQRSTVWXZ'), minLength: 2, maxLength: 6 }).map((letters) => `QZ${letters}`);
   const MARKS = ['́', '̈', '̌'];
   /** A part as a narrative might write it: each letter in either case, some with a mark on it. */
@@ -193,12 +206,13 @@ describe('MOD-19: a narrative that writes one of the case’s identifiers in a f
     );
     fc.assert(
       fc.property(name, ({ record, whole, alone }) => {
-        expect(flagged(telling(whole), names(record)), `${record}: ${whole}`).toEqual([whole]);
-        expect(flagged(telling(alone), names(record)), `${record}: ${alone}`).toEqual([alone]);
-        expect(flagged(telling(whole), NO_CASE_IDENTIFIERS)).toEqual([]);
+        expect(found(said(whole), names(record)), `${record}: ${whole}`).toEqual([whole]);
+        expect(found(said(alone), names(record)), `${record}: ${alone}`).toEqual([alone]);
       }),
-      { numRuns: 150 },
+      { numRuns: 30 },
     );
+    // One of them through the verifier, end to end.
+    expect(flagged(telling('qzbcd\u0301–QZFGH’qzjkl'), names("QZBCD-QZFGH'QZJKL"))).toEqual(['qzbcd\u0301–QZFGH’qzjkl']);
   });
 
   it('any number, its characters joined any way a number is', () => {
@@ -216,10 +230,11 @@ describe('MOD-19: a narrative that writes one of the case’s identifiers in a f
       );
     fc.assert(
       fc.property(number, ({ record, written }) => {
-        expect(flagged(telling(written), numbers(record)), `${record}: ${written}`).toEqual([written]);
+        expect(found(said(written), numbers(record)), `${record}: ${written}`).toEqual([written]);
       }),
-      { numRuns: 150 },
+      { numRuns: 30 },
     );
+    expect(flagged(telling('9-12 345_678–9'), numbers('9123456789'))).toEqual(['9-12 345_678–9']);
   });
 });
 
@@ -341,10 +356,12 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
     const number = fc.string({ unit: fc.constantFrom(...'0123456789'), minLength: 4, maxLength: 9 }).map((digits) => `ZQ${digits}`);
     fc.assert(
       fc.property(fc.array(name, { maxLength: 4 }), fc.array(number, { maxLength: 4 }), (caseNames, caseNumbers) => {
-        expect(verifyNarrative(draft, facts, { names: caseNames, numbers: caseNumbers }).mismatches).toEqual([]);
+        expect(read(draft, { names: caseNames, numbers: caseNumbers })).toEqual([]);
       }),
-      { numRuns: 100 },
+      { numRuns: 50 },
     );
+    // And through the verifier, for one such case: the draft passes whole.
+    expect(verifyNarrative(draft, facts, { names: ['QZBCDFG', 'QZHJ-KLMNP'], numbers: ['ZQ12345', 'ZQ987654321'] }).mismatches).toEqual([]);
   });
 
   // The differential: the verifier's reading against the two it is made of, each asked directly. Whatever the letter
@@ -393,7 +410,7 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
           expect(skip.tokens.some((token) => (token.start <= span.start && span.start < token.end) || (token.start < span.end && span.end <= token.end)), text).toBe(false);
         }
       }),
-      { numRuns: 400 },
+      { numRuns: 200 },
     );
   });
 });
