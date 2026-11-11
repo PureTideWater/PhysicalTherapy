@@ -1,6 +1,37 @@
-ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDNJ3ixNo2VHiiA93Y) holds this item from 2026-11-11 20:06 UTC; Lane B: read lanes/lane-b.md's latest entries before resuming.
+ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9mD, W18; before it W17, session_019i9ifDNJ3ixNo2VHiiA93Y) holds this item from 2026-11-11 20:28 UTC; Lane B: read lanes/lane-b.md's latest entries before resuming.
 
 # Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
+
+## RESUME-BLOCK, current (W18, 2026-11-11 21:25 UTC; W17's block below is kept for its design decisions and review scopes)
+
+- **WIP ref:** `co-001/wip-redact-item-26` at **d67775d0** (three commits on f3f5a642). Local branch `co-001/redact-item-26`.
+- **Done since W17's block (its OPEN items 1 to 3):**
+  - Time: the wider reading read the letter's dates a second time. `inOneReading` opens the check's stores around each
+    exported reading (`redactLetterForScreen`, `redactionSpans`, `holdsIdentifier`; `holdsAsFirstRead` uses it too, it
+    is re-entrant), so both readings share views and dates. The two 100 kB rows: 1.04 to 1.19 s on the head against
+    1.04 to 1.16 s on the base on one machine (1.45 to 1.49 s before). Budget unchanged, no letter exempted. Five new
+    timing rows for letters that hold a split name (`denial-letter.test.ts`).
+  - The run-count row: the excess was the subject's forms rebuilt on every reader call (fixed work). `formsOf` now
+    builds them once per reading for each subject, fold and width (`formsOfCheck`, the list frozen; no reader runs a
+    form's own pattern object, each reads its source and flags). 2,106 runs against 2,385: 88.3 in 100, bar 90
+    unchanged (the base: 2,385 against 2,662, 89.6).
+  - Six files pass: gateway 4,127, packets `verifier-identifiers.test.ts` 107, `@tp/redact` 46; typecheck and lint
+    clean. Two of the new rows' expectations were wrong and are corrected (two words of a three-word name are two
+    placeholders, as on the base; `I'd a` is IDA under the blunt rule: an apostrophe always joined a part).
+  - Failing-first: the MOD-23 describe on the base's `redact.ts`: 32 of 39 fail; on the head 39 pass.
+  - `docs/product/test-matrix.md`: the MOD-23 row and its note (committed).
+- **Running in this container (gone if the container is):** `/home/user/bt/chain.sh`: the gate A = `/home/user/snapA`
+  (f3f5a642), B = `/home/user/snapB` (the head at 2ab3e0dd's `redact.ts`) into `/home/user/gate-out/i26-2`; then the
+  battery four times in parallel under `/home/user/bt/{hr,hf,rr,rf}` (head and base-as-head, recorded and fresh
+  seeds; `lay.sh <root> <dir of redact.ts>` builds one layout with every `/home/user/` path rewritten to the root;
+  outputs in `<root>/out/fuzz-all.out`). Fresh seeds are in `<root>/work/battery-fresh.sh`.
+- **OPEN, in this order:** read the gate's `report.md` counts and `PHI.*` rows; ADR 0054's amendment with the measured
+  numbers (and a pointer at the three residual sentences it closes: line 455 `jo ann`, the K-1 sentence, the MOD-23
+  sentence of the 2026-11-11 amendment); the two reviews (briefs: `designs/lane-b-redact-item-26/reviews/brief-*.md`;
+  frozen copies for them in `/home/user/rev/{head,base}`, the diff in `/home/user/rev/redact.diff`); read the
+  batteries (head against base-as-head, same seeds); at most two fix rounds; the full suite once; the base merge; the
+  gate again; the draft PR; CI; the merge.
+- No PR is open, no subscription and no check-in is held.
 
 ## RESUME-BLOCK (written by W17 at its 250k-token limit; the build is not finished, nothing is reviewed, no PR is open)
 
@@ -98,3 +129,4 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDNJ3ixNo2VHiiA93
 - 2026-11-11T20:06Z (W17): started; read STATE.md, item 26 and its citations, ADR 0054 and 0047.
 - 2026-11-11 (W17): design note pushed (cee084c6) and sent to the orchestrator; prototype built; cost measured; tests
   written; WIP 7cbdd33d pushed. Stopped at the token limit with the items above open.
+- 2026-11-11T20:28Z (W18): started from 7cbdd33d; time and run-count fixed at their causes; six files pass; WIP d67775d0; gate and batteries running.
