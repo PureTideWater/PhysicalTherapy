@@ -1,0 +1,27 @@
+{
+  "case": "CAS-57",
+  "module": "CAS",
+  "title": "No web mutation waits on a row a reconcile pass holds",
+  "assertion": "Every transaction the routes’ wrapper opens for a signed-in request sets `lock_timeout` (three seconds) first, for that transaction only, and the queue producer’s pool carries the same setting, which a database URL cannot replace; a file that takes a connection of its own from a pool is named; while a second session holds a case’s row as a reconcile pass does, assigning the case answers `busy` with the closed word `records` after about the timeout and never after the holder, logs its code and the request’s ID alone, and writes no row, audit event or request key; with the row free the same assignment under the same request key goes through; a page’s read that waits on a lock is refused the same way and shown as the error state, never “not found”; the same request key sent while its first request is still running is answered `busy` with the closed word `request`, and `duplicate` once the first has saved, while another lock met as the key is written is `records`; a form’s words say what stays in it (what was typed, all but passwords and codes, or nothing), and a form already sent is “Not confirmed”, keeps its key and is sent again unchanged; sign-in, the session’s read and the public forms are not bounded",
+  "synthetic": true,
+  "completesIn": 8,
+  "assertedBy": [
+    "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
+    "apps/web/src/lib/server/lock-timeout.test.ts",
+    "apps/web/src/lib/server/lock-timeout.db.test.ts",
+    "apps/web/src/lib/http/http.test.ts",
+    "apps/web/src/lib/http/next.test.ts",
+    "apps/web/src/lib/http/busy-words.test.ts",
+    "apps/web/src/components/action-form.test.tsx",
+    "apps/web/src/components/action-form.browser.test.tsx",
+    "apps/web/src/components/uploads/uploader.test.tsx"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding a case’s row, a request key’s lock or a table: no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

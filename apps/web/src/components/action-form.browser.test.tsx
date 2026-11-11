@@ -319,6 +319,100 @@ describe.skipIf(!chromiumInstalled())('a refused form in the browser', { timeout
     await plain.close();
   });
 
+  it('CAS-57: a busy refusal is "Not done", reads nothing again, and says what stays in the form it is shown on: what was typed, all but passwords and codes, or nothing where nothing does', async () => {
+    // The server's words claim nothing about the form (next.ts, busyState); each form writes its own lead from the flag.
+    const records: RefusalState = { error: 'The records this form needs are being updated, so nothing was saved. Try again in a few minutes.', busy: 'records' };
+    const ledger: RefusalState = { error: 'The recovery ledger is being updated, so nothing was saved. Try again in a few minutes.', busy: 'ledger' };
+
+    const keep = await harness.open('keep');
+    await keep.fill('#field-zip', '27514');
+    await keep.fill('#field-password', TYPED_PASSWORD);
+    await keep.fill('#field-code', '123 456');
+    await refusedWith(keep, records);
+    expect(await keep.getAttribute(SUMMARY, 'data-state')).toBe('error');
+    expect(await keep.textContent(TITLE)).toBe('Not done');
+    expect(await looks(keep, SUMMARY)).toEqual(FAILURE);
+    // The form held a password and a code, which the refusal emptied: the lead never says they are still here.
+    expect(await keep.textContent(DESCRIPTION)).toBe(
+      'The records this form needs are being updated, so nothing was saved. What you typed is still here, except passwords and codes: in a few minutes, type your password again or enter a new code, then try again.',
+    );
+    expect(await keep.inputValue('#field-zip')).toBe('27514');
+    expect(await keep.inputValue('#field-password')).toBe('');
+    expect(await keep.inputValue('#field-code')).toBe('');
+    expect(await focused(keep)).toBe('refusal-summary');
+    expect(await refreshes(keep)).toBe(0);
+    // The same press again is sent, under the key the page holds: the refused one used none.
+    await refusedWith(keep, ledger);
+    expect(await sentKeys(keep)).toEqual([FIRST_KEY, FIRST_KEY]);
+    expect(await keep.textContent(DESCRIPTION)).toBe(
+      'The recovery ledger is being updated, so nothing was saved. What you typed is still here, except passwords and codes: in a few minutes, type your password again or enter a new code, then try again.',
+    );
+    await keep.close();
+
+    // Fields and no secret: what was typed is still here.
+    const row = await harness.open('row');
+    await refusedWith(row, ledger, 'Set');
+    expect(await row.textContent(DESCRIPTION)).toBe('The recovery ledger is being updated, so nothing was saved. What you typed is still here: try again in a few minutes.');
+    await refusedWith(row, records, 'Set');
+    expect(await row.textContent(DESCRIPTION)).toBe('The records this form needs are being updated, so nothing was saved. What you typed is still here: try again in a few minutes.');
+    await row.close();
+
+    // One code and nothing else: it was emptied, so nothing typed is still here.
+    const code = await harness.open('code');
+    await code.fill('#field-code', '123 456');
+    await refusedWith(code, records, 'Confirm');
+    expect(await code.textContent(DESCRIPTION)).toBe('The records this form needs are being updated, so nothing was saved. Passwords and codes are not kept: in a few minutes, type your password again or enter a new code, then try again.');
+    expect(await code.inputValue('#field-code')).toBe('');
+    await code.close();
+
+    // One button and what the page names: nothing typed, so nothing is said to stay.
+    const press = await harness.open('press');
+    await refusedWith(press, records, 'Reopen this line');
+    expect(await press.textContent(TITLE)).toBe('Not done');
+    expect(await press.textContent(DESCRIPTION)).toBe('The records this form needs are being updated, so nothing was saved. Try again in a few minutes.');
+    await press.close();
+
+    // The export form's own summary: no field of it is the person's to fill.
+    const exported = await harness.open('export');
+    const description = '[data-state="error"] [data-slot="alert-description"]';
+    await script(exported, { refuse: records });
+    await exported.getByRole('button', { name: 'Export PDF and CSV', exact: true }).click();
+    await exported.waitForFunction((selector) => document.querySelector(selector) !== null, description);
+    expect(await exported.textContent(description)).toBe('The records this form needs are being updated, so nothing was saved. Try again in a few minutes.');
+    expect(await refreshes(exported)).toBe(0);
+    await exported.close();
+  });
+
+  it('CAS-57: a form sent again while its first send is still running is "Not confirmed", is sent again unchanged, and keeps its key through a refresh, so the next send is answered "Already sent" and nothing is saved twice', async () => {
+    const request: RefusalState = { error: 'This form was already sent and is still being processed, so nothing new was saved. Reload the page in a few minutes to see whether it saved.', busy: 'request' };
+    const page = await harness.open('keep');
+    await page.fill('#field-zip', '27514');
+    await refusedWith(page, request);
+    // Never "Not done": the first send may yet save.
+    expect(await page.getAttribute(SUMMARY, 'data-state')).toBe('unconfirmed');
+    expect(await page.textContent(TITLE)).toBe('Not confirmed');
+    expect(await page.textContent(DESCRIPTION)).toBe(
+      'This form was already sent and is still being processed, so nothing new was saved. In a few minutes, type your password again or enter a new code, and send it again, changing nothing else. If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.',
+    );
+    expect(await page.inputValue('#field-zip')).toBe('27514');
+    // The key is pinned: a refresh renders a new one, and the next press still sends the first, which alone can be
+    // answered "Already sent".
+    await rerender(page, { requestKey: 'synthetic-request-key-2' });
+    expect(await page.inputValue('input[name="requestKey"]')).toBe('synthetic-request-key-2');
+    await refusedWith(page, DUPLICATE);
+    expect(await sentKeys(page)).toEqual([FIRST_KEY, FIRST_KEY]);
+    expect(await page.textContent(TITLE)).toBe('Already sent');
+    await page.close();
+
+    // No secret in the form: nothing to type again.
+    const row = await harness.open('row');
+    await refusedWith(row, request, 'Set');
+    expect(await row.textContent(DESCRIPTION)).toBe(
+      'This form was already sent and is still being processed, so nothing new was saved. Send it again in a few minutes, changing nothing. If the first send saved, PaidWhole says so; if not, this one saves it. Nothing is saved twice.',
+    );
+    await row.close();
+  });
+
   it('FRM-01: after a dropped connection every press sends that press’s request key until one is saved, though a refresh renders a new one; before, a refresh’s key is sent (S-SEC-1)', async () => {
     const page = await harness.open('keep');
     await page.fill('#field-zip', '27514');

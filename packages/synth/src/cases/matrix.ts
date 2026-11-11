@@ -332,7 +332,13 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'CAS-56',
     title: 'No web request waits on the ledger lock',
     assertion:
-      'While a second session holds a practice\'s `ledger:` lock as a reconcile pass does, each of the seven ledger actions a person sends (match a posting, a deposit or a claim by hand, reverse a match, adjust an entry, write a line off, reopen a line) answers `busy` at once (within two seconds), as a status alone with no identifier, and writes no row, audit event or request key (the same key sent again once the lock is free is taken as new); with the lock free the same actions go through and write as before; a second person’s action sent while the first is in flight is refused the same way',
+      'While a second session holds a practice\'s `ledger:` lock as a reconcile pass does, each of the seven ledger actions a person sends (match a posting, a deposit or a claim by hand, reverse a match, adjust an entry, write a line off, reopen a line) answers `busy` at once (within two seconds), as a status and the closed word `ledger`, with no identifier, and writes no row, audit event or request key (the same key sent again once the lock is free is taken as new); with the lock free the same actions go through and write as before; a second person’s action sent while the first is in flight is refused the same way',
+  },
+  {
+    id: 'CAS-57',
+    title: 'No web mutation waits on a row a reconcile pass holds',
+    assertion:
+      'Every transaction the routes’ wrapper opens for a signed-in request sets `lock_timeout` (three seconds) first, for that transaction only, and the queue producer’s pool carries the same setting, which a database URL cannot replace; a file that takes a connection of its own from a pool is named; while a second session holds a case’s row as a reconcile pass does, assigning the case answers `busy` with the closed word `records` after about the timeout and never after the holder, logs its code and the request’s ID alone, and writes no row, audit event or request key; with the row free the same assignment under the same request key goes through; a page’s read that waits on a lock is refused the same way and shown as the error state, never “not found”; the same request key sent while its first request is still running is answered `busy` with the closed word `request`, and `duplicate` once the first has saved, while another lock met as the key is written is `records`; a form’s words say what stays in it (what was typed, all but passwords and codes, or nothing), and a form already sent is “Not confirmed”, keeps its key and is sent again unchanged; sign-in, the session’s read and the public forms are not bounded',
   },
   { id: 'LED-01', title: 'Packet submitted', assertion: 'No entry' },
   { id: 'LED-02', title: 'Adjusted remittance with higher allowed matching a case line', assertion: '`approved` entry for the difference' },
