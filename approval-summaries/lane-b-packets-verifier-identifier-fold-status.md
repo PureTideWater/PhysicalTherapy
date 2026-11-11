@@ -7,9 +7,9 @@ Reserved: test-matrix MOD-19 and MOD-20; synth entries the same as MOD-13 if nee
 ## The item
 `packages/packets/src/verifier/mismatches.ts`'s `identifierSpans` checks a narrative for the case's identifiers as whole words, without regard to case, and nothing more. It lacks the forms the gateway's letter reader reads (#80: diacritics, typographic apostrophes and dashes, hyphenated halves, a word hyphenated at a line break, spaced or dashed numbers; #115: label boundaries and glued labels). A narrative that writes a name as `Zoe` for `ZOË`, `O’Quill` for `O'QUILL` or `Treeby` for `VAN-TREEBY` passes the verifier today. `verifier/template.ts` (format /3, slice 2) calls the same function.
 
-## RESUME-BLOCK (W7; current at 2026-11-11 11:10 UTC by the container's clock)
+## RESUME-BLOCK (W7; current at 2026-11-11 11:06 UTC by the container's clock)
 - **Report to** the new orchestrator, session_019i9ifBCrxfV35CFDVHLTad (`lanes/STATE.md`, from 09:15 UTC), not the one that assigned the item.
-- **PR: draft #141**, https://github.com/PureTideWater/PhysicalTherapy/pull/141, `co-001/packets-verifier-identifier-fold` into `claude/build-platform`, head **543fc55b** (pushed 11:02 UTC; the WIP ref holds the same commit; the base **342d6144**, #140, is an ancestor of it). Its description was brought current for this head at 11:08. W7 is subscribed to it.
+- **PR: draft #141**, https://github.com/PureTideWater/PhysicalTherapy/pull/141, `co-001/packets-verifier-identifier-fold` into `claude/build-platform`, head **543fc55b** (pushed 11:02 UTC; the WIP ref holds the same commit; the base **342d6144**, #140, is an ancestor of it). Its description was brought current for this head at 11:04. W7 is subscribed to it.
 - **What the head is:** 995380b7 (every check green at 09:18) with the base merged in (**81079f78**, no conflict) and two commits of test rows and corrected sentences from the delta reviews (**a6979ac6**, **543fc55b**). No product code changed after 995380b7.
 - **CI, third run (543fc55b): running since 11:03.** Required: `all green`, `mutation` (all 19 shards for this PR), `screening-capacity gate`, `approval-of-record`.
 - **Local, on the head:** typecheck, lint:logs, check:fixtures, verify-content; lint and lint:copy on the merge, and the linter on each file changed after it; the generators leave no diff; the unit tests of packets, redact, synth, the gateway and the mutation and capacity tools (112 files, 6,827 passed); mutation shards `packets-verifier`, `packets-template` and `packets-scan` with canary and gate on a6979ac6, each gate passed with no recorded equivalent turned (543fc55b adds no call into packets); fourteen mutants made by hand, each failing a fixed row. The full suite ran once, on c2c5a07c.
@@ -18,7 +18,7 @@ Reserved: test-matrix MOD-19 and MOD-20; synth entries the same as MOD-13 if nee
 - **If the base moves again before the merge:** merge it, run the fast checks and the generators, push, wait for CI. If the SSN and phone leaks item (W5) is what merged, see Coordination.
 - **If CI is red:** read the gate's log and the shard's report (`killedBy`, `statusReason`) before changing anything, and reproduce locally. A recorded equivalent Killed by a timed-out test of the base is the base's own exposure (Queues item 23): re-run that job once, and if it fails again tell the orchestrator in one line. A recorded equivalent a new row really kills is re-recorded by removing its record with the reason, never by removing the row.
 - **Container:** PostgreSQL on port 5433 has been down since the worker restart (the account's reset at 08:11); run `tools/setup-container.sh` from `claude/build-ops` before any `pnpm test:db`. Mutation runs need `PATH=/opt/node24/bin:$PATH`. Heavy commands under `flock /tmp/laneb-heavy.lock`.
-- **Check-in:** one safety-net wake-up at about 11:44 UTC (`trig_01WPffQ2FQnNt1wmbkMSF2wR`); cancel it at stand-down.
+- **Check-in:** one safety-net wake-up at 11:41 UTC (`trig_01RCZBsdpYuK8Ujq6BZhDhaR`); cancel it at stand-down.
 - **Coordination:** the SSN and phone leaks item (W5, WIP `co-001/wip-redact-ssn-phone-leaks`) edits `redact.ts` heavily and adds `confusables.ts` beside it. Whichever merges second: git follows the rename for `redact.ts`; a new file `redact.ts` imports is moved by hand into `packages/redact/src/`, and a test's import of `./redact` becomes `@tp/redact`. The fold's own edits to `redact.ts` are one region (`lettersOf` to `nameOrNumberMatches`, after `nameGlued`).
 - **Exact next step:** wait for #141's CI events; act as above.
 
@@ -69,9 +69,9 @@ Reserved: test-matrix MOD-19 and MOD-20; synth entries the same as MOD-13 if nee
 ## Log (UTC)
 - 2026-11-05 07:40: branch cut from 23b25ad0 by Lane A's S1 (session_019i9ifCJSbPYXpafL86Rm6J); workflow wf_54232b96-397 ran its three scouts.
 - 2026-11-05 07:55: stood down on the orchestrator's order (the account's weekly usage); the designer had written nothing.
-- 2026-11-11 11:10: #141's description and this file brought current; a check-in set for about 11:44.
+- 2026-11-11 11:05: #141's description and this file brought current; a check-in set for 11:41.
 - 2026-11-11 11:02: the second fix round committed as 543fc55b and pushed (the branch and the WIP ref); CI's third run started at 11:03.
-- 2026-11-11 10:55: the three local shards finished on a6979ac6, each gate passed. The review of a6979ac6's delta had reported at 10:46 (15 tool calls; six findings, DR2-1 to DR2-6, each run); the review of the second round's diff reported at 11:00 (9 tool calls; nothing false).
+- 2026-11-11 10:55: the three local shards finished on a6979ac6, each gate passed. The review of a6979ac6's delta had reported at about 10:47 (15 tool calls; six findings, DR2-1 to DR2-6, each run); the review of the second round's diff reported at about 11:01 (9 tool calls; nothing false).
 - 2026-11-11 10:31: fix round a6979ac6 committed and pushed to the WIP ref; three mutation shards and a bounded review of its delta started.
 - 2026-11-11 10:08: the delta review reported after an hour (410k tokens, 104 tool calls: too much for a small delta; the next one has a budget of 25 calls). Four findings, each run before it was acted on (DR-1 to DR-4).
 - 2026-11-11 10:04: the base moved (#140, 342d6144) while the delta review ran; merged as 81079f78, no conflict, fast checks and generators clean.
