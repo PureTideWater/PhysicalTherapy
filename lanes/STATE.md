@@ -1,6 +1,6 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-11 05:25 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-11 05:40 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
@@ -43,12 +43,12 @@ own status file and `CLAUDE.md`, not the long history files.
 | --- | --- | --- | --- | --- |
 | 1 | MOD-16: **merged as ef3e8d20** (#138, 2026-11-11) | `lane-b-redact-range-glued-status.md` | B (acting) | Done. Residuals A, A' and B go to item 3. Four safer-reading costs are recorded in ADR 0054 and #138's description. |
 | 2 | **#126, interest credited once** (schema) | Head 8ee290ae; `approval-summaries/lane-a-schema-chain-status.md` (its RESUME-BLOCK) | A, W2 | The founder's line is committed (05:06 UTC). W2 merges on green required checks. Open with the founder: whether to grant D19's exact alternative as a later schema PR (a new ledger freeze exception). |
-| 3 | **SSN and phone leaks** (`co-001/redact-ssn-phone-leaks`; MOD-21, MOD-22) | `lane-b-redact-ssn-phone-leaks-status.md` | B (acting), **W5** | **Must land before any real PHI is processed.** Started 2026-11-11 02:40 UTC: the gate reproduced. Two reviews. |
+| 3 | **SSN and phone leaks** (`co-001/redact-ssn-phone-leaks`; MOD-21, MOD-22) | `lane-b-redact-ssn-phone-leaks-status.md` | B (acting), **W5** | **Must land before any real PHI is processed.** Design reviewed and fixed; build next. It also takes the middle dot and the hyphenation point as name joiners. Two reviews. **After it: `LANES.md` Queues item 26 (MOD-23), two name forms still sent in clear, also before any real PHI; not assigned.** |
 | 4 | #134, SUITE-CAP-3: **merged as 994ee303** (2026-11-10) | `lane-b-suite-cap-3-status.md` | B (acting) | Done. No `ledger_line_net` change. |
 | 5 | #129, email plate: **merged as ca504674** (2026-11-11) | `lane-a-email-lockup-plate-status.md` | B (acting) | Done. |
 | 6 | **password-changed-notice** (schema PR 1; ADR 0091, SGN-16) | f110efd9 (WIP c0ced87f), stacked on #126; `approval-summaries/lane-a-auth-emails-status.md` | A, **W6** | W6 finishes the suite, the three reviews and the fix round now. The PR opens only after #126 merges. Founder's line. |
 | 7 | The schema batching plan, PRs 2 to 10 | `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` | A | One schema PR at a time. |
-| 8 | Packets verifier identifier fold (MOD-19, MOD-20) | `lane-b-packets-verifier-identifier-fold-status.md` | B (acting), **W7** | Started 2026-11-11 04:31 UTC: design next. Never at the same time as the verifier /3 migration. |
+| 8 | Packets verifier identifier fold (MOD-19, MOD-20) | `lane-b-packets-verifier-identifier-fold-status.md` | B (acting), **W7** | Design in review. It moves `redact.ts` whole to `packages/redact` (`@tp/redact`); whichever of it and item 3 merges second takes the base merge (git follows the rename; new files beside it move by hand). Never at the same time as the verifier /3 migration. |
 | 9 | The queue: `LANES.md` Queues item 25, seven follow-ups from #137's reviews (first the web's transaction scope, which does not read COMMIT's answer); then the Stryker static-mutant timeouts; the Dependabot replacement PR; P2 Trivy version; dark-mode-ship; the UX queue | `LANES.md` Queues; Lane B's handoff §2 | B | **Not assigned:** three builds run (W5, W6, W7). The next free build takes Queues item 25 (a). #136 and #137 (ADR 0092, CAS-56, CAS-57) are merged. |
 
 ## Founder items (bring each with the exact link or text)
