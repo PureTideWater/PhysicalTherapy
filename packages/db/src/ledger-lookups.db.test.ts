@@ -101,8 +101,8 @@ async function functions(): Promise<Map<string, Record<string, unknown>>> {
 }
 
 /** Every trigger of the schema: its table, function, timing and events, and whether it fires. */
-async function triggers(): Promise<unknown[]> {
-  const { rows } = await head.query(
+async function triggers(): Promise<Record<string, unknown>[]> {
+  const { rows } = await head.query<Record<string, unknown>>(
     `SELECT t.tgrelid::regclass::text AS relation, t.tgname AS name, t.tgfoid::int AS function, t.tgtype AS type, t.tgenabled AS enabled, pg_get_triggerdef(t.oid) AS definition
        FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
       WHERE NOT t.tgisinternal AND c.relnamespace = 'public'::regnamespace ORDER BY 1, 2`,

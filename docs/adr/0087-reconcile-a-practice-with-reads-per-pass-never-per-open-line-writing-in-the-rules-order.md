@@ -156,7 +156,10 @@ one step-7b pass on a copy of each seed, before (the base's bodies) against afte
   | analyzed with rows | the line's entries | the line's entries |
 
   So on a ledger that holds a few hundred to some tens of thousands of entries and was never analyzed, the new body
-  is the slower one from about 4,000 entries.
+  is the slower one from about 4,000 entries. Measured: F at 10,000 lines on a ledger already holding 20,000
+  never-analyzed entries of another tenant passes in 132.0 s before and 168.5 s after (`ledger_line_net` 2.0 s to
+  90.8 s; `ledger_entry_rules` 52.2 s to 4.1 s), with the same approved and posted cents. The pull request that moves
+  step 7b measures the weekly run's own ledger as its pass finds it, for that reason.
   In production the state is short: automatic analysis runs within about a minute of the first fifty committed
   entries, its statistics make every open session plan again, and with statistics both bodies read the line's
   entries. The match lookups have no such state: without `reversed_at IS NULL` in the query only the primary key fits.
