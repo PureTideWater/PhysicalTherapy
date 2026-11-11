@@ -2,25 +2,33 @@
 
 W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this item from 2026-11-11, taking it over from W8 in a fresh context (the orchestrator's assignment). It also holds password-changed-notice's merge step once W6 has posted its approval line.
 
-## RESUME-BLOCK: step-before-reset and #140, W9, 2026-11-11 09:25 UTC
-**#140 first (W9 holds it since W6 stood down; its block is in `lane-a-auth-emails-status.md`):**
-- Head **c82d2c99** (W9's one commit on abdc2192: CI's `unit` failed `tools/test/function-files.test.ts`, which still
-  expected a migration to carry no git attribute after abdc2192 marked migrations `text eol=lf`; the test now asserts
-  exactly those two; no schema change). CI on c82d2c99 is running; expect green but `domain model` and `all green`.
-- Done: the description is replaced with `lane-a-wip/pwnotice/pr/body-final.md` (the posted text equals it); the
-  document hash 6002e2afb2b830a519e6edc5de428f312ef3ada3591fa10b18f861cf83beea33 is confirmed on a fresh database at
-  abdc2192 (c82d2c99 changes one test file only); the approval line is line 7536, the last line.
-- **Next:** when CI on c82d2c99 is green but for those two: post the approval line as a suggestion (W6's step 3:
-  `gh api repos/PureTideWater/PhysicalTherapy/pulls/140/comments -f commit_id=<head> -f path=docs/product/domain-model.md
-  -f side=RIGHT -F line=7536 -f body=...`; `Approved by: Tyler Williams  Date: <today>  Document SHA-256: \`<hash>\``,
-  then the sentence that committing it accepts the description's trade-off, then the footer). If the session's
-  safety check refuses `gh api` for a write (it refused a PATCH of the description; the connector's
-  `update_pull_request` did that instead), tell the orchestrator in one line: the connector's review tools are
-  refused by `protect-github.sh`, so there is no second route. Then one line to the orchestrator
-  (session_019i9ifBCrxfV35CFDVHLTad) with the comment's link and the founder's decision sentence. Merge only after
-  the founder's commit of the line and green required checks (W6's steps 5 and 6). The description's Checks table
-  wants a row for c82d2c99 before the merge.
-**Item 28:**
+## RESUME-BLOCK: step-before-reset and #140, written by W9 as it stood down, 2026-11-11 09:40 UTC
+W9 (session_019i9ifBKxrX229x23BggpZK) holds nothing more: it is unsubscribed from #140 and its check-ins are
+cancelled. Nothing is unpushed; its container, worktrees (`/home/user/step-before-reset`, `/home/user/pwnotice`) and
+scratchpad can be lost. A fresh session takes both parts from here. Orchestrator: session_019i9ifBCrxfV35CFDVHLTad.
+
+**Part 1, #140's merge step** (password-changed-notice; W6's block in `lane-a-auth-emails-status.md`, steps 5 and 6):
+- Draft #140, branch `co-001/password-changed-notice`, head **c82d2c99** (abdc2192 plus one test-file commit by W9:
+  `tools/test/function-files.test.ts` now asserts a migration's two git attributes). The base 2e26a416 is an ancestor.
+- **The approval line is posted** as a suggested change on line 7536, the last line of `docs/product/domain-model.md`:
+  https://github.com/PureTideWater/PhysicalTherapy/pull/140#discussion_r4536232884 (document hash
+  6002e2afb2b830a519e6edc5de428f312ef3ada3591fa10b18f861cf83beea33, confirmed on a fresh database; date 2026-11-11).
+  The orchestrator has the link and the founder's decision sentence.
+- CI on c82d2c99 at 09:37 UTC: 34 checks passed; `capacity` was still running; `domain model` and `all green` red on
+  the blank line alone.
+- The description equals `lane-a-wip/pwnotice/pr/body-final.md`. It has no Checks row for c82d2c99 yet: add one line
+  ("On c82d2c99: one test file; CI passed but for the blank line") with the connector's `update_pull_request` (the
+  session's safety check refused `gh api -X PATCH` for the description; `gh api` POST of the review comment worked).
+- **Next:** subscribe to #140. After the founder's commit of the suggestion: it must be the only change (the last
+  line); wait for green required checks (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`);
+  `origin/claude/build-platform` must be an ancestor of the head (merge the base with a merge commit if it moved;
+  regenerate only if a migration came with it, which needs a new line); mark ready; merge with a merge commit
+  ("Merge pull request #140: ..."); one line to the orchestrator; record it in `lane-a-auth-emails-status.md`; ADR
+  0091's Status line (as #126 did for ADR 0084). If the founder asks instead to hold #140 until item 28 is in it,
+  the orchestrator says so and item 28's branch is folded into #140. Never merge before the founder's committed line;
+  never write it.
+
+**Part 2, item 28's PR** (opens only after #140 has merged):
 - WIP ref `co-001/wip-step-before-reset` = **5222fe59**, worktree clean (`/home/user/step-before-reset`, branch
   `co-001/step-before-reset`; disposable). Commits: the build f5d1c05e; review rounds 79c98137, 1a6b2e8b, 47c99ac7;
   case (d) 1ae2952e and its review fixes 5222fe59. No PR until #140 merges. Still stacked on ffa44ea9.
@@ -50,7 +58,12 @@ W9 (Lane A, https://claude.ai/code/session_019i9ifBKxrX229x23BggpZK) holds this 
 - **Handed on, for the orchestrator's queue:** W8's four; a job that records a reset whose transaction failed twice;
   two confirm errors still thrown as the platform's failure; the other provider methods rethrow the SDK's error whole;
   the "factor older than the reset" rule if ADR 0088's second release slips past launch.
-- Token rule (orchestrator, 09:01 UTC): at most two subagents at a time. This session's context is past about 300k.
+- **What the founder should read in item 28's PR:** the description's trade-offs above, ADR 0093 (the rule, D6's
+  lock and hold, D9's unknown outcome, D10's deploy and case (d), the known limits), the three new runbook sections
+  in `docs/runbooks/incident-response.md`, and the function files the summary flags (the two triggers, the three
+  replaced functions, `sign_in_step_refused`, `sign_in_lock_key_across_reset`).
+- Token rule (orchestrator, 09:01 UTC): at most two subagents at a time, each with a named scope, about 20 tool calls
+  and a report file. Forks cost about 250k to 350k tokens each: prefer doing small fixes in the session.
 
 ## W8's RESUME-BLOCK (2026-11-11 07:25 UTC), kept for its notes
 
