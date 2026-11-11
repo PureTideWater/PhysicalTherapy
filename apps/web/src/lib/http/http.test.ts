@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { ClientSecret, clientSecretValue } from '../auth/secret-hash';
 import { ConfigError, defaultDevAuthDirectory, defaultDocumentsDirectory, developmentMasterKey, readWebConfig } from '../server/config';
 import { type Services, devOutbox, devResetOutbox } from '../server/services';
-import { MAX_JSON_BODY_BYTES, PRIVATE_NO_STORE, ResponseCookies, boundedText, downloadHandler, outcomeResponse, routeHandler, setCookieHeader } from './handler';
+import { BUSY_RETRY_AFTER_SECONDS, MAX_JSON_BODY_BYTES, PRIVATE_NO_STORE, ResponseCookies, boundedText, downloadHandler, outcomeResponse, routeHandler, setCookieHeader } from './handler';
 import { platformRoute, practiceRoute, publicRoute, selfRoute } from './invoke';
 import { type Download, InputError, NotFoundError } from './route';
 
@@ -70,6 +70,10 @@ describe('public routes', () => {
       if (input.value === 'boom') {
         return Promise.reject(new Error('server error'));
       }
+      if (input.value === 'locked') {
+        // What pg throws when a statement gives up waiting for a lock: its code, and words that name the statement.
+        return Promise.reject(Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03', where: 'while locking tuple (0,1) in relation "synthetic"' }));
+      }
       return Promise.resolve({ echoed: input.value });
     },
   });
@@ -81,6 +85,11 @@ describe('public routes', () => {
     expect(await route.invoke(request({}, { extra: 1 }), services)).toMatchObject({ status: 'invalid' });
     expect(await route.invoke(request({ value: 'domain' }), services)).toEqual({ status: 'invalid', issues: [{ field: 'value', message: 'refused by the domain' }] });
     await expect(route.invoke(request({ value: 'boom' }), services)).rejects.toThrow('server error');
+  });
+
+  it('leave a public handler’s own errors as they were: no lock timeout is set for one, and one it met is not answered busy (docs/adr/0092, the amendment)', async () => {
+    // Sign-in, the public forms and the webhooks commit in steps of their own; "nothing was saved" is not theirs to say.
+    await expect(route.invoke(request({ value: 'locked' }), services)).rejects.toThrow('canceling statement due to lock timeout');
   });
 
   it('refuse a POST another origin sent, before the handler runs (login CSRF; docs/adr/0053)', async () => {
@@ -176,11 +185,21 @@ describe('the route-handler adapter', () => {
     expect(await response.json()).toEqual({ status: 'rate_limited', retryAfterSeconds: 42 });
   });
 
-  it('answers a busy refusal with 409, a short wait and the status alone (docs/adr/0092)', async () => {
-    const response = outcomeResponse({ status: 'busy' }, new ResponseCookies(null));
+  it('answers a busy refusal with 409, a short wait, and the status with its closed word alone (docs/adr/0092)', async () => {
+    const response = outcomeResponse({ status: 'busy', what: 'ledger' }, new ResponseCookies(null));
     expect(response.status).toBe(409);
     expect(response.headers.get('retry-after')).toBe('5');
-    expect(await response.json()).toEqual({ status: 'busy' });
+    expect(await response.json()).toEqual({ status: 'busy', what: 'ledger' });
+  });
+
+  it('tells a client to wait a minute after a lock timeout or a request still running, each of which held a connection to answer (the amendment; CAS-57)', async () => {
+    for (const what of ['records', 'request'] as const) {
+      const response = outcomeResponse({ status: 'busy', what }, new ResponseCookies(null));
+      expect(response.status).toBe(409);
+      expect(response.headers.get('retry-after')).toBe('60');
+      expect(await response.json()).toEqual({ status: 'busy', what });
+    }
+    expect(BUSY_RETRY_AFTER_SECONDS).toEqual({ ledger: 5, records: 60, request: 60 });
   });
 
   it('passes the URL’s and the route’s parameters and a JSON body to the route', async () => {

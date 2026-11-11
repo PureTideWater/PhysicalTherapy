@@ -4,7 +4,7 @@ import type { Services } from '../server/services';
 import { CSRF_HEADER } from './csrf';
 import { refusalLocation } from './download-refusal';
 import { clientAddress } from './rate-limit';
-import type { CookieJar, Download, Outcome, ReturnPage, Route, RouteRequest, TextDocument, UploadBody } from './route';
+import type { BusyWhat, CookieJar, Download, Outcome, ReturnPage, Route, RouteRequest, TextDocument, UploadBody } from './route';
 
 /**
  * The route-handler adapter (route.ts files): a Web Request in, a Web Response out, through the same
@@ -17,8 +17,14 @@ import type { CookieJar, Download, Outcome, ReturnPage, Route, RouteRequest, Tex
 
 export const PRIVATE_NO_STORE = 'private, no-store';
 
-/** What a busy refusal tells a client to wait before the same request: a person's action holds the lock for well under this; a pass may hold it longer, and the retry is then refused again, at once. */
-const BUSY_RETRY_AFTER_SECONDS = 5;
+/**
+ * What a busy refusal tells a client to wait before the same request. The ledger's try-lock answers at once, so five
+ * seconds: a person's action holds the lock for well under that, a pass may hold it longer, and the retry is then
+ * refused again, at once, holding no connection. A lock timeout and a request still running each took the web's
+ * lock_timeout to answer, on a connection every practice shares, and what holds a lock that long holds it for a whole
+ * transaction, so a minute: a retry every five seconds would spend most of its time waiting on that connection.
+ */
+export const BUSY_RETRY_AFTER_SECONDS: Readonly<Record<BusyWhat, number>> = { ledger: 5, records: 60, request: 60 };
 
 const STATUS: Readonly<Record<Outcome<unknown>['status'], number>> = {
   ok: 200,
@@ -85,7 +91,7 @@ export function outcomeResponse(outcome: Outcome<unknown>, cookies: ResponseCook
     headers.set('retry-after', String(outcome.retryAfterSeconds));
   }
   if (outcome.status === 'busy') {
-    headers.set('retry-after', String(BUSY_RETRY_AFTER_SECONDS));
+    headers.set('retry-after', String(BUSY_RETRY_AFTER_SECONDS[outcome.what]));
   }
   for (const cookie of cookies.written) {
     headers.append('set-cookie', cookie);
