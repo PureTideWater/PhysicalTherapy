@@ -807,8 +807,8 @@ interface Found extends Range {
   readonly compacts?: readonly string[];
   /**
    * A match ef3e8d20 did not make that can change what the survivor scan chains: a number a label names only through the
-   * call's own identifier or a list number, or a member ID or claim number in a form only this reading reads. Redaction
-   * applies it only where the letter is not refused without it (appliedMatches).
+   * call's own identifier or a list number, a member ID or claim number in a form only this reading reads, or a name in a
+   * digit-for-letter form. The letter reader applies it only where the letter is not refused without it (appliedMatches).
    */
   readonly fresh?: boolean;
 }
@@ -1203,7 +1203,8 @@ function confusedMatchesIn(tokens: readonly WrittenToken[], subject: Subject, no
       // small upsilon).
       const read = confusedAs(token, 0, units);
       if ((read === 'crossed' && !dateToken(token)) || (pieces === 'one' && read === 'same' && token.likened)) {
-        found.push({ start: token.starts[0] ?? 0, end: token.ends[token.ends.length - 1] ?? 0, kind: form.kind, claim: form.claim, ...(form.kind === 'name' ? {} : { fresh: true }) });
+        // A digit-for-letter form holds digits the scan chained as ef3e8d20 read it, a name's too ("VANTR3E"): fresh.
+        found.push({ start: token.starts[0] ?? 0, end: token.ends[token.ends.length - 1] ?? 0, kind: form.kind, claim: form.claim, ...(form.kind !== 'name' || read === 'crossed' ? { fresh: true } : {}) });
         return true;
       }
     }
@@ -3005,7 +3006,7 @@ function ownIdentifierGlued(normal: string, subject: Subject, held: boolean, str
  * No.XXXXX1234": the review of the build, B2-2).
  */
 const MASKED_SSN_GLUED = /(?![X*#_\u2022\u25CF])[\p{L}0-9]\.?[X*#_\u2022\u25CF]{3,5}(?:[ \t]{0,2}[\p{Pd}\u2212][ \t]{0,2}|[ \t]{1,3}|\.)[X*#_\u2022\u25CF]{2}(?:[ \t]{0,2}[\p{Pd}\u2212][ \t]{0,2}|[ \t]{1,3}|\.)(?:[ \t]{0,16}(?:\r\n|[\n\r])[ \t]{0,16})?[0-9]{4}(?![0-9])/u;
-const HELD_MASKED_SSN_GLUED = /(?![X*#_\u2022\u25CF])[\p{L}0-9]\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_\u2022\u25CF]{2}|[X*#_\u2022\u25CF]{5})[\p{Pd}\u2212 .]?[0-9]{4}(?![0-9])/u;
+const HELD_MASKED_SSN_GLUED = /[\p{L}0-9]\.?(?:[X*#_\u2022\u25CF]{3}[\p{Pd}\u2212 .]?[X*#_\u2022\u25CF]{2}|[X*#_\u2022\u25CF]{5})[\p{Pd}\u2212 .]?[0-9]{4}(?![0-9])/u;
 
 const ROMAN_MONTHS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII'];
 const ORDINAL_WORDS = ['FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH', 'SIXTH', 'SEVENTH', 'EIGHTH', 'NINTH', 'TENTH', 'ELEVENTH', 'TWELFTH', 'THIRTEENTH', 'FOURTEENTH', 'FIFTEENTH', 'SIXTEENTH', 'SEVENTEENTH', 'EIGHTEENTH', 'NINETEENTH', 'TWENTIETH'];
