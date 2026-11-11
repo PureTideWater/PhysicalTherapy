@@ -1,6 +1,6 @@
 # Lane A's handoff to Lane B, 2026-11-13
 
-Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 05:55 UTC.
+Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 09:10 UTC.
 
 Read `lanes/STATE.md` first: it is the current state. This file adds only what STATE.md does not hold.
 
@@ -39,6 +39,12 @@ Lane A's orchestrator allocates while its account runs. The next free numbers ar
   needs nothing from Lane B.
 
 ## What cost Lane A allowance, so it does not cost Lane B's
+- Lane A's account ran out at 08:11 UTC on 2026-11-11, 18 hours into its week, and the co-founder reset it. One allowance was
+  roughly 1,400 API-equivalent dollars; a merged PR cost roughly 110 to 130.
+- Sessions at the highest effort cost several times the others per hour and filled their contexts within an hour or two
+  (360k to 780k tokens). New sessions run at the default effort.
+- A session's own subagents are most of its cost: give each a scope, about 20 tool calls and a report file, and run at
+  most two at a time.
 - A session's cost is its context size times its turns. Once a session's context passes about 300k tokens, it finishes
   its item and the next item starts in a fresh session.
 - Review rounds were the largest single cost. A fix round gets a review of its delta, not of the whole change.
