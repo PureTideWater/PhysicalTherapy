@@ -24,10 +24,12 @@ import { type StageTrio, type StageWorld, buildStageWorld } from './test-support
  * the claims whose patient control numbers each side decrypted in the search.
  *
  * The reference against itself is the settle rule's own proof (slice 1): settleMatches' posted entries follow
- * ledgerMatches' order, which within a pass follows random match ids, so a check with two or more allocated check-level
- * postings splits a line's share between them by a cent differently from run to run on the base itself (5.2). The rule
- * (each side replayed against partialShare in its own order, totals per line and stage compared) must absorb that in
- * every run, and the harness counts the runs where a row-for-row comparison would have failed.
+ * ledgerMatches' order. When slice 1 was written that order followed random match ids within a pass, so a check with two
+ * or more allocated check-level postings split a line's share between them by a cent differently from run to run on the
+ * base itself (5.2), and the rule (each side replayed against partialShare in its own order, totals per line and stage
+ * compared) absorbed it. Since the interest fix the order is ledger_match.seq (docs/adr/0084), the order the pass wrote
+ * its matches in, the same on both sides: the rule stays, the harness counts the runs where a row-for-row comparison
+ * would have failed, and that count is held at zero below.
  *
  * The proof level is fixed by the run's index (review round 5): even runs at posted, odd runs raised to deposited after
  * the history; after the runs the harness checks that both levels ran, that a posted run moved a line to recovered from
@@ -469,6 +471,8 @@ function expectWorldShapes(built: BuiltWorld, side: SideResult, before: Readonly
   }
   // The PLB L6 alone: a claim's AMT I credits nothing since the interest fix (docs/adr/0084), on either side.
   expect(summary.remittances.interest, `${run}: interest`).toBe(1);
+  expect(summary.remittances.interestTakenBack, `${run}: interest taken back`).toBe(0);
+  expect((side.after.get('ledger_entry') ?? []).filter((row) => row.stage === 'interest').map((row) => row.evidence_kind), `${run}: interest from the PLB L6 alone`).toEqual(['provider_adjustment']);
   expect(summary.postingsMatched, `${run}: postings`).toBeGreaterThan(0);
   expect(summary.depositsMatched, `${run}: deposits`).toBeGreaterThan(0);
   expect(summary.stages.back, `${run}: a line moved back`).toBeGreaterThan(0);
@@ -610,6 +614,11 @@ describe('a reconcile pass writes what the per-line pass wrote (CAS-49.1)', () =
   for (let run = 0; run < RUNS; run += 1) {
     it(`run ${String(run)} (${run % 2 === 0 ? 'posted' : 'raised to deposited'})`, () => oneRun(run), RUN_TIMEOUT_MS);
   }
+
+  // ledgerMatches reads in ledger_match.seq order (docs/adr/0084), which both sides write alike: no run's settle entries differ row for row.
+  it('finds no run whose settle entries would differ row for row', () => {
+    expect(facts.strictSettleWouldDiffer).toBe(0);
+  });
 
   it('ran both proof levels, recovered a line from a posted entry of a posted pass, and wrote both move-backs in run 1', () => {
     expect([...facts.levels].sort()).toEqual(RUNS > 1 ? ['deposited', 'posted'] : ['posted']);

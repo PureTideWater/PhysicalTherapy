@@ -136,6 +136,8 @@ measured figure (SUITE-CAP-1's rule):
   nothing in it and it calls nothing this item changes) and takes #126's `reconcileRemittances`; `settleOrder` and
   CAS-49.3's `ledgerMatches` pattern read `ledger_match.seq`; a generated practice expects one interest credit (the
   PLB L6; AMT I credits none, ADR 0084). Still owed, as its own item: the settle entries compared row for row in
-  `seq` order in place of the set comparison and the replay (CAS-49.1 reports 0 of 25 runs would differ).
+  `seq` order in place of the set comparison and the replay (CAS-49.1 reports 0 of 25 runs would differ), and
+  CAS-50's and CAS-51's practices seeded with PLB L6s and WOs with the interest step's statements counted (its reads
+  are a fixed number a pass by reading, ADR 0084 D17, which no check yet holds at two sizes).
 - A spread puts many lines on few codes and dates beyond CAS-51's spread A, or the patient search's share of a pass
   grows: the equality hash above.

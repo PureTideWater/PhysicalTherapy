@@ -481,7 +481,7 @@ function withoutRecording<T>(run: () => T): T {
   return recording.exit(run);
 }
 
-/** The posted and deposited entries settleMatches wrote in the pass: their order follows the random match ids. */
+/** The posted and deposited entries settleMatches wrote in the pass: their order follows ledgerMatches' (ledger_match.seq). */
 const isSettle = (row: Record<string, unknown>) => (row.stage === 'posted' || row.stage === 'deposited') && row.created_by === null;
 
 const multiset = (items: readonly string[]) => [...items].sort();

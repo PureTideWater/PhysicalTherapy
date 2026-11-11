@@ -1157,7 +1157,7 @@ export async function providerAdjustments(
   }
   const reading = await interestAttribution(scope, cipher, practiceId, moment);
   const interest = await interestState(scope, practiceId, lines, matches, reading);
-  const claimHashes = await hashesOf(scope, matches);
+  const claimHashes = await hashesOf(scope, practiceId, matches);
   const l6s = moment.adjustments.filter((adjustment) => adjustment.category === 'interest' && reading.draws.has(adjustment.id));
   const limit = interestWalkLimit.of(interestRoom(interest, reading, l6s));
   let wrote = 0;
@@ -1612,9 +1612,9 @@ function sumEntries(amounts: readonly Cents[]): bigint {
   return amounts.reduce((sum, amount) => sum + amount, 0n);
 }
 
-async function hashesOf(scope: Scope, matches: readonly StoredMatch[]): Promise<Map<string, string>> {
+async function hashesOf(scope: Scope, practiceId: string, matches: readonly StoredMatch[]): Promise<Map<string, string>> {
   const ids = [...new Set(matches.filter((match) => match.kind === 'claim').map((match) => match.claimId as string))];
-  const { rows } = await scope.client.query<{ id: string; hash: string }>('SELECT id, payer_claim_control_number_hash AS hash FROM claim WHERE id = ANY ($1::uuid[])', [ids]);
+  const { rows } = await scope.client.query<{ id: string; hash: string }>('SELECT id, payer_claim_control_number_hash AS hash FROM claim WHERE practice_id = $1 AND id = ANY ($2::uuid[])', [practiceId, ids]);
   return new Map(rows.map((row) => [row.id, row.hash]));
 }
 

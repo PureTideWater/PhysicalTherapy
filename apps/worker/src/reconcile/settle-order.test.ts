@@ -12,9 +12,10 @@ import { checkPostedBefore } from './postings';
  * the sum of the amounts of the check-level postings of its remittance ahead of it in the standing matches' order.
  * Today's settleMatches re-filtered that prefix for every match; checkPostedBefore keeps one running sum per remittance
  * instead. For any standing list (any order, any mix of kinds, levels and remittances, amounts present or not, and sums
- * past what a float holds exactly) both give every match the same `before`, order for order: CAS-49 cannot compare a
- * partial check's entries row for row, since within a pass that order follows random match ids (5.2), so this test is
- * where D6 is held exactly. Synthetic ids only.
+ * past what a float holds exactly) both give every match the same `before`, order for order. When this was written
+ * CAS-49 could not compare a partial check's entries row for row, since within a pass that order followed random match
+ * ids (5.2); since the interest fix it follows ledger_match.seq (docs/adr/0084) and CAS-49.1 holds that no run would
+ * differ row for row. This test is still where D6 is held exactly, for every order. Synthetic ids only.
  */
 
 const REMITTANCES = ['5b1f6c2e-0d3a-4e7b-9c8d-1a2b3c4d5e01', '6c2a7d3f-1e4b-4f8c-8d9e-2b3c4d5e6f02', '7d3b8e4a-2f5c-4a9d-9eaf-3c4d5e6f7a03'] as const;
