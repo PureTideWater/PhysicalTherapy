@@ -83,6 +83,14 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifDNJ3ixNo2VHiiA93
   - *Review B, must-stay and the other-patient screen.* Scope: new refusals and new redactions against f3f5a642 (the
     gate's `KEEP.*` rows, names that split into words, CR LF letters, a wider match that makes the check refuse a
     letter the base sent), time on crafted letters, and that every candidate f3f5a642 offers the screen is offered.
+- **The gate on the first prototype, read after the hand-over** (`designs/lane-b-redact-item-26/gate/report-prototype.md`;
+  A is f3f5a642, B the prototype before the forms filter and the last test fixes, so it is an indication, not the
+  run of record): 975,489 letters, 13 differ; **no PHI class**, nothing unplaced, no letter newly refused (462,984
+  refused on both trees); 13 letters with ordinary text newly replaced (`KEEP.changed.text`) and 3 with a short name
+  part, the recorded cost; slowest crafted letter 1,616 ms against 1,050 ms on the base (budget 3,000 ms), so the two
+  rows over 3 s in vitest are that test's heavier path (it also runs `mentionsIdentifier`) on a loaded machine, and
+  open item 1 is still to fix and measure. The corpus holds few CR LF letters and no stored separator: K-1 and P6
+  rest on their own rows and properties, and on review A's fuzzer.
 - No PR is open, no subscription and no check-in is held.
 
 ## Log (UTC)
