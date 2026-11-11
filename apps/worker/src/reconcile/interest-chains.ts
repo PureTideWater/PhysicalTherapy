@@ -71,7 +71,9 @@ export async function adjustmentMoment(scope: Scope, practiceId: string): Promis
 /**
  * The walk back to each claim's root, as CTEs over `wanted (id)`: $1 is the practice, and $2 the remittances a link may
  * reach (null: every remittance of the practice). A loop, which the loader's links never make, ends where it would
- * repeat; of several roots the farthest, then the lowest ID, is taken.
+ * repeat; of several roots the farthest, then the lowest ID, is taken. The practice is named where the walk takes a
+ * claim in (wanted, and p at every step), which scopes the statement; the lookups inside the LATERAL name none, because
+ * a practice predicate there moves the planner off the link indexes (measured: CAS-42.3's pass did not end in 30 minutes).
  */
 const WALK_BACK = `
   up (start, id, path) AS (
@@ -80,9 +82,9 @@ const WALK_BACK = `
     SELECT u.start, p.id, u.path || p.id
       FROM up u
       CROSS JOIN LATERAL (
-        SELECT x.reversal_of_claim_id AS id FROM claim x WHERE x.practice_id = $1 AND x.id = u.id AND x.reversal_of_claim_id IS NOT NULL
+        SELECT x.reversal_of_claim_id AS id FROM claim x WHERE x.id = u.id AND x.reversal_of_claim_id IS NOT NULL
         UNION ALL
-        SELECT k.id FROM claim k WHERE k.practice_id = $1 AND k.superseded_by_claim_id = u.id AND NOT EXISTS (SELECT 1 FROM claim x WHERE x.practice_id = $1 AND x.id = u.id AND x.reversal_of_claim_id IS NOT NULL)
+        SELECT k.id FROM claim k WHERE k.superseded_by_claim_id = u.id AND NOT EXISTS (SELECT 1 FROM claim x WHERE x.id = u.id AND x.reversal_of_claim_id IS NOT NULL)
       ) step
       JOIN claim p ON p.id = step.id
      WHERE p.practice_id = $1 AND ($2::uuid[] IS NULL OR p.remittance_id = ANY ($2::uuid[])) AND p.id <> ALL (u.path)),
@@ -257,8 +259,8 @@ export async function reportedInterest(scope: Scope, practiceId: string, service
     `WITH RECURSIVE down (id) AS (
        SELECT unnest($2::uuid[])
        UNION
-       SELECT n.id FROM down d JOIN claim x ON x.id = d.id AND x.practice_id = $1
-         CROSS JOIN LATERAL (SELECT v.id FROM claim v WHERE v.practice_id = $1 AND v.reversal_of_claim_id = x.id UNION ALL SELECT x.superseded_by_claim_id WHERE x.superseded_by_claim_id IS NOT NULL) n)
+       SELECT n.id FROM down d JOIN claim x ON x.id = d.id
+         CROSS JOIN LATERAL (SELECT v.id FROM claim v WHERE v.reversal_of_claim_id = x.id UNION ALL SELECT x.superseded_by_claim_id WHERE x.superseded_by_claim_id IS NOT NULL) n)
      SELECT c.id, c.remittance_id, coalesce(c.interest_cents, 0)::text AS interest_cents
        FROM down JOIN claim c ON c.id = down.id JOIN remittance r ON r.id = c.remittance_id
       WHERE c.practice_id = $1 AND r.status = 'loaded'`,
