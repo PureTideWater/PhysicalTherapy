@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { type LetterClaim, type PatientIdentifiers, holdsIdentifier, holdsNameOrNumber, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
 
+import { timed } from './test-support/time-budget';
+
 /**
  * The leaks co-001/redact-ssn-phone-leaks closes (test matrix MOD-21, MOD-22; docs/adr/0054, the amendment of that change;
  * the orchestrator's rulings A, A' and B of 2026-11-07), each rule on both sides: the shape it now redacts or refuses, and
@@ -1301,9 +1303,9 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
   it.each(['_', '~', '\u2500', '_ ', '-'])('I1-1, I2-1: a long rule of %j between a noun and a number is read in time linear in its length', (mark) => {
     for (const length of [48, 60, 110, 5000]) {
       const letter = `IMPORTANT NOTICE\n${mark.repeat(length)}\nClaim Number: 20260112345.01`;
-      const started = performance.now();
-      expect(outcome(letter)).toBe(letter);
-      expect(performance.now() - started, `a rule of ${String(length)}`).toBeLessThan(1000);
+      const run = timed(1_000, () => outcome(letter));
+      expect(run.value).toBe(letter);
+      expect(run.ms, `a rule of ${String(length)}: ${run.said}`).toBeLessThan(run.allowedMs);
     }
   });
   it.each([
@@ -1410,9 +1412,9 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
   it.each(['-+', '+-', '=+', '_~', '─_', '+ ', '(S)', 'NO ', '# ', '| '])('J-5: %j repeated between a noun and a number is read in time linear in its count', (pair) => {
     for (const count of [24, 28, 50, 2500]) {
       const letter = `Claim ${pair.repeat(count)} Total 20260112345.01`;
-      const started = performance.now();
-      expect(outcome(letter)).toBe(REFUSED);
-      expect(performance.now() - started, `${String(count)} of them`).toBeLessThan(1000);
+      const run = timed(1_000, () => outcome(letter));
+      expect(run.value).toBe(REFUSED);
+      expect(run.ms, `${String(count)} of them: ${run.said}`).toBeLessThan(run.allowedMs);
     }
   });
 

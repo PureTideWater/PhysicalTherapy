@@ -7,6 +7,7 @@ import { BARRIER, type LetterClaim, type PatientIdentifiers, dateForms, datesIn,
 import { SYNTHETIC_IDS, SYNTHETIC_LETTER, localGateway, registerOutput, syntheticLetterInput, syntheticLetterOutput, syntheticRecords } from '../testing';
 import { type DenialLetterInput, type DenialLetterOutput, denialLetterSpec, verifyDenialLetter } from './denial-letter';
 import { mentionsIdentifier } from './narrative';
+import { timed } from '../test-support/time-budget';
 
 /**
  * readDenialLetter (PRD 14, v1.5): PHI minimized before the call (one patient's material only; names,
@@ -318,6 +319,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
   // The second fix round's reproductions (design section 7): a payer's letter crafted to make redaction slow.
   // Each took seconds to minutes before; each is linear now, and its budget leaves room for a loaded runner.
   const N = 100_000;
+  /** The reader's budget for a letter of N characters, on the reference machine (docs/adr/0054). */
+  const BUDGET_MS = 3_000;
   const fill = (unit: string) => unit.repeat(Math.floor(N / unit.length));
   const half = (unit: string) => unit.repeat(Math.floor(N / 2 / unit.length));
   /** MOD-16's CI counterexample: a letter whose chain only the range fix's barriers hold (cc3dd7f6 refused it for the range's digits). */
@@ -362,13 +365,14 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['date ranges glued to an ordinal-like word after the year, repeated', ['JANE Q VANTREE'], fill('Service 01/01/2020-01/02/2020St. '), ['SYN555001']],
   ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
     const who = patient(names);
-    const started = performance.now();
-    // The path prepare runs: redaction, the screen's candidates, then the check (review GATEWAYJ1-5).
-    const redacted = redactLetterForScreen(text, who, claim(...claimNumbers));
-    expect(holdsIdentifier(redacted.text, who, claim(...claimNumbers))).toBe(false);
-    expect(mentionsIdentifier(redacted.text, { names, numbers: [...who.memberIds, ...claimNumbers] })).toBe(false);
-    const seconds = (performance.now() - started) / 1000;
-    expect(seconds, `redacted and checked ${String(text.length)} characters in ${seconds.toFixed(2)} s`).toBeLessThan(3);
+    // The path prepare runs: redaction, the screen's candidates, then the check (review GATEWAYJ1-5). The budget is the
+    // reference machine's, held on any machine by a calibration in the same process (test-support/time-budget.ts).
+    const run = timed(BUDGET_MS, () => {
+      const redacted = redactLetterForScreen(text, who, claim(...claimNumbers));
+      return { held: holdsIdentifier(redacted.text, who, claim(...claimNumbers)), mentioned: mentionsIdentifier(redacted.text, { names, numbers: [...who.memberIds, ...claimNumbers] }) };
+    });
+    expect(run.value).toEqual({ held: false, mentioned: false });
+    expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
   });
 
   // Review round 3 (GATEWAY3-3): the check's own paths, a letter it refuses included, in time linear in its length.
@@ -446,11 +450,9 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['a mask in an SSN’s shape with spaced dashes and three digits, glued to a word, the letter over (MOD-21)', ['JANE Q VANTREE'], fill('PaidXXX - XX - 345 '), false],
   ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
     const who = patient([...names]);
-    const started = performance.now();
-    const redacted = redactLetterForScreen(text, who, claim('SYN555001'));
-    expect(holdsIdentifier(redacted.text, who, claim('SYN555001'))).toBe(refused);
-    const seconds = (performance.now() - started) / 1000;
-    expect(seconds, `redacted and checked ${String(text.length)} characters in ${seconds.toFixed(2)} s`).toBeLessThan(3);
+    const run = timed(BUDGET_MS, () => holdsIdentifier(redactLetterForScreen(text, who, claim('SYN555001')).text, who, claim('SYN555001')));
+    expect(run.value).toBe(refused);
+    expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
   });
 
   it.each([
