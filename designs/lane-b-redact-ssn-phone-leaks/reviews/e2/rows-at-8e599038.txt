@@ -1,0 +1,160 @@
+"611.87 phone (10) 813.91 5.08 246.04" 
+    head: same | before: REFUSED | base: same
+"611.87 phone 813.91 5.08 246.04" 
+    head: same | before: same | base: same
+"Telephone call (2) 30.00 60.00" 
+    head: same | before: REFUSED | base: same
+"Telephone call 30.00 60.00" 
+    head: same | before: same | base: same
+"Fax (10) 1.00 10.00" 
+    head: same | before: REFUSED | base: same
+"Fax 1.00 10.00" 
+    head: same | before: same | base: same
+"Contact: Billing 250 75.123456" 
+    head: same | before: REFUSED | base: same
+"Medicare rate 110 32.74420" 
+    head: same | before: REFUSED | base: same
+"Medicare 150 12.50120.00" 
+    head: same | before: REFUSED | base: same
+"DOS 2020-01-02XXX-XX-3456" 
+    head: REFUSED | before: same | base: same
+"DOS 2020-01-02900-12-3456" 
+    head: REFUSED | before: REFUSED | base: same
+"Paid $150XXX-XX-3456" 
+    head: REFUSED | before: same | base: same
+"Paid $150900-12-3456" 
+    head: REFUSED | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\nLine (001) 420-97110" 
+    head: same | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\nCalls (10) for details 9.02 853.51 951.45" 
+    head: REFUSED | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\nCalls for details 9.02 853.51 951.45" 
+    head: REFUSED | before: REFUSED | base: same
+"Phone (2) 15.00 30.00" 
+    head: same | before: REFUSED | base: same
+"Phone 15.00 30.00" 
+    head: same | before: same | base: same
+"Phone (2) 15.00 3.00" 
+    head: same | before: same | base: same
+"Phone (12) 15.00 3.00" 
+    head: same | before: REFUSED | base: same
+"611.87 phone (x) 813.91 5.08 246.04" 
+    head: same | before: same | base: same
+"Calls (3) 25.00 75.00" 
+    head: same | before: REFUSED | base: same
+"Calls 25.00 75.00" 
+    head: same | before: same | base: same
+"Mobile (1) 49.99 49.99" 
+    head: same | before: REFUSED | base: same
+"Records fee: fax (10) 1.00 10.00, copies (25) 0.25 6.25" 
+    head: same | before: REFUSED | base: same
+"Records fee: fax 1.00 10.00, copies (25) 0.25 6.25" 
+    head: same | before: same | base: same
+"Dear Provider,\nWe processed the following.\nTelephone call (2) 30.00 60.00\nTotal 60.00\nSincerely, Claims" 
+    head: same | before: REFUSED | base: same
+"Dear Provider,\nWe processed the following.\nTelephone call 30.00 60.00\nTotal 60.00\nSincerely, Claims" 
+    head: same | before: same | base: same
+"Telephone call (2)\n30.00 60.00" 
+    head: same | before: REFUSED | base: same
+"Therapeutic exercise (2) 30.00 60.00" 
+    head: same | before: same | base: same
+"Fax 2) 15.00 30.00" 
+    head: same | before: REFUSED | base: same
+"Fax 15.00 30.00" 
+    head: same | before: same | base: same
+"DOS 01-Jan-2020900-12-3456" 
+    head: REFUSED | before: same | base: same
+"DOS 01/2020900-12-3456" 
+    head: REFUSED | before: same | base: same
+"Paid Jan 2020900-12-3456" 
+    head: REFUSED | before: same | base: same
+"Paid Jan 1,2020900-12-3456" 
+    head: REFUSED | before: same | base: same
+"Paid Jan 1, 2020900-12-3456" 
+    head: REFUSED | before: REFUSED | base: same
+"DOS 01-Jan-2020202-555-0100" 
+    head: REFUSED | before: same | base: same
+"Service 01/01/2020-150.00 Paid\nDOS 2020-01-02XXXXX3456" 
+    head: REFUSED | before: same | base: same
+"Paid $1,500XXX-XX-3456" 
+    head: REFUSED | before: same | base: same
+"Paid 150.00XXX-XX-3456" 
+    head: REFUSED | before: REFUSED | base: same
+"Medicare allowed 150 12. 97110 97140" 
+    head: same | before: REFUSED | base: same
+"Medicare paid 100 80.00000" 
+    head: same | before: REFUSED | base: same
+"Medicare rate 110 32.7442" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"Contact: Billing 250.75 123456" 
+    head: same | before: same | base: same
+"Service 01/01/2020-150.00 Paid\nTable (555) 456-23099" 
+    head: same | before: REFUSED | base: same
+"Line (001) 420-97110" 
+    head: same | before: same | base: same
+"Service 01/01/2020-150.00 Paid\nphone (4) pages to Tracking 802-456-71718" 
+    head: REFUSED | before: REFUSED | base: same
+"Service 01/01/2020-150.00 Paid\nphone pages to Tracking 802-456-71718" 
+    head: REFUSED | before: REFUSED | base: same
+"98966 Telephone call (2) 30.00 60.00" 
+    head: same | before: REFUSED | base: same
+"Contact (2) 15.00 30.00 copay collected" 
+    head: same | before: REFUSED | base: same
+"SSN (2) 15.00 30.00" 
+    head: same | before: REFUSED | base: same
+"Phone (12) 555-0100" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"Phone (2) 555-0100" 
+    head: "Phone (2) [PHONE]" | before: "Phone (2) [PHONE]" | base: same
+"Phone ( 2 ) 555-0100" 
+    head: "Phone ( 2 ) [PHONE]" | before: same | base: same
+"Phone (2nd) 555-0100" 
+    head: "Phone (2nd) [PHONE]" | before: same | base: same
+"Phone numbers (2) 555-0100" 
+    head: "Phone numbers (2) [PHONE]" | before: same | base: same
+"Phone\n(2) 555-0100" 
+    head: "Phone\n(2) [PHONE]" | before: same | base: same
+"Phone (2)555-0100" 
+    head: same | before: same | base: same
+"Phone (2​) 555-0100" 
+    head: "Phone (2​) [PHONE]" | before: same | base: same
+"Phone 1: 555-0100" 
+    head: "Phone 1: [PHONE]" | before: "Phone 1: [PHONE]" | base: same
+"Tel 1) 555-0123" 
+    head: "Tel 1) [PHONE]" | before: "Tel 1) [PHONE]" | base: same
+"SSN (2). 150.00 120.00 30.00" 
+    head: REFUSED | before: REFUSED | base: same
+"TTY users call (2), 2,403.99; Paid 150.00 2026" 
+    head: REFUSED | before: REFUSED | base: same
+"Re: Cell (2) is 933.67 4536." 
+    head: REFUSED | before: REFUSED | base: same
+"TTY 1: 7,439.10 942.77 3098" 
+    head: REFUSED | before: REFUSED | base: same
+"Contact 1: Springfield, IL 62701-1234" 
+    head: REFUSED | before: REFUSED | base: same
+"Contact (1): Springfield, IL 62701-1234" 
+    head: REFUSED | before: REFUSED | base: same
+"Phone (2); 364.33\n15.00 12.00 3.00" 
+    head: "Phone (2); [PHONE].00 12.00 3.00" | before: "Phone (2); [PHONE].00 12.00 3.00" | base: same
+"Paid 0.00. Call (2) March 4, 2020−9,139.37 915-94-3821-150.00" 
+    head: REFUSED | before: REFUSED | base: "Paid 0.00. Call (2) March 4, 2020−9,139.37 [SSN]-150.00"
+"Call (2) 150.00 120.00 30.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Call 150.00 120.00 30.00" 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"Phone:555-0100" 
+    head: "Phone:[PHONE]" | before: "Phone:[PHONE]" | base: "Phone:[PHONE]"
+"Phone (home)555-0100" 
+    head: same | before: same | base: same
+"Phone (2):555-0100" 
+    head: "Phone (2):[PHONE]" | before: "Phone (2):[PHONE]" | base: same
+"Phone 1:555-0100" 
+    head: "Phone 1:[PHONE]" | before: "Phone 1:[PHONE]" | base: same
+"Phone)555-0100" 
+    head: same | before: same | base: same
+"Phone (2) 5550100" 
+    head: same | before: same | base: same
+"Phone 5550100" 
+    head: same | before: same | base: same
+"Phone: 5550100" 
+    head: same | before: same | base: same

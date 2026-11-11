@@ -1,0 +1,188 @@
+"SSN/Member ID: 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"Patient SSN/Account #: 900-12-345601/02/2020" 
+    head: REFUSED | before: same | base: same
+"SSN on file: 900-12-345678" 
+    head: REFUSED | before: same | base: same
+"Soc. Sec. Acct. No. 900-12-345678" 
+    head: REFUSED | before: same | base: same
+"S.S.N. Account No. 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"Social Security\nAccount Number 900-12-345678" 
+    head: REFUSED | before: same | base: same
+"Social Security Number Account 900123456150.00" 
+    head: REFUSED | before: same | base: same
+"Social Security No. on file 900123456150.00" 
+    head: REFUSED | before: same | base: same
+"SSN or Member ID: 900-12-345678" 
+    head: REFUSED | before: same | base: same
+"SSN (Member ID): 900-12-3456150.00" 
+    head: REFUSED | before: same | base: same
+"SSN# Account 900-12-345678" 
+    head: REFUSED | before: same | base: same
+"Social Security Account Number 900-12-345678" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"SSN 900123456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Member SSN: 900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Paid $150XXX-XX-3456" 
+    head: REFUSED | before: same | base: same
+"CPT 97110XXX-XX-3456" 
+    head: REFUSED | before: same | base: same
+"DOS 2020-01-02XXX-XX-3456" 
+    head: REFUSED | before: same | base: same
+"NPI 1234567890***-**-3456" 
+    head: REFUSED | before: same | base: same
+"DOS 20200102XXX-XX-3456" 
+    head: REFUSED | before: same | base: same
+"Paid 150.00___-__-3456" 
+    head: REFUSED | before: same | base: same
+"DOS 01/02/2020___-__-3456" 
+    head: REFUSED | before: same | base: same
+"Billed 01/01/2020-150.00.\nPaid $150XXX-XX-3456" 
+    head: REFUSED | before: same | base: same
+"Billed 01/01/2020-150.00.\nDOS 2020-01-02XXX-XX-3456" 
+    head: REFUSED | before: same | base: same
+"Paid 1,250XXX-XX-3456" 
+    head: REFUSED | before: same | base: same
+"Units 150 XXX-XX-3456" 
+    head: "Units 150 [SSN]" | before: "Units 150 [SSN]" | base: "Units 150 [SSN]"
+"Paid 150.00XXX-XX-3456" 
+    head: REFUSED | before: REFUSED | base: same
+"DOS 01/02/2020XXX-XX-3456" 
+    head: REFUSED | before: REFUSED | base: same
+"DOS 2020.01.02XXX-XX-3456" 
+    head: REFUSED | before: REFUSED | base: same
+"Paid 150.00 XXX-XX-3456" 
+    head: "Paid 150.00 [SSN]" | before: "Paid 150.00 [SSN]" | base: "Paid 150.00 [SSN]"
+"Seen 01-Jan-2020900-12-3456 today." 
+    head: REFUSED | before: same | base: same
+"Seen Jan 1,2020900-12-3456 today." 
+    head: REFUSED | before: same | base: same
+"Seen January 2020900-12-3456 today." 
+    head: REFUSED | before: same | base: same
+"Seen 01/2020202-555-0123 today." 
+    head: REFUSED | before: same | base: same
+"Seen January 1,\n2020900-12-3456 today." 
+    head: REFUSED | before: same | base: same
+"Seen 01Jan2020202-555-0123 today." 
+    head: REFUSED | before: same | base: same
+"Seen Jan-01-2020900-12-3456 today." 
+    head: REFUSED | before: same | base: same
+"DOS 01-JAN-2020900-12-3456 Paid 150.00" 
+    head: REFUSED | before: same | base: same
+"Seen 1-Jan-2020 900-12-3456 today." 
+    head: "Seen 1-Jan-2020 [SSN] today." | before: "Seen 1-Jan-2020 [SSN] today." | base: "Seen 1-Jan-2020 [SSN] today."
+"Seen Jan 1, 2020900-12-3456 today." 
+    head: REFUSED | before: REFUSED | base: same
+"Seen 01/02/2020900-12-3456 today." 
+    head: REFUSED | before: REFUSED | base: same
+"Seen 2020900-12-3456 today." 
+    head: same | before: same | base: same
+"SSN: 90012345601/02/2020150.00 ok." 
+    head: REFUSED | before: same | base: same
+"Seen 90012345601/02/2020150.00 ok." 
+    head: REFUSED | before: same | base: same
+"SSN: 9001234562020-01-02150.00 ok." 
+    head: REFUSED | before: same | base: same
+"Phone 202555012301/02/2020150.00 ok." 
+    head: REFUSED | before: same | base: same
+"SSN: 90012345601/02/202001/31/2020 ok." 
+    head: REFUSED | before: same | base: same
+"SSN: 90012345601-Jan-2020 ok." 
+    head: REFUSED | before: same | base: same
+"SSN: 90012345601·02·2020 ok." 
+    head: REFUSED | before: same | base: same
+"SSN: 90012345601\\02\\2020 ok." 
+    head: REFUSED | before: same | base: same
+"SSN: 90012345601_02_2020 ok." 
+    head: REFUSED | before: same | base: same
+"Seen 90012345601|02|2020 ok." 
+    head: REFUSED | before: same | base: same
+"Seen 90012345601~02~2020 ok." 
+    head: REFUSED | before: same | base: same
+"SSN: 90012345601∕02∕2020 ok." 
+    head: REFUSED | before: same | base: same
+"Phone 20255501239/9/2020 ok." 
+    head: REFUSED | before: same | base: same
+"SSN: 90012345601/02/2020, 150.00 ok." 
+    head: REFUSED | before: REFUSED | base: same
+"SSN: 90012345601/02/2020 ok." 
+    head: REFUSED | before: REFUSED | base: same
+"SSN: 90012345601/02/2020 150.00 ok." 
+    head: REFUSED | before: REFUSED | base: REFUSED
+"Seen 2025550123 01/02/2020 ok." 
+    head: "Seen [PHONE] 01/02/2020 ok." | before: "Seen [PHONE] 01/02/2020 ok." | base: "Seen [PHONE] 01/02/2020 ok."
+"Service (202)  555-0123150.00 on file." 
+    head: REFUSED | before: same | base: same
+"Service (202) 555 0123150.00 on file." 
+    head: same | before: same | base: same
+"Service ( 202 ) 555-0123150.00 on file." 
+    head: REFUSED | before: same | base: same
+"Service (202)\n555-0123150.00 on file." 
+    head: REFUSED | before: same | base: same
+"Service (202) 555-012301-Jan-2020 on file." 
+    head: REFUSED | before: same | base: same
+"Service (202) - 555-0123150.00 on file." 
+    head: REFUSED | before: same | base: same
+"Service (202) 555-0123150.00 on file." 
+    head: REFUSED | before: REFUSED | base: same
+"Phone (2)555-0100" 
+    head: same | before: same | base: same
+"Phone (2​) 555-0100" 
+    head: "Phone (2​) [PHONE]" | before: same | base: same
+"Phone ( 2 ) 555-0100" 
+    head: "Phone ( 2 ) [PHONE]" | before: same | base: same
+"Phone numbers (2) 555-0100" 
+    head: "Phone numbers (2) [PHONE]" | before: same | base: same
+"Phone\n(2) 555-0100" 
+    head: "Phone\n(2) [PHONE]" | before: same | base: same
+"Phone (2nd) 555-0100" 
+    head: "Phone (2nd) [PHONE]" | before: same | base: same
+"Phone (­2) 555-0100" 
+    head: "Phone (­2) [PHONE]" | before: same | base: same
+"Phone (2) 555-0100" 
+    head: "Phone (2) [PHONE]" | before: "Phone (2) [PHONE]" | base: same
+"Seen Remittance Advice 900-12-3456150.00 today." 
+    head: same | before: same | base: same
+"Seen Please seek advice. 900-12-3456150.00 today." 
+    head: REFUSED | before: same | base: same
+"Seen NOTICE\n\n\n                                                  900-12-3456150.00 today." 
+    head: REFUSED | before: same | base: same
+"Seen Member                                                            900-12-3456150.00 today." 
+    head: same | before: same | base: same
+"Seen Claim(s) 900-12-3456150.00 today." 
+    head: same | before: same | base: same
+"Seen Claim 2020-900123456150.00 today." 
+    head: same | before: same | base: same
+"REMITTANCE ADVICE\n\n900-12-3456150.00 01/02/2020" 
+    head: REFUSED | before: same | base: same
+"For advice, call us.\n900-12-3456150.00" 
+    head: REFUSED | before: REFUSED | base: same
+"Member                                                            900123456150.00" 
+    head: same | before: same | base: same
+"Seen Paid 900-12-3456150.00 today." 
+    head: REFUSED | before: REFUSED | base: same
+"Phone on file: 202-555-0123150.00" 
+    head: REFUSED | before: same | base: same
+"Fax on file 202-555-01234567" 
+    head: REFUSED | before: same | base: same
+"File No. 802-45-678901.50" 
+    head: same | before: same | base: same
+"Medicare Summary Notice 802-45-678901" 
+    head: same | before: same | base: same
+"Fax confirmation number 802-456-78901.50" 
+    head: same | before: same | base: same
+"Contact us regarding account 802-456-789012." 
+    head: same | before: same | base: same
+"SSN on file. Claim 802-45-678901.50" 
+    head: same | before: same | base: same
+"Remittance Advice Number 802-45-678901.50" 
+    head: same | before: same | base: same
+"Claim Number   Service Date\n802-45-678901.50   01/05/2026" 
+    head: REFUSED | before: REFUSED | base: same
+"Claim Number:                                        802-45-678901.50" 
+    head: same | before: same | base: same

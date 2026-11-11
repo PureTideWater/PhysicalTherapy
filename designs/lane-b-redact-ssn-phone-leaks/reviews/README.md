@@ -29,4 +29,13 @@ The scripts carry the absolute paths of the session that wrote them (`/home/user
   Fixed in cf5094a0 but what is recorded as a cost (`recorded-for-the-third-review.md`).
 - `recorded-for-the-third-review.md`: what the round after D1 and D2 gives back, adds and leaves, as the reviewers of
   its delta were given it.
-
+- `e1/`: the PHI review of the next delta (0ddfa078 to 5d685267; brief `brief-e1.md`), which ran to its report: E1-1 to
+  E1-8 (`h.mts`, `h2.mts`, `h3.mts`; `findings.txt` holds every letter it reported, one JSON string a line). Each was run
+  first and fixed in 8e599038; `rows-at-8e599038.txt` reads them there on the head, on 91e1527a and on the base (15 of 94
+  are sent unchanged: its controls and the numbers a listed noun names).
+- `e2/`: the must-stay review of the same delta (brief `brief-e2.md`), which ran to its report: E2-1 to E2-6 (`run.mts`,
+  `exp2.mts`, `exp3.mts` with `lib.mts`; `time.mts` its timing; `cmp1.jsonl`, `cmp2.jsonl` its letters). E2-1 (a label's
+  list number counted as a digit of the number the label names) was a fault; E2-1 to E2-5 are fixed in 8e599038
+  (`rows-at-8e599038.txt`); E2-6 is a held-letter cost the amendment records.
+- `brief-g1.md`, `brief-g2.md`, `recorded-for-the-fourth-review.md`: the briefs and the recorded list given to the two
+  reviewers of the delta 91e1527a to 8e599038 (G1 PHI, G2 must-stay).
