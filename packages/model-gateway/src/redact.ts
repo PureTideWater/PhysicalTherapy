@@ -2278,7 +2278,7 @@ function survivorIn(text: string): Survivor {
     return false;
   };
   const heldWhole = (from: number, to: number) => groups.slice(from, to).every((group) => group.blocked && (group.kept || rangeStands(group.range)));
-  if (gluedShape(text, groups, (group) => labeledAt(group.start) === 'person')) {
+  if (gluedShape(text, groups, (group) => labeledAt(group.start) === 'person', currencyAt)) {
     return 'survivor';
   }
   if (survives((group) => group.blocked, () => false) || survives((group) => group.kept, heldWhole)) {
@@ -2368,24 +2368,30 @@ const survivorLeft = (text: string): Survivor => {
 const NAMED_BEFORE = new RegExp(`(?:(?:${KEEP_NOUN.source}|(?<![\\p{L}\\p{N}])(?:ACCOUNT|ACCT|POLICY|CERTIFICATE|CONTRACT|MEMBER|SUBSCRIBER|TICKET|INQUIRY|TRACKING|GRIEVANCE|CORRESPONDENCE|DOCUMENT|CONFIRMATION|ORDER|FILE|RECORD|REQUEST|TRANSACTION|ENCOUNTER|VISIT|BATCH|LETTER|NOTICE|PLAN|PROVIDER|FACILITY|LOCATION)(?!\\p{L}))(?:[\\s:#.*=(\\p{Pd}\\u2212]|(?<![\\p{L}\\p{N}])(?:NO|NUMBERS?|NBR|NUM|ID|IS)(?!\\p{L}))*|(?<![\\p{L}\\p{N}])\\p{L}+(?:[ \\t]{0,2}#|[ \\t]{1,2}(?:(?:NO|NBR|NUM)\\.|(?:NUMBER|ID)\\b))[\\s:#.=\\p{Pd}\\u2212]*)$`, 'u');
 
 /**
- * Whether a Social Security or phone number's own shape stands with another number's digits glued to it, three groups no
- * barrier holds, joined by joiners with no white space, the middle one of two digits (three for a phone; a slash only for
- * a phone):
+ * Whether a Social Security or phone number's own shape stands with another number's digits glued to it, three groups
+ * joined by joiners with no white space, the middle one of two digits (three for a phone; a slash only for a phone), no
+ * barrier holding them but a currency amount its first:
  * - its first group three digits and its last longer than four, the digits glued after it ("900-12-3456150.00",
- *   "202-555-0123202-555-0124"), unless a keep-noun or an identifier's label names the number ("Case No. 123-45-678901");
+ *   "202-555-0123202-555-0124"), unless a reference's noun names the number ("Case No. 123-45-678901"); a number under an
+ *   SSN or phone label is never named ("SSN No. 900-12-3456150.00");
  * - its last group four digits and its first longer than three, where the digits before it are another number's: joined to
- *   a group before them, after a currency sign, or four or more of them ("01/01/2020900-12-3456", "$514451/293-6215",
- *   "2020900-12-3456"); a group one to three digits longer alone is a reference's ("29 CFR 2590.715-2719");
+ *   a group before them, a currency amount's, or four or more of them ("01/01/2020900-12-3456", "$150.00900-12-3456",
+ *   "$514451/293-6215", "2020900-12-3456"); a group one to three digits longer alone is a reference's ("29 CFR
+ *   2590.715-2719");
  * - both longer, where the digits before it are another number's as above ("150.00900-12-3456150.00").
  * And a run of eleven digits or more with cents after it ("900123456150.00"), unless named ("ICN 12345678901234.01").
  * A date written year first with digits glued after its day ("2020-01-02150.00") is read as cc3dd7f6 read it.
  */
-function gluedShape(text: string, groups: readonly ScanGroup[], person: (group: ScanGroup) => boolean): boolean {
+function gluedShape(text: string, groups: readonly ScanGroup[], person: (group: ScanGroup) => boolean, currencyAt: Uint8Array): boolean {
   const named = (group: ScanGroup) => !person(group) && NAMED_BEFORE.test(text.slice(Math.max(0, group.start - 48), group.start));
   for (let i = 0; i < groups.length; i += 1) {
     const [a, b, c] = [groups[i], groups[i + 1], groups[i + 2]];
-    if (a === undefined || a.blocked) continue;
-    if (a.digits.length >= 11 && CENTS_AFTER.test(text.slice(a.end, a.end + 4)) && !named(a)) return true;
+    if (a === undefined) continue;
+    // A currency amount holds its digits, but a shape that starts inside one is no part of it: the amount's digits are the
+    // other number's ("$150.00900-12-3456", "$514451/293-6215").
+    const inCurrency = a.blocked && currencyAt[a.start] === 1;
+    if (a.blocked && !inCurrency) continue;
+    if (!inCurrency && a.digits.length >= 11 && CENTS_AFTER.test(text.slice(a.end, a.end + 4)) && !named(a)) return true;
     if (b === undefined || c === undefined || b.blocked || c.blocked) continue;
     const [g1, g2] = [text.slice(a.end, b.start), text.slice(b.end, c.start)];
     if (!TIGHT_JOIN.test(g1) || !TIGHT_JOIN.test(g2)) continue;
@@ -2397,8 +2403,8 @@ function gluedShape(text: string, groups: readonly ScanGroup[], person: (group: 
     const yearFirst = /^(?:19|20)[0-9]{2}$/u.test(a.digits) && /^(?:0[1-9]|1[0-2])$/u.test(b.digits) && /^(?:0[1-9]|[12][0-9]|3[01])/u.test(c.digits);
     if (yearFirst) continue;
     const before = groups[i - 1];
-    const anothers = head >= 4 || /\p{Sc}[ \t]?$/u.test(text.slice(Math.max(0, a.start - 2), a.start)) || (before !== undefined && TIGHT_JOIN.test(text.slice(before.end, a.start)));
-    if (head === 0 ? !named(a) : anothers) return true;
+    const anothers = head >= 4 || inCurrency || (before !== undefined && TIGHT_JOIN.test(text.slice(before.end, a.start)));
+    if (head === 0 ? !inCurrency && !named(a) : anothers) return true;
   }
   return false;
 }
