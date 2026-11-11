@@ -116,6 +116,59 @@ measured figure (SUITE-CAP-1's rule):
 - CAS-51's budgets: the whole pass under 120,000 ms and its own part under 40,000 ms at 2,000 lines; CAS-42.3's pass
   (shape P's postings) under 60,000 ms.
 
+*Dated note, 2026-11-11 (Lane A, `co-001/ledger-function-bodies`; migration `20261113090000_ledger_lookups.sql`).*
+The two ledger functions this record hands on get their new bodies, under the ledger freeze exception the founder
+granted on 2026-11-06 at about 22:40 UTC (reconciliation-001, "Ledger semantics"): `ledger_line_net` reads a line's
+entries by the line's practice and the line, and `ledger_entry_rules` reads an entry's match by its primary key alone.
+The migration carries exactly the two bodies the founder read, byte for byte, refuses to run over any other starting
+body, and changes nothing else: no table, column, index, trigger, policy, grant, amount, stage or refusal.
+
+Re-measured on the base edab4d4d (#126, #134, #136, #137, #140 and #141 merged), SYNTHETIC rows, 4 CPUs, one run each,
+one step-7b pass on a copy of each seed, before (the base's bodies) against after (the migration applied):
+
+| Shape and size | Pass before | Pass after | `ledger_line_net` | `ledger_entry_rules` | The pass's writes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Spread R, 2,000 lines | 53.7 s | 19.0 s | 36.2 s to 3.1 s | 2.0 s to 1.3 s | identical, 20,635 rows |
+| F, one case, 10,000 lines | 220.9 s | 79.2 s | 92.1 s to 2.2 s | 52.2 s to 4.0 s | identical, 102,907 rows |
+| A's month, 30,795 lines in F's shape | 1,770.2 s (197% of the attempt) | 317.1 s (35%) | 863.3 s to 7.1 s | 589.4 s to 15.0 s | identical, 316,770 rows |
+
+- "Identical" is every row the pass wrote (ledger matches, ledger entries, stage events, audit events, postings),
+  compared row for row in the order the ledger gave them, `seq` values included; identifiers new in the pass are
+  compared by their order and encrypted text as present or absent. At A's month both runs approve 30,795 lines, post
+  30,795 and recover 30,795, 4,947,800.00 posted. A pass writes no correction and meets no refusal: those are held
+  by `apps/worker/src/reconcile/ledger-lookups.db.test.ts`, whose cases pass on the old bodies and on the new.
+- What remains of the inserts at A's month is `ledger_entry_within_evidence`, 91 s of the 317 (not part of this
+  exception).
+- **Step 7b's move back to A's month is not this pull request's acceptance step.** It follows as a pull request with
+  no migration, measured on the merged tree with the weekly run's own harness (the schema batching plan, section 2):
+  the exception covers one migration with two bodies, and the granted change does not wait on a capacity acceptance
+  that only the move needs. The 360 s sizing bound holds here with 43 s to spare on one run.
+- **A measured limit of the new `ledger_line_net`, found by this pull request's database review.** The design said the
+  line index would be taken "whatever the statistics". It is not. Planned as the application role on PostgreSQL 18.4
+  (generic plan, one practice in scope):
+
+  | The ledger when the function is planned | Body before | Body after |
+  | --- | --- | --- |
+  | never analyzed, empty to about 120 entries (a new deployment's first pass; every measurement above) | every entry of the practice (`ledger_entry_by_date`) | the line's entries (`ledger_entry_by_line`) |
+  | never analyzed, about 200 to 80,000 entries | every entry of the practice up to about 1,000; the line's entries from about 4,000 | every entry of the practice (`ledger_entry_by_date`, then a sort) |
+  | never analyzed, 100,000 entries | the line's entries | the line's entries |
+  | analyzed while empty (R's seed) | a sequential scan, and two more for corrections' targets | a sequential scan |
+  | analyzed with rows | the line's entries | the line's entries |
+
+  So on a ledger that holds a few hundred to some tens of thousands of entries and was never analyzed, the new body
+  is the slower one from about 4,000 entries.
+  In production the state is short: automatic analysis runs within about a minute of the first fifty committed
+  entries, its statistics make every open session plan again, and with statistics both bodies read the line's
+  entries. The match lookups have no such state: without `reversed_at IS NULL` in the query only the primary key fits.
+  The plan test holds the two states a first pass plans in (an empty ledger, and its first rows). A body that reads
+  the line's entries in every state would be a new body, so a new founder ruling: it is recorded as a candidate for
+  the next ledger freeze ask, with `ledger_entry_within_evidence`.
+- Where the two bodies of `ledger_line_net` answer differently: only for an entry whose practice is not its line's.
+  The application role cannot make one (it cannot change a service line, and the rules and the tenant policy refuse
+  such an entry); the owner role or a superuser could, by moving a service line to another practice by hand, and the
+  new body then counts none of that line's entries, so the ledger refuses more, never less. No migration or function
+  updates a service line's practice. A trigger that refuses that change is proposed as its own schema item.
+
 ## Alternatives considered
 
 | Option | Why not (or when we would switch) |
@@ -131,6 +184,8 @@ measured figure (SUITE-CAP-1's rule):
 
 - Lane A's trigger fixes merge: their pull request moves step 7b back to A's full month, re-measured within 360 s, and
   lowers CAS-51's `PASS_BUDGET_MS` from its own measurement.
+  Dated note, 2026-11-11: the trigger fixes are migration `20261113090000_ledger_lookups.sql`; the move and the
+  budgets follow in a pull request with no migration, measured on the merged tree (the note under "Measured").
 - The interest fix (#126) lands: CAS-49 compares `ledger_match` and the settle entries exactly in `seq` order, and the
   per-line reference is taken from the merged base's text.
   Dated note, 2026-11-10: #126 merges after this item, so its pull request aligns the reference instead. The per-line

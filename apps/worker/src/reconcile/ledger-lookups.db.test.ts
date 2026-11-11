@@ -257,19 +257,31 @@ describe('the plans of the ledger’s lookups on a ledger with no statistics, as
     }
   }
 
-  // This group is the file's first, so its first case plans before the file's first ledger row.
-  it('reads through the line index and the match’s primary key on an empty ledger that was never analyzed', async () => {
-    scope = await w.practice(`plans ${randomUUID().slice(0, 8)}`, ledSettings('posted'));
-    expect(await neverAnalyzed()).toBe(0);
-    await lineNetReadsThroughTheLineIndex();
-    await matchReadsThroughThePrimaryKey();
+  // This group is the file's first, so its first two cases plan before the file's first ledger row.
+  describe('on an empty ledger that was never analyzed', () => {
+    it('reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key', async () => {
+      scope = await w.practice(`plans ${randomUUID().slice(0, 8)}`, ledSettings('posted'));
+      expect(await neverAnalyzed()).toBe(0);
+      await lineNetReadsThroughTheLineIndex();
+    });
+
+    it('reads an entry’s match and a correction’s match by the match’s primary key alone', async () => {
+      expect(await neverAnalyzed()).toBe(0);
+      await matchReadsThroughThePrimaryKey();
+    });
   });
 
-  it('and on the same ledger once it holds its first rows, still never analyzed', async () => {
-    scope = (await posted('plans, first rows')).practice;
-    expect(await neverAnalyzed()).toBeGreaterThan(0);
-    await lineNetReadsThroughTheLineIndex();
-    await matchReadsThroughThePrimaryKey();
+  describe('on the same ledger once it holds its first rows, still never analyzed', () => {
+    it('reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key', async () => {
+      scope = (await posted('plans, first rows')).practice;
+      expect(await neverAnalyzed()).toBeGreaterThan(0);
+      await lineNetReadsThroughTheLineIndex();
+    });
+
+    it('reads an entry’s match and a correction’s match by the match’s primary key alone', async () => {
+      expect(await neverAnalyzed()).toBeGreaterThan(0);
+      await matchReadsThroughThePrimaryKey();
+    });
   });
 });
 
