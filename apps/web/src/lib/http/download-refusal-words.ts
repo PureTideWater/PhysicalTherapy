@@ -104,8 +104,11 @@ export function downloadRefusalWords(refusal: RefusedDownload, surface: Download
     case 'csrf_refused':
       return { title: NOT_DOWNLOADED, body: 'This download could not be checked against your session. Try it again from this page.' };
     case 'busy':
-      // No download takes the ledger lock today; the outcome is placed so the closed list stays whole (docs/adr/0092).
-      return { title: NOT_DOWNLOADED, body: 'The records in this file are being updated. Try again in a minute.' };
+      // No download takes the ledger lock; a download's own write (the record of the download, docs/adr/0079) may wait
+      // past the web's lock_timeout for a row something else holds and be refused as busy (docs/adr/0092, the amendment
+      // of 2026-11-11). The row may not be the file's own, so the words name what the download needs, and the wait is
+      // minutes, as a form's is (busy-words.ts).
+      return { title: NOT_DOWNLOADED, body: 'The records this download needs are being updated. Try again in a few minutes.' };
   }
 }
 

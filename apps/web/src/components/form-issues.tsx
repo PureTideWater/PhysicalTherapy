@@ -19,7 +19,8 @@ import {
   useState,
 } from 'react';
 
-import type { Issue } from '../lib/http/route';
+import { busyWords } from '../lib/http/busy-words';
+import type { BusyWhat, Issue } from '../lib/http/route';
 
 /**
  * A refused form, as the person sees it (docs/adr/0077): what was typed stays, each refused field shows "Error:" and
@@ -41,6 +42,8 @@ export interface RefusalState {
   readonly stale?: boolean;
   /** The request key was used before: an earlier post with it saved, and this one did nothing. */
   readonly duplicate?: boolean;
+  /** What the request would write was being written by something else (docs/adr/0092): nothing was saved, and the lead says what stays. */
+  readonly busy?: BusyWhat;
 }
 
 /** The state a form shows: the action's, plus fields only the browser sets, never the server. */
@@ -469,6 +472,14 @@ function emptySecrets(form: HTMLFormElement): boolean {
 }
 
 /**
+ * Whether the form holds a field a person fills (typed, chosen or attached), so a lead that says what stays in the form
+ * says it only where something can: a form that is one button holds nothing typed.
+ */
+function holdsFields(form: HTMLFormElement): boolean {
+  return form.querySelector('input:not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), textarea, select') !== null;
+}
+
+/**
  * Marks a control no shared field renders (a hand-written control): aria-invalid, and the summary item first in its
  * description. A control its component already marks is left alone. Returns the undo, for the next state. A control
  * that React renders with aria-describedby must set aria-invalid itself, or sit in a [data-invalid] wrapper, when it
@@ -573,12 +584,13 @@ function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, ap
   const itemId = useId();
   const summaryRef = useRef<HTMLDivElement>(null);
   // Each issue's target, read from the page for the state it was read for (null before: the server render), the name
-  // a hidden field gives an issue with no target, and whether the form held a secret, which the lead then names.
+  // a hidden field gives an issue with no target, and whether the form held a secret or any field, which the lead then names.
   const [placement, setPlacement] = useState<{
     readonly state: FormState;
     readonly targets: readonly (Placed | null)[];
     readonly hidden: readonly (string | null)[];
     readonly secrets: boolean;
+    readonly fields: boolean;
   } | null>(null);
   const shown = refused(state);
   useLayoutEffect(() => {
@@ -591,7 +603,7 @@ function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, ap
     const issues = state.issues ?? [];
     const targets = issues.map((issue) => resolveIssue(form, issue.field));
     const undo = targets.map((target, index) => (target === null ? null : markByHand(target.control, `${itemId}-${String(index)}`)));
-    setPlacement({ state, targets, hidden: issues.map((issue, index) => (targets[index] === null ? hiddenName(form, issue.field) : null)), secrets });
+    setPlacement({ state, targets, hidden: issues.map((issue, index) => (targets[index] === null ? hiddenName(form, issue.field) : null)), secrets, fields: holdsFields(form) });
     const only = issues.length === 1 ? targets[0] : null;
     (only?.control ?? summaryRef.current)?.focus();
     return () => {
@@ -616,6 +628,7 @@ function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, ap
           fromBrowser={fromBrowser}
           submit={submit}
           secrets={read?.secrets === true}
+          fields={read?.fields === true}
           stale={stale}
           appOrigin={appOrigin}
           unconfirmed={unconfirmed}
@@ -651,7 +664,9 @@ function Summary({ state, fromBrowser, submit, formRef, renderMessage, stale, ap
 /**
  * The summary's lead: a form cleared for another person, the connection, the out-of-date page, or the action's error
  * as summaryLead chooses it. Exported for a form with a summary of its own (the export form), so its leads read the
- * same. `secrets`: the form held a password or a code, which a dropped connection's lead says it emptied. `stale`
+ * same. `secrets`: the form held a password or a code, which a dropped connection's lead and a busy refusal's say it
+ * emptied. `fields`: the form holds a field a person fills, so a busy refusal's lead may say what was typed stays; not
+ * given (a form of buttons, the server's render, the post without JavaScript), the lead claims nothing stays. `stale`
  * "origin": the form's route is public, with no token or request key to renew, so `stale` means only that the page
  * failed the origin check (invoke.ts, publicRoute's csrf_refused when the request is not same-origin), which no refresh
  * repairs: its lead claims no refresh, does not blame the page's age, and names the app's own web address to open.
@@ -662,6 +677,7 @@ export function RefusalLead({
   fromBrowser,
   submit,
   secrets = false,
+  fields = false,
   stale,
   appOrigin,
   unconfirmed,
@@ -671,6 +687,7 @@ export function RefusalLead({
   readonly fromBrowser: boolean;
   readonly submit: ReactNode;
   readonly secrets?: boolean;
+  readonly fields?: boolean;
   readonly stale?: 'origin';
   readonly appOrigin?: string;
   readonly unconfirmed?: 'mails-again';
@@ -706,6 +723,10 @@ export function RefusalLead({
     ) : (
       <p>This page was out of date, so nothing was saved. Check the form, then send it again if you still mean to.</p>
     );
+  }
+  if (state.busy !== undefined) {
+    // The flag, never the server's words, which cannot say what stays in a form they have not seen (next.ts, busyState).
+    return <p>{busyWords(state.busy, { fields, secrets })}</p>;
   }
   const lead = summaryLead(state, placed);
   return lead === null ? null : <p>{lead}</p>;

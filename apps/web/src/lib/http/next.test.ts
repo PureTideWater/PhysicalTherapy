@@ -137,6 +137,22 @@ describe('a request key used before (U-UX-4)', () => {
   });
 });
 
+describe('a request refused as busy (docs/adr/0092 and its amendment of 2026-11-11; CAS-56, CAS-57)', () => {
+  const LEDGER = { error: 'The recovery ledger is being updated, so nothing was saved. Try again in a few minutes.', busy: 'ledger' };
+  const RECORDS = { error: 'The records this change needs are being updated, so nothing was saved. Try again in a few minutes.', busy: 'records' };
+
+  it('carries the outcome’s closed word as a flag, with words for each that claim nothing about a form the server has not seen', async () => {
+    expect(await runAction(answering<MutationResult>({ status: 'busy', what: 'ledger' }), formOf(TICKET))).toEqual(LEDGER);
+    expect(await runAction(answering<MutationResult>({ status: 'busy', what: 'records' }), formOf(TICKET))).toEqual(RECORDS);
+  });
+
+  it('is the same refusal on a sign-in step, whose form empties its password and its code: never "Start again", and no value sent', async () => {
+    const state = await runSignInStep(answering<StepResult>({ status: 'busy', what: 'records' }), formOf({ email: 'typed@synthetic.test', password: TYPED_PASSWORD }));
+    expect(state).toEqual(RECORDS);
+    expect(JSON.stringify(state)).not.toContain(TYPED_PASSWORD);
+  });
+});
+
 describe('a sign-in step no press of its form can mend (S-A11Y-2, U-UX-3; docs/adr/0077, D2)', () => {
   const expired = { error: 'This invitation has expired. Ask your organization’s administrator to send it again.', final: true };
 

@@ -308,6 +308,12 @@ const forms: Record<string, (page: PageKeys) => ReactNode> = {
       <Field label="Note" name="rowNote" />
     </HarnessForm>
   ),
+  /** A form that is one button: nothing in it is the person's to fill (a reopen, an approval), only what the page names. */
+  press: () => (
+    <HarnessForm submit="Reopen this line">
+      <input type="hidden" name="lineId" value="line-1" />
+    </HarnessForm>
+  ),
   /** A fieldset of independent booleans, each named by its own label, and a group named by its legend. */
   adjustments: () => (
     <HarnessForm submit="Save version">

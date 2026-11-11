@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { downloadRefusal, refusalLocation } from './download-refusal';
-import { DOWNLOAD_REFUSALS, MAX_RETRY_MINUTES, type RefusedDownload, minutesWords, refusedDownloadOf, waitMinutes } from './download-refusal-words';
+import { DOWNLOAD_REFUSALS, MAX_RETRY_MINUTES, type RefusedDownload, downloadRefusalWords, minutesWords, refusedDownloadOf, waitMinutes } from './download-refusal-words';
 import { ResponseCookies, outcomeResponse } from './handler';
 import { retryMinutes } from './rate-limit';
 import type { Outcome } from './route';
@@ -55,6 +55,11 @@ describe('a refused download read from its outcome', () => {
       expect(refusedDownloadOf({ status: 'rate_limited', retryAfterSeconds })).toEqual({ status: 'rate_limited', fields: [], retryMinutes: null });
     }
     expect(refusedDownloadOf({ status: 'not_found', retryAfterSeconds: 60, issues: [{ field: 'codes' }], message: 'Your account is locked' })).toEqual({ status: 'not_found', fields: [], retryMinutes: null });
+  });
+
+  it('says of a busy refusal what the download needs, which may not be the file’s own records, and a wait of minutes (docs/adr/0092, the amendment)', () => {
+    expect(downloadRefusalWords({ status: 'busy', fields: [], retryMinutes: null })).toEqual({ title: 'Not downloaded', body: 'The records this download needs are being updated. Try again in a few minutes.' });
+    expect(downloadRefusalWords({ status: 'busy', fields: [], retryMinutes: null }, 'console')).toEqual(downloadRefusalWords({ status: 'busy', fields: [], retryMinutes: null }));
   });
 
   it('rounds the wait as a refused form’s, one minute to a day', () => {

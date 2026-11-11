@@ -7,11 +7,12 @@ import { cache } from 'react';
 import type { Sealer } from '../auth/seal';
 import type { StepResult } from '../routes/sign-in';
 import { services } from '../server/services';
+import { busyWords } from './busy-words';
 import { minutesWords } from './download-refusal-words';
 import { formInput } from './form';
 import { clientAddress, retryMinutes } from './rate-limit';
 import { RECEIVED_AT_HEADER, receivedAtFrom } from './received';
-import type { CookieJar, Issue, MutationResult, Outcome, Route, RouteRequest, Shell, UploadBody } from './route';
+import type { BusyWhat, CookieJar, Issue, MutationResult, Outcome, Route, RouteRequest, Shell, UploadBody } from './route';
 import { signInFor } from './sign-in-for';
 
 /**
@@ -55,27 +56,23 @@ async function nextRequest(params: unknown, input?: unknown, upload?: UploadBody
 }
 
 /**
- * What a form says when its action met the practice's ledger lock (docs/adr/0092): nothing was saved, what was typed
- * stays, and pressing again is the next step. It never says what holds the lock (a reconcile, or another person's action),
- * so the wait it names holds for either: a person's action is over in a moment, a pass in minutes, and a press that
- * meets the lock again is refused again, at once. "The recovery ledger" is the name the Cases and Reconciliation pages use.
+ * A refused form's state for a busy outcome (docs/adr/0092 and its amendment of 2026-11-11): the request met the
+ * practice's ledger lock, or waited past the web's lock_timeout for a row something else holds. Nothing was saved, and
+ * sending it again is the next step. The words never say what holds the lock (a reconcile pass, a job, another person's
+ * action). The flag marks it and carries the outcome's closed word: a form with JavaScript writes its own lead from it
+ * (RefusalLead), which also says what stays in the form, since that depends on the form (its passwords and codes are
+ * emptied; a single button holds nothing typed). The words here are for a post made without JavaScript, which keeps
+ * nothing typed, so they claim nothing about the form. "The recovery ledger" is the name the Cases and Reconciliation
+ * pages use.
  */
-export const BUSY_MESSAGE = 'The recovery ledger is being updated, so nothing was saved. What you typed is still here: try again in a minute.';
-
-/**
- * What a form says when a row its action had to change stayed locked past the web's lock_timeout (docs/adr/0092, the
- * amendment of 2026-11-11): the same sentence, without naming the ledger, since the row may be a case's, a submission's
- * or any other, and what holds it is never said.
- */
-export const BUSY_RECORDS_MESSAGE = 'These records are being updated, so nothing was saved. What you typed is still here: try again in a minute.';
+function busyState(what: BusyWhat): ActionState {
+  return { error: busyWords(what, null), busy: what };
+}
 
 /** What a refused form says when the wrapper's rate limits refused it (a refused CSRF token is a page out of date, STALE). */
 function guardMessage(outcome: Outcome<unknown>): string | undefined {
   if (outcome.status === 'rate_limited') {
     return `Too many attempts in a short time. Wait ${minutesWords(retryMinutes(outcome.retryAfterSeconds))} and try again.`;
-  }
-  if (outcome.status === 'busy') {
-    return outcome.what === 'ledger' ? BUSY_MESSAGE : BUSY_RECORDS_MESSAGE;
   }
   return undefined;
 }
@@ -162,6 +159,8 @@ export interface ActionState {
   readonly stale?: boolean;
   /** The request key was used before: an earlier post with it saved, and this one did nothing (the form says "Already sent"). */
   readonly duplicate?: boolean;
+  /** What the request would write was being written by something else, as the outcome's closed word: nothing was saved (busyState). */
+  readonly busy?: BusyWhat;
 }
 
 /** The lead of an invalid form; the browser says "field" for one field it places (summaryLead). */
@@ -186,6 +185,9 @@ function onlyRequestKey(issues: readonly Issue[]): boolean {
 function refusedInput(outcome: Outcome<unknown>): ActionState | undefined {
   if (outcome.status === 'csrf_refused' || (outcome.status === 'invalid' && onlyRequestKey(outcome.issues))) {
     return STALE;
+  }
+  if (outcome.status === 'busy') {
+    return busyState(outcome.what);
   }
   const guarded = guardMessage(outcome);
   if (guarded !== undefined) {

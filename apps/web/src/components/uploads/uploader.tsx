@@ -331,11 +331,55 @@ function declaredType(file: { readonly name: string; readonly type: string }, al
   return allowed.includes(file.type) ? file.type : 'application/octet-stream';
 }
 
-interface Refusal {
+export interface Refusal {
   readonly status?: string;
   readonly issues?: readonly { readonly field: string; readonly message: string }[];
   /** A suspended organization's reason (docs/adr/0050). */
   readonly reason?: string;
+}
+
+/**
+ * What a busy refusal says here (docs/adr/0092, the amendment of 2026-11-11): a request for an upload, its completion
+ * or its retry waited past the web's lock_timeout for a row something else holds. It claims nothing about what was
+ * sent (a completion is refused after the file's bytes are stored), and it never asks for a reload, which would drop
+ * the files on screen: the files waiting, or the file's Retry, are the next step.
+ */
+export const UPLOAD_BUSY = 'The records this upload needs are being updated. Try again in a few minutes.';
+
+/** What a refused request says: the first issue's words, a suspended organization's reason, a busy refusal's, the role's, or the plain refusal. */
+export function refusalWords(status: number, answer: Refusal): string {
+  const issue = answer.issues?.[0]?.message;
+  if (issue !== undefined) {
+    return issue;
+  }
+  if (answer.status === 'suspended' && answer.reason !== undefined) {
+    return `Not started: ${answer.reason}.`;
+  }
+  if (answer.status === 'busy') {
+    return UPLOAD_BUSY;
+  }
+  return status === 403 ? 'Your role cannot upload files here.' : 'The server refused the request. Reload the page and try again.';
+}
+
+/** Whether a refused PUT's body is the routes' busy outcome (this server's own receiver; a presigned PUT's body is never JSON). */
+function busyBody(body: string): boolean {
+  try {
+    return (JSON.parse(body) as { readonly status?: unknown } | null)?.status === 'busy';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What a PUT's answer means for the file's bytes: stored (a 409 or 412 says they were stored before: a presigned PUT's
+ * condition, or this server's receiver answering a request key used before), not stored because the receiver was
+ * refused as busy (also a 409, told apart by its body: nothing was stored), or refused.
+ */
+export function putAnswer(status: number, body: string): 'stored' | 'busy' | 'refused' {
+  if (status === 409 && busyBody(body)) {
+    return 'busy';
+  }
+  return (status >= 200 && status < 300) || status === 409 || status === 412 ? 'stored' : 'refused';
 }
 
 async function post<T>(path: string, csrfToken: string, body: Record<string, unknown>): Promise<T> {
@@ -347,8 +391,7 @@ async function post<T>(path: string, csrfToken: string, body: Record<string, unk
   });
   const answer = (await response.json()) as T & Refusal;
   if (!response.ok) {
-    const issue = answer.issues?.[0]?.message ?? (answer.status === 'suspended' && answer.reason !== undefined ? `Not started: ${answer.reason}.` : undefined);
-    throw new Error(issue ?? (response.status === 403 ? 'Your role cannot upload files here.' : 'The server refused the request. Reload the page and try again.'));
+    throw new Error(refusalWords(response.status, answer));
   }
   return answer;
 }
@@ -391,7 +434,7 @@ function useLeaveGuard(active: boolean): void {
   }, [active]);
 }
 
-/** PUTs the file, reporting progress; a 409 or 412 means its bytes were already stored. */
+/** PUTs the file, reporting progress; a 409 or 412 means its bytes were already stored, unless the receiver was refused as busy (putAnswer). */
 function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (share: number) => void): Promise<void> {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
@@ -410,10 +453,11 @@ function put(file: File, target: UploadTarget, csrfToken: string, onProgress: (s
       }
     };
     request.onload = () => {
-      if ((request.status >= 200 && request.status < 300) || request.status === 409 || request.status === 412) {
+      const answer = putAnswer(request.status, request.responseText);
+      if (answer === 'stored') {
         resolve();
       } else {
-        reject(new Error('The upload was refused. Retry it.'));
+        reject(new Error(answer === 'busy' ? UPLOAD_BUSY : 'The upload was refused. Retry it.'));
       }
     };
     request.onerror = () => {
