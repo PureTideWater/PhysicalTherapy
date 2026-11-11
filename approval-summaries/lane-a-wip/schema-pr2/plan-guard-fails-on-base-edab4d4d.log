@@ -1,49 +1,89 @@
 
  RUN  v5.0.5 /home/user/PhysicalTherapy
 
- ❯ |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts (10 tests | 2 failed) 7253ms
-   ❯ the plans of the ledger’s lookups on a ledger with rows and no statistics (the reason for migration 20261113090000) (3)
-     × reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key (ledger_line_net as installed) 8ms
-     × reads an entry’s match and a correction’s match by the match’s primary key alone (ledger_entry_rules as installed) 3ms
+ ❯ |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts (11 tests | 4 failed) 8378ms
+   ❯ the plans of the ledger’s lookups on a ledger with no statistics, as a first reconcile pass finds it (the reason for migration 20261113090000) (4)
+     ❯ on an empty ledger that was never analyzed (2)
+       × reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key 48ms
+       × reads an entry’s match and a correction’s match by the match’s primary key alone 8ms
+     ❯ on the same ledger once it holds its first rows, still never analyzed (2)
+       × reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key 844ms
+       × reads an entry’s match and a correction’s match by the match’s primary key alone 5ms
 
-⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
 
- FAIL  |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts > the plans of the ledger’s lookups on a ledger with rows and no statistics (the reason for migration 20261113090000) > reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key (ledger_line_net as installed)
+ FAIL  |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts > the plans of the ledger’s lookups on a ledger with no statistics, as a first reconcile pass finds it (the reason for migration 20261113090000) > on an empty ledger that was never analyzed > reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key
 AssertionError: expected 'ledger_entry_by_date' to be 'ledger_entry_by_line' // Object.is equality
 
 Expected: "ledger_entry_by_line"
 Received: "ledger_entry_by_date"
 
- ❯ apps/worker/src/reconcile/ledger-lookups.db.test.ts:315:37
-    313|     expect(entries?.['Relation Name']).toBe('ledger_entry');
-    314|     expect(entries?.['Node Type']).toBe('Index Scan');
-    315|     expect(entries?.['Index Name']).toBe('ledger_entry_by_line');
+ ❯ lineNetReadsThroughTheLineIndex apps/worker/src/reconcile/ledger-lookups.db.test.ts:234:37
+    232|     expect(entries?.['Relation Name']).toBe('ledger_entry');
+    233|     expect(entries?.['Node Type']).toBe('Index Scan');
+    234|     expect(entries?.['Index Name']).toBe('ledger_entry_by_line');
        |                                     ^
-    316|     expect(entries?.['Index Cond']).toMatch(/\bpractice_id = \(/);
-    317|     expect(entries?.['Index Cond']).toMatch(/\bservice_line_id = \$1/);
+    235|     expect(entries?.['Index Cond']).toMatch(/\bpractice_id = \(/);
+    236|     expect(entries?.['Index Cond']).toMatch(/\bservice_line_id = \$1/);
+ ❯ apps/worker/src/reconcile/ledger-lookups.db.test.ts:265:7
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
 
- FAIL  |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts > the plans of the ledger’s lookups on a ledger with rows and no statistics (the reason for migration 20261113090000) > reads an entry’s match and a correction’s match by the match’s primary key alone (ledger_entry_rules as installed)
+ FAIL  |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts > the plans of the ledger’s lookups on a ledger with no statistics, as a first reconcile pass finds it (the reason for migration 20261113090000) > on an empty ledger that was never analyzed > reads an entry’s match and a correction’s match by the match’s primary key alone
 AssertionError: SELECT 1 FROM ledger_match m WHERE m.id = NEW.match_id AND m.reversed_at IS NULL: expected 'ledger_match_standing' to be 'ledger_match_pkey' // Object.is equality
 
 Expected: "ledger_match_pkey"
 Received: "ledger_match_standing"
 
- ❯ apps/worker/src/reconcile/ledger-lookups.db.test.ts:335:48
-    333|       expect(matches, read).toHaveLength(1);
-    334|       expect(matches[0]?.['Node Type'], read).toBe('Index Scan');
-    335|       expect(matches[0]?.['Index Name'], read).toBe('ledger_match_pkey…
+ ❯ matchReadsThroughThePrimaryKey apps/worker/src/reconcile/ledger-lookups.db.test.ts:255:48
+    253|       expect(matches, read).toHaveLength(1);
+    254|       expect(matches[0]?.['Node Type'], read).toBe('Index Scan');
+    255|       expect(matches[0]?.['Index Name'], read).toBe('ledger_match_pkey…
        |                                                ^
-    336|       expect(matches[0]?.['Index Cond'], read).toMatch(/^\(id = \$1\)$…
-    337|     }
+    256|       expect(matches[0]?.['Index Cond'], read).toMatch(/^\(id = \$1\)$…
+    257|     }
+ ❯ apps/worker/src/reconcile/ledger-lookups.db.test.ts:270:7
 
-⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts > the plans of the ledger’s lookups on a ledger with no statistics, as a first reconcile pass finds it (the reason for migration 20261113090000) > on the same ledger once it holds its first rows, still never analyzed > reads a line’s entries through the line index, by the line’s practice and the line, and a correction’s target by its primary key
+AssertionError: expected 'ledger_entry_by_date' to be 'ledger_entry_by_line' // Object.is equality
+
+Expected: "ledger_entry_by_line"
+Received: "ledger_entry_by_date"
+
+ ❯ lineNetReadsThroughTheLineIndex apps/worker/src/reconcile/ledger-lookups.db.test.ts:234:37
+    232|     expect(entries?.['Relation Name']).toBe('ledger_entry');
+    233|     expect(entries?.['Node Type']).toBe('Index Scan');
+    234|     expect(entries?.['Index Name']).toBe('ledger_entry_by_line');
+       |                                     ^
+    235|     expect(entries?.['Index Cond']).toMatch(/\bpractice_id = \(/);
+    236|     expect(entries?.['Index Cond']).toMatch(/\bservice_line_id = \$1/);
+ ❯ apps/worker/src/reconcile/ledger-lookups.db.test.ts:278:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |db| apps/worker/src/reconcile/ledger-lookups.db.test.ts > the plans of the ledger’s lookups on a ledger with no statistics, as a first reconcile pass finds it (the reason for migration 20261113090000) > on the same ledger once it holds its first rows, still never analyzed > reads an entry’s match and a correction’s match by the match’s primary key alone
+AssertionError: SELECT 1 FROM ledger_match m WHERE m.id = NEW.match_id AND m.reversed_at IS NULL: expected 'ledger_match_standing' to be 'ledger_match_pkey' // Object.is equality
+
+Expected: "ledger_match_pkey"
+Received: "ledger_match_standing"
+
+ ❯ matchReadsThroughThePrimaryKey apps/worker/src/reconcile/ledger-lookups.db.test.ts:255:48
+    253|       expect(matches, read).toHaveLength(1);
+    254|       expect(matches[0]?.['Node Type'], read).toBe('Index Scan');
+    255|       expect(matches[0]?.['Index Name'], read).toBe('ledger_match_pkey…
+       |                                                ^
+    256|       expect(matches[0]?.['Index Cond'], read).toMatch(/^\(id = \$1\)$…
+    257|     }
+ ❯ apps/worker/src/reconcile/ledger-lookups.db.test.ts:283:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
 
 
  Test Files  1 failed (1)
-      Tests  2 failed | 8 passed (10)
-   Start at  11:29:57
-   Duration  11.48s (tests 67%, transform 17%, import 16%)
+      Tests  4 failed | 7 passed (11)
+   Start at  12:25:23
+   Duration  10.90s (tests 81%, import 14%, transform 5%)
 
 exit 1
