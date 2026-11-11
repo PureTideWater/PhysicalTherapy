@@ -192,7 +192,7 @@ confidential client) closes that. So "required before launch" needs both: this r
     action;
   - `hardware_key_registered` is audited only if the key is still there; the grant is released; the step is closed.
     A throw anywhere after the provider stored the key (the judgement, the audit) is read as refused: the removal
-    is still tried, the line is still logged and the grant is still released (the build's security review, S3).
+    is still tried, the line is still logged and the grant is still released (the build's security review, S3). `unlock_user()` takes the account's row before it reads the hold (the second delta review's blocking finding: a lock for a key still in its transaction was otherwise unseen, and an account locked already by ten failures was unlocked beside it), and the runbook's clear runs in one transaction that holds the same row.
 
   Holding the account's lock across the judgement and the provider's call would make this exact, and stays
   rejected: the reset would wait on a provider call, and the key would then exist before the reset committed, so

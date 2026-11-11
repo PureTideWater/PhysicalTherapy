@@ -843,6 +843,26 @@ describe('unlock_user(): an account locked for a key registered across its reset
     expect(await code(unlock(user, user))).toBe('42501');
   });
 
+  it('waits for a lock for the key that is still in its transaction, then refuses: an account locked already is not unlocked beside the hold', async () => {
+    // Locked already, as ten failed sign-ins lock it; the key's registration across the reset is on record.
+    const user = await createUser(owner);
+    const start = await beganAndPassed();
+    await recordReset(user);
+    expect(await stepRefused(user, start, 'key_registered')).toBe('before_reset');
+    await owner.query('UPDATE "user" SET locked_at = now(), failed_sign_ins = 10 WHERE id = $1', [user]);
+    const locking = await connect(database.appUrl);
+    await locking.client.query('BEGIN');
+    expect((await locking.client.query<{ locked: boolean }>('SELECT sign_in_lock_key_across_reset($1, $2) AS locked', [user, request()])).rows[0]?.locked).toBe(false);
+    const unlocking = await actorTransaction(admin);
+    const answer = failure(unlocking.client.query('SELECT unlock_user($1)', [user]));
+    expect(await waits(unlocking.pid)).toBe(true);
+    await locking.client.query('COMMIT');
+    expect(await answer).toEqual(HOLD);
+    await close(unlocking.client);
+    await close(locking.client);
+    expect(await locked(user)).toBe(true);
+  });
+
   it('unlocks once the owner has recorded the key cleared after the lock; a clear recorded before the lock clears nothing; a second lock after a clear holds again', async () => {
     const early = await createUser(owner);
     await owner.query(CLEARED, [early]);

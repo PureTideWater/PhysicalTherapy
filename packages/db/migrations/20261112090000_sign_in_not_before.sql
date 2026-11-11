@@ -289,6 +289,9 @@ BEGIN
   IF NOT app_actor_platform_permitted('organization.manage') THEN
     RAISE EXCEPTION 'only a platform administrator unlocks an account' USING ERRCODE = 'insufficient_privilege';
   END IF;
+  -- The account's row first: a lock for a key that is still in its transaction is waited for, so the hold it records
+  -- is read here and an account locked already (by ten failures) is not unlocked beside it.
+  PERFORM 1 FROM "user" u WHERE u.id = target_user FOR NO KEY UPDATE;
   IF EXISTS (
        SELECT 1 FROM audit_event held
         WHERE held.object_type = 'user' AND held.object_id = target_user AND held.action = 'security_event'

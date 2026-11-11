@@ -395,7 +395,7 @@ describe('members', () => {
       issues: [
         {
           field: 'input',
-          message: 'This account is locked because a hardware key was registered during a password reset. It stays locked until the key is removed. See the incident runbook.',
+          message: 'this account is locked because a hardware key was registered across its password reset; it stays locked until the key is removed and the removal is recorded (incident runbook, the hardware key section); then unlock it again',
         },
       ],
     });

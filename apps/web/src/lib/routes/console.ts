@@ -798,7 +798,7 @@ export const endMembership = platformRoute({
 
 /** What the unlock answers while the database holds the account for a key registered across a password reset (docs/adr/0093, D6). */
 export const KEY_HOLD_REFUSAL =
-  'This account is locked because a hardware key was registered during a password reset. It stays locked until the key is removed. See the incident runbook.';
+  'this account is locked because a hardware key was registered across its password reset; it stays locked until the key is removed and the removal is recorded (incident runbook, the hardware key section); then unlock it again';
 
 export const unlockUser = platformRoute({
   id: 'console.unlock_user',

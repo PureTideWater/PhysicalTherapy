@@ -322,18 +322,23 @@ event: hardware key registered across a password reset`.
    any credential is tried, so the key opens nothing while the lock stays. Open the record (section 1). Give the
    user ID to the founder: nothing an operator holds removes a key (not a reset, not End membership), so the
    founder's break-glass removes it, until `LANES.md` Queues item 29 gives the operator an action. The account
-   cannot be unlocked meanwhile: the database holds it, and the console's Unlock answers "This account is locked
-   because a hardware key was registered during a password reset. It stays locked until the key is removed. See the
-   incident runbook." An unlock before the key is gone would hand the account to whoever holds the key. The audit
+   cannot be unlocked meanwhile: the database holds it, and the console's Unlock answers "this account is locked
+   because a hardware key was registered across its password reset; it stays locked until the key is removed and the
+   removal is recorded (incident runbook, the hardware key section); then unlock it again". An unlock before the key is gone would hand the account to whoever holds the key. The audit
    log holds `hardware_key_registered` and a `security_event` with the purpose `account_locked_key_across_reset`
    for the user at the line's time. The person cannot sign in meanwhile; step 5 tells them why. Then, in order:
    1. The founder's break-glass removes the key at the provider and confirms that the user has no key left.
    2. Only then, the founder's break-glass session records the clear, as the owner (the application role cannot
-      write this row):
+      write this row), in one transaction that holds the account's row, so a lock for another key that is being
+      recorded at that moment is waited for and is not cleared unseen. After the first statement, check at the
+      provider once more that the user has no key, then record and commit:
 
       ```sql
+      BEGIN;
+      SELECT 1 FROM "user" WHERE id = '<user id>' FOR UPDATE;
       INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose)
       VALUES (clock_timestamp(), 'system', 'security_event', 'user', '<user id>', 'key_across_reset_cleared');
+      COMMIT;
       ```
 
    3. A platform administrator unlocks the account in the console. If the account is locked for a key again

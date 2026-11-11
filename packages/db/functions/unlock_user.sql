@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- unlock_user(uuid)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 95a8acf6d4021da5
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: d851eb6f159d224f
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.unlock_user(target_user uuid)
@@ -16,6 +16,9 @@ BEGIN
   IF NOT app_actor_platform_permitted('organization.manage') THEN
     RAISE EXCEPTION 'only a platform administrator unlocks an account' USING ERRCODE = 'insufficient_privilege';
   END IF;
+  -- The account's row first: a lock for a key that is still in its transaction is waited for, so the hold it records
+  -- is read here and an account locked already (by ten failures) is not unlocked beside it.
+  PERFORM 1 FROM "user" u WHERE u.id = target_user FOR NO KEY UPDATE;
   IF EXISTS (
        SELECT 1 FROM audit_event held
         WHERE held.object_type = 'user' AND held.object_id = target_user AND held.action = 'security_event'
