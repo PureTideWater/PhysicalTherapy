@@ -1811,12 +1811,13 @@ function keptLetter(pieces: readonly (readonly [KeptSegment, string])[]): { read
 }
 
 /**
- * MOD-16's patient's date of birth (1980-03-14) with a two-digit year, run together in each order of year, month and day.
+ * MOD-16's patient's date of birth (1980-03-14) with a two-digit year, run together in each order of year, month and day,
+ * and with month and day of two digits each in the three orders a date is written in.
  * A run of digits that begins or ends with one of them is the date of birth to a held letter's reading, whatever number
  * it is a part of (an ICN, a ZIP, a compact date of service such as 20280314), so the letter is refused: a fail-safe
  * refusal the property does not count against what must stay. Read here on the letter's own text, never by the redactor.
  */
-const BIRTH_RUN_TOGETHER = ['80314', '80143', '31480', '14380', '38014', '14803'];
+const BIRTH_RUN_TOGETHER = ['80314', '80143', '31480', '14380', '38014', '14803', '800314', '031480', '140380'];
 const holdsBirthRunTogether = (text: string) => (text.match(/[0-9]{5,}/gu) ?? []).some((run) => BIRTH_RUN_TOGETHER.some((birth) => run.startsWith(birth) || run.endsWith(birth)));
 
 /** MOD-16's property: a letter of what must stay is sent unchanged, refused by no check, and its deadlines and references still verify. */
