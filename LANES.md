@@ -208,6 +208,7 @@ The shared documents (test-matrix, reconciliation-001, ADRs, the synth registry)
     - **(b) `resolve_session()` and `revokeDevice` deadlock two ways on the base;** one statement closes it (the database review's DB-D11). If it changes a function file it is a migration for Lane A's schema queue. Before launch.
     - **(c) The reset resolves its account by the typed address:** resolve it by the provider's subject, or detect a crossed state and page. It belongs to the schema plan's PR 6 (sign-in identity).
     - **(d) A migration that refuses a session with no start,** once no image before item 28's release can run. Lane A's schema queue, after that release.
+32. **A queue outbox table, so no job is lost if the web process dies between the request's commit and the queue's** (database and reliability; a schema PR, so Lane A's chain; queued 2026-11-11 15:05 UTC by Lane A's orchestrator, from W12's item 25 (a), draft #144, which moves the sends after the commit and records this part "for Lane A" in `approval-summaries/lane-b-web-transaction-scope-status.md`, with four follow-up proposals; not assigned; numbers at the claim). Place it in the schema batching plan at its next revision; database: two adversarial reviews.
 
 ## Claims
 
