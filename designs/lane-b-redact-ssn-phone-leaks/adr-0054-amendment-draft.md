@@ -56,8 +56,8 @@ scripts and the differential gate are in the ops repository (`claude/build-ops`,
     mask characters (a word's own final `x` before them too), a gap the masked pattern reads, two, such a gap and four
     digits, the four on the next line too (`PaidXXX-XX-3456`, `2020***-**-3456`, `PaidXXX - XX - 3456`, `FaxXXX-XX-3456`).
     Five mask characters and four digits, a gap missing, or four after `#` is as often a masked account number
-    (`Acct#XXXX1234`, `Acct No.XXXXX1234`, `Acct#XXXX-XX-1234`): the first two are refused in a held letter only, as at
-    ef3e8d20.
+    (`Acct#XXXX1234`, `Acct No.XXXXX1234`, `Acct#XXXX-XX-1234`): each is read as ef3e8d20 read it, sent in a letter with no
+    held range and refused in a held one.
   - *A Social Security label glued to the word before it*: `SSN`, `SOC SEC` and `HICN` in any case (`PatientSSN 900.12
     3456`, `PATIENTSSN`, `PatientSocialSecurityNumber`, `PatientHICN`; never `Assn` or `ISSN`), and `SS#`, `SS No` and
     `HIC` where a change of case sets them apart (`PatientSS# 900.12 3456`), read by the survivor scan only, so a refusal
@@ -155,7 +155,8 @@ mobile 5550123`); a letter O for a zero inside an SSN or phone (`SSN 9OO-12-3456
 a name part of four letters in a digit-for-letter form (`L1AM`), and a month's word with digits that is such a form
 (`MAR10` for a patient Mario); a look-alike whose small letter looks unlike its capital inside a name split by a joiner
 (`νan-tree`); letters with a stroke (`Zepħyra`); a control character inside a number or a name (`900-12<U+0004>-3456`, as
-at ef3e8d20); a day of the date of birth written as an ordinal's word in a held letter (`March fourteenth`); a number
+at ef3e8d20); a day of the date of birth written as an ordinal's word in a held letter (`March fourteenth`), and for a date of birth
+in May its day in digits with the phrase going on after it (`May 12 for review`, where `may 1) call us` is the verb); a number
 glued so that a bare nine or ten reads across the join (`123456900-12-3456` is `[SSN]-12-3456`, as at ef3e8d20); one to
 three digits glued before the shape with no structure (`150900-12-3456`); the shape wrapped before its last group with
 an amount glued after it; the shape written with spaces and no label with an amount glued after it (`900 12

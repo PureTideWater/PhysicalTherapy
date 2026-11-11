@@ -4,46 +4,56 @@ Must land before any real PHI is processed (ruling A, 2026-11-07 10:53 UTC; the 
 Counters MOD-21 and MOD-22 are allocated (2026-11-06 21:03 UTC); no new ADR is expected (an ADR 0054 amendment). Any other
 counter comes from the orchestrator.
 
-## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 09:38 UTC)
-- **State:** code and tests at **0ddfa078** = WIP `co-001/wip-redact-ssn-phone-leaks` on origin (typecheck and lint clean;
-  the six redaction test files passed at 19454724, 3,773 tests; worktree `/home/user/leaks`, branch
-  `co-001/redact-ssn-phone-leaks`, not on origin; no PR). **Owed before the merge: two adversarial reviews of the fix
-  round's delta that run to their report.** The two started at 07:35 UTC were stopped by the account's usage limit at
-  about 07:50 UTC with no report (a stopped agent is no review); the container restarted at 09:00 UTC.
-- **What happened since the two build reviews** (their reproductions: `designs/lane-b-redact-ssn-phone-leaks/reviews/`):
-  the fix round (405314b4, a64cc9af); three corrections from replaying the gate (0105cd96); then **the two cut-off
-  reviewers' own files were read and every row re-run by W5** (`reviews/c1`, `reviews/c2`), and fixed:
-  - f0d6e914: ef3e8d20's reading of the call's own identifiers stands (the plain fold) and the look-alike reading only
-    adds, each addition a fresh match; the patterns read the settled matches alone; the glued checks run on both folds in
-    the strict check; the glued-label space is a second reading; the check's patterns read through the call's own
-    placeholders, so a match left as written is found again and the letter refused.
-  - 0c0975a6 to 0ddfa078: digits before the glued shape are another number's only as a currency amount's, four or more,
-    an amount's cents or a date's end, and after it only as cents after a point, a second shape or a date; more
-    reference nouns and separators name a number; cents only after a point; the masked rule, the verb "may", a day in
-    words (not read), a list number in parentheses, a name's pieces; the call's own number found through a label's list
-    number is fresh too.
-- **Measured on 0ddfa078 so far:** pinned rows ruling A 697 of 697 (632 refused, 65 redacted), ruling A' 406 of 406 (200
-  redacted, 206 refused), ruling B 5 of 5. The four reviews' reproduction scripts: b1 and c1 read as ef3e8d20 or safer on
-  every row; b2 as ef3e8d20 but the leak forms now refused and the recorded costs; c2: 95 of 102 rows as ef3e8d20, the
-  other 7 recorded costs. The cut-off PHI reviewer's fuzzer: 0 letters ef3e8d20 refused that the head sends (85,888
-  letters; 200 at a64cc9af) and 0 matches left as written and sent (`reviews/c1/withheld.mts`, about 316,000 letters).
-  **Running now:** every fuzzer and the gate on 0ddfa078 (outputs `/home/user/work/p9/fuzz-all.out`,
-  `/home/user/gate-out/p9-*`, not kept).
+## RESUME-BLOCK (W5, session_019i9ifC8ouxG6CLPdZtgAcJ; current at 2026-11-11 09:55 UTC)
+- **State:** WIP `co-001/wip-redact-ssn-phone-leaks` on origin = **ecb89c5b** (the code is 0ddfa078's, unchanged since;
+  1a8355bc added test-matrix rows MOD-21 and MOD-22 and MOD-16's six-digit birth filter; ecb89c5b added the two cases to
+  `packages/synth/src/cases/matrix.ts` and `registry.ts` with `fixtures/synthetic/MOD-21|22/expected.json`, which the
+  registry's test requires word for word). Worktree `/home/user/leaks`, branch `co-001/redact-ssn-phone-leaks`, not on
+  origin; no PR. Reports (the merge, a blocker, a founder ask) go to the orchestrator of record in `lanes/STATE.md`
+  (session_019i9ifBCrxfV35CFDVHLTad from 2026-11-11 09:15 UTC).
+- **Owed before the merge: two adversarial reviews of the fix round's delta (aea2852d to 0ddfa078) that run to their
+  report.** The two of 07:35 UTC were cut off by the usage limit with no report (no review). Two narrow ones (PHI,
+  findings D1-n; must-stay and logic, D2-n; about 20 tool calls each, the report as the final message) were started at
+  09:40 UTC in this session and read `/home/user/fix` and `/home/user/work/p9/fixround.diff`; if this session ends before
+  they report, they do not count and are run again.
+- **Measured on 0ddfa078's code:** pinned rows ruling A 697 of 697 (632 refused, 65 redacted), ruling A' 406 of 406 (200
+  redacted, 206 refused), ruling B 5 of 5. The four reviews' reproduction scripts (`reviews/b1`, `b2`, `c1`, `c2`): b1 and
+  c1 as ef3e8d20 or safer on every row; b2 as ef3e8d20 but the leak forms refused and the recorded costs; c2 95 of 102
+  rows as ef3e8d20, 7 recorded costs. **Every fuzzer, 09:44 to 09:50 UTC:** PHI: 0 letters ef3e8d20 refused that the head
+  sends (20,000 + 20,000 + 10,000 + 10,000 generated letters and 88,256 of the cut-off reviewer's), 0 matches left as
+  written and sent (130,624 letters). Must-stay (12,000 generated letters): 72 new refusals, 71 of them the one form
+  `Contact <own name>, <city>, IL <ZIP+4>` (the recorded cost: a phone label read through the own name refuses what
+  ef3e8d20 refuses without the name) and 1 a `TTY: 711` line with the own identifiers and a service row on the next line
+  (the same rule); 8 letters redacted further (phone lists); names against 26,143 ordinary tokens: 1 of 651 names
+  (`Week5` for WEEKS, recorded); `S83511A` for member 583511 (recorded). The old MOD-16 generator (ef3e8d20's), 20,000
+  letters, seed 42: 359 refused, each a held letter (a local number with no label beside a held range, and the like).
+  **Running:** the gate on 0ddfa078 against ef3e8d20 and cc3dd7f6 (`/home/user/gate-out/p9-*`, not kept).
+- **Every example in the amendment draft was run** on the head, ef3e8d20 and cc3dd7f6
+  (`designs/lane-b-redact-ssn-phone/gate/leaks-scripts/adr-examples.mts <label=redact.ts>...`); two sentences corrected
+  (masked account numbers read as ef3e8d20 in both kinds of letter; the May residual `May 12 for review`).
+- **The fold (#141, head 995380b7, not merged at 09:50 UTC) trial-merged into this branch:** `redact.ts` follows the
+  rename to `packages/redact/src/` with no conflict; one conflict, `docs/product/test-matrix.md` (keep MOD-19, MOD-20,
+  then MOD-21, MOD-22); the same order in `packages/synth/src/cases/matrix.ts` and `registry.ts`. By hand after the merge:
+  `git mv` `confusables.ts` and `confusables.test.ts` to `packages/redact/src/`; `redact.leaks.test.ts` stays in
+  model-gateway with its import of `./redact` changed to `@tp/redact` (as #141 left the other redaction tests); the
+  registry's `assertedBy` path of `confusables.test.ts`; `packages/redact`'s description and `index.ts` comment say "no
+  import" (now one data file beside it); `gen-residual6.mts` paths; check `vitest.mutation.config.ts` and `stryker/` for
+  what they mutate (the look-alike table is data).
 - **The rules as built:** `designs/lane-b-redact-ssn-phone-leaks/adr-0054-amendment-draft.md` (the text for ADR 0054, its
-  measured section still to fill); `design.md` beside it is the history.
-- **Next, in order:** (1) read the fuzzers and the gate; (2) fill the amendment's measured section, put it in ADR 0054,
-  add test-matrix rows MOD-21 and MOD-22; (3) MOD-16's five seeds and three fresh on the property files; (4) **the two
-  delta reviews (aea2852d to the head), each a narrow scope, about 20 tool calls, its report as its final message**;
-  verify, fix, and a review of any fix; (5) the final gate if the code moved; (6) the full suite once, the base merged
-  (the packets verifier's fold may have moved `redact.ts` to `packages/redact/src/`: `confusables.ts` and the new tests
-  move beside it by hand), the push, the draft PR from the template, CI, the merge under rule 2a, one line to the
-  orchestrator.
+  measured section `@@MEASURED@@` still to fill from the gate); `design.md` beside it is the history.
+- **Next, in order:** (1) read the gate (no PHI class on either tree; replay class changes against p8 with
+  `leaks-scripts/revdiff.mjs` and `evalhits.mts`); (2) the two delta reviews: verify each finding by running it, fix, and a
+  review of any fix's delta; (3) fill the amendment's measured section and put it in ADR 0054; (4) MOD-16's five seeds
+  (1034253323, -1074798020, 383403599, -460602131, -594136649) and three fresh on the property and leaks files; (5) the
+  final gate if the code moved; (6) the full suite once, the base merged once (above), the push through the hook, the
+  draft PR from the template, CI, the merge under rule 2a, one line to the orchestrator.
 - **MOD-23** (allocated 2026-11-11, `LANES.md` Queues item 26): `Zephy ra`, `Zephy. ra` and `Z e p h y r a` are sent in
   clear outside a held letter on cc3dd7f6, ef3e8d20 and this head alike; pinned in `redact.leaks.test.ts`. Reproduce:
   `cd designs/lane-b-redact-ssn-phone/gate/leaks-scripts && node --import ../ts-resolve.mjs name-forms.mts <redact.ts of each tree>`.
 - **Container paths (not kept):** `/home/user/fix` (scratch copy of the head's `redact.ts`), `/home/user/gate` and
   `/home/user/gate-out`, `/home/user/tree-cc3`, `/home/user/tree-ef3`, `/home/user/work` (fuzzers `d1p6/`, `d2p6/`, `b1fix/`,
-  `b2fix/`, `c1fix/`; `stress16.mts`; `p8/`, `p9/` outputs), `/home/user/review-b1`, `-b2`, `-c1`, `-c2`.
+  `b2fix/`, `c1fix/`; `stress16.mts`; `p8/`, `p9/` outputs; `adrcheck/`), `/home/user/review-b1`, `-b2`, `-c1`, `-c2`, `-d1`,
+  `-d2`, `/home/user/trial` (the trial merge, to remove).
 - **Trailers:** every commit ends with `Co-Authored-By: Claude <noreply@anthropic.com>` and the session's
   `Claude-Session:` line. Nothing already pushed is rewritten.
 
