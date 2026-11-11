@@ -164,14 +164,16 @@ export interface MonitoringProps {
  * a day. Each is matched on the line's `error_code` and named by it (the failed record by its constant's name), never
  * by a value from the line; MailStreams holds the reputation and queue alarms.
  *
- * Reset and enrolment (R-11; docs/adr/0088, D7; test matrix SEC-23) add nine metric filters on the web's group, each
+ * Reset and enrolment (R-11; docs/adr/0088, D7; test matrix SEC-23) add thirteen metric filters on the web's group, each
  * with its alarm (infra/lib/security-events.ts, RESET_AND_ENROLMENT_COUNTS): a reset request not delivered for a code
  * that means the app and Cognito disagree or mail is broken, one not delivered for a throttle code, a failed reset
  * request, a refused second-factor enrolment, a refused client credential, the start-up probe's refused credential,
  * three reset requests in an hour answered after their floor (docs/adr/0081), a completed reset whose sessions were
  * not ended, which queued no password-changed email (docs/adr/0091, D15), and a completed reset whose sign-out at the
  * provider failed, after which a key-registration step begun before it can still register a hardware key
- * (docs/adr/0091, D10). Reset requests per user are counted by a Contributor Insights rule keyed on the user ID, never
+ * (docs/adr/0091, D10); and the four of docs/adr/0093: a sign-in step begun before a reset and refused after it (every
+ * step but the hardware-key sign-in's), a hardware key registered across a reset, a reset whose outcome at the
+ * provider is unknown, and a sign-in refused because its address and its provider subject name two accounts. Reset requests per user are counted by a Contributor Insights rule keyed on the user ID, never
  * by a metric with a user dimension, and alarm at five in an hour; the alarm names no user.
  *
  * The database's connections (docs/adr/0083, "The practice pool"): RDS's DatabaseConnections at its largest in five
@@ -610,6 +612,10 @@ export class Monitoring extends Construct {
       ClientCredentialProbeRefused: `A ${props.environmentName} web task's start-up probe found its Cognito client credential refused, so its health check fails and the deploy rolls back: check the client secret and the client ID the new task definition was given (docs/adr/0088, D8).`,
       PasswordResetSessionsNotEnded: `A ${props.environmentName} password reset changed the password at Cognito, but the app could not end the account's sessions or record the reset, so no password-changed email was queued: read the user ID from the line, end the account's sessions and tell the person another way (docs/runbooks/incident-response.md, "A password reset whose sessions were not ended"; docs/adr/0091, D15).`,
       PasswordResetProviderSignOutFailed: `A ${props.environmentName} password reset was completed, but the sign-out at Cognito that follows it failed, so a hardware-key registration begun before the reset can still be completed for up to 15 minutes: read the user ID from the line, look in the audit log for hardware_key_registered by that user since the reset, and if there is one treat it as a takeover, end the account's sessions and tell the founder; a sign_in by authenticator code is the person's own (docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed"; docs/adr/0091, D10).`,
+      SignInStepRefusedAfterReset: `A ${props.environmentName} sign-in step begun before the account's latest password reset was answered after it and refused, so someone proved the old password around the reset from another browser or device: read the user ID and the step from the line, tell the person, and at the code step (mfa) tell them their second factor may be known too, which a reset does not change (docs/runbooks/incident-response.md, "A sign-in step refused after a password reset"; docs/adr/0093, D5).`,
+      HardwareKeyRegisteredAcrossReset: `A ${props.environmentName} hardware key was registered while the account's password reset was being recorded: read the line's error code. removed: confirm with the person. not_removed: the key is still on the account and the account is locked, so have the key removed through the founder's break-glass before anyone unlocks it. not_removed_not_locked: the key signs in, so go to the break-glass now (docs/runbooks/incident-response.md, "A hardware key registered across a password reset"; docs/adr/0093, D6).`,
+      PasswordResetOutcomeUnknown: `Cognito did not say whether a ${props.environmentName} password reset changed the password, so the app ended the account's sessions and sent no password-changed email: read the user ID from the line, find out at Cognito whether the password changed, and tell the person another way (docs/runbooks/incident-response.md, "A password reset whose outcome is unknown"; docs/adr/0093, D9).`,
+      SignInRefusedCrossedAccount: `A ${props.environmentName} sign-in was refused because the address typed names one account and Cognito's subject another, which a sound database never holds: read the user ID from the line (the subject's account), compare the app's accounts and Cognito's users for that address, and let neither sign in until they agree (docs/runbooks/incident-response.md, "A sign-in refused for a crossed account"; docs/adr/0093, D5).`,
       PasswordResetRequestOverFloor: `Three ${props.environmentName} password reset requests in an hour were answered after their floor, so their timing could tell an account from none: find the slow call (Cognito, the message trigger's cold start), or raise RESET_REQUEST_FLOOR_MS (docs/adr/0081).`,
     };
     const resetAndEnrolmentAlarms: Partial<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>> = {};

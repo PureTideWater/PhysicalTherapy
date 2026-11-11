@@ -11,7 +11,8 @@ import { z } from 'zod';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import { routeHandler } from '../http/handler';
 import { practiceRoute } from '../http/invoke';
 import type { CookieJar, Outcome, Route } from '../http/route';
@@ -131,7 +132,7 @@ const tokens = new Map<string, string>();
 async function sessionOf(userId: string, method: 'totp' | 'webauthn' = 'totp'): Promise<string> {
   let token = tokens.get(userId);
   if (token === undefined) {
-    token = (await openSession(app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+    token = (await openSessionNow(app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
     tokens.set(userId, token);
   }
   return token;
@@ -236,7 +237,7 @@ describe('Settings, billing (J18)', () => {
     const world = await createTenantWorld(owner, 'SYNTHETIC BILLING RETRY');
     const platformAdmin = await createUser(owner, { hardwareKeyRequired: true });
     await addMembership(owner, await createOrganization(owner, 'internal'), platformAdmin, 'platform_admin');
-    tokens.set(platformAdmin, (await openSession(app, { userId: platformAdmin, method: 'webauthn', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken);
+    tokens.set(platformAdmin, (await openSessionNow(app, { userId: platformAdmin, method: 'webauthn', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken);
 
     ok(await call(simulatedPaymentMethodAction, world.adminUserId, { organizationId: world.organizationId }, DECLINED_CARD));
     ok(await call(issueAuditInvoiceAction, platformAdmin, {}, { organizationId: world.organizationId }));
@@ -266,7 +267,7 @@ describe('Settings, billing (J18)', () => {
     const organizationId = world.organizationId;
     const platformAdmin = await createUser(owner, { hardwareKeyRequired: true });
     await addMembership(owner, await createOrganization(owner, 'internal'), platformAdmin, 'platform_admin');
-    tokens.set(platformAdmin, (await openSession(app, { userId: platformAdmin, method: 'webauthn', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken);
+    tokens.set(platformAdmin, (await openSessionNow(app, { userId: platformAdmin, method: 'webauthn', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken);
 
     // Only a card on file: the annual plan is taken and its invoice paid by the card at once.
     ok(await call(simulatedPaymentMethodAction, admin, { organizationId }, GOOD_CARD));
@@ -551,7 +552,7 @@ describe('a suspended organization (PRD 6: it can read but not run)', () => {
     // The console reads it the same way, and lists it before every organization in good standing.
     const platformAdmin = await createUser(owner, { hardwareKeyRequired: true });
     await addMembership(owner, await createOrganization(owner, 'internal'), platformAdmin, 'platform_admin');
-    tokens.set(platformAdmin, (await openSession(app, { userId: platformAdmin, method: 'webauthn', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken);
+    tokens.set(platformAdmin, (await openSessionNow(app, { userId: platformAdmin, method: 'webauthn', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken);
     const listed = ok(await call(consoleBillingPage, platformAdmin, {})).organizations;
     const heldAt = listed.findIndex((row) => row.organizationId === organizationId);
     expect(listed[heldAt]).toMatchObject({ status: 'suspended', standing: 'good', standingKind: 'suspended_by_paidwhole' });

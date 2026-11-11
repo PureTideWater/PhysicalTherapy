@@ -33,6 +33,7 @@ A session that passes either limit is expired: the next request is refused and t
 
 - The sign-in screen shows the user's device list and lets the user revoke a device. [PRD 7, Sign-in and MFA]
 - Device and sign-in events are recorded in the audit log. [PRD 6, Identity and sessions, acceptance]
+- A password reset ends every session of the account, and a sign-in step begun at or before the reset opens no session, registers no key and enrols no factor after it: the step closes and the person starts again. The database holds both (the account's `sign_in_not_before` and each session's `sign_in_began_at`, on its own clock), and each refused step is a security event. A hardware key registered across a reset is removed, or the account is locked until it is: the database refuses the console's unlock until the owner has recorded the key cleared. A sign-in whose address and provider subject name two accounts is refused. A reset the provider did not answer for is treated as one that happened: the sessions end and the operator is told. [docs/adr/0093; Test matrix SGN-17, SGN-18]
 - Failed MFA bursts, sign-ins from new devices, bulk exports, grant changes and role escalations raise security events reviewed weekly. [PRD 5, J16; PRD 19, Monitoring and alerts]
 
 ## Responses
@@ -50,3 +51,4 @@ A session that passes either limit is expired: the next request is refused and t
 | Grant expiry and revocation | SEC-03, SEC-04 |
 | Support grant after four hours | SEC-05 |
 | Sign-in events in the audit log | PRD 6 acceptance |
+| A sign-in step begun before a password reset is refused after it | SGN-17, SGN-18 |

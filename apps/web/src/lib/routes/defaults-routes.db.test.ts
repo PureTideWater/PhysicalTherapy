@@ -9,7 +9,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import { csrfTokenFor } from '../http/csrf';
 import type { CookieJar, Route } from '../http/route';
 import { dollarsForInput } from '../money-input';
@@ -71,7 +72,7 @@ beforeAll(async () => {
   world = await createTenantWorld(owner, 'defaults');
   const manager = await createUser(owner);
   await addMembership(owner, world.organizationId, manager, 'billing_manager');
-  token = (await openSession(app, { userId: manager, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+  token = (await openSessionNow(app, { userId: manager, method: 'totp', deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
 }, 120_000);
 
 afterAll(async () => {

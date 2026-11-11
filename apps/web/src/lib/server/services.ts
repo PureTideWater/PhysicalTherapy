@@ -3,7 +3,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { SESv2Client } from '@aws-sdk/client-sesv2';
 import { cognitoMessage } from '@tp/auth-mail';
 import type { BillingProvider } from '@tp/billing';
@@ -16,7 +15,7 @@ import { CognitoJwtVerifier } from 'aws-jwt-verify';
 
 import { type AgreementDocuments, LocalAgreementDocuments, S3AgreementDocuments } from '../agreements/documents';
 import { type ESignatureProvider, LocalESignature } from '../agreements/esign';
-import { CognitoAuthProvider } from '../auth/cognito-provider';
+import { CognitoAuthProvider, cognitoClients } from '../auth/cognito-provider';
 import { CredentialProbe, PROBE_USERNAME } from '../auth/credential-probe';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { FileDevStore } from '../auth/dev-store';
@@ -141,7 +140,8 @@ export function devResetOutbox(directory: string): (email: string, code: string)
 function provider(config: WebConfig, sealer: Sealer, logger: Logger): AuthProvider {
   if (config.auth.kind === 'cognito') {
     return new CognitoAuthProvider({
-      client: new CognitoIdentityProviderClient({ region: config.auth.region }),
+      // Two clients (docs/adr/0093, D9): the confirm of a password reset is sent once, never repeated.
+      ...cognitoClients(config.auth.region),
       userPoolId: config.auth.userPoolId,
       clientId: config.auth.clientId,
       ...(config.auth.clientSecret === null ? {} : { clientSecret: config.auth.clientSecret }),

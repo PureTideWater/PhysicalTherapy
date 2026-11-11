@@ -30,6 +30,31 @@ export interface OpenSessionRequest {
   readonly deviceToken: string | undefined;
   readonly userAgent: string | null;
   readonly requestId: string;
+  /**
+   * When the sign-in attempt began (epoch ms of the database's sign_in_step_began(), read before the attempt's first
+   * provider call; docs/adr/0093, D3 and D4). The database refuses the session when it is at or before the account's
+   * latest recorded password reset, or ahead of its clock. Absent: the row carries no start and is not checked, as the
+   * release before wrote it; the sign-in flow always gives one.
+   */
+  readonly began: number;
+}
+
+/** The name the database's refusal of a stale session carries (migration 20261112090000; docs/adr/0093, D4). */
+export const STALE_SESSION_CONSTRAINT = 'user_session_sign_in_not_before';
+
+/** Whether an error is the database refusing a session whose sign-in began at or before the account's latest reset. */
+export function isStaleSessionRefusal(error: unknown): boolean {
+  const { code, constraint } = (typeof error === 'object' && error !== null ? error : {}) as { readonly code?: unknown; readonly constraint?: unknown };
+  return code === '23514' && constraint === STALE_SESSION_CONSTRAINT;
+}
+
+/**
+ * The acting account's own row lock, taken first by the transaction that opens a session and by the one that records a
+ * password reset (docs/adr/0093, D2): every transaction then takes the account's row before a device or a session row,
+ * so the two cannot deadlock, and a sign-in racing a reset is either ended by it or refused after it.
+ */
+export async function lockAccountForSignIn<C extends ScopeClient>(scope: ActorScope<C>): Promise<void> {
+  await scope.client.query('SELECT sign_in_lock_account()');
 }
 
 export interface OpenedSession {
@@ -46,6 +71,8 @@ export interface OpenedSession {
 export function openSession(pool: ScopePool<ScopeClient>, request: OpenSessionRequest): Promise<OpenedSession> {
   return withActor(pool, request.userId, async (scope) => {
     const client = scope.client;
+    // The account's row first, before any device or session row (docs/adr/0093, D2).
+    await lockAccountForSignIn(scope);
     const label = deviceLabel(request.userAgent);
     let deviceToken = request.deviceToken ?? newToken();
     const known = await client.query<{ id: string; revoked: boolean }>('SELECT id, revoked_at IS NOT NULL AS revoked FROM user_device WHERE user_id = $1 AND token_sha256 = $2', [
@@ -73,8 +100,8 @@ export function openSession(pool: ScopePool<ScopeClient>, request: OpenSessionRe
     }
     const sessionToken = newToken();
     const session = await client.query<{ id: string; expires_at: Date }>(
-      'INSERT INTO user_session (user_id, device_id, token_sha256, mfa_method) VALUES ($1, $2, $3, $4) RETURNING id, expires_at',
-      [request.userId, device.id, tokenHash(sessionToken), request.method],
+      'INSERT INTO user_session (user_id, device_id, token_sha256, mfa_method, sign_in_began_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, expires_at',
+      [request.userId, device.id, tokenHash(sessionToken), request.method, new Date(request.began)],
     );
     const sessionId = session.rows[0]?.id ?? '';
     await client.query('SELECT sign_in_succeeded($1)', [request.userId]);

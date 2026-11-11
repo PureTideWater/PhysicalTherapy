@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { DevAuthProvider, temporaryPassword } from './dev-provider';
+import { DEV_LOST_ANSWER, DevAuthProvider, type DevFaults, temporaryPassword } from './dev-provider';
 import { type DevUserRecord, FileDevStore, MemoryDevStore } from './dev-store';
 import { hashPassword, passwordProblems } from './password';
 import type { AuthStep } from './provider';
@@ -31,7 +31,7 @@ const advance = (seconds: number) => {
   clock = new Date(clock.getTime() + seconds * 1000);
 };
 
-async function provider(records: DevUserRecord[] = []) {
+async function provider(records: DevUserRecord[] = [], faults?: DevFaults) {
   const store = new MemoryDevStore();
   for (const record of records) {
     await store.put(record);
@@ -52,6 +52,7 @@ async function provider(records: DevUserRecord[] = []) {
     },
     now: () => clock,
     scryptCost: CHEAP,
+    ...(faults === undefined ? {} : { faults }),
   });
   return { dev, store, invitations, resets };
 }
@@ -308,6 +309,23 @@ describe('DevAuthProvider: a forgotten password (SGN-06)', () => {
     expect((await dev.signIn('person@synthetic.test', NEW_PASSWORD)).kind).toBe('mfa_required');
   });
 
+  it('SGN-18: a lost answer is outcome_unknown, never a refused code: after the reset was applied the new password works and the code is spent; before it, nothing changed and the code still resets (docs/adr/0093, D9)', async () => {
+    let lost: 'after' | 'before' | undefined;
+    const { dev, resets } = await provider([await record()], { lostResetAnswer: () => lost });
+    await dev.requestPasswordReset('person@synthetic.test');
+    lost = 'before';
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'outcome_unknown', code: DEV_LOST_ANSWER });
+    expect(await dev.signIn('person@synthetic.test', PASSWORD)).toMatchObject({ kind: 'mfa_required' });
+    expect(await dev.signIn('person@synthetic.test', NEW_PASSWORD)).toEqual({ kind: 'rejected', stage: 'password' });
+    lost = 'after';
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), NEW_PASSWORD)).toEqual({ kind: 'outcome_unknown', code: DEV_LOST_ANSWER });
+    expect(await dev.signIn('person@synthetic.test', NEW_PASSWORD)).toMatchObject({ kind: 'mfa_required' });
+    expect(await dev.signIn('person@synthetic.test', PASSWORD)).toEqual({ kind: 'rejected', stage: 'password' });
+    // With the switch off the twin answers as it always has: the spent code is the one refusal.
+    lost = undefined;
+    expect(await dev.confirmPasswordReset('person@synthetic.test', codeFor(resets), 'Another-Reset-Pass-2026')).toEqual({ kind: 'rejected' });
+  });
+
   it('delivers nowhere by default, so a provider built without the hook still answers', async () => {
     const store = new MemoryDevStore();
     await store.put(await record());
@@ -348,6 +366,33 @@ describe('DevAuthProvider: hardware keys (real WebAuthn verification)', () => {
     const done = await dev.completeKeySignIn(challenge, key.get(options));
     expect(done).toMatchObject({ kind: 'authenticated', identity: { sub: 'sub-1', method: 'webauthn' } });
     expect((await store.bySub('sub-1'))?.credentials[0]?.counter).toBe(1);
+  });
+
+  it('SGN-17: removes a registered key by its credential ID with the grant, so it no longer signs in; an unknown ID, an expired grant and the removal fault remove nothing (docs/adr/0093, D6)', async () => {
+    const { dev, key, store, grant } = await registered();
+    const id = key.credentialId.toString('base64url');
+    expect(await dev.removeHardwareKey(grant, 'not-a-credential')).toBe(true);
+    expect((await store.bySub('sub-1'))?.credentials.map((credential) => credential.id)).toEqual([id]);
+    expect(await dev.removeHardwareKey('not-a-grant', id)).toBe(false);
+    expect((await store.bySub('sub-1'))?.credentials).toHaveLength(1);
+    const { options, challenge } = await dev.beginKeySignIn('person@synthetic.test');
+    expect(await dev.removeHardwareKey(grant, id)).toBe(true);
+    expect((await store.bySub('sub-1'))?.credentials).toEqual([]);
+    expect(await dev.hasHardwareKey(grant)).toBe(false);
+    expect(await dev.completeKeySignIn(challenge, key.get(options))).toEqual({ kind: 'rejected', stage: 'hardware_key' });
+  });
+
+  it('SGN-17: the removal fault leaves the key and answers false', async () => {
+    const setup = await provider([await record()], { keyRemovalFails: () => true });
+    const step = await setup.dev.answerTotp(challengeOf(await setup.dev.signIn('person@synthetic.test', PASSWORD)), totpCode('JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP', clock));
+    if (step.kind !== 'authenticated') {
+      throw new Error('expected a sign-in');
+    }
+    const key = new SoftAuthenticator(ORIGIN);
+    const { options, challenge } = await setup.dev.beginKeyRegistration(step.grant);
+    expect(await setup.dev.completeKeyRegistration(step.grant, challenge, key.create(options))).toBe(true);
+    expect(await setup.dev.removeHardwareKey(step.grant, key.credentialId.toString('base64url'))).toBe(false);
+    expect((await setup.store.bySub('sub-1'))?.credentials).toHaveLength(1);
   });
 
   it('rejects an assertion from an unknown key, a key without user verification, a replayed challenge, or another origin', async () => {

@@ -287,6 +287,7 @@ WCAG 2.2.1 (A, a timing that is adjustable), 2.2.6 (AAA, taken as practice: the 
     (`docs/runbooks/support-mail.md`, "Sign-in help tickets");
   - a sign-in begun with both factors less than 3 minutes before a reset (Cognito's auth session) can still open an
     app session after the revoke; a reset time checked against `auth_time` would close it (a migration, Lane A);
+    closed on 2026-11-11 by ADR 0093, without `auth_time` (the amendment of that date, below);
   - SEC-B1 holds on the app's path only until ADR 0088's second release makes the client confidential (D1). The
     pool's app client is public (`generateSecret: false`) and recovery is `EMAIL_ONLY`, so a caller who knows the
     client ID (an identifier: the environment, stack outputs, any ID token's `aud`) can call `ForgotPassword` and
@@ -420,6 +421,29 @@ it names goes to ADR 0091, below) and its "Revisit when" line "Lane A brands the
   inverting client were made for the review, outside the repository, and are not proof of these clients; the
   repository checks the art's pixels (`plateHolds`: the served PNG is opaque inside the rounded plate and White across
   the plate's padding; `tools/brand-email-plate` and `apps/web/e2e/brand.spec.ts`).
+
+## Amendment: a sign-in step begun before a reset (co-001/step-before-reset, 2026-11-11)
+
+[ADR 0093](0093-refuse-a-sign-in-step-begun-before-the-accounts-latest-password-reset-by-one-database-clock-and-read-an-unknown-reset-outcome-on-the-safer-side.md) closes the forgotten-password amendment's "Not covered" item on a sign-in begun before a reset. It
+changes no ruling of this decision and no words on any screen.
+
+- **What is closed.** A sign-in step the application carries, begun at or before the account's latest recorded reset,
+  no longer opens a session, registers a key, enrols a factor or replaces a temporary password afterwards. The step
+  is answered as a closed step, with the words this decision already gave it. The close reads the attempt's start
+  and the reset's mark from the database's clock; it does not use Cognito's `auth_time`, so the migration that item
+  named is ADR 0093's, in another form.
+- **A5 stands.** A reset still removes no factor and no key. A key whose registration returns after the reset was
+  recorded is removed at the provider or reported (ADR 0093 D6). A key registered before the reset stays: removing a
+  member's keys is `LANES.md` Queues item 29.
+- **A1 stands.** The reset step holds no proof and is not checked against the mark.
+- **What stays in "Not covered".** The item on the public client: a challenge opened at Cognito directly before a
+  reset and answered after it never passes the application, so ADR 0093's rule holds for it only once ADR 0088's
+  second release makes the client confidential.
+- **Not verified here** gains ADR 0093's staging checks, for the founder's pool smoke check, with a synthetic
+  account: the old password is refused at once after the confirm answers (a tight loop of sign-ins across one); the
+  public client's token registers a passkey, and the confidential client refuses a direct `InitiateAuth` without the
+  secret hash; what a repeated `ConfirmForgotPassword` answers; `DeleteWebAuthnCredential` with the app's token and
+  the registration's credential ID; two reset codes, the first tried after the second completed.
 
 ## Revisit when
 

@@ -349,6 +349,8 @@ export const passwordNotice = pgTable(
     /** changed_at plus 90 days; operator_mail_expire() deletes it after, never while pending. */
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    /** Whether the account had a second factor when the reset was recorded, written by the notice's trigger; the email follows it, not the account as the send finds it (docs/adr/0091 D10, case (d)). NULL: queued before migration 20261112090000. */
+    mfaEnrolledAtReset: boolean('mfa_enrolled_at_reset'),
   },
   (table) => [
     unique('password_notice_once').on(table.auditEventId),

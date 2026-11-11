@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { type Page, expect, test } from '@playwright/test';
 
-import { SYNTHETIC_PRACTICES, personaEmail, personaPassword } from '../scripts/synthetic-personas';
+import { SYNTHETIC_PRACTICES, personaEmail, personaPassword, personaTotpCode } from '../scripts/synthetic-personas';
 import { E2E_DEV_AUTH_DIR } from './env';
 import { enterPassword, practiceId, refusal, signInWithTotp, withDatabase } from './helpers';
 import { E2E_SUPPORT_EMAIL, sendPasswordNoticesOnce } from './mail';
@@ -215,6 +215,69 @@ test('a forgotten password is reset by emailed code, the account’s address is 
   await expect(page.getByLabel('Six-digit code')).toBeVisible();
   // The address was never in a URL.
   expect(urls.some((url) => url.includes('@') || url.includes(encodeURIComponent('@')))).toBe(false);
+});
+
+/** Answers the code step with the persona's current code, and the next step's when a parallel sign-in used this one. */
+async function answerCode(page: Page, key: string): Promise<void> {
+  const at = Date.now();
+  await page.getByLabel('Six-digit code').fill(personaTotpCode(key, new Date(at)));
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  const left = page.waitForURL((url) => url.pathname !== '/sign-in/mfa').then(() => true);
+  const refused = refusal(page)
+    .filter({ hasText: 'That did not match' })
+    .waitFor()
+    .then(
+      () => false,
+      () => true,
+    );
+  if (!(await Promise.race([left, refused])) && new URL(page.url()).pathname === '/sign-in/mfa') {
+    await page.getByLabel('Six-digit code').fill(personaTotpCode(key, new Date(at + 30_000)));
+    await page.getByRole('button', { name: 'Sign in' }).click();
+  }
+  await left;
+}
+
+test('a code step begun before a password reset is closed after it, in another browser, and a new sign-in opens the session (SGN-17)', async ({ page, browser }) => {
+  // Its own persona: the specs run in parallel, and this one changes the password.
+  const key = 'reset-step';
+  const email = personaEmail(key);
+  const chosen = 'Synthetic-reset-After-Step-2026!';
+  // The first browser proves the password the account holds now (the seeded one, or the one an earlier try of this
+  // test chose) and stops at the code step.
+  await enterPassword(page, key);
+  if (!(await page.waitForURL(/\/sign-in\/mfa$/, { timeout: 5000 }).then(() => true, () => false))) {
+    await enterPassword(page, key, chosen);
+  }
+  await expect(page).toHaveURL(/\/sign-in\/mfa$/);
+  // A second browser resets the password with the emailed code.
+  const other = await browser.newContext();
+  try {
+    const second = await other.newPage();
+    const before = resetCodesFor(email).length;
+    await requestReset(second, email);
+    await expect.poll(() => resetCodesFor(email).length).toBeGreaterThan(before);
+    await second.getByLabel('Six-digit code').fill(resetCodesFor(email).at(-1) ?? '');
+    await second.getByLabel('New password', { exact: true }).fill(chosen);
+    await second.getByLabel('New password again').fill(chosen);
+    await second.getByRole('button', { name: 'Save password' }).click();
+    await expect(second).toHaveURL(/\/sign-in\?reason=password_reset$/);
+    // The first browser's step proved the old password: a right code no longer opens a session from it.
+    await answerCode(page, key);
+    await expect(page).toHaveURL(/\/sign-in\?reason=step_expired$/);
+    // The step's own closing words, the address kept for the restart (docs/adr/0081): nothing new is said.
+    await expect(arrival(page)).toContainText('That sign-in step closed. Your email is filled in: type your password to start again.');
+    await expect(page.getByLabel('Email')).toHaveValue(email);
+    await page.goto('/account/devices');
+    await expect(page).toHaveURL(/\/sign-in$/);
+    // A sign-in begun after the reset, with the new password and a code, opens one.
+    await enterPassword(page, key, chosen);
+    await expect(page).toHaveURL(/\/sign-in\/mfa$/);
+    await answerCode(page, key);
+    await page.goto('/account/devices');
+    await expect(page).toHaveURL(/\/account\/devices$/);
+  } finally {
+    await other.close();
+  }
 });
 
 test('Use a different email ends the reset step at any time, with the address not kept (SGN-06, review UXR-01)', async ({ page }) => {

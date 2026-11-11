@@ -8,7 +8,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { Sealer } from '../auth/seal';
-import { SESSION_COOKIE, openSession } from '../auth/sessions';
+import { SESSION_COOKIE } from '../auth/sessions';
+import { openSessionNow } from './test-support/open-session';
 import { csrfTokenFor } from '../http/csrf';
 import type { CookieJar, Route } from '../http/route';
 import { type Services, createServices } from '../server/services';
@@ -79,7 +80,7 @@ class Jar implements CookieJar {
 }
 
 async function sessionFor(userId: string, method: 'totp' | 'webauthn'): Promise<string> {
-  return (await openSession(app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
+  return (await openSessionNow(app, { userId, method, deviceToken: undefined, userAgent: null, requestId: 'test' })).sessionToken;
 }
 
 function run<R>(route: Route<R>, token: string, input?: Record<string, unknown>, params: Record<string, unknown> = {}) {
