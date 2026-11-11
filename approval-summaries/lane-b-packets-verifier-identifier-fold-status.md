@@ -7,15 +7,15 @@ Reserved: test-matrix MOD-19 and MOD-20; synth entries the same as MOD-13 if nee
 ## The item
 `packages/packets/src/verifier/mismatches.ts`'s `identifierSpans` checks a narrative for the case's identifiers as whole words, without regard to case, and nothing more. It lacks the forms the gateway's letter reader reads (#80: diacritics, typographic apostrophes and dashes, hyphenated halves, a word hyphenated at a line break, spaced or dashed numbers; #115: label boundaries and glued labels). A narrative that writes a name as `Zoe` for `ZOË`, `O’Quill` for `O'QUILL` or `Treeby` for `VAN-TREEBY` passes the verifier today. `verifier/template.ts` (format /3, slice 2) calls the same function.
 
-## RESUME-BLOCK (W7; current at 2026-11-11 07:00 UTC by the container's clock)
-- **Branch:** `co-001/packets-verifier-identifier-fold`, worktree `/home/user/fold`, head **c2c5a07c**: the base **2e26a416** (#126) merged in cleanly on top of ec4f4e28. Not on origin under its own name yet (no PR); **WIP ref `co-001/wip-packets-verifier-identifier-fold` = c2c5a07c** (nothing uncommitted).
-  - 181c816c the move; 811706c9 the reading and its wiring; 13eea841 the tests and the reading across a token; 42290807 the ADRs, test matrix and synth records; 0a5e9165 the mutation fixes; 662a56cb the bundled browser guard and the matcher's unread forms pinned; 5ac5d2cd the second design review's fix round; ec4f4e28 the documents corrected after build review B; c2c5a07c the base merge.
-- **PR:** none yet. **CI:** none. **Counters used:** MOD-19, MOD-20.
-- **Reviews: all four are in** (design 1 and 2, build A and B), every finding verified by running it; table below. Build review B found no defect in the code; its one finding (two documents) is fixed in ec4f4e28.
-- **Running now (one background job, output in the session's scratchpad, not kept):** the full local suite once on c2c5a07c (typecheck, lint, lint:copy, lint:logs, check:fixtures, verify-content, `pnpm test`, `pnpm test:db` and `pnpm test:e2e` with `DATABASE_URL=postgres://postgres:test@localhost:5433/postgres`, `pnpm test:golden`), then the mutation shard `packets-verifier` with its gate on Node 24.22.0. The generators (`watched.ts --write`, `pnpm synth --all`) leave no diff after the merge.
-- **Not done:** read that job's results and fix what fails; push the branch under its own name; open the draft PR from the template; subscribe; CI; check the base is an ancestor of the head; merge; report one line; remove the worktrees `/home/user/fold-r1` and `/home/user/fold-r2`.
-- **Coordination:** the SSN and phone leaks item (W5) edits `redact.ts` heavily and adds `confusables.ts` beside it. Whichever merges second: git follows the rename for `redact.ts`; a new file `redact.ts` imports is moved by hand into `packages/redact/src/`, and a test's import of `./redact` becomes `@tp/redact`. The fold's own edits to `redact.ts` are one region (`lettersOf` to `nameOrNumberMatches`, after `nameGlued`).
-- **Exact next step:** when the job ends, read `full/summary.log` in the scratchpad (or run the suite again), then push and open the PR.
+## RESUME-BLOCK (W7; current at 2026-11-11 07:50 UTC by the container's clock)
+- **PR: draft #141**, https://github.com/PureTideWater/PhysicalTherapy/pull/141, `co-001/packets-verifier-identifier-fold` into `claude/build-platform`, head **c2c5a07c** (the base **2e26a416** merged in; the WIP ref holds the same commit). Its description is filled from the template. W7 is subscribed to it.
+- **CI:** running on c2c5a07c (first run). Required: `all green`, `mutation` (all 19 shards for this PR), `screening-capacity gate`, `approval-of-record`.
+- **Local, once, on c2c5a07c:** typecheck, lint, lint:copy, lint:logs, check:fixtures, verify-content; `pnpm test` 13,386 passed and 4 skipped; `pnpm test:db` 10,080 passed and 1 skipped (PostgreSQL 18.4, port 5433); `pnpm test:golden` 381; `pnpm test:e2e` 86; the mutation shard `packets-verifier` with its gate on Node 24.22.0, no unrecorded survivor (`verifier/identifiers.ts` 93 of 93); `toolchain:check` and `actions:check`; the generators leave no diff. Not run locally: the 17 other mutation shards (a test added here could make a recorded equivalent of another shard stale; CI says).
+- **Reviews: all four are in** (design 1 and 2, build A and B), every finding verified by running it and resolved or recorded; table below. **Counters used:** MOD-19, MOD-20.
+- **Not done:** CI green on the head; the base an ancestor of the head at merge time (if it moved: merge it, run the fast checks and the generators, push, wait for CI); mark the PR ready and merge it (a merge commit, as the base's history has them); one line to the orchestrator; unsubscribe; the LANES row to done.
+- **If CI is red:** reproduce the failing check locally first. A stale mutation equivalent in another shard is fixed by killing or re-recording with a second reviewer, never by removing a test.
+- **Coordination:** the SSN and phone leaks item (W5, WIP `co-001/wip-redact-ssn-phone-leaks`) edits `redact.ts` heavily and adds `confusables.ts` beside it. Whichever merges second: git follows the rename for `redact.ts`; a new file `redact.ts` imports is moved by hand into `packages/redact/src/`, and a test's import of `./redact` becomes `@tp/redact`. The fold's own edits to `redact.ts` are one region (`lettersOf` to `nameOrNumberMatches`, after `nameGlued`).
+- **Exact next step:** wait for #141's CI events; act as above.
 
 ## Findings
 | # | From | Finding | Verified | Resolution |
@@ -50,6 +50,7 @@ Reserved: test-matrix MOD-19 and MOD-20; synth entries the same as MOD-13 if nee
 ## Log (UTC)
 - 2026-11-05 07:40: branch cut from 23b25ad0 by Lane A's S1 (session_019i9ifCJSbPYXpafL86Rm6J); workflow wf_54232b96-397 ran its three scouts.
 - 2026-11-05 07:55: stood down on the orchestrator's order (the account's weekly usage); the designer had written nothing.
+- 2026-11-11 07:50: the full local suite passed once on c2c5a07c; draft PR #141 opened; CI running.
 - 2026-11-11 07:00: build review B in (no code defect; two documents fixed, ec4f4e28); base 2e26a416 merged (c2c5a07c); the full local suite and the mutation shard running.
 - 2026-11-11 06:35: design review 2 and build review A in; the fix round 5ac5d2cd pushed; build review B running.
 - 2026-11-11 05:40: design review 1 in (one adapter gap, fixed; two residuals recorded); tests built and pushed as WIP 13eea841; mutation shards running.
