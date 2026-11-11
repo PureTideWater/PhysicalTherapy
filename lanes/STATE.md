@@ -1,11 +1,11 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-11 09:10 UTC by Lane A's orchestrator. **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-11 09:15 UTC by Lane A's orchestrator, at its handover. **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
 ## Accounts and pace
-- **Orchestrator:** session_019i9ifDAzQNA3kLHozjBoeS, from 2026-11-10 21:23 UTC. The co-founder talks to it. Work sessions (started 21:24 UTC):
+- **Orchestrator:** session_019i9ifBCrxfV35CFDVHLTad, from 2026-11-11 09:15 UTC, at the default effort. The co-founder talks to it. It took over from session_019i9ifDAzQNA3kLHozjBoeS (2026-11-10 21:23 UTC to 2026-11-11 09:15 UTC), whose context had passed 480k tokens and which holds nothing. Work sessions:
   - **W1** session_019i9if9bThP3wWKpHBiU3m8: merged MOD-16 (#138) and #129, wrote item 3's RESUME-BLOCK, then stood down on 2026-11-11 03:05 UTC. It holds nothing.
   - **W2** session_019i9ifDkbzUJwNMrtB7Yriz: merged #126, then stood down on 2026-11-11 05:37 UTC. It holds nothing.
   - **W3** session_019i9ifE6JAC24yB5654GXcV: merged #134 and #136, then stood down on 2026-11-11 (its context had passed 500k tokens). It holds nothing.
@@ -38,7 +38,7 @@ own status file and `CLAUDE.md`, not the long history files.
 
 ## Base and open PRs (live 2026-11-11 05:40 UTC)
 - `claude/build-platform` is at **2e26a416** (#126, merged 2026-11-11 05:37 UTC with the founder's approval line; before it #137 as 4fe8bcca, #129 as ca504674, #138 as ef3e8d20, #136 as 06cde5eb and #134 as 994ee303). Every open PR merges this base before its last push.
-- **#140**, password-changed-notice (schema; draft): head 7da699b1. CI is red only on the blank approval line once its one test fix is green. W6 posts the suggested approval line when CI and its delta review are in; **W9** merges after the founder's commit.
+- **#140**, password-changed-notice (schema; draft): head abdc2192 (W6's last review's fixes, pushed 09:06 UTC). **No approval line is posted yet:** W6 posts it when CI is green on that head, or W9 does from W6's record. **W9** merges after the founder's commit.
 - **#141**, the packets verifier identifier fold (draft): head 995380b7 (a mutation-timing fix on c2c5a07c; the base 2e26a416 merged). CI is running; W7 merges it on green.
 - Dependabot #123, #124, #135 and #139 (#139 replaced #122 on 2026-11-11), untriaged: one replacement PR, never merged as they stand.
 
@@ -50,8 +50,8 @@ own status file and `CLAUDE.md`, not the long history files.
 | 3 | **SSN and phone leaks** (`co-001/redact-ssn-phone-leaks`; MOD-21, MOD-22) | `lane-b-redact-ssn-phone-leaks-status.md` | B (acting), **W5** | **Must land before any real PHI is processed.** Design reviewed and fixed; build next. It also takes the middle dot and the hyphenation point as name joiners. Two reviews. **After it: `LANES.md` Queues item 26 (MOD-23), two name forms still sent in clear, also before any real PHI; not assigned.** |
 | 4 | #134, SUITE-CAP-3: **merged as 994ee303** (2026-11-10) | `lane-b-suite-cap-3-status.md` | B (acting) | Done. No `ledger_line_net` change. |
 | 5 | #129, email plate: **merged as ca504674** (2026-11-11) | `lane-a-email-lockup-plate-status.md` | B (acting) | Done. |
-| 6 | **password-changed-notice** (schema PR 1; ADR 0091, SGN-16): **draft #140** | Head 7da699b1; `approval-summaries/lane-a-auth-emails-status.md` (the merge step's RESUME-BLOCK) | A, W6 then **W9** | W6 posts the suggested line, then stands down. Three reset cases it cannot close are recorded as open residuals, closed by Queues item 28. **Founder's line next,** with that trade-off in the description; W9 merges after it. |
-| 7 | **Queues item 28 first** (a step begun before a password reset is refused, and a reset whose answer is lost is not reported as refused; ADR 0093, SGN-17, SGN-18; required before launch; **W9** builds it from W8's reviewed design, stacked on item 6), then the schema batching plan's PRs 2 to 10 | `LANES.md` Queues item 28; `designs/lane-a-step-before-reset.md`; `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` | A | One schema PR open at a time; the next one is always in build while the current one waits for the founder. |
+| 6 | **password-changed-notice** (schema PR 1; ADR 0091, SGN-16): **draft #140** | Head abdc2192; `approval-summaries/lane-a-auth-emails-status.md` (the merge step's RESUME-BLOCK, once W6 writes it) | A, W6 then **W9** | W6 posts the suggested line, then stands down. Three reset cases it cannot close are recorded as open residuals, closed by Queues item 28. **Founder's line next,** with that trade-off in the description; W9 merges after it. |
+| 7 | **Queues item 28 first** (a step begun before a password reset is refused, and a reset whose answer is lost is not reported as refused; ADR 0093, SGN-17, SGN-18; required before launch): **built and reviewed by W9** (WIP `co-001/wip-step-before-reset` 47c99ac7), it opens when #140 merges. Then the schema batching plan's PRs 2 to 10 | `approval-summaries/lane-a-step-before-reset-status.md`; `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` | A, **W9** | One schema PR open at a time; the next one is always in build while the current one waits for the founder. |
 | 8 | Packets verifier identifier fold (MOD-19, MOD-20): **draft #141** | Head 995380b7; `lane-b-packets-verifier-identifier-fold-status.md` | B (acting), **W7** | Four reviews in, the full local suite passed; W7 merges on green CI. It moves `redact.ts` whole to `packages/redact` (`@tp/redact`); item 3 merges second and takes the base merge (git follows the rename; new files beside it move by hand). |
 | 9 | The queue: `LANES.md` Queues item 25, seven follow-ups from #137's reviews (first the web's transaction scope, which does not read COMMIT's answer); then Queues item 29 (an operator can remove a member's keys); then Queues item 31 (four follow-ups from item 28's design reviews); then Queues item 27, four items #126's reviews left owed; then the Stryker static-mutant timeouts; the Dependabot replacement PR; P2 Trivy version; dark-mode-ship; the UX queue | `LANES.md` Queues; Lane B's handoff §2 | B | **Not assigned:** three builds run (W5, W6, W7). The next free build takes Queues item 25 (a). #136 and #137 (ADR 0092, CAS-56, CAS-57) are merged. |
 

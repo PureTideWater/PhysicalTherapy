@@ -1,6 +1,6 @@
 # Lane A's handoff to Lane B, 2026-11-13
 
-Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 09:10 UTC.
+Kept current from 2026-11-11; final at 18:30 UTC on 2026-11-13. Last update: 2026-11-11 09:15 UTC.
 
 Read `lanes/STATE.md` first: it is the current state. This file adds only what STATE.md does not hold.
 
@@ -35,7 +35,7 @@ Lane A's orchestrator allocates while its account runs. The next free numbers ar
 
 ## Check-ins to settle
 - Lane B's own P2 check-in trig_01R6nXDdCD43e1PypnQ2Dtwi fires at 2026-11-13 19:15 UTC.
-- Lane A's orchestrator's reminder trig_012EkWoxXjurCFJ5HhZQyvjn fires into its own session at 2026-11-13 18:00 UTC. It
+- Lane A's orchestrator (session_019i9ifBCrxfV35CFDVHLTad from 2026-11-11 09:15 UTC) sets its own reminder for the handback; it
   needs nothing from Lane B.
 
 ## What cost Lane A allowance, so it does not cost Lane B's
