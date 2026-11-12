@@ -289,8 +289,8 @@ export const BARRIER = '\u0001';
  * of the reading; the only answer it changes is from sent to refused. Callers with no refusal to give (redactLetter,
  * redactionSpans, the narrative's and the verifier's readings) run no counter and read as before.
  *
- * The unit is one comparison of two matches (about 2.5 ns on the reference machine); the budget is set so that the
- * dearest letter still read takes about 1.5 s there (the ADR records the measurement), half the reader's 3 s.
+ * The unit is one comparison of two matches (2 to 5 ns on the reference machine, by the letter); the dearest letter
+ * found that is still read takes about 2.3 s there (the ADR records the measurements), inside the reader's 3 s.
  */
 export const CHECK_WORK_BUDGET = 420_000_000;
 
@@ -302,6 +302,7 @@ export const CHECK_WORK_BUDGET = 420_000_000;
  */
 const WORK = {
   comparison: 1,
+  formCharacter: 2,
   mayBe: 30,
   viewCharacter: 30,
   fold: 150,
@@ -715,6 +716,9 @@ interface Subject {
   readonly patterns: boolean;
 }
 
+/** How many names, member IDs and claim numbers the call reads for: each is read for over the whole letter, so each costs work per character (WORK.formCharacter). */
+const identifiersOf = (subject: Subject): number => subject.names.length + subject.memberIds.length + subject.claims.reduce((sum, numbers) => sum + numbers.length, 0);
+
 function formsOf(subject: Subject): Form[] {
   const forms = new Map<string, Form>();
   const add = (form: Form | null) => {
@@ -1077,6 +1081,7 @@ function birthFormsIn(normal: string, subject: Subject): (range: Range) => boole
 const MONTH_IN = new RegExp(MONTH_WORD, 'iu');
 
 function ownMatchesIn(normal: string, subject: Subject): Found[] {
+  work(WORK.formCharacter * identifiersOf(subject) * normal.length);
   const { births, inWholeDate, inDateAsRead } = datesOf(normal, subject);
   const inBirthForm = birthFormsIn(normal, subject);
   const found: Found[] = births.map((range) => ({ ...range, kind: 'birth' as const, claim: 0 }));
@@ -1379,6 +1384,7 @@ function confusedAs(token: WrittenToken, at: number, units: readonly string[]): 
  * "ZZ765432l"): each such word, as a Found range of the form's kind.
  */
 function confusedMatchesIn(tokens: readonly WrittenToken[], subject: Subject, normal: string): Found[] {
+  work(WORK.formCharacter * identifiersOf(subject) * normal.length);
   const forms = confusableForms(subject);
   const found: Found[] = [];
   if (forms.length === 0) return found;
@@ -3387,6 +3393,10 @@ export function redactLetterForScreen(text: string, patient: PatientIdentifiers,
 function redactedForScreen(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
   work(WORK.character * text.length);
   const normal = unbracketed(text);
+  // The reading is of the letter as NFKC writes it, which can be many times as long as the letter (U+FDFA is eighteen characters).
+  if (normal.length > text.length) {
+    work(WORK.character * (normal.length - text.length));
+  }
   const subject = letterSubject(patient, claims);
   const found = appliedMatches(normal, subject, claims.length);
   const spans = merge(found);
@@ -3467,7 +3477,7 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
   }
   // The work the redaction of this letter spent comes with it (checkWorkOf): a count that is no count, or one past
   // the budget, refuses the letter before anything is read.
-  if (!(spent >= 0 && spent <= CHECK_WORK_BUDGET)) {
+  if (typeof spent !== 'number' || !(spent >= 0 && spent <= CHECK_WORK_BUDGET)) {
     return true;
   }
   const before = checkWorkSpent;

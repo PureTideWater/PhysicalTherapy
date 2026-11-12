@@ -447,6 +447,43 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(checkWorkOf({ text: clean, claims: new Map(), replaced: 0 })).toBe(0);
   });
 
+  it('counts every name, member ID and claim number the call reads for: 1,000 claim numbers are no way past the 3 s', { timeout: HANG_GUARD_MS }, () => {
+    // The review of the build (scope time, T-1): each of the call's identifiers is read for over the whole letter, and
+    // with 400 to 1,000 claim numbers a letter still read took 3.5 to 5.9 s. Each now costs work per character.
+    const who = patient(['JANE Q VANTREE']);
+    const many = [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'synthetic-patient-7', claimNumbers: Array.from({ length: 1_000 }, (_unused, index) => `SYN${String(556_000 + index)}`) }];
+    const prose = fill('The claim was reviewed and paid in full by the plan. ');
+    const check = (text: string, claims: typeof many) => {
+      const redacted = redactLetterForScreen(text, who, claims);
+      return { text: redacted.text, spent: checkWorkOf(redacted), held: holdsIdentifier(redacted.text, who, claims, checkWorkOf(redacted)) };
+    };
+    // One claim number: the letter is read and sent as written.
+    const one = timed(BUDGET_MS, () => check(prose, claim('SYN555001')));
+    expect(one.value).toMatchObject({ text: prose, held: false });
+    expect(one.ms, `read ${String(prose.length)} characters in ${one.said}`).toBeLessThan(one.allowedMs);
+    // A thousand: the same letter is past the budget and refused; a fifth of it is read, and costs more than it did.
+    const refused = timed(BUDGET_MS, () => check(prose, many));
+    expect(refused.value.held).toBe(true);
+    expect(refused.ms, `refused ${String(prose.length)} characters in ${refused.said}`).toBeLessThan(refused.allowedMs);
+    const short = prose.slice(0, N / 5);
+    const read = timed(BUDGET_MS, () => check(short, many));
+    expect(read.value).toMatchObject({ text: short, held: false });
+    expect(read.value.spent).toBeGreaterThan(5 * check(short, claim('SYN555001')).spent);
+    expect(read.ms, `read ${String(short.length)} characters in ${read.said}`).toBeLessThan(read.allowedMs);
+  });
+
+  it('charges the letter as NFKC writes it, and takes no count that is not a number', () => {
+    const who = patient(['JANE Q VANTREE']);
+    // U+FDFA is one character that NFKC writes as eighteen: the reading is of the eighteen (the review, T-2).
+    const ligatures = redactLetterForScreen('ﷺ'.repeat(1_000), who, claim('SYN555001'));
+    const letters = redactLetterForScreen('a'.repeat(1_000), who, claim('SYN555001'));
+    expect(checkWorkOf(ligatures)).toBeGreaterThan(10 * checkWorkOf(letters));
+    // null would switch the counter off, a string or a bigint would count as no number counts (the reviews, P-1 and T-3).
+    for (const spent of [null, '0', '5', 0n, {}, [], true]) {
+      expect(holdsIdentifier('The claim was denied for timely filing.', who, claim('SYN555001'), spent as unknown as number), String(spent)).toBe(true);
+    }
+  });
+
   it('runs no counter where there is no refusal to give: redactLetter reads a letter past the budget as before', { timeout: HANG_GUARD_MS }, () => {
     const text = fill('5\n');
     expect(redactLetter(text, patient(['JANE Q VANTREE']), claim('SYN555001'))).toMatchObject({ text, replaced: 0 });
