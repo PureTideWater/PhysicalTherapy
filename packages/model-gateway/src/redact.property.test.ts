@@ -1434,8 +1434,19 @@ const ssnPhoneCase: fc.Arbitrary<PatternCase> = fc
 
 const PATTERN_EXACT = /^\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|SSN|PHONE|CLAIM_[1-9]\d*)\]$/;
 
-/** MOD-15's property: no letter or digit of a Social Security or phone number the generator wrote is sent. */
-const sendsNoSsnOrPhone = fc.property(ssnPhoneCase, ({ patient, claims, segments, refused }) => {
+/**
+ * MOD-15's property: no letter or digit of a Social Security or phone number the generator wrote is sent.
+ *
+ * redactLetter writes exactly redactionSpans' spans, always. redactLetterForScreen writes that same text in every letter
+ * the check does not refuse. In a letter the check refuses it applies only the matches that stood before a label was read
+ * through the call's own identifier (appliedMatches in packages/redact: Found.fresh), so there, and only there, a number
+ * both readings take whole may carry the lower-ranked label: [PHONE] where every match together gives [SSN]. The span is
+ * the same and a placeholder is written either way; nothing else may differ (Queues item 38, fast-check seed 1596478644).
+ * This asks for more than the design gives in one way: a number only such a match takes stays as written in the screen's
+ * text of a refused letter. The generator writes none (every number it writes is taken without the label read through),
+ * so a letter that holds one fails here, and is read again before anything is allowed for it.
+ */
+function sendsNoSsnOrPhoneIn({ patient, claims, segments, refused }: PatternCase): void {
   let text = '';
   const secrets: { at: number; secret: PatternSegment['secret'] }[] = [];
   for (const segment of segments) {
@@ -1453,8 +1464,26 @@ const sendsNoSsnOrPhone = fc.property(ssnPhoneCase, ({ patient, claims, segments
     rebuilt += text.slice(kept, span.start) + span.placeholder;
     kept = span.end;
   }
-  expect(screened.text).toBe(rebuilt + text.slice(kept));
-  expect(redactLetter(text, patient, claims).text).toBe(screened.text);
+  const applied = rebuilt + text.slice(kept);
+  expect(redactLetter(text, patient, claims).text).toBe(applied);
+  const held = holdsIdentifier(screened.text, patient, claims);
+  if (held) {
+    // Refused: every span is replaced where it stands, each by its own placeholder, or [PHONE] for an [SSN].
+    let at = 0;
+    let from = 0;
+    for (const span of spans) {
+      const between = text.slice(from, span.start);
+      expect(screened.text.slice(at, at + between.length), `${JSON.stringify(text)} -> ${JSON.stringify(screened.text)}`).toBe(between);
+      at += between.length;
+      const lower = span.placeholder === '[SSN]' && screened.text.startsWith('[PHONE]', at) ? '[PHONE]' : span.placeholder;
+      expect(screened.text.slice(at, at + lower.length), `${JSON.stringify(text)} -> ${JSON.stringify(screened.text)}`).toBe(lower);
+      at += lower.length;
+      from = span.end;
+    }
+    expect(screened.text.slice(at), `${JSON.stringify(text)} -> ${JSON.stringify(screened.text)}`).toBe(text.slice(from));
+  } else {
+    expect(screened.text).toBe(applied);
+  }
   for (const { at, secret } of secrets) {
     const span = spans.find((each) => each.start <= at && at < each.end);
     const expected = secret === 'member' ? ['[MEMBER_ID]'] : secret === 'claim' ? ['[CLAIM_2]'] : ['[SSN]', '[PHONE]'];
@@ -1463,16 +1492,60 @@ const sendsNoSsnOrPhone = fc.property(ssnPhoneCase, ({ patient, claims, segments
   const brackets = screened.text.match(/\[[^[\]]*\]/g) ?? [];
   expect(brackets.every((bracket) => PATTERN_EXACT.test(bracket))).toBe(true);
   expect(brackets).toHaveLength(screened.replaced);
-  expect(holdsIdentifier(screened.text, patient, claims), `${JSON.stringify(text)} -> ${JSON.stringify(screened.text)}`).toBe(refused);
+  expect(held, `${JSON.stringify(text)} -> ${JSON.stringify(screened.text)}`).toBe(refused);
   // The call's own identifiers are never offered to the screen.
   const own = [...patient.memberIds, ...claims.flatMap((claim) => claim.claimNumbers)].map(compactIdentifier);
   expect(screened.candidates.filter((candidate) => own.includes(candidate))).toEqual([]);
-});
+}
+
+const sendsNoSsnOrPhone = fc.property(ssnPhoneCase, sendsNoSsnOrPhoneIn);
 
 describe('MOD-15: every Social Security and phone number is redacted, and a letter in which one survives is refused', () => {
   it('sends no letter or digit of a Social Security or phone number the generator wrote, keeps the call’s own placeholders, writes only exact placeholders, and refuses exactly the letters with a survivor (property)', () => {
     fc.assert(sendsNoSsnOrPhone, { numRuns: 400 });
   }, 60_000);
+
+  // Queues item 38: fast-check seed 1596478644's counterexample, shrunk, as the generator wrote it. A survivor (the letter
+  // is refused), the call's own member ID after "SSN", then a phone number with an extension on the next line, an
+  // invisible character inside each group. The shaped pattern takes the number as a phone; the bare ten is also read as
+  // an SSN under the label, through the member ID before it, a match applied only in a letter the check does not refuse.
+  it('writes a placeholder over a phone number an SSN label names only through the call’s own member ID, [SSN] with every match applied and [PHONE] in the refused letter the screen reads (seed 1596478644)', () => {
+    const Z = '\u200B';
+    const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042', '900000000'] };
+    const claims: LetterClaim[] = [
+      { claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['SYNCLAIM0001'] },
+      { claimId: 'synthetic-claim-2', patientPseudonym: 'synthetic-patient-15', claimNumbers: ['2005550100'] },
+    ];
+    const sent: PatternSegment[] = [
+      { text: 'SSN ', secret: 'none' },
+      { text: `9${Z}00-0${Z}0-0${Z}000`, secret: 'member' },
+      { text: '. Noted. ', secret: 'none' },
+      { text: '\n', secret: 'none' },
+      { text: `2${Z}09${Z}5${Z}55${Z}0${Z}184 x123`, secret: 'pattern' },
+      { text: '. Noted. ', secret: 'none' },
+      { text: 'SSN ', secret: 'none' },
+      { text: `9${Z}00-0${Z}0-0${Z}001`, secret: 'pattern' },
+      { text: '. Noted. ', secret: 'none' },
+    ];
+    const survivor: PatternSegment = { text: 'Ref 900-12-34 56 on file. ', secret: 'none' };
+    // The property's own assertions, on the seed's case and on the same letter without its survivor.
+    sendsNoSsnOrPhoneIn({ patient, claims, segments: [survivor, ...sent], refused: true });
+    sendsNoSsnOrPhoneIn({ patient, claims, segments: sent, refused: false });
+    // And what each entry writes, as it is.
+    const letter = sent.map((segment) => segment.text).join('');
+    const refusedLetter = survivor.text + letter;
+    expect(redactLetter(refusedLetter, patient, claims).text).toBe('Ref 900-12-34 56 on file. SSN [MEMBER_ID]. Noted. \n[SSN]. Noted. SSN [SSN]. Noted. ');
+    const screened = redactLetterForScreen(refusedLetter, patient, claims);
+    expect(screened.text).toBe('Ref 900-12-34 56 on file. SSN [MEMBER_ID]. Noted. \n[PHONE]. Noted. SSN [SSN]. Noted. ');
+    expect(holdsIdentifier(screened.text, patient, claims)).toBe(true);
+    // Without the survivor the letter is sent, and every entry writes the same text. [SSN] over this phone number is how
+    // far a label is read through the call's own number today: a change that narrows that reading changes these lines
+    // with it, to [PHONE], never to the number as written.
+    const sentText = 'SSN [MEMBER_ID]. Noted. \n[SSN]. Noted. SSN [SSN]. Noted. ';
+    expect(redactLetter(letter, patient, claims).text).toBe(sentText);
+    expect(redactLetterForScreen(letter, patient, claims).text).toBe(sentText);
+    expect(holdsIdentifier(sentText, patient, claims)).toBe(false);
+  });
 
   it('redacts each writer’s forms on their own: every gap kind, other scripts, masks, labels of either kind, and a digit and an invisible character before the number', () => {
     const patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-15', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
