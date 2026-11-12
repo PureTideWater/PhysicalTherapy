@@ -4,7 +4,7 @@ Lane A, W15 (https://claude.ai/code/session_019i9if9aX9NMhnMVmJCk4BM), from 2026
 from W11. Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md`.
 
 ## RESUME-BLOCK (W16, https://claude.ai/code/session_019i9ifEMVhfmHMsi6UzykXB, 2026-11-12 05:45 UTC; schema PR 4 only)
-- **Draft #156 is open** (https://github.com/PureTideWater/PhysicalTherapy/pull/156), head **155bcbe6** on
+- **Draft #156 is open** (https://github.com/PureTideWater/PhysicalTherapy/pull/156), head **ac8500fc** (first 155bcbe6) on
   `co-001/payer-response-db-rules`, the base 93e137f9 (#143, #151) merged, the domain model regenerated: before
   `47fae5d1…` (approved with #143), after `922ff5e3f7e81884d1aaaa1937a46fe1b2ff645c889dd60dc62e8e1e086b061b`, the
   approval line blank. W16 is subscribed. Its description is `lane-a-wip/schema-pr4/pr-description.md`.
@@ -17,6 +17,10 @@ from W11. Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md`.
   Tyler Williams, 2026-11-12, the hash above) and its link sent to the orchestrator with the founder's reading. CI at
   that time: green but for the blank line (the domain model job and so all green); two mutation shards and capacity
   still running. **What is left: wait for the founder's commit, then the merge step at the end of the next bullet.**
+- **2026-11-12 07:55 UTC: brought up to date, head ac8500fc** (the base adaf7897, #157, merged; no generator changed
+  a file; the document's hash is unchanged, so the posted suggestion stands and GitHub shows it on the new head, not
+  outdated). Fast checks passed. CI is running on ac8500fc; one line to the orchestrator when it is green but for
+  the line.
 - **Next:** (7) when CI is green but for the blank approval line (`domain model` / approval jobs): post the suggested
   line by the skill's `gh api` route as ONE pull-request comment on the last line of `docs/product/domain-model.md`
   at the head (the founder's name as on the base's line, the date, the hash above); send its link to the orchestrator
