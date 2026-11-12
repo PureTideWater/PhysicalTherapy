@@ -1,6 +1,77 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
-## RESUME-BLOCK (W42, session_019i9ifCwck5Ufy8GGyahgjE; 2026-11-12; build step 1 is DONE; next is the build cut's step 2, the writer)
+## RESUME-BLOCK (W55, session_019i9ifDhHKEbRRr5mquRDNa; 2026-11-12 about 22:25 UTC; build step 2, the writer, is DONE; step 3, the readers, is NOT started and is handed over at the context line)
+- **WIP ref:** `co-001/wip-schema-pr5` at `cf1e4a80` (on `9887dd77`, step 1). Step 2 changes seven files, no migration,
+  no granted text, no arithmetic:
+  - `apps/worker/src/triage/actionable-now.ts`: the `FROM ... WHERE` of `ACTIONABLE_NOW` is one private fragment
+    (`ACTIONABLE_NOW_ROWS`) that `ACTIONABLE_NOW` and the new `ACTIONABLE_NOW_LINE_IDS(alias)` both use;
+    `ACTIONABLE_NOW('c')` is the text it was, byte for byte (T16's pin). The web's triage queries, the digest and
+    `triage/public.ts` import this file: the PR's description names the change and the pin.
+  - `apps/worker/src/reconcile/statements.ts`: `OPEN_CASES_ACTIONABLE` gains `line_ids` in the same SELECT (the plain
+    path of note 4.1); the stored `links` gain `actionable_open_lines`, the lines of exactly the cases in
+    `statement.links.actionableOpen`, in the cases' order, each case's by ID. `roiStatement()` and `packages/ledger/src`
+    untouched. The mutation's Zod schema, role check (handler and Postgres), scoped transaction and audit event are the
+    route's and the job's, unchanged; no new log line.
+  - `packages/db/src/schema/ledger.ts`: `RoiLinks.actionable_open_lines?` (optional).
+  - tests: `apps/worker/src/triage/actionable-now.test.ts` (T16, T15 a), `actionable-now.db.test.ts` (HOM-01 extended:
+    T4), `apps/worker/src/reconcile/statement-lines.db.test.ts` (T5, T6, T7, T8, T11, T15 b and c) and
+    `reconcile/test-support/four-key-writer.ts` (the writer before the list, word for word but the permission check
+    and the audit event: T11's reference, and T10's "previous image's writer" for step 3).
+- **Failing first, each on an assertion (the files loaded):** T4 on HOM-01's `toEqual` (no `lines`); T5 and T11 on the
+  stored keys (four, five expected); T8 on the stored list; T6's last clause (the writer lists no stale line). T6's and
+  T7's refusals, T15 and T16 are guards: the migration of step 1 already refuses, so they passed before the writer.
+- **Green (PostgreSQL 18.4, a scratch database, SYNTHETIC only):** the step's tests 9 of 9 (7 database, 2 unit);
+  `pnpm typecheck`, `pnpm lint:logs` clean; eslint clean on the seven files (the whole `pnpm lint` ran once before a
+  two-error fix in one test file and was not run whole again: the last session's gates run it); `pnpm test:golden`
+  381 of 381; `pnpm test:db` whole: 10,359 passed, 1 skipped, 4 failed: the three known drift checks
+  (`domain-model.db.test.ts` "matches the schema", `function-files.db.test.ts` DBF-01 and DBF-04's `--check`) and
+  `pass.large.db.test.ts` CAS-51's time budget, which ran beside lint, typecheck and the unit suite and passes alone
+  (3 of 3). `pnpm test` whole: 14,349 passed, 6 failed; five pass alone (time budgets and one git-state test under the
+  same load); ONE IS REAL AND NOT STEP 2'S: `packages/db/src/migrate.test.ts`, "the deploy runbook ... quotes
+  20261115090000_roi_statement_actionable...'s lock-loop failure as the deploy log shows it": the runbook
+  `docs/runbooks/deploy-and-rollback.md` does not yet quote the step-1 migration's lock message. It fails on
+  `9887dd77` too (step 1 ran `test:db` only). It is a record for step 5.
+- **NOT DONE in step 2, owed:**
+  - **The cost of note 4.1 is not measured.** The plain path runs the line predicate twice a line. Neither timing at
+    A's month (30,795 lines) was taken here: no world of that size was built in this session. Step 4 (T14) measures
+    the writer's query before and after; past 1 s of growth the build takes the one-pass form the note gives (a
+    derived table behind `OFFSET 0`, as `ACTIONABLE_NOW_OF`), and T5 then still compares with `ACTIONABLE_NOW('c')`.
+  - **T3b's last clause** (the application's error path shows no quoted value to a person or a log) has no test. By
+    reading: the writer's IDs are `priced_line.id` cast by Postgres, so it cannot send a malformed one; a 23514 reaches
+    a person as the rule's own words (`apps/web/src/lib/http/invoke.ts`, the `23514` branch), which name no value;
+    any other code is rethrown. Whether the rethrown path logs the message was not read: for the database review.
+  - T11 covers the CAS worlds, HOM-01's CAS-08 and LED-06 (through payer approved, recovered and a recoupment's
+    reopen). "A month of worked cases" at size and the other LED worlds are not in it.
+  - T5's worlds are the nine CAS runs and two of CAS-03 with the second plan paid in full or overpaid (zero and
+    negative variance beside a case), each as triaged, with the lines triage left out joined to a case as the owner,
+    after seeded write-offs, and (every other world) after an accepted re-run. Stages moving on are covered on LED-06
+    only: the database refuses a stage past actionable without ledger entries, so no owner insert fakes one.
+- **Changed screens and prints (for the UX and brand review):** none in step 2. No reader, page, CSV or print was
+  touched; the golden figures are equal. Until step 3 the readers still ship `links` whole (five keys on a new
+  statement): the detail page, the CSV and the print read only the four keys by name.
+- **Points for the two reviews (W42's below stand; W55 adds):**
+  - money: the list is each case's `line_ids` concatenated by `statement.links.actionableOpen`; a case missing from
+    the map contributes none (`?? []`) and the database would then refuse a nonzero figure: confirm that is the wanted
+    failure. The acceptance on record (T6): a statement listing a stale or written-off line of a listed case with a
+    matching figure is stored.
+  - database: `line_ids` is `text[]` read by node-postgres as strings; the predicate runs twice a line (above); the
+    daily repeat runs the check before the conflict is found and stores nothing (T8).
+  - a caution for whoever formats: the repository has no prettier config for `apps/worker`; `prettier --write` with
+    defaults restyles whole files (it did here, and was undone before the commit).
+- **For the last session (the orchestrator's notes, carried):**
+  - the migration's timestamp 20261115090000 is also the key registry's first migration's on its own branch:
+    whichever PR opens second takes the base with the other's migration and is renamed to sort after it, by the
+    co-founder's typed `/new-migration` in that session;
+  - the preflight takes a short SHARE lock for its closing count: the PR's description says so under "What the
+    founder should know before approving" (it corrects "it takes only reading locks"); cold storage is a recorded
+    residual; the refusal prints counts only.
+- **Next, one session:** step 3, the readers (note 4.2): `apps/web/src/lib/reconciliation/queries.ts`
+  (`STATEMENT_SELECT`) and `apps/worker/src/reconcile/print.ts` (`STATEMENT_COLUMNS`, line 80: `s.links`) replace
+  `s.links` by the four-key `jsonb_build_object`; T9, T10 (with `four-key-writer.ts`), T12, T13. HOM-01 reads the
+  stored list by its own query, so the readers' change does not touch it. Then steps 4 to 6.
+- **Holds:** the WIP ref. The scratch database `w55` (port 5433) is on this machine only.
+
+## Superseded as the top block by W55's above: RESUME-BLOCK (W42, session_019i9ifCwck5Ufy8GGyahgjE; 2026-11-12; build step 1 is DONE; next is the build cut's step 2, the writer)
 - **Built (step 1):** a person typed `/new-migration roi_statement_actionable_lines` in W42's session; the file is
   `packages/db/migrations/20261115090000_roi_statement_actionable_lines.sql`, created with the marker set and removed
   in a trap, byte-identical to the rehearsed draft (`lane-a-wip/schema-pr5/w42/roi_statement_actionable_lines.draft.sql`);
