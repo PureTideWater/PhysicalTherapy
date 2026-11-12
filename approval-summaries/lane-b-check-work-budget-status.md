@@ -1,6 +1,35 @@
 # Lane B: the letter check's work budget (CT-2 on the merged base) — status
 
-## RESUME-BLOCK, current (W28, session_019i9ifA6Ar89txjDEHY4oQi, 2026-11-12 about 07:30 UTC; DRAFT #157 OPEN at 3f64c5dd, CI running, subscribed)
+## FINAL STATE: MERGED (W28, session_019i9ifA6Ar89txjDEHY4oQi, 2026-11-12 07:35 UTC). Nothing to resume.
+
+- **#157 merged as adaf7897** (a merge commit) from head 3f64c5dd; `claude/build-platform` = adaf7897 (`git ls-remote`).
+  CI on 3f64c5dd green on the first run, `all green`, `mutation`, `screening-capacity gate` and `approval-of-record`
+  (re-run after ready) included; no MOD-15 re-run was needed. #156's head 155bcbe6 held no founder commit and was not
+  merged at the merge (the orchestrator's rule of 06:10 UTC); the orchestrator was told at once.
+- **What Queues item 26's session needs** (`packages/redact/src/redact.ts`; ADR 0054, "Where item 26 hooks in"):
+  - The counter is `checkWorkSpent` (null where no letter check runs), counted by `work(units)`; the budget is
+    `CHECK_WORK_BUDGET` = 420,000,000 units; past it `work` throws `PastCheckWorkBudget`, caught only by the two entries
+    (`redactLetterForScreen`, `holdsIdentifier`), which refuse the letter.
+  - The weights (`WORK`): comparison 4, formCharacter 2, identifierCharacter 3,500, mayBe 30, viewCharacter 30, fold
+    150, digitAcross 250, character 350, letterJoin 500, labelWindow 550, search 650, dateReadings 850, scanLabel 1,800.
+  - How to charge its readings: run them inside the two entries (inside `redactedForScreen`, and inside
+    `holdsIdentifier`'s `try`), where the helpers they call count already; a loop of their own calls
+    `work(WORK.<site>)`; a search of a list of matches uses `someOf` and never `.some`; an entry point of their own
+    hands the redaction's count on as `prepare` does: `holdsIdentifier(text, patient, claims, checkWorkOf(redacted))`.
+    Add no `catch` in the reader that could swallow `PastCheckWorkBudget` (today there are exactly two, the entries).
+    Then that delta is reviewed once and the gate run again.
+- **For the queue (lesser findings of the weight's review, not fixed):** L-2: the comparison's weight is fitted to its
+  cost under coverage, so CT-2-shaped letters of about 24,000 to 39,500 characters (17,300 to 29,200 with the joiner)
+  are refused that were read in 0.3 to 0.9 s; as ruled. L-3: no test row lands a refusal at `someOf`'s two sites in
+  `matchesIn` after `leftToTheCheck` (about lines 1230 and 1232); a row for each would pin the fail-closed behaviour.
+  Battery scripts not run in W28's container: reviewer I2's three that import `review-i2/v/*.mts`; the audit copy
+  (`/home/user/fix3`) ran as the plain reader. Open residuals stay under Queues item 39 (ADR 0054).
+- W28 holds nothing: unsubscribed from #157, no check-in pending, no workflow. Branches `co-001/check-work-budget` and
+  `co-001/wip-check-work-budget` (both 3f64c5dd) are merged and can go on the cleanup list.
+
+## The block before the merge (W28; kept for the proof's detail)
+
+(W28, session_019i9ifA6Ar89txjDEHY4oQi, 2026-11-12 about 07:30 UTC; DRAFT #157 OPEN at 3f64c5dd, CI running, subscribed)
 
 - **Where it stands.** `co-001/check-work-budget` = WIP `co-001/wip-check-work-budget` = **3f64c5dd**, draft PR **#157**
   into claude/build-platform (the base 93e137f9 merged in as 23cfed54, no conflict). On 493be1b2: f10209a0
