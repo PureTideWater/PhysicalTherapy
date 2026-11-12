@@ -248,6 +248,14 @@ lock, so no two of these triggers take the same locks in opposite orders.
 **The invariant is proven when the migration applies.** Before it changes anything, the migration counts documents
 that both a response and a version name, in every practice, and stops if there is one: under rule 4 a version holding
 such a document could never be edited or amended again. `docs/runbooks/deploy-and-rollback.md` says what to do then.
+The count is asked of the responses and the versions, never by reading every document: the migration holds
+`source_document` against all access while it runs, and that is the table that grows with every upload (the database
+review's finding; the first form took seconds at a million documents).
+
+**A document stays under the zip it was inserted under, or under none.** Rule 5 gives an entry its zip's link at
+insert. The application role has never been able to change a document's zip; the owner role could, and a document
+moved under or out of a zip would be an entry whose link is not its zip's, or an unfiled entry of a filed zip that a
+version accepts. `source_document_rules()` now refuses the move for every role (the database review's note, taken).
 
 **A search path for `source_document_rules()`.** The function had no `search_path` of its own, so the
 `source_document` it reads a zip's row from was whatever the session's path found first, a temporary table of that
