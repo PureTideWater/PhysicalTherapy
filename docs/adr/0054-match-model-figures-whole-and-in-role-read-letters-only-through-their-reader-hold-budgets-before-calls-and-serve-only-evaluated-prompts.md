@@ -2313,7 +2313,8 @@ placeholder took a part of the number. The check read the rule only on the redac
 already taken a part of the number. The redaction now reads it first, on the NFKC letter in each writing of its line
 endings the check reads (`gluedBeforeRedaction`), and where a digits-only number of five digits or more stands whole
 and glued to a letter it returns the first reading's text with the mark the check refuses at its first line; nothing
-of the wider reading is applied to such a letter. One place is not counted: the whole written number under one span
+of the wider reading is applied to such a letter. Where neither reading replaces anything the letter goes to the
+check as it is written, with no mark: the check reads the rule on that same text and refuses it, as before. One place is not counted: the whole written number under one span
 of the first reading (`Acct12345`, `Fax X8852780545 ext`, a label or phone word against it; `Fax X900123456 ext`, the
 whole of it a pattern's), where nothing of the number is left to send and the base redacts and sends the letter. A
 placeholder for a part hides nothing, whichever reading writes it.
@@ -2330,7 +2331,7 @@ placeholder for a part hides nothing, whichever reading writes it.
 The generated set on this tree: 0 failures of 13,780 letters (238 before), no PHI class against the base, 5,213
 refused (4,975 before; the 238 and no other), every other form's counts as stage 6 recorded them. The gate, full and
 with no cache, on this tree against a97d73e4: 975,489 letters, 2 differ as before (A-4's), 462,984 refused by both, no
-real-shaped letter newly refused, the slowest letter 973 ms (the base 964 ms). The reading is charged on the letter's
+real-shaped letter newly refused, the slowest letter 957 ms (the base 944 ms). The reading is charged on the letter's
 counter as the check's is and costs nothing for a call with no such number; the two rows nearest the budget are at
 403,548,210 and 414,023,090 units, both sent, as before, the budget and every weight unchanged. Tests: the rows of
 MOD-25 under "read on the raw letter", each seen failing before the fix, and a property over a number held with or
