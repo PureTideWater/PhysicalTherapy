@@ -3,70 +3,39 @@
 Lane A, W15 (https://claude.ai/code/session_019i9if9aX9NMhnMVmJCk4BM), from 2026-11-11 18:12 UTC. It took the chain
 from W11. Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md`.
 
-## BLOCKED, W16, 2026-11-11 22:50 UTC: the migration's marker route was refused by this session's permission check
-- **Why a change is wanted.** W15's own database review turned up after W16's (`lane-a-wip/schema-pr4/review-database-w15-run.md`).
-  W16 checked it and takes two things that change the migration:
-  - **S1 (real):** the preflight reads every document against every version while ACCESS EXCLUSIVE on
-    `source_document` is held (13.4 s at 1,000,000 documents and 100 versions by that review's measurement; 0.25 s asked
-    of `payer_response`). Fix: count the documents the responses name that a version of the same practice names; never
-    read `source_document`. Same count (a response's document has been its practice's since migration 20261023090000).
-  - **N1 (real, owner role only):** nothing refuses a change of `parent_document_id`, so the owner role can make an
-    entry whose link is not its zip's, or an unfiled entry of a filed zip that a version accepts. Fix: one refusal in
-    `source_document_rules()`'s UPDATE block. Checked: tp_app has no UPDATE on the column, no code and no foreign-key
-    action changes it.
-  - Not taken: S2 (the crossing; already in ADR 0085's amendment, the web's), S3 (already fixed by 217e96ce's search
-    path, which also covers a temp table named `submission`: `pg_temp` is last), N2 (superuser only, unchanged in
-    kind), N3 (a cap before the locks: any role can take advisory locks itself; the web caps at 100), N4 (no defect),
-    N5 (the runbook's "scan" corrected, 0e38fd73), N6 (the runbook already says it).
-- **What is ready.** The kit is changed and built: `lane-a-wip/schema-pr4/template.sql`, `build.py`, and the built file
-  beside them (419 lines; its diff from the committed migration is the preflight's query and comment, and the
-  zip-move refusal and its comment). Two tests written and seen to FAIL on the unchanged migration, as
-  `lane-a-wip/schema-pr4/pending-tests-for-s1-n1.patch` (not on the branch, which stays green at **0e38fd73**).
-- **What was refused.** The one command of W15's block (the marker, the copy of the built file over
-  `packages/db/migrations/20261114090000_payer_response_document_rules.sql`, the marker removed in a trap) was denied
-  once by the permission check. W16 did not retry or route around it. No marker file was left.
-- **To resume once the co-founder allows it (or does the copy):** in `/home/user/pr4`: the copy; `git apply` the patch;
-  a fresh database, `pnpm db:migrate`, `pnpm -s db:domain-model --out --strict`, `--check --strict`; the three test
-  files (59 expected); one delta review (database: the preflight's equivalence and the zip-move refusal only); then
-  the block below from "Next". If the co-founder rules the change is not to be made, drop the patch and the built
-  file, and state S1 and N1 in the PR description as known and not taken.
-
-## RESUME-BLOCK (W16, https://claude.ai/code/session_019i9ifEMVhfmHMsi6UzykXB, 2026-11-11 19:30 UTC; schema PR 4 only; #143's merge step stays W15's, block below)
+## RESUME-BLOCK (W16, https://claude.ai/code/session_019i9ifEMVhfmHMsi6UzykXB, 2026-11-12 02:30 UTC; schema PR 4 only; #143's merge step stays W15's, block below)
 - **State: steps 1 and 2 are done; PR 4 waits only for #143 to merge.** WIP ref `co-001/wip-payer-response-db-rules`
-  = **0e38fd73** (on #143's head a3a32024). Worktree `/home/user/pr4`, branch `co-001/payer-response-db-rules`
-  (a successor makes it with W15's command in the block below, from the WIP ref).
-- **Reviews, both done, no migration or function change after 217e96ce, so no delta review:** tenant isolation
-  (`lane-a-wip/schema-pr4/review-tenant-isolation.md`), database (`lane-a-wip/schema-pr4/review-database.md`, run by
-  W16: no must-fix; F1 a handler-then-trigger deadlock, the web's to fix, P4; F2 the handlers' lock key on a
-  non-lowercase id, the web's, new P5; both in ADR 0085's amendment).
-- **Records done (654e5169, f8732bda):** the runbook's section before "## Rollback"; CAS-58 in test-matrix.md, matrix.ts,
-  registry.ts and fixtures (`pnpm synth --all`); CAS-45 and CAS-48 name the database tests; ADR 0085's amendment (the
-  search path taken, the duplicate residual not closed and why, the crossing); ADR 0093 accepted.
-- **Passed on f8732bda's tree (654e5169 for all but lint:copy):** typecheck, lint, lint:logs, lint:copy,
-  check:fixtures, synth's unit tests, the three database files (57) on PostgreSQL 18.
-- **Next, only when the orchestrator says #143 is in:** (5) in `/home/user/pr4`: fetch and merge
-  `origin/claude/build-platform`; a fresh database on 5433, `pnpm db:migrate`, `pnpm -s db:domain-model --out --strict`
-  (the approval line stays blank), `--check`; the fast checks; the one full local suite
-  (`DATABASE_URL=postgres://postgres:test@localhost:5433/postgres`; output to files); (6) push
-  `co-001/payer-response-db-rules`; the draft PR into claude/build-platform: the description is the whole output of
-  `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs list`, then
-  `lane-a-wip/schema-pr4/pr-description-body.md` with its three `@@` places filled (the checks table, the two hashes;
-  the review rows are in); (7) on CI green but for the blank line: the suggested approval line by the skill's `gh api`
-  route, its link to the orchestrator with the founder's reading (the body's "What the founder should know", point 1
-  first); subscribe; merge after the founder's "Commit suggestion" and green required checks.
-- Kit to change the migration, if ever needed: W15's paragraph below ("To change the migration").
-- A slip, 19:35 UTC: this block's first writing went through an unquoted shell here-document, which ran its backticked
-  text in `/home/user/ops`. What ran: two fetches, pnpm refusing for want of a manifest, and a bare push the pre-push
-  hook refused. Nothing merged, no branch was pushed, no database was touched; the block was rewritten.
-
-## W15's database review run, recorded and not acted on (W15, after W16's block was written)
-W15's reviewer finished its report on a539fa14 but was ended by the account's usage limit at its hand-back, so nothing
-of it reached W15 until the file was found on W15's machine. It is now `lane-a-wip/schema-pr4/review-database-w15-run.md`
-(257 lines; no blocking finding; three should-fix). W15 checked none of it and changed nothing for it: it is W16's to
-weigh against its own review. S1 (the preflight's read while ACCESS EXCLUSIVE on `source_document` is held, with the
-reviewer's timing) and S2 (a deadlock between two version writes ends as 40P01, where the design says "busy") are the
-two to read first; S3 (`source_document_rules()` and a temporary table) was written before 217e96ce gave the function
-its search path.
+  = **9090c4b3** (on #143's head a3a32024). Worktree `/home/user/pr4`, branch `co-001/payer-response-db-rules`
+  (a successor makes it with W15's command in the block below, from the WIP ref). Report to the orchestrator's new
+  seat, session_019i9ifCaMokBYHaARonYamS.
+- **The block of 2026-11-11 22:50 UTC is lifted:** the co-founder allowed the marker-route command in W16's session
+  ("Let's allow it", 2026-11-12). The migration was replaced once from the kit's built file (c07965d6): the preflight
+  asks the responses and the versions (W15's review, S1); `source_document_rules()` refuses a change of
+  `parent_document_id` (its N1). Both with tests that failed first.
+- **Reviews, all done:** tenant isolation (`lane-a-wip/schema-pr4/review-tenant-isolation.md`); database, twice
+  (`review-database.md`, W16's run; `review-database-w15-run.md`, W15's, weighed by W16); the fixes' delta
+  (`review-database-delta.md`: its one should-fix, the preflight's cost at thousands of practices, NOT taken and
+  recorded with why; its test notes taken, 9090c4b3). **No further migration change is owed and no review is owed.**
+- **Records done:** the runbook's section; CAS-58 (matrix, registry, fixtures), CAS-45 and CAS-48 name the database
+  tests; ADR 0085's amendment (the search path, the duplicate residual not closed and why, the crossing, the two
+  fixes); ADR 0093 accepted.
+- **Passed on 9090c4b3:** the three database files (59) on PostgreSQL 18, eslint on the changed tests, lint:copy;
+  typecheck and `db:domain-model --check --strict` on c07965d6. The whole fast set runs again after the base merge.
+- **Next, only when #143 is in:** (5) in `/home/user/pr4`: fetch and merge `origin/claude/build-platform`; a fresh
+  database on 5433 (PostgreSQL stops when the container idles: run `tools/setup-container.sh` first), `pnpm
+  db:migrate`, `pnpm -s db:domain-model --out --strict` (the approval line stays blank), `--check`; the fast checks;
+  the one full local suite (`DATABASE_URL=postgres://postgres:test@localhost:5433/postgres`; output to files); (6)
+  push `co-001/payer-response-db-rules`; the draft PR into claude/build-platform: the description is the whole output
+  of `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs list`, then
+  `lane-a-wip/schema-pr4/pr-description-body.md` with its three `@@` places filled (the checks table, the two
+  hashes); (7) on CI green but for the blank line: the suggested approval line by the skill's `gh api` route, its link
+  to the orchestrator with the founder's reading (the body's "What the founder should know", point 1 first);
+  subscribe; merge after the founder's "Commit suggestion" and green required checks.
+- Kit to change the migration, if ever needed again: `lane-a-wip/schema-pr4/template.sql` and `build.py` (current with
+  the committed migration); W15's paragraph below ("To change the migration").
+- A slip, 2026-11-11 19:35 UTC: a first writing of this block went through an unquoted shell here-document, which ran
+  its backticked text in `/home/user/ops` (two fetches, pnpm refusing for want of a manifest, a bare push the pre-push
+  hook refused). Nothing merged, no branch was pushed, no database was touched.
 
 ## W15's block (superseded for B by W16's above; A still stands) (W15, 2026-11-11 21:45 UTC; W15's context is at its limit, a successor takes B from here)
 - **A. #143** (schema PR 2): W15 is subscribed. Head a3a32024, waiting for the founder's "Commit suggestion" on
