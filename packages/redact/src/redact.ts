@@ -723,10 +723,30 @@ function patternOf(characters: readonly string[], gaps: readonly string[]): RegE
 }
 
 /**
+ * A run of marks (Queues item 34, MOD-25; docs/adr/0054): any run of characters that are no letter, no digit and none of
+ * the checks' three marks (PRIVATE_MARKS: a placeholder, to every check). An APOSTROPHE_LETTER is an apostrophe here, as
+ * it is in every number. What the wider reading takes where a boundary is known to stand: no case per mark, since each
+ * mark left out was a form sent in clear ("ZZ12345.01", "ZZ12345:01" and "ZZ12345#01" for a number held "ZZ12345/01").
+ * A function, since two of the marks are named further down the file.
+ */
+const runOfMarks = (also = '') => `(?:[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}${OWN_MARK}]|[\\u02BC\\u02B9\\u02CA${also}])*`;
+
+/**
+ * The fewest letters and digits of a piece of a stored number that is read as a number of its kind (piecesOf), and the
+ * fewest digits of a digits-only number that the check refuses glued to a letter (Queues item 34, MOD-25; the
+ * orchestrator's ruling of 2026-11-12 on the design's first question). One floor for both. Under it a value is read as
+ * before: a piece of four characters, and a number of four digits glued to a letter, are sent, the recorded residual
+ * of docs/adr/0054 ("Account1234"). Five is the shortest patient control number the reader expects (SCREEN_FLOORS).
+ */
+const WIDER_NUMBER_FLOOR = 5;
+
+/**
  * A member ID's or claim number's form, compacted from its folded value, or null under two letters or digits. With
- * `asStored` (the letter reader's wider reading, widerMatchesIn), what the records themselves write between two of the
- * number's characters joins them there too, beside what joins a number anywhere: "ZZ12345/01", "ZZ12345.01", "ZZ12345,01"
- * and "ZZ12345+01" are each read as the records hold them, and a claim number held "1234/56" with no label before it.
+ * `asStored` (the letter reader's wider reading, widerMatchesIn), where the records themselves write a separator
+ * between two of the number's characters a run of marks joins them (runOfMarks; MOD-25, A-5), beside what joins a number
+ * anywhere: a number held "ZZ12345/01" is read written "ZZ12345/01", "ZZ12345.01", "ZZ12345,01", "ZZ12345 : 01" and
+ * "ZZ12345#01", and a claim number held "1234/56" with no label before it. Never where the records write nothing:
+ * "ZZ123+4501" is no writing of it. What the records write there joins as well, whatever it is (MOD-23).
  */
 function numberForm(value: string, kind: 'claim' | 'member', claim: number, asStored = false): Form | null {
   const folded = viewOf(value.normalize('NFKC'), 'join').text;
@@ -753,10 +773,24 @@ function numberForm(value: string, kind: 'claim' | 'member', claim: number, asSt
   const gaps = characters.slice(1).map((next, i) => {
     const gap = letter(characters[i]) || letter(next) ? GAP.numberNearLetter : GAP.number;
     const own = stored[i + 1] ?? '';
-    return own === '' ? gap : `${gap.slice(0, -2)}${own}]*`;
+    return own === '' ? gap : runOfMarks(own);
   });
   const digitsOnly = /^\p{N}+$/u.test(compact);
   return { compact, kind, claim, pattern: patternOf(characters, gaps), insidePart: [], digitsOnly, labeled: digitsOnly ? patternOf(characters, gaps.map(() => GAP.labeledNumber)) : null };
+}
+
+/**
+ * The pieces of a stored member ID or claim number that are numbers of its kind in the letter reader's wider reading
+ * (Queues item 34, MOD-25, rule (c)): each run of its letters and digits that a character of the stored value which is
+ * no letter and no digit sets off (a joiner too: "ZZ12345 01", "ZZ12345-01", "ZZ12345/01"), if it holds a digit and
+ * WIDER_NUMBER_FLOOR letters and digits or more. None for a value the records hold in one piece. A piece under the
+ * floor ("01", "1234") or of letters alone ("ZZ") is no number: the recorded residual.
+ */
+function piecesOf(value: string): string[] {
+  const pieces = viewOf(value.normalize('NFKC'), 'join')
+    .text.split(/(?:[^\p{L}\p{N}]|[\u02BC\u02B9\u02CA])+/u)
+    .filter((piece) => piece !== '');
+  return pieces.length < 2 ? [] : pieces.filter((piece) => [...piece].length >= WIDER_NUMBER_FLOOR && /\p{N}/u.test(piece));
 }
 
 /** A name's parts, each compacted from its folded value, grouped by word. */
@@ -845,13 +879,27 @@ function formsBuiltOf(subject: Subject, wider: boolean): Form[] {
       forms.set(`${form.kind}:${String(form.claim)}:${form.pattern.source}`, form);
     }
   };
+  // A piece of a stored number (piecesOf) takes its number's placeholder and the first reading's exceptions, as a
+  // number of its kind; where two numbers share a piece, the first in the call's order.
+  const pieces = new Set<string>();
+  const addPieces = (value: string, kind: 'claim' | 'member', claim: number) => {
+    for (const piece of wider ? piecesOf(value) : []) {
+      const form = numberForm(piece, kind, claim);
+      if (form !== null && !pieces.has(form.pattern.source)) {
+        pieces.add(form.pattern.source);
+        add(form);
+      }
+    }
+  };
   subject.claims.forEach((numbers, index) => {
     for (const number of numbers) {
       add(numberForm(number, 'claim', index + 1, wider));
+      addPieces(number, 'claim', index + 1);
     }
   });
   for (const memberId of subject.memberIds) {
     add(numberForm(memberId, 'member', 0, wider));
+    addPieces(memberId, 'member', 0);
   }
   for (const name of subject.names) {
     const words = nameWords(name);

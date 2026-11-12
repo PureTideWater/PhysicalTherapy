@@ -857,8 +857,8 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
     // An amount after a currency sign and with cents, and a whole written date with no label, stay as the first reading keeps them.
     expect(sentOrRefused('Paid $2026.00 on the claim', patient, claimsOf('2026.00123'))).toBe('Paid $2026.00 on the claim');
     expect(sentOrRefused('Seen 2026/03/05 and paid', patient, claimsOf('2026/03/05'))).toBe('Seen 2026/03/05 and paid');
-    // Recorded: one piece of a number held in two is not the number.
-    expect(sentOrRefused('The member ZZ12345 was paid', patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['ZZ12345 01']), claims)).toBe('The member ZZ12345 was paid');
+    // Recorded here until Queues item 34, which closed it (MOD-25, rule (c)): one piece of a number held in two, of five characters or more, is the number's.
+    expect(sentOrRefused('The member ZZ12345 was paid', patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['ZZ12345 01']), claims)).toBe('The member [MEMBER_ID] was paid');
   });
 
   // K-1: every letter of the review's file whose writing with LF is refused is refused with CR LF too.
@@ -1106,10 +1106,10 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
       expect(sentOrRefused(letter, patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], [memberId]), claims)).toBe(sent);
     });
 
-    it('A-5, recorded: a stored number written with another separator than the records hold is sent as written, as on the base', () => {
+    it('A-5, recorded here until Queues item 34 closed it (MOD-25): a stored number written with another separator than the records hold is the number', () => {
       const held = patientOf(['JUNE MARCH'], ['1975-06-01'], ['ZZ12345/01']);
-      expect(sentOrRefused('The member ZZ12345.01 was paid short.', held, claims)).toBe('The member ZZ12345.01 was paid short.');
-      expect(sentOrRefused('The member ZZ12345,01 was paid short.', held, claims)).toBe('The member ZZ12345,01 was paid short.');
+      expect(sentOrRefused('The member ZZ12345.01 was paid short.', held, claims)).toBe('The member [MEMBER_ID] was paid short.');
+      expect(sentOrRefused('The member ZZ12345,01 was paid short.', held, claims)).toBe('The member [MEMBER_ID] was paid short.');
     });
 
     it('A-6: every CR before a line feed is that line ending’s; a line feed before a CR is as written, recorded', () => {
@@ -2027,5 +2027,167 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
       }),
       { numRuns: 600 },
     );
+  });
+});
+
+/**
+ * Queues item 34 (test matrix MOD-25): the forms item 26 left in clear, each rule in the letter reader's wider reading
+ * or beside it in the check, so that the first reading is as it was and every rule only adds. Each row was sent in clear
+ * on a97d73e4. SYNTHETIC only: the twins of the suites above.
+ */
+describe('MOD-25: a stored number written with other marks than the records hold, one piece of it, and its digits glued to a letter', () => {
+  const claims = claimsOf('SYNCLAIM0001');
+  const heldAs = (...memberIds: string[]) => patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], memberIds);
+  /** The same letter through redactLetter, then the check from nothing: the path with no screen. */
+  const letterPath = (letter: string, patient: PatientIdentifiers, numbers: readonly LetterClaim[]) => {
+    const sent = redactLetter(letter, patient, numbers).text;
+    return holdsIdentifier(sent, patient, numbers) ? REFUSED : sent;
+  };
+
+  describe('A-5: where the records write a separator, any run of marks joins', () => {
+    it.each(['.', ',', '+', '*', ':', '#', ' / ', '. ', ' - ', '\u3002', '\u30FB', '=', '(', ')', '&', './', ' , ', '\t:\t', '\n/'])('redacts a member ID held "ZZ12345/01" written with %j where the records write the slash', (between) => {
+      const held = heldAs('ZZ12345/01');
+      const letter = `The member ZZ12345${between}01 was paid short.`;
+      expect(sentOrRefused(letter, held, claims)).toBe('The member [MEMBER_ID] was paid short.');
+      expect(letterPath(letter, held, claims)).toBe('The member [MEMBER_ID] was paid short.');
+      expect(holdsIdentifier(letter, held, claims)).toBe(true);
+      // In a held letter the first reading's check refuses, nothing of the wider reading is applied: refused as before.
+      // (A joiner is the first reading's own: with " - " or U+30FB the base replaced the number, there too.)
+      expect(sentOrRefused(`${HELD}${letter}`, held, claims)).toBe([' - ', '\u30FB'].includes(between) ? `${HELD}The member [MEMBER_ID] was paid short.` : REFUSED);
+    });
+
+    it.each(['/', '.', ',', '+', ' / ', '&', '*', ':', '#'])('reads a member ID held with %j between two digits written with any other of them', (separator) => {
+      const held = heldAs(`ZZ12345${separator}01`);
+      for (const between of ['/', '.', ',', '+', '&', '*', ':', '#', ' . ']) {
+        expect(sentOrRefused(`The member ZZ12345${between}01 was paid short.`, held, claims), between).toBe('The member [MEMBER_ID] was paid short.');
+      }
+    });
+
+    it('joins only where the records write a separator, and never over a letter, a digit or a placeholder', () => {
+      // A number neither of whose pieces is one of its own (rule (c): each is under five characters).
+      const held = heldAs('ZZ12/3401');
+      expect(sentOrRefused('The member ZZ12.3401 was paid short.', held, claims)).toBe('The member [MEMBER_ID] was paid short.');
+      // Between two digits where the records hold none: as on the base.
+      for (const letter of ['The member ZZ123+401 was paid short.', 'The member ZZ1,23401 was paid short.', 'The member ZZ12/34,01 was paid short.']) {
+        expect(sentOrRefused(letter, held, claims), letter).toBe(letter);
+      }
+      // A letter or a digit in the run: another value.
+      for (const letter of ['The member ZZ12x3401 was paid short.', 'The member ZZ12 / 9 / 3401 was paid short.', 'The member ZZ12 or 3401 was paid short.']) {
+        expect(sentOrRefused(letter, held, claims), letter).toBe(letter);
+      }
+      // A placeholder is none of the marks a run joins over: the check reads no number through one.
+      expect(holdsIdentifier('The member ZZ12 [PATIENT_NAME] 3401 was paid short.', held, claims)).toBe(false);
+      expect(holdsIdentifier('The member ZZ12 . 3401 was paid short.', held, claims)).toBe(true);
+      // Where the run holds a digit and a piece is a number of its own, the piece alone is replaced.
+      expect(sentOrRefused('The member ZZ12345 / 9 / 01 was paid short.', heldAs('ZZ12345/01'), claims)).toBe('The member [MEMBER_ID] / 9 / 01 was paid short.');
+    });
+
+    it('keeps the first reading’s exceptions: an amount after a currency sign, and a whole written date with no label', () => {
+      const patient = heldAs('SYNMEMBER0042');
+      // The recorded cost: a claim number held "1234/56" replaces "1234.56" where no currency sign stands before it.
+      expect(sentOrRefused('Paid $1,234.56 for 1234.56 units', patient, claimsOf('1234/56'))).toBe('Paid $1,234.56 for [CLAIM_1] units');
+      // Recorded too: after a currency sign as well, as the base did for a claim number held "1234.56" (isAmount asks for cents after the number).
+      expect(sentOrRefused('Paid $1234.56 on the claim', patient, claimsOf('1234/56'))).toBe('Paid $[CLAIM_1] on the claim');
+      expect(sentOrRefused('Paid $15,000.00 on the claim', patient, claimsOf('15/000'))).toBe('Paid $15,000.00 on the claim');
+      expect(sentOrRefused('Paid for 15,000 on the claim', patient, claimsOf('15/000'))).toBe('Paid for [CLAIM_1] on the claim');
+      expect(sentOrRefused('Seen 2026.03.05 and paid', patient, claimsOf('2026/03/05'))).toBe('Seen 2026.03.05 and paid');
+      expect(sentOrRefused('Seen 2026-03-05 and paid', patient, claimsOf('2026/03/05'))).toBe('Seen 2026-03-05 and paid');
+      expect(sentOrRefused('Claim 2026.03.05 was paid', patient, claimsOf('2026/03/05'))).toBe('Claim [CLAIM_1] was paid');
+    });
+
+    it('never sends a stored number written with a run of marks where the records write one, and keeps what the first reading does (property)', () => {
+      const mark = fc.constantFrom('/', '.', ',', '+', '*', ':', '#', '&', '=', ' ', '-', '(', ')', '\u3002', '\t', '%', '!', '?', '@', '^', '<', '>', '{', '}');
+      const run = fc.array(mark, { minLength: 1, maxLength: 4 }).map((marks) => marks.join(''));
+      const frame = fc.constantFrom(['The member ', ' was paid short.'], ['', ''], ['Re: ', '\r\nPaid 150.00'], ['Member ID: ', '.'], ['(', ')'], [HELD, ' Paid']);
+      const stored = fc.constantFrom('/', '+', '.', ' ', '*', '#');
+      fc.assert(
+        fc.property(stored, run, frame, (separator, between, [before, after]) => {
+          const held = heldAs(`ZZ12345${separator}01`);
+          // The same number held with nothing between: its first reading is the held number's own first reading.
+          const plain = heldAs('ZZ1234501');
+          const letter = `${before}ZZ12345${between}01${after}`;
+          const sent = sentOrRefused(letter, held, claims);
+          const first = sentOrRefused(letter, plain, claims);
+          if (first === REFUSED) {
+            expect(sent, JSON.stringify(letter)).toBe(REFUSED);
+          }
+          if (sent !== REFUSED) {
+            expect(sent, JSON.stringify(letter)).not.toMatch(/12345|ZZ1/u);
+            expect(holdsIdentifier(sent, plain, claims), JSON.stringify(letter)).toBe(false);
+          }
+        }),
+        { numRuns: 400 },
+      );
+    });
+  });
+
+  describe('(c): one piece of a stored number, of five characters or more and holding a digit, is a number of its kind', () => {
+    it.each([' ', '/', '-', '_', '.', '+', ' / ', '#'])('redacts the piece "ZZ12345" of a member ID held with %j before "01"', (separator) => {
+      const held = heldAs(`ZZ12345${separator}01`);
+      for (const [letter, sent] of [
+        ['The member ZZ12345 was paid short.', 'The member [MEMBER_ID] was paid short.'],
+        ['Member ID: ZZ12345', 'Member ID: [MEMBER_ID]'],
+        ['Re: zz-12345, paid', 'Re: [MEMBER_ID], paid'],
+      ] as const) {
+        expect(sentOrRefused(letter, held, claims), letter).toBe(sent);
+        expect(letterPath(letter, held, claims), letter).toBe(sent);
+        expect(holdsIdentifier(letter, held, claims), letter).toBe(true);
+      }
+    });
+
+    it('redacts a piece of digits alone, and each piece of five characters or more', () => {
+      expect(sentOrRefused('Member ID: 12345', heldAs('12345 01'), claims)).toBe('Member ID: [MEMBER_ID]');
+      expect(sentOrRefused('The visit for 12345 was paid.', heldAs('12345 01'), claims)).toBe('The visit for [MEMBER_ID] was paid.');
+      const three = heldAs('AB123-45678-XY9ZZ');
+      expect(sentOrRefused('See AB123, then 45678, then XY9ZZ.', three, claims)).toBe('See [MEMBER_ID], then [MEMBER_ID], then [MEMBER_ID].');
+    });
+
+    it('gives a claim number’s piece that claim’s placeholder, the first in the call’s order where two share it', () => {
+      const patient = heldAs('SYNMEMBER0042');
+      expect(sentOrRefused('Ref AB12345 was denied.', patient, claimsOf('SYNCLAIM0001', 'AB12345/777'))).toBe('Ref [CLAIM_2] was denied.');
+      expect(sentOrRefused('Ref AB12345 was denied.', patient, claimsOf('AB12345/01', 'AB12345/02'))).toBe('Ref [CLAIM_1] was denied.');
+      expect(sentOrRefused('Ref AB12345 was denied.', heldAs('AB12345 9'), claimsOf('AB12345/01'))).toBe('Ref [CLAIM_1] was denied.');
+    });
+
+    it('keeps the first reading’s exceptions for a piece: an amount, and a whole written date with no label', () => {
+      const patient = heldAs('SYNMEMBER0042');
+      expect(sentOrRefused('Paid $15000.00 on the claim', patient, claimsOf('15000 77'))).toBe('Paid $15000.00 on the claim');
+      // With only one of the two, a currency sign or cents, the digits stay the claim's, as a whole claim number's do.
+      expect(sentOrRefused('Paid $15000 on the claim', patient, claimsOf('15000 77'))).toBe('Paid $[CLAIM_1] on the claim');
+      expect(sentOrRefused('Seen 2026-11-15 and paid', patient, claimsOf('20261115 000123'))).toBe('Seen 2026-11-15 and paid');
+      // The recorded cost: a piece that is a compact date replaces that date written compact.
+      expect(sentOrRefused('Seen 20261115 and paid', patient, claimsOf('20261115 000123'))).toBe('Seen [CLAIM_1] and paid');
+    });
+
+    it('pins what is left, the recorded residual: a piece under five characters, or of letters alone, is sent as written', () => {
+      expect(sentOrRefused('The visit for 1234 was paid.', heldAs('1234 567890'), claims)).toBe('The visit for 1234 was paid.');
+      expect(sentOrRefused('Line 01 was paid.', heldAs('ZZ12345 01'), claims)).toBe('Line 01 was paid.');
+      expect(sentOrRefused('The Abcdef plan paid.', heldAs('ABCDEF 12345'), claims)).toBe('The Abcdef plan paid.');
+      expect(sentOrRefused('The ZZ plan paid.', heldAs('ZZ 12345'), claims)).toBe('The ZZ plan paid.');
+      // The floor is the piece's letters and digits: four of them with a joiner are four.
+      expect(sentOrRefused('The visit for A-123 was paid.', heldAs('A123 567890'), claims)).toBe('The visit for A-123 was paid.');
+    });
+
+    it('never sends a piece of five characters or more that stands whole, and keeps what the first reading does (property)', () => {
+      const separator = fc.constantFrom(' ', '/', '-', '.', '+', '_', '  ', ' / ');
+      const frame = fc.constantFrom(['The member ', ' was paid short.'], ['', ''], ['Re: ', '\r\nPaid 150.00'], ['Member ID: ', '.'], ['(', ')'], ['ID#', ','], [HELD, ' Paid']);
+      const written = fc.constantFrom('ZZ12345', 'zz12345', 'ZZ-12345', 'ZZ 12345', 'Z Z 1 2 3 4 5', '66778', '6-6-7-7-8', '66 778');
+      fc.assert(
+        fc.property(separator, written, frame, (between, piece, [before, after]) => {
+          const held = heldAs(`ZZ12345${between}66778`);
+          const plain = heldAs('ZZ1234566778');
+          const letter = `${before}${piece}${after}`;
+          const sent = sentOrRefused(letter, held, claims);
+          if (sentOrRefused(letter, plain, claims) === REFUSED) {
+            expect(sent, JSON.stringify(letter)).toBe(REFUSED);
+          }
+          if (sent !== REFUSED) {
+            expect(sent.replace(/Paid 150\.00|01\/01\/2020-150\.00/gu, ''), JSON.stringify(letter)).not.toMatch(/[0-9]/u);
+            expect(holdsIdentifier(sent, plain, claims), JSON.stringify(letter)).toBe(false);
+          }
+        }),
+        { numRuns: 400 },
+      );
+    });
   });
 });
