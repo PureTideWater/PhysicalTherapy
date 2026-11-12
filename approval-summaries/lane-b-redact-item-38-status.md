@@ -2,7 +2,7 @@
 
 ## RESUME-BLOCK (kept current; last written 2026-11-12, at the draft PR)
 - Branch `co-001/redact-item-38` cut from the base a97d73e4 (still the base when pushed); two commits, 1fd9fddb and
-  2fa01985 (one test file). WIP ref `co-001/wip-redact-item-38` holds 2fa01985. The draft PR is being opened.
+  2fa01985 (one test file). WIP ref `co-001/wip-redact-item-38` holds 2fa01985. PR #159 is open, marked ready (head 2fa01985), subscribed; waiting for the required checks.
 - Done: reproduced; diagnosis; the oracle corrected; the seed's case pinned (fails under the old oracle, passes under
   the new); the seed and 41 others pass at 400 runs each; the redaction suites pass (6 files, 3,192 tests); the full
   local suite ran once: lint, lint:logs, verify-content, test (508 files, 14,351 passed, 4 skipped) and test:golden (381)
