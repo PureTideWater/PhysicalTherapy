@@ -1,0 +1,19 @@
+{
+  "case": "SGN-22",
+  "module": "SGN",
+  "title": "The invariant: no live session without a live key, none begun at or before the mark",
+  "assertion": "Held today by its parts: the database refuses any key session whose digest is not a live key of the account and any session begun at or before the account's mark (SGN-20, SGN-17), and a confirmation that commits on a second connection after the app read the registry and before the session's insert is refused under the account's lock and answered as a stale session (SGN-26, case 7). Not yet written: the property over interleavings of sign-in, confirmation, End membership and reset in each order of the account lock, and the count that resolveSession issues the same statements as before the registry",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/web/src/lib/auth/sign-in.db.test.ts","packages/db/src/key-registry.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": [
+    "The property over interleavings (sign-in, confirmation, End membership and reset in each order of the account lock) and resolveSession's statement count are not yet written; the named tests hold the invariant's parts (SGN-20's refusals, SGN-26 case 7 on two connections)."
+  ]
+}

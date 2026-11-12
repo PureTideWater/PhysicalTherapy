@@ -1,0 +1,17 @@
+{
+  "case": "SGN-23",
+  "module": "SGN",
+  "title": "Who may request a key removal",
+  "assertion": "Refused, each by its constraint name, for everyone but a platform administrator of an internal organization more than seven days in the role with no role change in the last seven, acting from their own live session opened with a registered key in the last fifteen minutes, who is not the account; an administrator whose own key was registered within 24 hours of a removal of their own keys is refused too; through the console's route a refusal is answered with the rule's words and writes exactly no event",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["packages/db/src/key-registry.db.test.ts","apps/web/src/lib/routes/console-routes.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

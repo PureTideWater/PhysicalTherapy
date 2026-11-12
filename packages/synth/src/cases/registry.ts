@@ -582,6 +582,15 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'infra/test/compute.test.ts',
     'apps/worker/src/bundle.test.ts',
   ]),
+  'SEC-25': none(1, 'Synthetic accounts of two synthetic practices the test inserts; no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+  ]),
+  'SEC-26': none(1, 'Synthetic accounts of two synthetic practices the test inserts; no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+  ]),
+  'SEC-27': none(1, 'Synthetic accounts of two synthetic practices the test inserts; no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+  ]),
   'SCR-01': none(6, 'A screening upload is built in memory by the tests from synthetic rows and refused headers; no file is committed.', [
     'apps/worker/src/screening/format.test.ts',
     'apps/web/src/lib/screening/parse.test.ts',
@@ -763,6 +772,18 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/worker/src/mail/events.test.ts',
     'packages/db/src/mail.db.test.ts',
     'infra/test/mail-streams.test.ts',
+  ]),
+  'JOB-06': none(6, 'Synthetic accounts and a provider twin the tests make; no file.', [
+    'packages/db/src/provider-sign-out.db.test.ts',
+  ]),
+  'JOB-07': none(6, 'Synthetic accounts and a provider twin the tests make; no file.', [
+    'packages/db/src/provider-sign-out.db.test.ts',
+  ]),
+  'JOB-08': none(6, 'Synthetic accounts and a provider twin the tests make; no file.', [
+    'apps/worker/src/platform/provider-sign-outs.db.test.ts',
+    'apps/worker/src/platform/cognito-sign-out.test.ts',
+    'apps/worker/src/jobs/platform.test.ts',
+    'infra/test/monitoring.test.ts',
   ]),
   'MOD-01': {
     completesIn: 10,
@@ -1175,6 +1196,39 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/auth/no-provider-sign-out.test.ts',
     'apps/web/src/lib/auth/sign-in.db.test.ts',
     'infra/test/monitoring.test.ts',
+  ]),
+  // The key registry (docs/adr/0095; Queues item 37).
+  'SGN-20': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
+  'SGN-21': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
+  'SGN-22': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'packages/db/src/key-registry.db.test.ts',
+  ], ["The property over interleavings (sign-in, confirmation, End membership and reset in each order of the account lock) and resolveSession's statement count are not yet written; the named tests hold the invariant's parts (SGN-20's refusals, SGN-26 case 7 on two connections)."]),
+  'SGN-23': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+  ]),
+  'SGN-24': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+  ]),
+  'SGN-25': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+  ]),
+  'SGN-26': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
+  'SGN-27': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
   ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
   // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).

@@ -1,0 +1,17 @@
+{
+  "case": "SGN-26",
+  "module": "SGN",
+  "title": "A removal's confirmation beside a sign-in in flight",
+  "assertion": "A key step and a code step begun before a confirmation open nothing after it; a key registration begun before it registers nothing and the provider is not asked; a confirmation that commits after the app read the registry and before the session's insert is refused by the database under the account's lock, answered as a stale session and recorded; after a registration with the code the removed key opens nothing",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["apps/web/src/lib/auth/sign-in.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

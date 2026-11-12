@@ -412,12 +412,13 @@ while it still runs, selects `operator_record_mail_event()`'s six columns by nam
 `operator_mail_expire()`, so its mail jobs keep working. The same deploy gives the operator role its
 `PasswordNoticeEmail` statement and the platform task `SUPPORT_EMAIL` (from the stack's `SupportEmail` parameter), and
 adds the alarms `PASSWORD_NOTICE_UNDELIVERED`, `PasswordNoticeRecordFailed`, `PasswordResetSessionsNotEnded` and
-`PasswordResetProviderSignOutFailed`; while IAM propagates, a refused first send is retried a minute later.
+`PasswordResetProviderSignOutFailed` (the last removed again by the key registry's release, below); while IAM propagates, a refused first send is retried a minute later.
 
 The release that carries ADR 0094 adds one alarm, `MembershipEndProviderSignOutFailed`, and no migration: End membership
 then commits whatever Cognito answers and asks Cognito to sign the person out only afterwards. Rolled back, the previous
 web asks Cognito inside End membership's transaction again (a refusal there ends nothing and shows an error) and
-writes no line the alarm counts, so the alarm stays silent, not broken.
+writes no line the alarm counts, so the alarm stays silent, not broken. The key registry's release (below) removes
+this alarm: the web then asks Cognito nothing, and a platform job sends the sign-out.
 
 **The rolling platform deploy.** The platform service rolls with a minimum of 100% and a maximum of 200%
 (`infra/lib/environments.ts`), so an old and a new platform task overlap, and an old task cannot read an SES event of
@@ -441,7 +442,7 @@ above state stay). What the previous images cannot do:
 
 The operator role's statement and ADR 0091's four alarms stay with the stack; `PasswordResetSessionsNotEnded` and
 `PasswordResetProviderSignOutFailed` count lines the previous web already writes (docs/runbooks/incident-response.md),
-so they keep paging. Roll forward with a fix rather than staying back. While rolled back, list who waits, in a session
+so they keep paging (until the key registry's release, below, which removes the second). Roll forward with a fix rather than staying back. While rolled back, list who waits, in a session
 as the operator role:
 
 ```sql
@@ -530,6 +531,128 @@ begun before a reset can again open a session or register a key after it (ADR 00
 reset's confirm with the SDK's repeats, so a lost answer can again read as a refused code. The three alarms stay
 with the stack and count nothing while the previous web runs, since it writes none of their lines. Roll forward with
 a fix rather than staying back. The schema is never rolled back.
+
+## The key registry (ADR 0095; Queues item 37)
+
+Two migrations, in one deploy: `20261115090000_key_registry.sql` (four tables, the triggers, the functions) and
+`20261115091000_key_registry_validate.sql` (three constraint validations). **Read "What this deploy asks of staff"
+and "Rollback across the key registry" before starting: staff register their hardware keys again in this deploy's
+own session, and a rollback of this release leaves staff unable to sign in until the image rolls forward.**
+
+**The first migration's lock loop.** `20261115090000_key_registry.sql` takes `"user"`'s and `membership`'s SHARE ROW
+EXCLUSIVE locks and `user_session`'s, `audit_event`'s and `mail_send`'s ACCESS EXCLUSIVE locks together with `NOWAIT`,
+once a second, up to 300 tries, before any of its DDL. A refused try holds and queues nothing. A try is refused by any
+open transaction that has touched `user_session`, `audit_event` or `mail_send` in any way, or has written `"user"` or
+`membership`, and by an autovacuum or autoanalyze of one of the five. Every signed-in request reads `user_session`
+and nearly every mutation writes `audit_event`; a request holds them for milliseconds, a triage, a pricing run, an
+audit report or a packet export to its commit, and one reconcile pass outlasts the loop's five minutes by itself. The
+mail jobs touch `mail_send` for a moment each minute.
+
+So, before this deploy:
+
+- deploy outside the practices' working hours;
+- **have no reconcile queued or running**, and no triage, pricing run, audit report or packet export (the daily
+  monitoring schedule queues every practice's monitoring at 05:10 UTC), and not at 01:20 UTC, when the audit copy
+  reads `audit_event`;
+- check that no vacuum runs, as "A migration that cannot get a lock" shows.
+
+Once the migration holds the five, its DDL is catalog-only (one nullable column with no default, constraints added NOT
+VALID, new tables, functions, triggers, grants, one policy recreated): no rewrite and no scan, so the hold is short.
+Until its commit every request and job waits or, for a signed-in request, is refused as busy after its three-second
+lock timeout with nothing saved (ADR 0092).
+
+If no moment with the five free comes in five minutes, the deploy fails: cdk reports that the migration task stopped
+without migrating, and `/tp/<env>/migration` ends with
+
+> db:migrate: 20261115090000_key_registry.sql failed: "user", membership, user_session, audit_event or mail_send stayed in use for five minutes; run the deploy again (docs/adr/0095)
+
+(`lock_not_available`, 55P03). This migration runs in one transaction, so it changed nothing, and no service moved
+(step 4). Run the deploy again at a quieter moment. Never take the locks by hand, and never end another session's
+transaction, or cancel a job or a vacuum, to make room.
+
+**The second migration's lock loop.** `20261115091000_key_registry_validate.sql` runs after the first has committed
+and released its locks. It takes SHARE UPDATE EXCLUSIVE on `user_session` and `mail_send`, the same loop, and then
+validates three constraints with one scan each. That mode blocks no read and no write, so requests and jobs go on
+through it; only a vacuum, an analyze or another schema change on one of the two refuses a try. If one runs for the
+whole five minutes, the deploy fails and `/tp/<env>/migration` ends with
+
+> db:migrate: 20261115091000_key_registry_validate.sql failed: user_session or mail_send stayed under a vacuum or a schema change for five minutes; run the deploy again (docs/adr/0095)
+
+(`lock_not_available`, 55P03). **The first migration stays applied** (each commits on its own), this one changed
+nothing, and no service moved (step 4): the previous images go on running on the new schema, which is the state
+"While the previous images serve" describes below, with the three constraints enforced for new rows and not yet
+validated for old ones. Wait for the vacuum to end (never cancel it) and run the deploy again: only this migration
+runs, and validating is safe to repeat.
+
+**The forward deploy.** From the first migration's commit, whichever image runs:
+
+- every session insert takes the account's row lock and is checked against the registry;
+- an ended membership moves the account's mark and ends its sessions in the database;
+- an ended membership, a recorded reset and a confirmed key removal each queue one sign-out at Cognito in their own
+  transaction (`provider_sign_out`).
+
+The new web image asks Cognito for no sign-out. The new platform image runs the job `provider_sign_outs` every
+minute, which sends the queued sign-outs, and the hardware-key notices. **One `cdk deploy` replaces both services; if
+they are ever deployed apart, the platform service goes first**: a new web with no job asks the provider nothing
+until the job exists. The same deploy removes the alarms `PasswordResetProviderSignOutFailed` and
+`MembershipEndProviderSignOutFailed` and adds `ProviderSignOutNotDelivered`, `ProviderSignOutsNotRunning`,
+`RemovedHardwareKeyUsed` and `KEY_NOTICE_UNDELIVERED` (docs/runbooks/incident-response.md).
+`ProviderSignOutsNotRunning` counts a missing line as missed, so it can raise once in this deploy, between the alarm's
+creation and the new platform task's first run; it returns to OK on the job's first line. If it has not within
+fifteen minutes of the platform service settling, follow its section.
+
+**While the previous images serve** (the minutes of the rolling deploy):
+
+- the previous web's key sign-in carries no key digest. The database lets it through only for an account the registry
+  has never touched, and refuses it for any account with a registry row;
+- the previous web's End membership ends the membership and writes `membership_ended` in one transaction, so the mark
+  moves and the sign-out is queued; it then asks Cognito itself as well, a second and harmless sign-out. If that call
+  fails it writes its old line, which no alarm counts once the new alarms are in: nothing is lost, since the row is
+  queued and the job delivers it or pages `ProviderSignOutNotDelivered`;
+- a key registered through a previous web task records no registry row. The new image refuses that key and removes it
+  at the provider, and the person registers again;
+- the previous platform task has no `provider_sign_outs` job: the rows wait, untried, and are claimed when the new
+  task runs. A row never tried is never given up.
+
+Confirm afterwards that only new web and platform tasks run.
+
+**What this deploy asks of staff.** A hardware key registered before this release has no registry row, so the new
+image refuses it. Only PaidWhole's own staff accounts hold hardware keys; customers sign in with a code and are not
+affected. From the deploy until each staff account registers again, that account rests on its password and
+authenticator code, with no second person involved. Bound it:
+
+1. Tell every staff member the deploy's time beforehand, and have them present for it.
+2. In the deploy's own session, once only new web tasks run, each staff member signs in with password and
+   authenticator code and registers their key again (one key an account), then signs out and signs in with the key:
+   that first key sign-in is the check.
+3. Before the deploy is called done, compare who has registered with the list of staff accounts, in a session as the
+   operator role, with the first migration's commit time from `/tp/<env>/migration`:
+
+   ```sql
+   SELECT actor_id, min(at) FROM audit_event
+    WHERE action = 'hardware_key_registered' AND at >= '<the migration's commit time>' GROUP BY actor_id;
+   ```
+
+   One row a staff account. The runtime roles hold no privilege on the registry's tables, so its own count of live
+   keys (`SELECT count(*) FROM hardware_key WHERE removed_at IS NULL`) is read by the founder, as the owner, where the
+   two must be reconciled. A staff account missing from the list has not registered: it is done before the deploy is
+   closed, or recorded in the release's pull request with the person's name left out (user ID only).
+
+**Rollback across the key registry** (to an earlier image, below) keeps both migrations: every object is added, and
+the schema is never rolled back. **But under the previous web image no account that has a registry row can sign
+in.** That image's key sign-in sends no digest, which the database refuses for such an account, and its
+password-and-code path sees the key at the provider and answers that a key is required. That is every staff account
+that registered under the new image. Customers who sign in with a code are not affected. It fails closed, which is
+the right side: **a rollback of this release is a decision to go without staff sign-in, the console included, until
+the image rolls forward again.** The way out is forward, with a fix; nothing at the database is edited to let staff
+back in. Under the previous images:
+
+- the previous web asks Cognito itself after an ended membership or a reset, as before, and its two alarms return if
+  the infrastructure is rolled back with it;
+- the sign-outs still queue (the database writes them) and wait for a platform task that has the job. With the new
+  infrastructure kept, `ProviderSignOutsNotRunning` pages for as long as the previous platform image runs; that is
+  the signal, not a fault;
+- key removal and its console screens are not there: a lost or stolen key goes to the founder's break-glass again.
 
 ## A payer's answer and a contract's source, in Postgres (ADR 0085's amendment of 2026-11-11; Schema PR 4)
 

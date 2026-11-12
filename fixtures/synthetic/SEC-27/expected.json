@@ -1,0 +1,17 @@
+{
+  "case": "SEC-27",
+  "module": "SEC",
+  "title": "The key registry's reserved audit actions",
+  "assertion": "The application role cannot insert any reserved action of the registry (the removal's request, confirmation, cancellation and expiry, the opening, the notices' two, the provider sign-out's two); `membership_ended` is recorded only for a membership the same transaction ended and did not create; `hardware_key_registered` is not yet reserved, for the previous image",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["packages/db/src/key-registry.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic accounts of two synthetic practices the test inserts; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

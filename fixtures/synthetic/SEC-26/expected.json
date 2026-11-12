@@ -1,0 +1,17 @@
+{
+  "case": "SEC-26",
+  "module": "SEC",
+  "title": "No tenant, no administrator and no job reads or writes the key registry's tables",
+  "assertion": "With rows for accounts of two practices: an actor of either practice, a platform administrator and the operator role read no row of the four tables and write none; each reaches them only through its granted functions, which answer for the caller's own account or by the removal rule",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["packages/db/src/key-registry.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic accounts of two synthetic practices the test inserts; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
