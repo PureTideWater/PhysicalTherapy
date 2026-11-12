@@ -1,0 +1,9 @@
+calibration 152 ms (reference 144); budget 420000000
+U+33FE and ";" repeated: read to 93664 characters, 1.67 s here, 1.59 s at the reference; refused at 93835 in 1.69 s at the reference (in the check)
+a name, then "a;" repeated: read to 196918 characters, 1.14 s here, 1.08 s at the reference; refused at 197259 in 1.07 s at the reference (in the check)
+ordinary prose: read to 300668 characters, 0.96 s here, 0.91 s at the reference; refused at 301009 in 0.86 s at the reference (in the check)
+CT-2: initials beside a name and a look-alike: read to 23875 characters, 0.33 s here, 0.32 s at the reference; refused at 23917 in 0.31 s at the reference (in the check)
+CT-2 with the name written once with a joiner: read to 17314 characters, 0.28 s here, 0.27 s at the reference; refused at 17357 in 0.26 s at the reference (in the check)
+initials beside a name: read to 95718 characters, 0.42 s here, 0.40 s at the reference; refused at 95889 in 0.41 s at the reference (in the check)
+a digit and a bare line break: read to 56803 characters, 0.59 s here, 0.56 s at the reference; refused at 56888 in 0.53 s at the reference (in the check)
+calibration after 150 ms

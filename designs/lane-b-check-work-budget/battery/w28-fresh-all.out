@@ -1,0 +1,39 @@
+runs 20000 seed 90217: flips(base refused, head sent) 0, of them with 3+ digits in clear 0; both sent and head shows more digits 0; head threw 0
+runs 20000 seed 90233: flips(base refused, head sent) 0; both sent and head shows more digits 0
+
+node:fs:2482
+    return binding.writeFileUtf8(
+                   ^
+{"letters":25536,"withheld":2995,"SENT_WITHHELD":0,"threw":0} seed 90263 in 120 s
+seed 90271 in 120 s inst=true {"letters":13632,"headSent":8227,"flip":26,"withheldRefused":1587,"FLIP-ADJ":7,"flip-other3":13,"flip-other0":6}
+fz3 letter seed 90281 in 120 s inst=true {"letters":14112,"headSent":8381,"flip":2,"withheldRefused":1428,"flip-other3.M":2}
+
+Node.js v24.22.0
+== G|MAJOR: 1 tags
+  (4) sp.pt+cents
+    "Fax 2nd: 900 40.9331150.00"
+      head: same | before: REFUSED | base: same
+    \r\n: RR= 120
+- "<Noun>|#|<ref>" (this round's give-back)
+    \n: RR= 120
+    \r\n: RR= 120
+
+8000 + 3840 letters in 62s
+## fuzz3 seed 90331: 10000 letters, 0 exceptions, 49s; the head sends more than the BASE in 0 distinct letters
+  the head sends what "before" refused, by what follows the year: "" 0/832, ",150.00" 0/741, ".50" 110/833, ",2021" 0/788, ".5 units" 0/718, ",1" 0/773, ".01.15" 85/743, ", 150.00" 0/700, " 150.00" 0/815, "." 0/807, "," 0/737, ".00" 124/747, ",00" 0/766
+  by label: "" 39, "Row" 31, "Claim" 0, "SSN" 15, "SSN:" 18, "Soc. Sec." 18, "Member SSN" 15, "Phone" 12, "Tel" 20, "Fax:" 17, "Call" 12, "Medicare" 19, "Medicare ID" 22, "Contact" 18, "Medicare rate" 24, "Contact: Billing" 39
+   "Paid on 01/15/2026.\nGroup \ufeff\n\u00a0~~~\rID No./\ufeff\r\u0301\n\u00a0/20260112345.01 Paid" :: H REFUSED | P "Paid on 01/15/2026.\nGroup \ufeff\n ~~~\rID No./\ufeff\r\u0301\n /20260112345.01 Paid" | B "Paid on 01/15/2026.\nGroup \ufeff\n ~~~\rID No./\
+   "Policy\ufeff\u2028\"\r\tNo  \"  \r\u2060\n\t~~~20260112345.01" :: H REFUSED | P same | B same
+   "Paid on 01/15/2026.\nProvider\n-+~~~~~_\n(S)12345678901234.01 Paid" :: H REFUSED | P same | B same
+   "Dear Provider,\nRemit  Advice+-\n No.  \n202-555-0123150.00 Paid" :: H REFUSED | P same | B same
+   "Unit 398-272-123915-Jul 1999.001234" :: H REFUSED | P same | B same
+   "Dear Provider,\nRow 366-535-169312MAY., 2026.125" :: H REFUSED | P same | B same
+   "Phone NBR No.\t:\u2013 250-75 .123456 Paid" :: H REFUSED | P same | B same
+   "Questions? Tel.  Nos. Numbers  \u2212:\t900 77.3283150.00 Paid" :: H REFUSED | P same | B same
+letters 12000 seed 90353 dashedRef 0.5: {"same":9084,"NEW-REFUSAL":57,"both-refused":2855,"CHANGED":4}
+     57  id.contact [?]
+      3  ph.list [CHANGED]
+      1  id.contact [CHANGED]
+MOD-16 runs 20000 seed 90359 bad 327
+29
+fresh done 06:39:21

@@ -1,32 +1,45 @@
 # Lane B: the letter check's work budget (CT-2 on the merged base) — status
 
-## RESUME-BLOCK, current (W28, session_019i9ifA6Ar89txjDEHY4oQi, 2026-11-12 about 05:30 UTC; the constant is in, its proof is running; no PR yet)
+## RESUME-BLOCK, current (W28, session_019i9ifA6Ar89txjDEHY4oQi, 2026-11-12 about 07:30 UTC; DRAFT #157 OPEN at 3f64c5dd, CI running, subscribed)
 
-- **Where it stands.** WIP `co-001/wip-check-work-budget` = **f10209a0** on 493be1b2: `WORK.comparison` 1 to 4 (the
-  orchestrator's ruling, 04:10 UTC) and MOD-24's registry entries (`packages/synth/src/cases/matrix.ts`, `registry.ts`,
-  the generated `fixtures/synthetic/MOD-24/expected.json`). Uncommitted in the checkout: the unit restated in the
-  reader's comment and in ADR 0054 (the compiled code is identical to the gate's copy; the only compiled difference from
-  493be1b2 is `comparison: 1` to `comparison: 4`). Local branch `co-001/check-work-budget`.
-- **The three failures of `pnpm test` on 493be1b2:** the registry test passes; the eight rows of "refuses a letter past
-  the check's work budget" pass WITH COVERAGE ON, by the test's own measure 1.68 to 1.74, 1.20 to 1.28, 0.64 to 0.66,
-  1.23 to 1.27, 1.26 to 1.30, 1.23 to 1.33, 1.36 to 1.48 and 1.46 to 1.53 s of processor time against 3.00 s allowed
-  (three runs; the test file is unchanged). The whole file with coverage: 1,061 of 1,061.
-- **This container was new: nothing of W25's machine was kept.** Rebuilt: `/home/user/gate` (the kept gate, with
-  `mod.checkWorkOf?.(r) ?? 0` handed to `holdsIdentifier` in gate.mts, worker.mts, prepare-check.mts);
-  `/home/user/tree-base` (58fb29e5), `/home/user/tree-r2` (493be1b2), `/home/user/headsrc` (the head's
-  `packages/redact/src`), `/home/user/headsrc-x` (the same with the check's final count left in `globalThis.__spent`);
-  the battery's layout by `designs/lane-b-redact-ssn-phone-leaks/battery/README.md` (the shim is
-  `battery/shim-head-redact.ts` at `/home/user/fix/packages/model-gateway/src/redact.ts`). Node 24 is `/opt/node24/bin`
-  (the default `node` is 22: put it first on PATH); PostgreSQL 18 on 5433.
-- **Running (05:10 UTC on):** the gate, A = 58fb29e5, B = the head, uncached (`/home/user/gate-out/run4`); behind it,
-  on the gate's lock, the battery `recorded.sh` then `fresh.sh` (`/home/user/battery-out/chain.log` ends CHAIN-DONE);
-  the fixtures (`w28/repo-w28.mts`, output beside it); the one delta review
-  (`reviews/lane-b-check-work-budget-review-comparison-delta.md`).
-- **Next, in order:** read the gate (0 differ, or read letters now refused; anything else is a blocker to the
-  orchestrator; real-shaped letters newly refused are counted and told before the PR); `w28/dearest-w28.mts` for the
-  dearest letter still read; the review's findings verified; the ADR's table and battery line; the full local suite once
-  (`suite/suite.sh`, Node 24); the base merged; the draft PR; CI by subscription; the merge; the final state here.
-- W25's block below holds the rulings and what the PR description must say; it stands but for its "Next".
+- **Where it stands.** `co-001/check-work-budget` = WIP `co-001/wip-check-work-budget` = **3f64c5dd**, draft PR **#157**
+  into claude/build-platform (the base 93e137f9 merged in as 23cfed54, no conflict). On 493be1b2: f10209a0
+  (`WORK.comparison` 1 to 4, the orchestrator's ruling of 04:10 UTC; MOD-24's registry entries and generated
+  `expected.json`), 65bf813c (the unit restated in the reader's comment and ADR 0054; compiled code identical),
+  8a2bb4bb, a battery line and 3f64c5dd (ADR 0054's figures). The test file is unchanged.
+- **Proof of the one-constant delta, all on the final reader:**
+  - The timed rows WITH COVERAGE ON, the test's own measure, three runs: 1.68 to 1.74, 1.20 to 1.28, 0.64 to 0.66, 1.23
+    to 1.27, 1.26 to 1.30, 1.23 to 1.33, 1.36 to 1.48, 1.46 to 1.53 s against 3.00 s.
+  - Gate (`gate/run4-65bf813c-report.md`; A = 58fb29e5, B = the head, uncached): 975,489 letters, same 975,489, differ
+    0, 462,984 refused by both. **No real-shaped letter moves from read to refused (count 0).**
+  - Fixtures (`w28/repo-w28.out`): 10,838 strings, 21,676 runs, no text differs, none flipped to sent; refused on length
+    alone the ZIP table (729,000 characters) and the ignored, generated 10,000-claim 835 (3.6 million); the dearest real
+    fixture 42.0 million units.
+  - Battery (`battery/shim-final-reader-w28.jsonl`, `w28-recorded-fuzz-all.out`, `w28-fresh-all.out`): 101 runs,
+    1,116,939 redactions and 1,045,920 checks on both readers, 0 differences. Not run: reviewer I2's three scripts that
+    import `review-i2/v/*.mts` (built files this container lacks); `/home/user/fix3` (the audit copy) was the plain
+    shim, so the audit's DEPART reading did not run. First pass (`try1`) lacked the before-trees; the counts above are
+    the second pass plus a re-run of the 13 scripts that still could not load.
+  - Dearest still read (`w28/dearest-w28.out`, calibration 150 to 152): U+33FE and `;` 93,664 characters 1.59 s at the
+    reference; a name then `a;` 196,918, 1.08 s; prose 300,668, 0.91 s; CT-2 read to 23,875 characters (17,314 with the
+    joiner), before about 39,500 and 29,200.
+  - The delta review (`reviews/lane-b-check-work-budget-review-comparison-delta.md`): no blocking finding. L-1 (the
+    comment) fixed in 65bf813c. **For the queue: L-2** (the weight is fitted to a comparison's cost under coverage, so
+    CT-2-shaped letters of 24,000 to 39,500 characters are refused that production read in 0.3 to 0.9 s; as ruled);
+    **L-3** (no test row lands a refusal at `someOf`'s sites in `matchesIn`'s `leftToTheCheck` and `inRun`, lines about
+    1230 and 1232; fail closed there by code reading only: a row for each would pin it).
+- **Suite:** the full local suite once on 8a2bb4bb, Node 24 (`/home/user/gate-out/suite2`): everything passes; `pnpm
+  test` 14,244 passed, 4 skipped; test:db 10,273; golden 381; e2e 87. On the merged tree: typecheck, lint, lint:logs,
+  check:fixtures, verify-content and the reader's four test files with coverage (1,107) pass.
+- **Next:** CI on #157 by subscription (if `unit` is red on MOD-15's seed 1596478644 alone, re-run once and note it in
+  the PR). Before merging: **the orchestrator's rule of 06:10 UTC**: `git fetch origin refs/pull/156/head`; if the
+  founder's "Approved by: Tyler Williams" commit is there and #156 is not merged, do NOT merge, tell the orchestrator
+  and wait; otherwise mark ready, merge on green (a merge commit), verify with `git ls-remote`, tell the orchestrator at
+  once, write the final state here (for item 26: `checkWorkSpent` / `work()`, the weights in `WORK`,
+  `checkWorkOf(redacted)` handed to `holdsIdentifier`), unsubscribe, stand down.
+- This machine: Node 24 at `/opt/node24/bin` first on PATH; PostgreSQL 18 must be started by hand after a restart
+  (`su postgres -c "/opt/pg18/bin/pg_ctl -D /root/pgdata18 -o '-p 5433 -k /tmp' -l /tmp/pg18.log start"`).
+- W25's block below holds the rulings; it stands but for its "Next".
 
 ## RESUME-BLOCK of W25 (superseded by the block above; W25, session_019i9ifCzDkV481emXJMM26J, 2026-11-12 about 04:00 UTC; HANDED ON AT THE TOKEN LIMIT; no PR; the full suite found two failures CI would show too)
 
