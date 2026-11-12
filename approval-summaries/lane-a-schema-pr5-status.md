@@ -1,6 +1,34 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
-## RESUME-BLOCK (W30, session_019i9ifDPVj1VzzJE78QWvC3; updated 2026-11-12 about 07:10 UTC; hands over at the context line, mid design step)
+## RESUME-BLOCK (W34, session_019i9ifCEAcrGwW4JmYcRswT; 2026-11-12; W34's brief is done)
+- **Where it stands:** the founder's ask for D2 is written, not sent and not answered:
+  `approval-summaries/lane-a-ledger-freeze-ask-pr5-d2-2026-11-12.md`. The orchestrator relays it. Question 1: Appendix
+  D2 in place of Appendix D (body `ad925199131cb411`, the SHA-256 of the text between the `$function$` marks of
+  `lane-a-wip/schema-pr5/d2/D2-draft.sql`; the same steps on `D-as-granted.sql` give the granted `ba8293836b9cd5aa`;
+  not yet printed by a database). Question 2, its own question by the orchestrator's ruling: one header line,
+  ` SET plan_cache_mode TO 'force_custom_plan'`, after the `SET search_path` line (the review's finding 1).
+- **Nothing is built:** no migration file, nothing in the application repository, no WIP commit, no pull request.
+- **After a grant, the builder:** (1) records the answer under a "Decided" heading in the ask, as relayed, never as the
+  founder; (2) builds PR 5 with Appendix A as granted and, with Question 1 yes, `roi_statement_rules` exactly as the
+  ask's appendix (byte for byte `D2-draft.sql`), with Question 2's line only on its yes; (3) checks that
+  `pnpm db:domain-model` prints body `ad925199131cb411` and, with Question 2 yes, the header line as the ask writes
+  it, and stops and reports on any difference, never adapting the text; (4) with Question 2 no, writes the residual
+  and its trigger condition (the review's finding 1) in the migration's notes; (5) re-runs `d2/jobE.sh` and
+  `d2/eq/run.sql` on the built migration (PostgreSQL 18, at least 10 GB of disk free), including the state S4 clean
+  and, with Question 2 yes, every state with the setting, none of which is measured yet; (6) designs the preflight
+  first (the three options below): it is open and not part of either question.
+- **On Question 1 no:** PR 5 is not built; the schema queue goes on without it.
+- **Closed by W34 from W30's files:** S4 (statistics from when the practice had 10 lines, then its month loaded) stays
+  measured once, degraded: 1.55 to 1.81 s. The clean rerun did not finish: `d2/out/jobE.log` stops as `e3 S4` begins,
+  `e3_load_10.txt` is empty and there is no `e3_load_month.txt`, so the `e3_S4_*` files there are the first run's.
+  Not re-run: this machine has no PostgreSQL 18 and the scratch databases are gone. The ask says so.
+- **The preflight scan, options for the builder's design step (not designed, not asked of the founder):**
+  1. run the proof as the owner outside the tenant policy, with the practice checked in the query itself;
+  2. batch the scan by practice, so the policy's scope is one practice a batch;
+  3. raise nothing: keep the scan as it is (ACCESS SHARE only; milliseconds on the empty table at launch).
+- **Holds:** none.
+
+## RESUME-BLOCK, superseded by W34's above (W30, session_019i9ifDPVj1VzzJE78QWvC3; updated 2026-11-12 about 07:10 UTC; hands over at the context line, mid design step)
 - **Where it stands:** PR 5 is not built (the orchestrator's ruling, 06:00 UTC: right to stop; the item became a bounded
   design step: a corrected text "Appendix D2", proved equal, reviewed, and a new ask for the founder). Steps 1 to 4 of
   that ruling are done but for one fix-round decision; **step 5 (the ask) is NOT drafted**: the next session writes
