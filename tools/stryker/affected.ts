@@ -133,12 +133,9 @@ export const DATA_FILES: Readonly<Record<MutationPackage, readonly DataEntry[]>>
  * them, or below them, affects all four, and so does a move of what the mutation tooling's own files import
  * (GLOBAL_ENTRY_POINTS' closure: yaml, which reads the lockfile here, and vitest/config). Each name is exact or a
  * scope: typescript-eslint is not tooling. affected.test.ts scans the installed tooling's code for any other bare
- * import its package does not declare that resolves outside this list and its lockfile closure. tslib is held for that
- * scan: typescript's own code names it in text (the message "Import emit helpers from 'tslib'"), which the scan reads
- * as an import, and Stryker pins tslib exactly, so when the rest of the lockfile moves to a newer tslib the hoisted
- * copy is one the tooling's closure does not hold. Holding the name errs toward running: a tslib move affects all four.
+ * import its package does not declare that resolves outside this list and its lockfile closure.
  */
-export const TEST_TOOLING = ['vitest', '@vitest/*', '@stryker-mutator/*', 'fast-check', 'tsx', 'typescript', 'tslib'] as const;
+export const TEST_TOOLING = ['vitest', '@vitest/*', '@stryker-mutator/*', 'fast-check', 'tsx', 'typescript'] as const;
 
 /**
  * What affects every package, by glob, besides the import closure of GLOBAL_ENTRY_POINTS and GLOBAL_LOADED: the
