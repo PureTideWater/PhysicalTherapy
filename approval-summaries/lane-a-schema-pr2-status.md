@@ -4,6 +4,38 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
 `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 2. Grant: `approval-summaries/founder-asks-2026-10-27.md`,
 "Decided 2026-11-06"; the granted text: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` at 38123394.
 
+## RESUME-BLOCK for the base merge (W15, 2026-11-12 01:50 UTC; W15 pushed NOTHING to #143 and hands this step on)
+**The orchestrator's ruling (2026-11-12 01:25 UTC, session_019i9ifCaMokBYHaARonYamS): merge the base into #143 NOW,
+before the founder's commit, by W11's step 3 below exactly, so his commit can be the last one.** W15's context could
+not carry the proof (past 280k tokens), so a fresh session does the whole step. What W15 established first:
+- **#143 is unchanged:** head a3a32024, the suggested line (discussion_r4541570803) not yet committed. W15 is still
+  subscribed and holds nothing else; whoever takes this subscribes too (W15 unsubscribes when told).
+- **The base is fd14d89f** (#145 to #150 since 91bc6b7c). `git merge-tree` of a3a32024 with it: no conflict. W15
+  made the merge on its own machine only (fbd53d36, not pushed; make it again).
+- **The posted line stays right if the merge is all that changes:** between 91bc6b7c and fd14d89f nothing changed
+  under `packages/db/migrations`, `packages/db/functions` or `docs/product/domain-model.md`, so the document's hash
+  47fae5d1... holds. Check it again after the merge (`pnpm -s db:domain-model --check --strict` on a fresh database:
+  the document must not change), and after the push confirm on GitHub that the suggestion is not marked outdated. Do
+  not touch the approval line or the suggestion.
+- **Why the proof is required again:** the base changed `packages/db/src/authz/scope.ts` (+67), `authz/index.ts` and
+  `scope.test.ts`; nothing under `apps/worker/src/reconcile` or `packages/ledger`. It also rewrote the migration
+  runner (`packages/db/src/migrate.ts`, +211: #145 bounds every lock wait and retries), so both
+  `ledger-lookups.db.test.ts` files (packages/db/src and apps/worker/src/reconcile) matter: they apply this
+  migration through that runner.
+- **The kit's real place** is `approval-summaries/lane-a-wip/schema-pr2/probe/` on claude/build-ops (W11's block
+  says `lane-a-wip/...`): `queue3.sh`, `run.sh`, `cluster.sh`, `compare.py`, `dump.py`. It is not self-contained:
+  `queue3.sh` calls `$P/seed.mts`, which with `common.mts` and `pass.mts` is in
+  `approval-summaries/lane-b-suite-cap-3-wip/probe/` (its README.md says how). It needs a private PostgreSQL 18
+  cluster on port 5494 with its data directory outside /tmp/claude-0 (`cluster.sh up <dir>`), the env `S`, `OUT`,
+  `TP_REPO` (the merged tree), `SEED_REPO` (a worktree of the base fd14d89f, without the migration, with its own
+  install) and `DRAFT` (the migration file's text), then the steps `base`, `seedR 2000`, `seedF 10000`, `run` for
+  each seed in states `none` and `pr2`, and `cmp`: the dumps must be IDENTICAL row for row (20,635 and 102,907 rows on
+  the previous bases), with the body hashes recorded per run.
+- **Then:** the fast checks (typecheck, lint, lint:copy, lint:logs, check:fixtures, synth and its diff), both test
+  files on PostgreSQL 18 (`DATABASE_URL=postgres://postgres:test@localhost:5433/postgres`), push through the hook from
+  the hooked checkout, CI by subscription, one line to the orchestrator at green or at the first failure. If the base
+  moves again before the founder's commit, do not chase it: tell the orchestrator.
+
 ## RESUME-BLOCK (final from W11, 2026-11-11 18:20 UTC; W11 has stood down and holds nothing)
 **For the successor: the only work left on this item is the merge, then three records.**
 - **Draft PR #143** (https://github.com/PureTideWater/PhysicalTherapy/pull/143), branch `co-001/ledger-function-bodies`,
