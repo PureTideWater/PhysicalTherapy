@@ -1,6 +1,6 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-12 22:30 UTC by Lane A's orchestrator (session_019i9ifBvWjwr3brfsKw8r8F). **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-12 22:55 UTC by Lane A's orchestrator (session_019i9ifBvWjwr3brfsKw8r8F). **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
@@ -61,7 +61,7 @@ own status file and `CLAUDE.md`, not the long history files.
 - Granted 2026-11-07 19:26 UTC: the batching plan's PR 5 ledger freeze ask, Q1 to Q3, exactly Appendices A and D, for schema PR 5 only.
 - Staging: F0 before release N reaches production; F1 to F5 and ruling 16 before Cognito PR 2; #125's smoke checks; Gmail iOS and Outlook.com dark renders.
 - Launch (added 2026-11-12, from item 37's build, not yet a numbered queue item): the web and the worker share one task role, so the web still holds the provider's AdminUserGlobalSignOut permission it no longer uses; split the roles before launch.
-- Launch: #42's actions 2 to 7, counsel's reading of the legal text, O9 (#41), runbook 3i, PRD section 19's RDS cost line. Before launch in code: Queues items 35 and 37 (item 29 stays open until 37), and Cognito PR 2 (item 28's and ADR 0093's rules hold for an account only once the client is confidential). Before any real PHI: Queues items 26 and 34, then the sweep.
+- Launch: #42's actions 2 to 7, counsel's reading of the legal text, O9 (#41), runbook 3i, PRD section 19's RDS cost line. Before launch in code: Queues items 35 and 37 (item 29 stays open until 37), and Cognito PR 2 (item 28's and ADR 0093's rules hold for an account only once the client is confidential). Before any real PHI: Queues items 26 (merged) and 34 (in review), **Queues item 40** (two forms of a stored number sent in clear on the base, found by item 34's review; queued 2026-11-12), then the sweep.
 
 ## Never
 - Sign or approve as the founder, or write the approval line or `approvers.json`.
