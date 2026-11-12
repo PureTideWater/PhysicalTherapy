@@ -3,3 +3,7 @@ a/open/
 b/out/
 b/inst/
 b/out-*.txt
+c-phi/out/
+c-phi/nostore/
+c-time/out/
+c-time/inst/

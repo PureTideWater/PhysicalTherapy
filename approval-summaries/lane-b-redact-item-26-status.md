@@ -2,42 +2,65 @@ ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9m
 
 # Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
 
-## RESUME-BLOCK, current (W21, session_019i9ifCPJnxuf8XPM3RFrt8, 2026-11-12 about 00:30 UTC; the work bound is BUILT and pushed; its review is running; no PR yet)
+## RESUME-BLOCK, current (W21, session_019i9ifCPJnxuf8XPM3RFrt8, 2026-11-12 about 02:15 UTC; STOPPED at its token limit with review C's TIME findings BLOCKING and run; the fix is designed below, NOT built; no PR)
 
-- **The ruling built (the orchestrator's, 2026-11-11: the 3 s budget stands; a deterministic work bound that fails closed).**
-  WIP `co-001/wip-redact-item-26` = **69e00b48** (f0d415e2 plus one commit). Local branch `co-001/redact-item-26`.
-  - Step 1 (a cheaper way): none taken. A profile of the dearest letter shows the wider reading itself is cheap; the
-    time is the first reading's check run four times (both writings before a wider match is applied, both after),
-    against once on the base. No few-line change removes a check and keeps the construction.
-  - Step 2: `WIDER_WORK_BOUND = 100_000` characters (`packages/redact/src/redact.ts`), counted on the text the first
-    reading wrote: its length, plus its length with CR LF as LF where it holds a CR LF (`widerWorkOf`, what
-    `refusedAsFirstRead` reads). Past it, where the wider reading has a match to apply, that check is not run, no wider
-    match is applied, and the letter is returned as the first reading wrote it with U+0001 at its end
-    (`unreadPastTheBound`), which `holdsAsFirstRead` refuses at its first line. Both paths (`screenAsBothRead`,
-    `redactionSpans`). No timer anywhere.
-  - Tests first (failed on f0d415e2, pass now): `redact.leaks.test.ts` `describe('the work bound of the wider reading')`
-    (10 rows) and `denial-letter.test.ts` (the name-apart rows trimmed to the bound and still read; the same letters
-    at N and the two 100 kB CR LF letters refused by the count; two CR LF rows with no wider match).
-  - Measured, Node 24, processor time at the reference calibration (`scripts/bound-time.mts`): dearest still read 2.0
-    to 2.2 s (a digit and a CR LF repeated to 100,000 characters, no wider match: K-1's two readings; and the same
-    with a name apart at the bound, 59,996 characters); base's dearest 1.1 to 1.5 s; past the bound refused in 0.4 to
-    0.8 s (was 3.4 to 4.0 s).
-  - What the bound refuses (`scripts/bound-refusals.mts`): the gate's 975,489 letters: longest 1,780 characters, none
-    can reach it; the repository's prose, 527 texts as written and with CR LF, 64 names, 67,456 letters: 0 refused by
-    the bound, 0 differ from f0d415e2 in answer, sent text or candidates.
-  - Typecheck, lint, the seven redaction test files (3,297) and `denial-letter.test.ts` (1,039) pass on Node 24.
-- **Running now:** the one adversarial review of everything since the reviewed build 2ab3e0dd (fix round 1 and the
-  bound), two reviewers: `reviews/c-phi/report.md`, `reviews/c-time/report.md` (briefs are in this session; snapshots
-  `/home/user/rev/{base,r0,f0d,head}`, delta `/home/user/rev/delta-since-review.diff`).
-- **Then, in order:** every finding run before any fix; a blocking one fixed and its delta reviewed once (not clean:
-  stop and tell the orchestrator); others pinned in ADR 0054 for Queues item 34. The gate (`/home/user/gate`, laid out
-  in this container: A `/home/user/snapA` = the base 83e30973's reader, F `/home/user/snapF` = f0d415e2, B
-  `/home/user/snapB` = the head; run A against B, and F against B for the letter-for-letter figure) and the battery
-  (`tools/lay.sh`; worktrees `tree-ef3`, `tree-cc3` exist) on recorded and fresh seeds, output to files; the full
-  local suite once on Node 24; ADR 0054 (rewrite "*The dearest letter.*", add the work bound and its must-stay cost,
-  tests, review C) and the matrix row MOD-23; the base merged right before the last push and the gate again; a draft
-  PR into claude/build-platform from the template naming every cost and residual; subscribe; merge on green; one line.
-- No PR is open, no subscription and no check-in is held.
+- **Where it stands.** WIP `co-001/wip-redact-item-26` = **c52f262a** (f0d415e2, then 69e00b48 the work bound and its
+  tests, 6f7029d9 ADR 0054 and the matrix row, c52f262a review C-PHI's three recorded findings pinned). Local branch
+  `co-001/redact-item-26`. Typecheck, lint, the seven redaction test files and `denial-letter.test.ts` passed on
+  69e00b48 (Node 24). **No PR, no subscription, no check-in. The gate, the battery and the full suite were NOT run.**
+- **What was built (the ruling's step 2).** `WIDER_WORK_BOUND = 100_000` characters on `widerWorkOf(first text)` (its
+  length, plus its length with CR LF as LF where it holds one): past it, where the wider reading has a match to apply,
+  the gate check is not run and the letter is returned as the first reading wrote it with U+0001 at its end, which
+  `holdsAsFirstRead` refuses at its first line (`unreadPastTheBound`; both paths). Step 1 (a cheaper way): none; the
+  time is the first reading's check run again, not the wider reading.
+- **Review C (the one adversarial review; reports `reviews/c-phi/report.md`, `reviews/c-time/report.md`).**
+  - **PHI: no blocking finding** (47,891 fuzzed letters on four trees and both paths, 104 letters at the bound, 9,510
+    store comparisons). C-PHI-1 to C-PHI-3 run by me, recorded and pinned in `redact.leaks.test.ts` (c52f262a); they
+    still need their rows in ADR 0054's "Left, each recorded" for Queues item 34.
+  - **TIME: BLOCKING, run by me and confirmed** (`scripts/review-c-time-rows.mts`, output beside it; Node 24, at the
+    reference calibration, three runs):
+    - **CT-1 (item 26's own): still-read letters of at most 100,000 characters over the budget.** The bound counts
+      characters, and a letter of one digit and one line break per line costs about twice per character what the
+      rows the bound was set on cost; the base itself takes 1.9 to 2.6 s on them. A wider match and no CR LF, at the
+      bound: head 3.2 to 3.8 s (base 2.1 to 2.4). A CR LF and no wider match, which meets no bound at all (K-1's second
+      reading): head 3.0 to 3.6 s (base 1.9 to 2.6). Both, at the bound (49,984 characters): head 2.8 to 2.9 s (base
+      1.2). My figure "dearest still read 2.0 to 2.2 s" is WRONG and is in ADR 0054 on the WIP ref: rewrite it.
+    - **CT-2 (the merged base's own, not item 26's): quadratic time.** `'Vantree' + ' J'.repeat(49990) + ' \u0445'`
+      (initials beside a name, and one look-alike character anywhere): base 3.0 to 4.3 s, head 4.0 to 4.6 s; with a
+      name joiner as well the reviewer measured 5.6 to 8.3 s on the base. `matchesIn` searches a list once per match
+      (`plain.some`, `base.some`; base lines 1090 and 1094). The merged base breaks the 3 s budget on a letter of
+      100,000 characters; no budget row holds this letter. **The orchestrator's to rule:** curing it changes the first
+      reading's code, which item 26's construction leaves unchanged by one character.
+    - CT-3, CT-4 (not blocking): a letter past the bound still pays its redaction (0.3 to 1.3 s; the base's quadratic
+      letter 3.6 to 4.4 s before it is refused); the base's dearest letters with nothing of item 26's are 2.3 to 2.7 s.
+- **The fix for CT-1, designed and not built (this item's one allowed fix; its delta is then reviewed once, and if that
+  review is not clean of blocking findings, stop and tell the orchestrator).**
+  1. The bound must cover BOTH re-readings item 26 adds, each counted the same way: the gate's (as now) and K-1's
+     second reading in `holdsIdentifier`: a text that holds a CR LF and whose writing with line feeds is over the
+     bound is REFUSED (return true) and not read again. In `holdsIdentifier` the first reading of the text as written
+     runs first, as on the base.
+  2. The bound falls to about **50,000** characters. Measured cost of one more check on the dearest content: 1.1 to
+     1.4 s per 100,000 characters, on a base of 2.1 to 2.5 s. At 50,000: a wider match alone (50,000 characters) about
+     1.25 + 0.7 = 1.95 s; a CR LF alone (LF writing 50,000) about 1.9 s; both (25,000 characters, three more checks)
+     about 1.5 s. Measure, do not trust these sums: rerun `scripts/review-c-time-rows.mts` with each row trimmed to
+     the new bound, with U+2028 and U+0085 as the line break too (`nel`, `ls` arguments) and the reviewer's rows L1 to
+     L12, K1 to K11 (`reviews/c-time/adv.mts`). The dearest letter still read should then be the base's own (2.3 to
+     2.7 s, no part of item 26).
+  3. Must-stay cost to state plainly: every letter with CR LF line endings over about 50,000 characters is refused,
+     whatever it holds; a letter with a wider match over 50,000 (25,000 with CR LF) is refused. Measured so far: the
+     gate's letters are at most 1,780 characters and the repository's prose at most 9,933, so none of either.
+     Rerun `scripts/bound-refusals.mts` (it reads the bound from the head).
+  4. Tests first: `denial-letter.test.ts`' two CR LF rows of 100,000 characters with no wider match turn to refused
+     (they are over the new bound) and rows at the new bound are added, among them the reviewer's dear units (`5\n`,
+     U+0665 with U+2028) with a CR LF, with a name apart, and with both; `redact.leaks.test.ts`: "reads a letter of
+     any length that holds nothing for the wider reading" keeps its LF half and its CR LF half turns to refused; a
+     boundary row for K-1's count; the pins of C-PHI-1 to C-PHI-3 are rebuilt on the new value (C-PHI-3's letter is
+     tuned to 100,000). Then ADR 0054 (the count, the bound, the costs, the time, review C) and the matrix row.
+- **Then, as before:** the gate (`/home/user/gate` is laid out in this container with `/home/user/snapA` = the base's
+  reader, `snapF` = f0d415e2's, `snapB` = the head's: copy the final `redact.ts` in; A against B, and F against B for
+  the letter-for-letter figure) and the battery (`tools/lay.sh`; `tree-ef3`, `tree-cc3` exist) on recorded and fresh
+  seeds; the full local suite once on Node 24; the base merged right before the last push and the gate again; a draft
+  PR from the template naming every cost and residual; subscribe; merge on green; one line to the orchestrator.
 
 ## RESUME-BLOCK, earlier (W20, session_019i9ifCRAB5iyShfYuBtnA3, 2026-11-11 about 23:25 UTC; part A MERGED; part B STOPPED at a blocker before its delta review, waiting on the orchestrator)
 
