@@ -1,0 +1,6 @@
+claim 12345 | "Account12345 was paid" | base: sent as written | floor 5: REFUSED | floor 6: sent as written
+claim 1234 | "Account1234 was paid" | base: sent as written | floor 5: sent as written | floor 6: sent as written
+claim 12345 | "Fax X12345 ext" | base: sent as written | floor 5: REFUSED | floor 6: sent as written
+claim 97110 | "Billed 97110GP twice" | base: sent as written | floor 5: REFUSED | floor 6: sent as written
+claim 0283 | "Billed G0283 twice" | base: sent as written | floor 5: sent as written | floor 6: sent as written
+claim 12345 | "Acct12345 was paid" | base: "Acct[CLAIM_1] was paid" | floor 5: "Acct[CLAIM_1] was paid" | floor 6: "Acct[CLAIM_1] was paid"

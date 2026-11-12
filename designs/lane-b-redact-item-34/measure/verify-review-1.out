@@ -1,0 +1,19 @@
+R1 "Ref 0076543210 ok" SENT AS WRITTEN
+R1 "Ref 7654321001 ok" SENT AS WRITTEN
+R1 "Ref 976543210 ok" SENT AS WRITTEN
+R1 "Ref 765432109B ok" SENT AS WRITTEN
+R1 "Card XYZ7654321001 ok" "Card XYZ[PHONE] ok"
+R1 "Card XYZ76543210123 ok" REFUSED
+R1 "Card XYZ76543210-01 ok" REFUSED
+R1 "Card XYZ7654321012345 ok" REFUSED
+R2/R7 7654/3210 "Fax X7654/3210 ext" SENT AS WRITTEN
+R2/R7 7654/3210 "Fax 7654/3210 ext" "Fax [MEMBER_ID] ext"
+R2/R7 12345 01 "Member ID: 12345 was paid" SENT AS WRITTEN
+R2/R7 12345 01 "The member 12345 was paid" SENT AS WRITTEN
+R8 ZEPHYRA2 "Dear Ms. Zephyra, ok" SENT AS WRITTEN
+R8 JANEZEPHYRA "Dear Ms. Zephyra, ok" SENT AS WRITTEN
+R9 HO NA "Pt h/o pain. Auth N/A. See n a." base: "Pt h/o pain. Auth N/A. See [PATIENT_NAME]." a4: "Pt [PATIENT_NAME] pain. Auth [PATIENT_NAME]. See [PATIENT_NAME]."
+R9 LE WO "L/E weak w/o brace" base: SENT AS WRITTEN a4: "[PATIENT_NAME] weak [PATIENT_NAME] brace"
+R3 dates 100k, ten 7-digit claims, floor 0 418.78 sent
+R3 dates 100k, ten 7-digit claims, floor 6 420.78 refused
+R6 "SSN verified. Account \n\r\rNo. 900-12-345678" SENT AS WRITTEN
