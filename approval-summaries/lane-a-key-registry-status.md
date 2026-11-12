@@ -2,6 +2,90 @@
 
 ## RESUME-BLOCK (2026-11-12, W50, session_019i9ifDqnGxZb6EWNt5PoPf): the records, the absence alarm and green are done; the five SCREENS are NOT seen and SGN-22's test is owed; then the reviews, the domain model and the PR
 
+**W52 adds (2026-11-12, session_019i9ifCRjPnsiRtqtB38Vmm): SGN-22's test and W43's item 6 are BUILT and green; WIP
+`co-001/wip-key-registry` is now 3187bda3 (one commit on 656854b1). No migration touched, no PR, no e2e spec or
+screen touched. Items 1 and 4 of the list below are done; the rest of the list stands.**
+
+*What is built*
+- **SGN-22's own test** (`packages/db/src/key-registry.db.test.ts`, the last `describe`; 16 cases). Two connections of
+  the application's role, the first holding the account's row uncommitted, the second **seen waiting on a lock**
+  (`pg_stat_activity`), then the invariant read as the owner (no live session whose digest is not a live key; none
+  begun at or before the mark): a sign-in first, then each of confirmation, End membership, reset (the session is
+  ended); each of the three first, then a sign-in begun before it (refused: `user_session_hardware_key_live` after a
+  confirmation, `user_session_sign_in_not_before` after the other two); each first, then a sign-in begun after its
+  clock and before its commit (refused after a confirmation; opens after the other two, its key live); the six
+  ordered pairs of the three (no session left, a step begun before either opens none); and the registry's two
+  migrations do not name `resolve_session`.
+- **The count** (`apps/web/src/lib/routes/session-end.db.test.ts`, the last `describe`): `resolveSession` issues
+  **three statements, one read** (`BEGIN`, the resolving statement written out in the test, `COMMIT`) for a key
+  session of the registry, a code session and an unknown cookie; none with no cookie. **No new round trip.** "The same
+  as on the base": `resolveSession` and `withResolvedActor` have no diff from `origin/claude/build-platform`, and the
+  test's literal is the base's `RESOLVE_SESSION`.
+- **Shown red first, in scratch changes never committed** (the migrations were not edited: the function was replaced
+  in the test's scratch database): the registry trigger's lock line removed, so its check runs before the lock the
+  next trigger takes: 2 failed, the invariant with `without_a_live_key: 1, live: 1` and `second: accepted`; the
+  mark's trigger disabled: 4 failed, `at_or_before_the_mark: 1`; one more read in `resolveSession`: the statement
+  list failed with the fourth statement named.
+- **The matrix:** SGN-22's assertion rewritten in `matrix.ts` and `docs/product/test-matrix.md`, the "not yet
+  written" note dropped from `registry.ts`, which now names the two test files; `pnpm synth --all` rewrote
+  `fixtures/synthetic/SGN-22/expected.json` (1 file).
+- **Item 6 (a), the relying-party tie** (`apps/web/src/lib/auth/sign-in.ts`, `oneRelyingParty`,
+  `RelyingPartyMismatch`): as the note's section 5 has it, the provider's ID is read from the options of the first key
+  step that carries one (`rpId` at sign-in, `rp.id` at registration), compared once in the process, logged once at
+  error (`configuration: the relying-party ID is not the provider’s; hardware-key steps are refused`, `request_id`
+  only), and that step and every later key step (begin and complete, sign-in and registration) throws, the later
+  ones before the provider is asked. The message names `WEBAUTHN_RP_ID`, the host of `APP_ORIGIN` and the stack's
+  application domain name, and neither value. Tests first (3, in `sign-in.db.test.ts`): red on the missing class,
+  then green.
+  **The choice taken, said plainly: refuse, not warn; and at the first key step, not at boot.** The pool's ID is
+  known to the web only from the provider's options, so the process starts and serves everything else; what it
+  refuses is every hardware-key step, so no key session opens on a mismatch. Refusing at boot would need a provider
+  read the web's role does not hold (`DescribeUserPool`), which the note does not ask for.
+- **Item 6 (b), the infra ties** (`infra/test/identity.test.ts`): the pool's `WebAuthnUserVerification` is `required`
+  exactly when `KEY_USER_VERIFICATION_REQUIRED` (read from `sign-in.ts`, declared once) is true, and both of the
+  web's checks take the constant and no literal; the web task's `WEBAUTHN_RP_ID` is the pool's
+  `WebAuthnRelyingPartyID` and its `APP_ORIGIN` is https on it. Red in scratch three ways (the constant false; the
+  pool PREFERRED; the web's variable another host), then green.
+
+*What is green (PostgreSQL 18, Node 24; one run on the tree of 3187bda3)*
+- `pnpm typecheck`: passed, 24 projects. `pnpm lint`: 1,959 files, 0 errors, 0 warnings. `pnpm lint:logs`: 1,209
+  files, every call allowlisted. `pnpm verify-content`: every content set passes.
+- `pnpm test` (the whole unit suite, the web's among it): **510 files; 14,376 passed, 4 skipped, 0 failed** (W50's
+  14,373 and infra's 3 new).
+- Infra's tests (`vitest run --project unit infra/`): **29 files, 831 passed, 0 failed.**
+- `pnpm test:db` whole, 25 minutes, alone on the machine: **175 files; 10,572 passed, 1 skipped, 0 failed** (W50's
+  10,552 and 20 new: SGN-22's 16 and 1, the relying party's 3).
+- **Not run:** `pnpm test:e2e`, `pnpm test:golden`.
+
+*W52's points for the reviews (48 to 56, after W50's)*
+48. **(auth review) The relying-party refusal is at the first key step of each process, not at start-up** (above);
+    whether a boot-time read of the pool is wanted is a decision with an IAM grant behind it.
+49. **(security and deploy review) The mismatch's error line pages nobody**: no metric filter counts it (the note
+    names none; the filter count stays 42). On a mismatch every key step answers as an unexpected failure.
+50. **(auth review) Options that carry no relying-party ID are not compared**, and the check stays open until one
+    does. Whether the provider always sends `rpId` in its request options is unverified on this machine; if it
+    never does at sign-in, only a registration compares.
+51. **(auth review) A mismatch is latched until the process ends**; mending the setting is a deploy, which replaces
+    the tasks.
+52. **(UX review) What a person sees when a key step throws `RelyingPartyMismatch`** is whatever the routes show for
+    an unexpected failure; W52 did not look (the screens were W53's).
+53. **(database review) A sign-in begun after End membership's or a reset's clock and before its commit opens a
+    session** (began after the mark, key live): the migration's comment says so and SGN-22 now pins it. One begun
+    in the mark's own millisecond is refused (`sign_in_step_began` cuts to the millisecond).
+54. **(database review) What SGN-22 was not shown red for:** the order "sign-in first, the mover waits" rests on each
+    mover's own lock (the confirmation's `FOR NO KEY UPDATE`, the two UPDATEs of the account's row); those were not
+    removed in scratch.
+55. **(auth review) The user-verification tie reads the web's source text**, as the relying-party test beside it
+    does; the provider twin's `'required'` literals are not held to the constant.
+56. **(database review) SGN-22's cases wait up to five seconds to see the second connection on a lock** and fail if
+    it never waits; on a slow machine that is the first place to look.
+
+*Machine notes:* PostgreSQL was stopped again (the same `pg_ctl` line). The checkout is on a local branch
+`co-001/wip-key-registry` at 3187bda3. W52 read, beyond its list, the registry migration's sections 5 and 6 and the
+confirmation's body, and migration 20261112090000's session trigger, to write the interleavings. W52 holds nothing:
+no PR, no subagent, no scheduled task; its one background run has ended.
+
+
 **WIP `co-001/wip-key-registry` 656854b1** (three commits on 7f986ed0: 1d86db50 the records, 2d0e08b4 the absence
 alarm, 656854b1 one alarm's words). No PR is open. No migration was touched, and none may be. W50 handed over at about
 185k tokens, at Part 3's end, **before Part 4**: nobody has yet seen item 37's screens in a browser.
