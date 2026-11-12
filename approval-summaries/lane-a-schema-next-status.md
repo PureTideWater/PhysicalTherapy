@@ -3,39 +3,25 @@
 Lane A, W15 (https://claude.ai/code/session_019i9if9aX9NMhnMVmJCk4BM), from 2026-11-11 18:12 UTC. It took the chain
 from W11. Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md`.
 
-## RESUME-BLOCK (W16, https://claude.ai/code/session_019i9ifEMVhfmHMsi6UzykXB, 2026-11-12 02:30 UTC; schema PR 4 only; #143's merge step stays W15's, block below)
-- **State: steps 1 and 2 are done; PR 4 waits only for #143 to merge.** WIP ref `co-001/wip-payer-response-db-rules`
-  = **9090c4b3** (on #143's head a3a32024). Worktree `/home/user/pr4`, branch `co-001/payer-response-db-rules`
-  (a successor makes it with W15's command in the block below, from the WIP ref). Report to the orchestrator's new
-  seat, session_019i9ifCaMokBYHaARonYamS.
-- **The block of 2026-11-11 22:50 UTC is lifted:** the co-founder allowed the marker-route command in W16's session
-  ("Let's allow it", 2026-11-12). The migration was replaced once from the kit's built file (c07965d6): the preflight
-  asks the responses and the versions (W15's review, S1); `source_document_rules()` refuses a change of
-  `parent_document_id` (its N1). Both with tests that failed first.
-- **Reviews, all done:** tenant isolation (`lane-a-wip/schema-pr4/review-tenant-isolation.md`); database, twice
-  (`review-database.md`, W16's run; `review-database-w15-run.md`, W15's, weighed by W16); the fixes' delta
-  (`review-database-delta.md`: its one should-fix, the preflight's cost at thousands of practices, NOT taken and
-  recorded with why; its test notes taken, 9090c4b3). **No further migration change is owed and no review is owed.**
-- **Records done:** the runbook's section; CAS-58 (matrix, registry, fixtures), CAS-45 and CAS-48 name the database
-  tests; ADR 0085's amendment (the search path, the duplicate residual not closed and why, the crossing, the two
-  fixes); ADR 0093 accepted.
-- **Passed on 9090c4b3:** the three database files (59) on PostgreSQL 18, eslint on the changed tests, lint:copy;
-  typecheck and `db:domain-model --check --strict` on c07965d6. The whole fast set runs again after the base merge.
-- **Next, only when #143 is in:** (5) in `/home/user/pr4`: fetch and merge `origin/claude/build-platform`; a fresh
-  database on 5433 (PostgreSQL stops when the container idles: run `tools/setup-container.sh` first), `pnpm
-  db:migrate`, `pnpm -s db:domain-model --out --strict` (the approval line stays blank), `--check`; the fast checks;
-  the one full local suite (`DATABASE_URL=postgres://postgres:test@localhost:5433/postgres`; output to files); (6)
-  push `co-001/payer-response-db-rules`; the draft PR into claude/build-platform: the description is the whole output
-  of `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs list`, then
-  `lane-a-wip/schema-pr4/pr-description-body.md` with its three `@@` places filled (the checks table, the two
-  hashes); (7) on CI green but for the blank line: the suggested approval line by the skill's `gh api` route, its link
-  to the orchestrator with the founder's reading (the body's "What the founder should know", point 1 first);
-  subscribe; merge after the founder's "Commit suggestion" and green required checks.
-- Kit to change the migration, if ever needed again: `lane-a-wip/schema-pr4/template.sql` and `build.py` (current with
-  the committed migration); W15's paragraph below ("To change the migration").
-- A slip, 2026-11-11 19:35 UTC: a first writing of this block went through an unquoted shell here-document, which ran
-  its backticked text in `/home/user/ops` (two fetches, pnpm refusing for want of a manifest, a bare push the pre-push
-  hook refused). Nothing merged, no branch was pushed, no database was touched.
+## RESUME-BLOCK (W16, https://claude.ai/code/session_019i9ifEMVhfmHMsi6UzykXB, 2026-11-12 05:45 UTC; schema PR 4 only)
+- **Draft #156 is open** (https://github.com/PureTideWater/PhysicalTherapy/pull/156), head **155bcbe6** on
+  `co-001/payer-response-db-rules`, the base 93e137f9 (#143, #151) merged, the domain model regenerated: before
+  `47fae5d1…` (approved with #143), after `922ff5e3f7e81884d1aaaa1937a46fe1b2ff645c889dd60dc62e8e1e086b061b`, the
+  approval line blank. W16 is subscribed. Its description is `lane-a-wip/schema-pr4/pr-description.md`.
+- **The one full local suite ran on 155bcbe6:** fast checks, verify-content, synth, test:db (10,346), golden (381),
+  e2e (87) passed; `pnpm test` 14,230 passed and 1 failed, `packages/contracts/src/evidence/pages.test.ts`'s
+  heap-exhaustion case (SIGABRT): passed alone on rerun, fails the same way on the base's checkout here, untouched by
+  this PR. If CI fails on it, it is the base's and is reported, not skipped.
+- **Reviews: all done, nothing owed** (tenant isolation; database twice; the fixes' delta). See the files beside the kit.
+- **Next:** (7) when CI is green but for the blank approval line (`domain model` / approval jobs): post the suggested
+  line by the skill's `gh api` route as ONE pull-request comment on the last line of `docs/product/domain-model.md`
+  at the head (the founder's name as on the base's line, the date, the hash above); send its link to the orchestrator
+  (session_019i9ifCaMokBYHaARonYamS) with the founder's reading (the description's "What the founder should know",
+  point 1 first); end the turn. After the founder's "Commit suggestion" and green required checks on that commit,
+  with the base an ancestor of the head (rule 2a): merge, one line to the orchestrator, record, unsubscribe, stand down.
+  A red job: read only its failing step.
+- Kit to change the migration, if ever needed again: `lane-a-wip/schema-pr4/template.sql` and `build.py`; the
+  marker-route command was allowed by the co-founder in W16's session on 2026-11-12.
 
 ## W15's block (superseded for B by W16's above; A still stands) (W15, 2026-11-11 21:45 UTC; W15's context is at its limit, a successor takes B from here)
 - **A. #143** (schema PR 2): W15 is subscribed. Head a3a32024, waiting for the founder's "Commit suggestion" on
