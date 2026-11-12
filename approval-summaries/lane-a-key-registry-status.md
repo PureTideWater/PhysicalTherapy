@@ -1,6 +1,254 @@
 # Status: Queues item 37, the key registry (Lane A)
 
-## RESUME-BLOCK (2026-11-12, W46, session_019i9ifBCSRKBX2qnkTHphgZ): cut B's CONSOLE is built (four routes, their screens); the provider sign-out removal and the alarm swap are NOT started
+## RESUME-BLOCK (2026-11-12, W47, session_019i9if9pdiBq7WR2Rdf8ezT): the BUILD of item 37 is whole (W43's item 5 done: the web asks the provider for no sign-out, the alarms moved); what is left is seeing it in a browser, the two reviews, and the papers
+
+**WIP `co-001/wip-key-registry` 7f986ed0** (three commits on 03f0af53). No PR is open. No migration was touched: the step
+needed nothing the functions and grants did not already give (the row is queued by `audit_event_provider_sign_out`,
+the trigger W33 built, on the audit event each act already wrote). The last session needs this block; W46's (the
+console), W45's (the code screen), W44's (the flow), W43's (the job) and W33's (the database) are the references.
+
+### What W47 built (W43's item 5, whole; commit 5b7729a4)
+- **The three call sites.** `lib/routes/console.ts` `endMembership`, `lib/routes/settings.ts` `endMembershipAction`
+  and `lib/auth/sign-in.ts` `endedByReset` no longer ask the provider anything. Each already wrote its audit event
+  (`membership_ended`; `password_reset_completed` or `password_reset_outcome_unknown`) inside its own transaction,
+  and the database's trigger queues one `provider_sign_out` row on that insert, so **the enqueue is the act's own
+  transaction: a committed act has its row, a rolled-back act has none.** The job `provider_sign_outs` sends it.
+  Nothing is sent from the web, after commit or otherwise. The Settings route no longer reads the person's provider
+  subject at all (the trigger reads the account).
+- **Removed with it:** `lib/auth/provider-sign-out.ts` and its test (`signOutAtProviderAfterCommit`,
+  `NO_PROVIDER_SUBJECT`); `AuthProvider.globalSignOut` from the interface, the Cognito provider (with
+  `signOutTimeoutMs`, `SIGN_OUT_TIMEOUT_MS` and the `AdminUserGlobalSignOutCommand` import) and the local twin, and
+  their unit tests; `AfterCommitOptions.whenCommitUnknown` (`http/route.ts`, `http/invoke.ts`), which only the helper
+  used: a commit that ends without an answer now runs no handler work at all, and what must follow it is the row's.
+  `packages/synth/src/cases/registry.ts` SGN-19 lists the new test file in place of the deleted one.
+- **The proof, kept as a test:** `lib/auth/no-provider-sign-out.test.ts` scans every `.ts`, `.tsx`, `.js`, `.mjs`,
+  `.cjs` and `.json` file under `apps/web` (not `node_modules`, not dot-directories) and fails on any mention of the
+  provider's sign-out, code or comment; the one allowed line is a test's `expect(provider).not.toHaveProperty(...)`.
+  The grep (the same on 7f986ed0):
+  ```
+  $ grep -rn 'globalSignOut\|signOutAtProviderAfterCommit' apps/web/src
+  apps/web/src/lib/auth/no-provider-sign-out.test.ts:20:const ALLOWED = /^\s*expect\(provider\)\.not\.toHaveProperty\('globalSignOut'\);$/;
+  apps/web/src/lib/auth/sign-in.db.test.ts:591:    expect(provider).not.toHaveProperty('globalSignOut');
+  apps/web/src/lib/routes/console-routes.db.test.ts:400:      expect(provider).not.toHaveProperty('globalSignOut');
+  apps/web/src/lib/routes/console-routes.db.test.ts:1232:    expect(provider).not.toHaveProperty('globalSignOut');
+  $ grep -rn 'GlobalSignOutCommand' apps packages --include=*.ts -l
+  apps/worker/src/platform/cognito-sign-out.ts
+  apps/worker/src/platform/cognito-sign-out.test.ts
+  ```
+  Four lines, all tests asserting the method does not exist; no call. The SDK's command is the worker's alone.
+- **The alarms (same commit).** `infra/lib/security-events.ts`: `PasswordResetProviderSignOutFailed` and
+  `MembershipEndProviderSignOutFailed` (and their two message constants) are gone from `RESET_AND_ENROLMENT_COUNTS`
+  (the web's set, now 13 lines); `PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM` (`ProviderSignOutNotDelivered`, the job's
+  words, 1 in 300 s) is new and `monitoring.ts` builds it on the **platform** log group
+  (`monitoring.providerSignOutNotDeliveredAlarm`, namespace `TherapyPlatform/Worker`, filter on `$.msg` alone so
+  LATE and GAVE_UP both count, operator topic, missing data not breaching). `RemovedHardwareKeyUsed` (W43's "plus")
+  joined the web's set for the line `sign-in.ts` 502 writes. The filter count stays 41 (two out, two in).
+  `PasswordResetSessionsNotEnded`'s words now also say no sign-out at Cognito was queued. `infra/test/monitoring
+  .test.ts` ties the job's line to `apps/worker/src/platform/provider-sign-outs.ts` and holds that the three web
+  sources hold no words about the provider's sign-out. `application-role.test.ts`: the web's provider sends
+  `AdminCreateUser` and `AdminGetUser` only; the third action of the shared task role is the worker's.
+
+### Tests first, and what was seen failing
+- `no-provider-sign-out.test.ts`: failed on its assertion (`expected [ …(31) ] to deeply equal []`: 31 lines in 9
+  files named the sign-out), then green.
+- `sign-in.db.test.ts` and `console-routes.db.test.ts`, rewritten before the code: **4 failed, 114 passed**, each
+  failure the assertion `expected DevAuthProvider{…} to not have property "globalSignOut"` (SGN-07's reset, SGN-19
+  in both routes, the key removal's confirm). **Said plainly: the assertions on the queued row passed already before
+  the change**, because the trigger has queued the row since W33's migration; what the change removes is the web's
+  call, and that is what was red. (The first two runs of these files failed only because PostgreSQL was not
+  running; those do not count and are not the failures above.)
+- `infra/test/monitoring.test.ts`, rewritten before the infra change: 20 failed (the pinned list of counted lines
+  by assertion; the web line's tie by assertion; the new alarm's tests because the construct did not exist yet),
+  then green. `application-role.test.ts` then failed by assertion (the web's commands no longer equal the role's
+  three) and was rewritten to say whose each action is.
+- New cases: a reset's row carries IDs only (no address, no subject), `attempts` 0; a reset whose transaction fails
+  twice, a reset made as the database goes away, a refused code and an unknown outcome with no account queue
+  nothing; one retried try queues exactly one row; End membership through both routes writes one row tied to its
+  audit event (`source_event_id`, `request_id`) and no line of the web's; a refused End membership queues nothing;
+  **an End membership whose COMMIT the server refuses leaves no row, no audit event, the membership standing and
+  the session active** (both routes).
+
+### What is green (on 5b7729a4, PostgreSQL 18, Node 24)
+The tip is **7f986ed0** (three commits on 03f0af53: 5b7729a4 the change; 34e84b87 and 7f986ed0 one generated file
+each, `fixtures/synthetic/SGN-19/expected.json` by `pnpm synth --all` and `tools/screening-capacity/watched-paths
+.txt` by its `--write`, which had not followed W45's `registration-code.ts`). Said exactly: typecheck, lint,
+lint:logs, the web's unit tests, infra's tests and `pnpm test:db` ran on 5b7729a4, nothing edited while they ran;
+the two later commits change one JSON line and one text line, and the whole unit suite ran on 34e84b87.
+- `pnpm typecheck`: passed (exit 0). `pnpm lint`: 1,959 files, 0 errors, 0 warnings. `pnpm lint:logs`: 1,209 files,
+  every call allowlisted. `pnpm verify-content`: every content set passes.
+- The web's unit tests (`vitest run --project unit apps/web`): **126 files, 1,691 passed, 0 failed** (1,700 before:
+  the deleted helper's and the provider method's tests out, the scan's two in).
+- Infra's tests (`vitest run --project unit infra/`): **29 files, 825 passed, 0 failed.**
+- `pnpm test:db` whole, 32 minutes, alone on the machine: **175 files passed; 10,551 tests passed, 1 skipped, 0
+  failed.** `reconcile.large.db.test.ts` passed inside it; no re-run was needed.
+- The worker's tests: none touched. `cognito-sign-out.test.ts` and `packages/synth` run again: passed.
+- **The whole unit suite (`vitest run --project unit`, 510 files): 14,366 passed, 4 skipped, 4 failed on 34e84b87;
+  2 of the 4 were the watched list, mended in 7f986ed0 (its file re-run: passed). The other 2 are NOT W47's and are
+  red on 03f0af53 too (checked out and run there: the same 2 failed, 31 passed):** `packages/db/src/migrate.test.ts`,
+  "the deploy runbook quotes 20261115090000_key_registry.sql's (and 20261115091000_key_registry_validate.sql's)
+  lock-loop failure as the deploy log shows it". `docs/runbooks/deploy-and-rollback.md` does not yet hold those two
+  quoted lines: **the runbook step's, and it must land before the PR's unit job can be green.** No earlier block
+  names this (W46 ran only the web's unit tests).
+- **Not run:** `pnpm test:e2e`, `pnpm test:golden`.
+
+### Safe with the previous image running (both do it for one act)
+The migration is already applied when either image runs, so the trigger queues the row whichever image ends the
+membership or records the reset.
+- **Previous web, new worker (a rolling deploy):** the previous web calls the provider after its commit *and* the
+  row is queued; the job calls the provider again within about a minute. The provider's global sign-out is
+  idempotent (design section 7: a second one ends tokens already ended; the app's own sessions are not the
+  provider's and ended at the commit), so the person is signed out once in effect and loses nothing more. The job
+  marks the row done on its own answer. If the previous web's call fails it writes its old line, **which no alarm
+  counts any more once the new infra is deployed**; nothing is lost, because the row is there and the job delivers
+  it or pages `ProviderSignOutNotDelivered`.
+- **New web, previous worker (the worker not yet replaced, or rolled back):** nothing asks the provider until a
+  worker with the job runs. The app's sessions and the account's mark moved at the commit, so what stays open is
+  only what the provider's own tokens can do, and a code step or key registration in flight is refused by the mark.
+  Rows wait, undone and untried (a row never tried is never given up: 16.6), and are claimed when the job exists.
+  **Nothing pages for a job that is not there**: see the point on the missed-run alarm below. Deploy the worker
+  with or before the web; the deploy runbook should say so.
+- **A full rollback to the previous image and the previous infra:** the previous web asks the provider itself
+  again and its two alarms return; the rows queue and wait as above.
+
+### NOT seen in a browser (nothing of item 37's screens has been; said first to whoever reviews)
+- **The code screen** (`app/sign-in/register-key/page.tsx`, W45): the code field after the password and the
+  authenticator code, its refusals, the step forward when the account is not closed.
+- **The four console screens** on `/console/organizations/[organizationId]`, the Members card (W46): request key
+  removal; the requested state as the requester and as another administrator (confirm, cancel); keys removed with
+  Open registration; the code panel shown once and what a reload shows.
+- Each at **390 px and 1,280 px**, by **keyboard**, with **focus** watched (the code panel takes focus; the table
+  scrolls sideways at 390 px inside `ScrollTable`; what a refusal and a refresh keep).
+- W47 changed no screen and no word a person sees: End membership's and the reset's pages answer as before, without
+  the wait on the provider. The alarm descriptions (operator-facing) are new words: see the wording point below.
+- `pnpm test:e2e` has not been run on this WIP by any session, and the e2e journey (request, confirm, open, the code
+  typed, the new key registered) is not written.
+
+### Every named point for the two reviews, in one list (W33, W43, W44, W45, W46 carried over; W47's added)
+**For the security review, first, from the orchestrator:**
+1. **A refused act leaves no trace.** A refused act writes no audit event because it rolls back (W46), so a refused
+   key removal (the requester confirming their own request, an administrator under seven days, a stale key session,
+   the account acting on itself) is recorded nowhere but a log line of the wrapper's. The security review says
+   whether sections 4.5 and 6 of the note require a trace of a refused removal and, if so, how it survives the
+   rollback (a second transaction after the refusal, an autonomous write by the function before it raises, or a
+   counted log line with an alarm).
+
+**Auth review**
+2. (W33, the ruling's point 4) Every session insert now takes the account's row, the previous image's included,
+   which ADR 0093 D4 had left unlocked on purpose. ADR 0095 needs the dated section amending D4, and "What the
+   founder should know" a line.
+3. (W33) `hardware_key_record` is an uncounted check of a code digest for whoever holds the application role
+   (decision 7); the 40 bits and the hour bound it.
+4. (W43) The job reads the provider's `UserNotFoundException` as `no_such_user` and marks the row done with no
+   sign-out; a pool ID naming the wrong pool would turn every row into that answer. Nothing checks the pool at start.
+5. (W43) The `removed` email tells the reader that support gives a one-time code: whether an email should say a code
+   exists at all.
+6. (W44, W45) `hardware_key_registration_judge` asked with no code counts a try, and the free "closed?" helper is
+   granted to no role. The web reads closed from the registry's rows; the one case it cannot see is a removal
+   confirmed for an account that never had a key row, whose first visit spends one of the five tries. Recorded for
+   the contract migration, not built.
+7. (W44) `codeRequired` and `code` live in the sealed step, but nothing trusts them: `judge` runs before each
+   provider call and `hardware_key_record` judges again under the lock.
+8. (W44) The cleaning skips a provider credential whose ID is not canonical base64url of 16 to 1,023 bytes; whether
+   Cognito's `CredentialId` is exactly the browser's `id` is unverified; if not, the cleaning deletes nothing.
+9. (W44) The cleaning measures "older than 15 minutes" from the database's clock against the provider's: two clocks.
+10. (W44) A registration that fails for a reason that is not a refusal now answers `key_not_registered` after
+    removing the key, where the base threw; the error's class name is logged.
+11. (W45) The code action is counted in `mfa` by the sealed step, the same budget as the key routes; whether the
+    code deserves a budget of its own.
+12. (W45) A code typed for an account that is not closed is answered as a step forward (`not_closed`), not a refusal.
+13. (W45) The shape's refusal differs from the wrong code's (a field issue against the one refusal).
+14. (W46) `AuditSpec.writtenBy: 'database'` lets a route name an audit action the wrapper never writes; only the
+    four key routes use it, each tested for exactly one event; no test yet refuses the flag on any other route.
+15. (W46) `runAction`'s `answer` returns a server action's success state without a redirect. One caller.
+16. (W46) 42501 from the functions is answered `invalid` with the rule's words, not `forbidden`.
+17. (W46) The lost code: one administrator can hold an account closed an hour at a time by opening and discarding
+    codes; each is audited and sends the member the opening's notice.
+18. (W46) The page lists removals only beside an organization's members; an account with no membership row has no
+    row to act on.
+19. (W46) `organizationId` in the key routes' inputs is used for the redirect only and is not checked against the
+    account's memberships.
+20. **(W47) A reset that recorded nothing now signs out nowhere.** When both tries of `endedByReset` fail (or the
+    database goes away after the provider took the new password), the previous web still asked the provider to sign
+    the user out; now no cause committed, so no row exists and nothing asks. The password is changed at the
+    provider, the app's sessions stand, and the one signal is `security event: password reset sessions not ended`
+    (`PasswordResetSessionsNotEnded`, whose words now say no sign-out was queued). The provider's sign-out never
+    ended the app's sessions, so what is lost is the provider's tokens ending for that account until the operator
+    acts. Closing it would take a way to queue a sign-out without the reset's event (a function and a grant: a
+    migration, closed to W47). The review says whether the runbook's step is enough.
+21. **(W47) The web's task can still send the sign-out.** The web and the worker share one task role
+    (`USER_POOL_ADMIN_ACTIONS`), so the web's credentials still hold `cognito-idp:AdminUserGlobalSignOut` though no
+    code of the web sends it. Splitting the role is larger than this step.
+22. **(W47) `whenCommitUnknown` is gone from the wrapper.** After a commit with no answer no handler work runs. No
+    route but the two End memberships used it; any later route that wants work for that case must write a row.
+23. **(W47) The Settings route no longer reads `cognito_sub`** under the administrator's scope before ending the
+    membership; ADR 0094's note on reading the subject "while the membership stands" is now moot and ADR 0095
+    should say so.
+
+**Security review**
+24. (W46) The registration code crosses the server-action response to the administrator's browser and lives in
+    React state until the page goes; `autocomplete`, storage and the URL never see it.
+25. **(W47) During a deploy the previous web's failure line pages nobody** once the new infra is in (its two alarms
+    are gone); covered by the row and the job, as "Safe with the previous image" says. And the reverse order (new
+    web, no job yet) asks the provider nothing until the worker is replaced.
+26. **(W47, W43's open point, still open) Nothing by name alarms when `provider_sign_outs` does not run.** Section 7
+    asks the build to confirm the platform schedule's missed-run alarm covers the job. W47 looked: `infra/lib` names
+    the job in no alarm list; what exists is the platform heartbeat (the process is alive) and the final-failure
+    filter on the platform group (`JobFailedOnLastAttempt`, a run that fails). A schedule that stops firing this one
+    job while the process beats is heard by neither, and rows then wait unpaged (LATE needs tries). Not built: it
+    needs a decision on a per-job missed-run signal (for example an alarm on rows undone past N minutes, written by
+    another job, or a per-job beat).
+27. (W43) The failed-try warning carries no cause `request_id` (`operator_provider_sign_out_claim()` does not return
+    it; migrations closed). The LATE and GAVE_UP lines carry it.
+
+**Database review**
+28. (W33) `membership_removal_target_holds` holds while a request is `requested`, including one past its 24 hours
+    that the job has not yet marked expired (at most a minute).
+29. (W43) The run's 8 seconds are counted from the first claim and each call may take 10 seconds more; the operator
+    pool has two connections and this job holds one for the run.
+30. (W43) The worker's tests assert `operator_key_removals_expire` is called; they do not expire a real lapsed
+    request (W32's database tests hold the function).
+
+**Wording, UX and brand review**
+31. (W43) The step-failed line's `error_code` is `<step>:<error name>`, a compound code.
+32. (W45, W46) "by phone, on a number you already hold" states the runbook before it exists.
+33. (W46) The Actions cell of a member under removal holds two paragraphs and two buttons in a table cell; at 390 px
+    the table scrolls sideways, not seen.
+34. (W46) "Confirm key removal" is one press with its consequence in the paragraph above, no typed confirmation.
+35. (W46) The refusals are lower-case rule sentences in the form's error; the first is long.
+36. (W46) If the code is lost the opening stands for its hour; the screen says "shown once" and not what to do then.
+37. (W46) "It cannot be undone" on a button whose effect a new registration mends.
+38. (W46) The requester sees their own request as "You asked".
+39. **(W47) The two new alarm descriptions** (`ProviderSignOutNotDelivered`, `RemovedHardwareKeyUsed`) point at
+    "docs/runbooks/incident-response.md, the hardware key section", which the runbook step has yet to write, and
+    `ProviderSignOutNotDelivered` tells the operator to have the user signed out "through the founder's break-glass"
+    for GAVE_UP (16.6: until an operator function exists the one resend left is the founder's).
+
+### What is left of item 37 (no code of the build; in this order)
+1. **See it in a browser** (the list above) and write the e2e journey; `pnpm test:e2e`.
+2. **W43's item 6:** the relying-party tie (the web refusing to start when the pool's and the app's differ) and the
+   infra test tying `KEY_USER_VERIFICATION_REQUIRED` to the pool's setting. (Small code; not started.)
+3. **The two build reviews** (auth and security, with the database and wording points), on the list above.
+4. **ADR 0095** (with the dated section amending ADR 0093 D4, ADR 0094's open case closed and its subject note
+   moot, the decisions W33 lists under "Decisions the migration takes beyond the note").
+5. **The runbooks** (first the two lock-loop lines `migrate.test.ts` wants in `deploy-and-rollback.md`, red today): `incident-response.md` (lines about 13, 30, 216 to 234, 282 to 297, 537 to 539 still describe
+   the two old alarms; the hardware key section, `ProviderSignOutNotDelivered` LATE and GAVE_UP, a removed key
+   used, `KEY_NOTICE_UNDELIVERED`), `support-mail.md` (65, 88), `deploy-and-rollback.md` (415 to 443; the worker
+   with or before the web).
+6. **The test-matrix rows:** `packages/synth/src/cases/matrix.ts` 931 and 949 still describe the web asking the
+   provider and the two old alarms (SGN-16's row and SGN-19's); SGN-21 to SGN-27 and JOB-07, JOB-08 as W33 lists.
+7. **The domain model's regeneration** and **the PR**, opened with `pnpm -s db:domain-model --summary-since
+   origin/claude/build-platform --function-diffs list`, the approval line posted as a suggestion, never written.
+
+### Machine notes
+PostgreSQL 18 was stopped when this container woke: `cd / && runuser -u postgres -- /opt/pg18/bin/pg_ctl -D
+/root/pgdata18 -l /root/pgdata18/server.log -w start -o "-p 5433 -k /tmp"`. Node 24 first on PATH
+(`/opt/node24/bin`); `DATABASE_URL=postgres://postgres:test@localhost:5433/postgres`. The checkout is detached at
+the WIP commit; push with `git push origin HEAD:refs/heads/co-001/wip-key-registry`. To write this block W47 read,
+beyond what it was told to read, the named-points sections of W45's, W44's, W43's and W33's blocks and W43's "Left
+open" (about 75 lines), since the list above had to carry them. W47 holds nothing else: no PR, no subagent, no
+scheduled task; its one background run (the database suite) has ended.
+
+## The earlier block (2026-11-12, W46, session_019i9ifBCSRKBX2qnkTHphgZ): cut B's CONSOLE is built (four routes, their screens); the provider sign-out removal and the alarm swap are NOT started
 
 **WIP `co-001/wip-key-registry` 03f0af53** (one commit on c2450a78). No PR is open. No migration was touched; every
 route was built on the functions and grants as they are. W46 stopped at its token limit (about 185k) at a clean
