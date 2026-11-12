@@ -91,10 +91,24 @@ Takes as the build's own: #123 (aws-sdk, 10), #124 (aws-cdk 2.1146.1 to 2.1148.0
 5. ADR 0066 line 2015 and the base's lockfile history: record that 3.38.0 was carried from its merge until this PR.
 6. The SDK comparison's oddities, same on both sides: a second HTTP/2 session for a second Bedrock call on one client.
 
-## RESUME-BLOCK
-State: branch `co-001/deps-2026-11-12` at 7660a331 (pushed), draft PR #151, description not yet filled. Review done
-(one fix round). Full local suite running once (toolchain, actions, lint, typecheck passed; test, test:db, golden,
-verify-content, lint:logs, licenses, cdk:diff, build, e2e to come), results in the session's scratchpad.
-Next: read the suite's results; fill the description from the template; check the base (fd14d89f at 01:52) and merge it
-if it moved; CI green on the head; mark ready; merge; `git ls-remote`; close #123 #124 #135 #139 with one comment each;
-final state here; one line to the orchestrator.
+## Final state (2026-11-12 04:12 UTC): MERGED, stood down
+- **#151 merged** into `claude/build-platform` as 891bf993955038923a14eb0122b8c2815861148a (parents fd14d89f, 7660a331),
+  verified with `git ls-remote`. The base did not move during the work, so no base merge was needed before the last push.
+- Required checks on 7660a331: `all green`, `mutation` (every shard), `screening-capacity gate`, `approval-of-record`,
+  all success; 48 check runs, none failed on the head (earlier red events were cancelled runs of superseded heads).
+- #123, #124, #135 and #139: one comment each naming #151 and its merge commit, then closed (all four are grouped pull
+  requests, so the close ignores nothing).
+- Local suite on 7660a331: unit 14,230 passed; test:db 10,272 passed, 1 failed once (screening/routes.db.test.ts, a
+  lock-wait assertion; 3 of 3 alone; CI's shards green); golden 381; e2e 87; verify-content, lint:logs, licenses,
+  build pass; cdk:diff synthesized every stack (no AWS credentials here).
+- **Mistake caught and corrected:** re-running `tools/setup-container.sh` to restart the stopped PostgreSQL servers
+  (they were down at 01:55) switched the checkout to `claude/build-platform`; the suites run between 01:58 and 03:45
+  therefore ran on the base's sources. They were discarded and rerun on 7660a331 with the commit recorded at the start
+  and the end. For the queue: the setup script should refuse, or keep the branch, when the checkout is on a work branch.
+- Local failures that are not this change's, each seen on the base too or passing alone: MOD-15's redaction property on
+  fast-check seed 1596478644 (fails on the untouched base; Queues item 38, told to the orchestrator); the page reader's
+  heap-exhaustion test (`packages/contracts/src/evidence/pages.test.ts`, SIGABRT, 1 of 3 on head and 1 of 3 on base on
+  this node 22 machine; Queues item 30's ground); local test:db needs DATABASE_URL on port 5433 (PostgreSQL 18), since
+  vitest.config.ts's default 5432 is this machine's PostgreSQL 16.
+- Review: one adversarial review and one delta review; one fix round of two used; notes in "For the queue" above.
+- Holds nothing: unsubscribed from #151, no check-in pending, the base worktree removed.
