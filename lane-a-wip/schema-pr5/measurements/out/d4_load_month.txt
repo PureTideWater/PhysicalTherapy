@@ -1,0 +1,5 @@
+                                                                         ?column?                                                                          
+-----------------------------------------------------------------------------------------------------------------------------------------------------------
+ loaded: priced_line 61590, of A 61590, case_line 30795; reltuples priced_line=-1/0 case_line=-1/0; analyzed priced_line=never/never case_line=never/never
+(1 row)
+

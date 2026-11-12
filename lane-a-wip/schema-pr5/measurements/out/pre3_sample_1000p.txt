@@ -1,0 +1,22 @@
+                     ?column?                     
+--------------------------------------------------
+ practices in scope 1000, scope text length 37001
+(1 row)
+
+SAMPLE thepsql:sample.sql:6: error: unterminated quoted string
+
+                                                 QUERY PLAN                                                 
+------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=31.18..31.19 rows=1 width=8) (actual rows=1.00 loops=1)
+   Buffers: shared hit=48507 read=15655 written=4
+   ->  Limit  (cost=0.00..5.93 rows=100 width=18) (actual rows=100.00 loops=1)
+         Buffers: shared read=7
+         ->  Seq Scan on roi_statement  (cost=0.00..513.00 rows=8649 width=18) (actual rows=100.00 loops=1)
+               Filter: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+               Buffers: shared read=7
+ Planning:
+   Buffers: shared hit=149 read=13 dirtied=1
+ Planning Time: 15.776 ms
+ Execution Time: 15303.075 ms
+(11 rows)
+

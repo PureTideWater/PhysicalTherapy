@@ -1,0 +1,29 @@
+RUN S3-1M mode=auto tag=month run=1
+Time: 4174.252 ms (00:04.174)
+RUN S3-1M mode=auto tag=month run=2
+Time: 3581.438 ms (00:03.581)
+RUN S3-1M mode=auto tag=month run=3
+Time: 3571.035 ms (00:03.571)
+RUN S3-1M mode=auto tag=month run=4
+Time: 3523.223 ms (00:03.523)
+RUN S3-1M mode=auto tag=month run=5
+Time: 3691.172 ms (00:03.691)
+RUN S3-1M mode=auto tag=month run=6
+Time: 579932.016 ms (09:39.932)
+RUN S3-1M mode=auto tag=month run=7
+Time: 577693.457 ms (09:37.693)
+RUN S3-1M mode=auto tag=all run=1
+psql:out2/d2_S3m_timed_auto.sql:73: FATAL:  terminating connection due to administrator command
+CONTEXT:  SQL statement "SELECT (SELECT count(*) FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines')) AS linked,
+           (SELECT count(*) FROM priced_line p JOIN case_line l ON l.service_line_id = p.service_line_id AND l.priced_line_id = p.id
+             WHERE p.practice_id = NEW.practice_id AND l.practice_id = NEW.practice_id
+               AND p.id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines') x)
+               AND l.case_id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'actionable_open') x)) AS found,
+           (SELECT coalesce(sum(p.variance_cents), 0) FROM priced_line p
+             WHERE p.practice_id = NEW.practice_id
+               AND p.id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines') x)) AS cents"
+PL/pgSQL function roi_statement_rules() line 55 at SQL statement
+psql:out2/d2_S3m_timed_auto.sql:73: server closed the connection unexpectedly
+	This probably means the server terminated abnormally
+	before or while processing the request.
+psql:out2/d2_S3m_timed_auto.sql:73: error: connection to server was lost

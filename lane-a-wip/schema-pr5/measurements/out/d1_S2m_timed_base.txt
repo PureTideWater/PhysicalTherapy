@@ -1,0 +1,6 @@
+RUN S2-1M mode=auto tag=month4 run=1
+Time: 17.981 ms
+RUN S2-1M mode=auto tag=month4 run=2
+Time: 8.002 ms
+RUN S2-1M mode=auto tag=month4 run=3
+Time: 7.540 ms

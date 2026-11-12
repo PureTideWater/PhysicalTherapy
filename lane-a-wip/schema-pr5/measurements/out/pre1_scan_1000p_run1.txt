@@ -1,0 +1,53 @@
+                       ?column?                       
+------------------------------------------------------
+ practices 1000, statements (pg_class estimate) 1e+06
+(1 row)
+
+ set_config 
+------------
+ 5s
+(1 row)
+
+STEP 3.2 A
+Time: 45.739 ms
+STEP 3.3 set_config (every practice)
+ scope_text_length 
+-------------------
+             37001
+(1 row)
+
+Time: 6.408 ms
+STEP 3.3 the scan
+Time: 764865.259 ms (12:44.865)
+EXTRA (not in the migration) count of statements in the opened scope, the policy alone
+  count  
+---------
+ 1000000
+(1 row)
+
+Time: 766.158 ms
+STEP 3.3 set_config back
+ set_config 
+------------
+ {}
+(1 row)
+
+Time: 0.335 ms
+STEP 3.4 D
+Time: 13.595 ms
+LOCKS held by the
+
+   locktype    |          object          |      mode       | granted | count 
+---------------+--------------------------+-----------------+---------+-------
+ relation      | pg_locks                 | AccessShareLock | t       |     1
+ relation      | practice                 | AccessShareLock | t       |     1
+ relation      | practice_by_organization | AccessShareLock | t       |     1
+ relation      | practice_pkey            | AccessShareLock | t       |     1
+ relation      | roi_statement            | AccessShareLock | t       |     1
+ relation      | roi_statement_by_period  | AccessShareLock | t       |     1
+ relation      | roi_statement_pkey       | AccessShareLock | t       |     1
+ relation      | roi_statement_quarterly  | AccessShareLock | t       |     1
+ transactionid |                          | ExclusiveLock   | t       |     1
+ virtualxid    |                          | ExclusiveLock   | t       |     1
+(10 rows)
+

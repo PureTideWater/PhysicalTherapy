@@ -1,0 +1,6 @@
+RUN S3-1M mode=auto tag=month4 run=1
+Time: 18.786 ms
+RUN S3-1M mode=auto tag=month4 run=2
+Time: 7.844 ms
+RUN S3-1M mode=auto tag=month4 run=3
+Time: 7.499 ms

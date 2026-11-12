@@ -1,0 +1,6 @@
+RUN S2 mode=auto tag=month4 run=1
+Time: 20.347 ms
+RUN S2 mode=auto tag=month4 run=2
+Time: 8.303 ms
+RUN S2 mode=auto tag=month4 run=3
+Time: 7.851 ms

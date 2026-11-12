@@ -1,0 +1,17 @@
+RUN S1 mode=force_generic_plan tag=empty run=1
+Time: 14.919 ms
+RUN S1 mode=force_generic_plan tag=empty run=2
+Time: 1.052 ms
+RUN S1 mode=force_generic_plan tag=empty run=3
+Time: 0.924 ms
+RUN S1 mode=force_generic_plan tag=empty run=4
+Time: 0.992 ms
+RUN S1 mode=force_generic_plan tag=empty run=5
+Time: 0.794 ms
+RUN S1 mode=force_generic_plan tag=empty run=6
+Time: 0.821 ms
+RUN S1 mode=force_generic_plan tag=empty run=7
+Time: 0.867 ms
+RUN S1 mode=force_generic_plan tag=month run=1
+Time: 189029.238 ms (03:09.029)
+RUN S1 mode=force_generic_plan tag=month run=2
