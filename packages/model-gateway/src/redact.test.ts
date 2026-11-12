@@ -194,6 +194,9 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
         fc.pre(!(/^\d+$/u.test(compact) && readings.some((reading) => datesIn(reading).some((span) => span.separated && span.dates.length > 0))));
         // What the letter path joins over these gaps: all but "*", and "." or "/" only next to a letter ("_" anywhere, review finding F4-1).
         const letterReads = groups.slice(1).every(([next, sep], index) => !sep.includes('*') && (!/[./]/u.test(sep) || letter.test(groups[index]?.[0].at(-1) ?? '') || letter.test(next[0] ?? '')));
+        // Since MOD-23 the letter path also reads a number as the records hold it, and here the stored value is the writing
+        // itself, so the check finds it whatever its gaps hold (docs/adr/0054, amendment of 2026-11-11, MOD-23).
+        const asStored = true;
         const labeledReads = LABELS.has(prefix) && /^\d+$/u.test(compact) && groups.slice(1).every(([, sep]) => !sep.includes('*'));
         const tokens = 1 + groups.slice(1).filter(([, sep]) => sep !== '').length;
         const screen = runs(text).includes(compact);
@@ -210,7 +213,7 @@ describe('identifierRuns: the page runs the contract screen compares', () => {
         const candidate = identifierCandidates(text).includes(compact);
         // The letter's candidates (identifierCandidates) join at most three tokens and offer only a run with a digit; they read
         // the label as the matcher does (review finding G1), so they offer what either reading joins.
-        return screen && matcher === (letterReads || labeledReads || patterned) && (!shapedNumber || patterned) && candidate === ((letterReads || labeledReads) && tokens <= 3 && /\d/u.test(compact));
+        return screen && matcher === (asStored || letterReads || labeledReads || patterned) && (!shapedNumber || patterned) && candidate === ((letterReads || labeledReads) && tokens <= 3 && /\d/u.test(compact));
       }),
       { numRuns: 2000 },
     );
