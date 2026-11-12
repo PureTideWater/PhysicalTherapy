@@ -6,7 +6,20 @@
  */
 export * from './runtime';
 export { type SeedOrganization, type SeedPerson, type SeedResult, SeedError, seedSyntheticTenancy } from './seed';
-export { MIGRATIONS_DIR, type MigrateOptions, type MigrateResult, type Migration, MigrationError, historyProblems, migrate, readMigrations } from './migrate';
+export {
+  MIGRATIONS_DIR,
+  MIGRATION_LOCK_WAIT,
+  type MigrateOptions,
+  type MigrateResult,
+  type Migration,
+  MigrationError,
+  type MigrationLockWait,
+  historyProblems,
+  isLockTimeout,
+  migrate,
+  migrationPauseMs,
+  readMigrations,
+} from './migrate';
 export {
   APP_DEV_LOGIN,
   APP_ROLE,

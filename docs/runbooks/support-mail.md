@@ -83,8 +83,9 @@ account's name. Work from the ticket ID and the user ID only, never the message'
      is a security event: open the record (docs/runbooks/incident-response.md, section 1).
   2. With the organization's administrator, end the account's sessions: End membership beside the person, pressed by the
      administrator in Settings, Users, or by a platform administrator on the organization's console page
-     (`/console/organizations/<id>`). It ends every session of the user, signs them out at the identity provider and
-     ends their role in that organization at once. It does not disable the account or change its password, and the
+     (`/console/organizations/<id>`). It ends every session of the user and their role in that organization at once,
+     and asks the identity provider to sign them out once that has committed; a failure there undoes nothing and pages
+     the operator (docs/runbooks/incident-response.md, "An ended membership whose provider sign-out failed"). It does not disable the account or change its password, and the
      database refuses it for an organization's only practice administrator. When the membership must stay, or the
      account must be disabled, give the user ID to the founder, whose break-glass session ends the sessions by user ID
      and disables the account at the identity provider. A disable at the provider ends no session of the app, and for an

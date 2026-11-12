@@ -7,6 +7,7 @@ import { BARRIER, type LetterClaim, type PatientIdentifiers, dateForms, datesIn,
 import { SYNTHETIC_IDS, SYNTHETIC_LETTER, localGateway, registerOutput, syntheticLetterInput, syntheticLetterOutput, syntheticRecords } from '../testing';
 import { type DenialLetterInput, type DenialLetterOutput, denialLetterSpec, verifyDenialLetter } from './denial-letter';
 import { mentionsIdentifier } from './narrative';
+import { timed } from '../test-support/time-budget';
 
 /**
  * readDenialLetter (PRD 14, v1.5): PHI minimized before the call (one patient's material only; names,
@@ -313,6 +314,10 @@ describe('one pass over one folded view: every placeholder survives and no ident
   // The second fix round's reproductions (design section 7): a payer's letter crafted to make redaction slow.
   // Each took seconds to minutes before; each is linear now, and its budget leaves room for a loaded runner.
   const N = 100_000;
+  /** The reader's budget for a letter of N characters, on the reference machine (docs/adr/0054). */
+  const BUDGET_MS = 3_000;
+  /** No budget: only how long a row may hang. A loaded runner's wall clock is no part of the reader's cost (vitest's default is 5 s). */
+  const HANG_GUARD_MS = 60_000;
   const fill = (unit: string) => unit.repeat(Math.floor(N / unit.length));
   const half = (unit: string) => unit.repeat(Math.floor(N / 2 / unit.length));
   /** MOD-16's CI counterexample: a letter whose chain only the range fix's barriers hold (cc3dd7f6 refused it for the range's digits). */
@@ -348,15 +353,16 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['one word as long as the letter, glued to a digit', ['JANE Q VANTREE'], `${'a'.repeat(N - 2)}1a`, ['SYN555001']],
     // Review GATEWAY1-1 and GATEWAY1-2: the third reading, and SEC-5's label read over the numbers before an amount.
     ['date ranges glued to an ordinal-like word after the year, repeated', ['JANE Q VANTREE'], fill('Service 01/01/2020-01/02/2020St. '), ['SYN555001']],
-  ])('redacts a letter crafted to be slow in time linear in its length: %s', (_case, names, text, claimNumbers) => {
+  ])('redacts a letter crafted to be slow in time linear in its length: %s', { timeout: HANG_GUARD_MS }, (_case, names, text, claimNumbers) => {
     const who = patient(names);
-    const started = performance.now();
-    // The path prepare runs: redaction, the screen's candidates, then the check (review GATEWAYJ1-5).
-    const redacted = redactLetterForScreen(text, who, claim(...claimNumbers));
-    expect(holdsIdentifier(redacted.text, who, claim(...claimNumbers))).toBe(false);
-    expect(mentionsIdentifier(redacted.text, { names, numbers: [...who.memberIds, ...claimNumbers] })).toBe(false);
-    const seconds = (performance.now() - started) / 1000;
-    expect(seconds, `redacted and checked ${String(text.length)} characters in ${seconds.toFixed(2)} s`).toBeLessThan(3);
+    // The path prepare runs: redaction, the screen's candidates, then the check (review GATEWAYJ1-5). The budget is the
+    // reference machine's, held on any machine by a calibration in the same process (test-support/time-budget.ts).
+    const run = timed(BUDGET_MS, () => {
+      const redacted = redactLetterForScreen(text, who, claim(...claimNumbers));
+      return { held: holdsIdentifier(redacted.text, who, claim(...claimNumbers)), mentioned: mentionsIdentifier(redacted.text, { names, numbers: [...who.memberIds, ...claimNumbers] }) };
+    });
+    expect(run.value).toEqual({ held: false, mentioned: false });
+    expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
   });
 
   // Review round 3 (GATEWAY3-3): the check's own paths, a letter it refuses included, in time linear in its length.
@@ -388,10 +394,16 @@ describe('one pass over one folded view: every placeholder survives and no ident
     // of birth's two-digit-year forms, near misses all (GATEWAYJ2-3, PHIJ2-2).
     ['held letters, the date of birth’s month words, then its years far from them (PHIJ2-4)', ['JANE Q VANTREE'], `${HELD}${half('Mar. ')} filler words here and there. ${half('1961/')}`, false],
     ['held letters, the date of birth’s years, then its month words far from them (PHIJ2-4)', ['JANE Q VANTREE'], `${HELD}${half('1961/')} filler words here and there. ${half('March ')}`, false],
-    ['held letters, a short part’s letters each alone and two-digit-year dates, near misses (GATEWAYJ2-3, PHIJ2-2)', ['AL Q VANTREE'], `${HELD}${fill('A Lx 61-03-0 6103034 ')}`, false],
+    // Since co-001/redact-ssn-phone-leaks a held letter's chains are read with groups of five to seven digits as parts, so
+    // this row's and the next row's numbers stand with a word between them ("on"): side by side they chained to nine or ten
+    // digits and the letter was refused. The near misses are the same, and so is the path they take.
+    // "6103134": one digit off the date of birth run together as six digits (610303), which a held letter refuses since
+    // co-001/redact-ssn-phone-leaks.
+    ['held letters, a short part’s letters each alone and two-digit-year dates, near misses (GATEWAYJ2-3, PHIJ2-2)', ['AL Q VANTREE'], `${HELD}${fill('A Lx 61-03-0 on 6103134 ')}`, false],
+    ['the same letter with the date of birth run together as six digits at the start of a run (MOD-22)', ['AL Q VANTREE'], `${HELD}${fill('A Lx 61-03-0 on 6103134 ')}ref 6103034`, true],
     // The judge's review round 3: the date of birth's parts read as runs in one pass, each compared with the two before it,
     // and its placeholder read for a part beside it (PHIJ3-1, PHIJ3-2), near misses all; glued birth labels, each read.
-    ['held letters, the date of birth’s numbers, compacts and month words, near misses (PHIJ3-1)', ['JANE Q VANTREE'], `${HELD}${fill('61 03 04 Mar 6104 610304 ')}`, false],
+    ['held letters, the date of birth’s numbers, compacts and month words, near misses (PHIJ3-1)', ['JANE Q VANTREE'], `${HELD}${fill('61 03 04 Mar 6104 on 610304 on ')}`, false],
     ['held letters, the date of birth redacted again and again with another number beside it (PHIJ3-1)', ['JANE Q VANTREE'], `${HELD}${fill('03/03/1961 5 ')}`, false],
     ['held letters, birth labels glued to the words beside them, no date after them (PHIJ3-2)', ['JANE Q VANTREE'], `${HELD}${fill('PaidDOBon file, see the enclosed record. ')}`, false],
     // The judge's review round 4: the date of birth's parts with gaps of any length of white space and separators, each gap
@@ -407,13 +419,30 @@ describe('one pass over one folded view: every placeholder survives and no ident
     // per range (F3: 4.5 s at 20 kB and 122 s at 100 kB before).
     ['one held range of dates and amounts as long as the letter (F3)', ['JANE Q VANTREE'], `Service 01/01/2020${fill('-150.00-01/01/2020')}`, false],
     ['one held range of dates and amounts as long as the letter, its last date glued to a word (F3)', ['JANE Q VANTREE'], `${fill('01/01/2020-150.00-')}01/01/2020Paid`, false],
-  ] as const)('checks a letter crafted to be slow in time linear in its length: %s', (_case, names, text, refused) => {
+    // co-001/redact-ssn-phone-leaks (MOD-22): in a held letter or not, every run of letters and digits is read at every
+    // place for each of the call's own name parts and numbers written with a digit for a letter or a letter for a digit.
+    // One run as long as the letter, every stretch of it a near miss (a form with one letter that is no look-alike), for a
+    // patient with six name parts, a member ID and a claim number; and the same run ending in one form, which is refused.
+    ['a held letter of one run of letters and digits, near misses of the own identifiers’ digit-for-letter forms (MOD-22)', ['SIMONE VANTREE', 'ZEPHYRA BELLO', 'JUNE ORLANDO'], `${HELD}${fill('S1MONXVANTR3XZ3PHYRXB3LLXORLANDXZZ12345X7SYN5550X1')}`, false],
+    ['the same run with one digit-for-letter form at its end (MOD-22)', ['SIMONE VANTREE', 'ZEPHYRA BELLO', 'JUNE ORLANDO'], `${HELD}${fill('S1MONXVANTR3XZ3PHYRXB3LLXORLANDXZZ12345X7SYN5550X1')}S1MONE`, true],
+    // And the date of birth's writings no rule reads, read in a held letter (MOD-22): its month as a Roman numeral, its
+    // month's word with a day and no year, its year in words, and its two-digit year, month and day run together at the
+    // start or the end of a run of digits. Near misses all (another day, another year, a compact one digit off); and the
+    // same letter ending in the date of birth with a Roman month, which is refused.
+    ['a held letter of month words, Roman numerals and runs of four and five digits, near misses of the date of birth (MOD-22)', ['JANE Q VANTREE'], `${HELD}${fill('Seen 3-III-1962 and III/13/1962, March the 13th, 4th of March; ref 6134 and 61304 on file, March nineteen sixty-two. ')}`, false],
+    ['the same letter with the date of birth written with a Roman month at its end (MOD-22)', ['JANE Q VANTREE'], `${HELD}${fill('Seen 3-III-1962 and III/13/1962, March the 13th, 4th of March; ref 6134 and 61304 on file, March nineteen sixty-two. ')}3-III-1961`, true],
+    // co-001/redact-ssn-phone-leaks, the fix round: a label read through its list number or through the call's own
+    // identifier at every number of the letter; the letter read a second time where a match is left for the check; a
+    // member ID's pieces merged across joiners; the masked SSN's gaps.
+    ['a label and its list number before every number of the letter (MOD-21)', ['JANE Q VANTREE'], fill('Phone 1: 555-0100, '), false],
+    ['a label read through the name before two numbers joined by a slash, the letter over (MOD-21)', ['JANE Q VANTREE'], fill('Call Vantree at 555-0123/555-0124 '), true],
+    ['short tokens that are pieces of no identifier, the letter over (MOD-22)', ['JANE Q VANTREE'], fill('SY 55 50 0l x '), false],
+    ['a mask in an SSN’s shape with spaced dashes and three digits, glued to a word, the letter over (MOD-21)', ['JANE Q VANTREE'], fill('PaidXXX - XX - 345 '), false],
+  ] as const)('checks a letter crafted to be slow in time linear in its length: %s', { timeout: HANG_GUARD_MS }, (_case, names, text, refused) => {
     const who = patient([...names]);
-    const started = performance.now();
-    const redacted = redactLetterForScreen(text, who, claim('SYN555001'));
-    expect(holdsIdentifier(redacted.text, who, claim('SYN555001'))).toBe(refused);
-    const seconds = (performance.now() - started) / 1000;
-    expect(seconds, `redacted and checked ${String(text.length)} characters in ${seconds.toFixed(2)} s`).toBeLessThan(3);
+    const run = timed(BUDGET_MS, () => holdsIdentifier(redactLetterForScreen(text, who, claim('SYN555001')).text, who, claim('SYN555001')));
+    expect(run.value).toBe(refused);
+    expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
   });
 
   it.each([
@@ -814,8 +843,11 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['R12-3', 'A', 'SSNXXX-XX-3456', 'SSN[SSN]', []],
     ['R12-4', 'A', 'SSN *****3456', 'SSN [SSN]', []],
     ['R12-s1 residual: 1 and ten as one run', 'A', 'Patient 12025550123', 'Patient 12025550123', []],
-    ['R12-s2 residual: a digit in a local number’s window', 'A', 'Phone 1: 555-0100', 'Phone 1: 555-0100', []],
-    ['R12-s3 residual: two phones with nothing between', 'A', '202-555-0123202-555-0124', '202-555-0123202-555-0124', []],
+    // R12-s2 and R12-s3 were residuals, each sent unchanged, until co-001/redact-ssn-phone-leaks (MOD-21; docs/adr/0054, its
+    // amendment) closed them: a label is read through its own list number, so the local number after "Phone 1:" is
+    // redacted (G5); and two phones with nothing between are refused (G1), so that row now stands with the letters in which
+    // a chain survives, below.
+    ['R12-s2 a label’s own list number before a local number (a residual until co-001/redact-ssn-phone-leaks closed it)', 'A', 'Phone 1: 555-0100', 'Phone 1: [PHONE]', []],
     // A1: the number joiners the call's own number reads, in a shape
     ['A1-1 bullets', 'A', 'Call 202•555•0123', 'Call [PHONE]', ['2025550123']],
     ['A1-2 middle dots', 'A', '900·12·3456', '[SSN]', ['900123456']],
@@ -942,6 +974,15 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['a labeled phone with a five-digit group and cents', 'Phone 202 55501 23.45'],
     ['a labeled phone of a five-digit group and an amount', 'Phone 20255 501.23'],
     ['a labeled fax number of a five-digit group and an amount', 'Fax: 95274 588.97 1234'],
+    // R12-s3, a residual (sent unchanged) until co-001/redact-ssn-phone-leaks closed it: another number's digits glued to a
+    // phone's own shape (G1).
+    ['two phones with nothing between (R12-s3, closed by co-001/redact-ssn-phone-leaks)', '202-555-0123202-555-0124'],
+    // Residuals of re-review GATEWAY1-2 (sent unchanged) until co-001/redact-ssn-phone-leaks closed them: under its label, an
+    // SSN or phone in its usual writing with an amount's digits glued after it.
+    ['a spaced labeled SSN glued to a two-digit amount (closed by co-001/redact-ssn-phone-leaks)', 'SSN 900 12 345615.00'],
+    ['a spaced labeled SSN glued to an amount with one decimal (closed by co-001/redact-ssn-phone-leaks)', 'SSN 900 12 3456150.0'],
+    ['a spaced labeled phone glued to a two-digit amount (closed by co-001/redact-ssn-phone-leaks)', 'Phone 202 555 012315.00'],
+    ['a spaced labeled phone glued to a one-digit amount (closed by co-001/redact-ssn-phone-leaks)', 'Phone 202 555 01231.00'],
   ])('refuses a letter in which a chain survives: %s', (_case, letter) => {
     const redacted = redactLetter(letter, A, AC);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
@@ -1102,29 +1143,17 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     // that force it are "Paid 900.12 3456 units" (redact.property.test.ts) and "Paid $0,000.00.$0,000.00-150.00 1234"
     // above; under a label it is refused.
     ['an unlabeled amount-shaped SSN at the end of a range of two amounts (since review round 2)', 'Paid 150.00-900.12 3456', 'Paid 150.00-900.12 3456'],
-    // A label glued to the word before it by a lost space is no label, so the amount-shaped number is read as unlabeled
-    // and sent, as at cc3dd7f6 (review PHI2-3; owned by the follow-on leak PR). Next to a range cc3dd7f6 refused, the
-    // glued label is read (below).
-    ['an amount-shaped SSN after an SSN label glued to the word before it', 'PatientSSN 900.12 3456', 'PatientSSN 900.12 3456'],
+    // A phone label glued to the word before it by a lost space is no label, so the amount-shaped number is read as
+    // unlabeled and sent, as at cc3dd7f6 (review PHI2-3): words end in the phone labels ("Fairfax", "smartphone"), so they
+    // are not read glued. The Social Security label glued so is read since co-001/redact-ssn-phone-leaks (the rows it
+    // closed, below), and next to a range cc3dd7f6 refused either glued label is read (below).
     ['an amount-shaped phone after a phone label glued to the word before it', 'PaidPhone 202 555 01.23', 'PaidPhone 202 555 01.23'],
-    // An SSN after its label with the call's own identifier between, set apart by a space or punctuation: the label window
-    // ends at the placeholder (sent at cc3dd7f6 too).
-    ['an amount-shaped SSN after its label and the patient’s name', 'SSN Vantree 900.12 3456', 'SSN [PATIENT_NAME] 900.12 3456'],
-    ['an SSN of a five-digit group after its label and the patient’s name', 'SSN for Zephyra Vantree: 90012-3456', 'SSN for [PATIENT_NAME] [PATIENT_NAME]: 90012-3456'],
-    // An SSN or phone glued digit to digit to an amount or a year, which the scan reads as one long group (review
-    // GATEWAY1-3); spaced and labeled, it is refused only where a run of its groups from the label's first group, or from
-    // the amount the label reaches, holds 9 or 10 digits (re-review GATEWAY1-2, review PHI2-6). Sent at cc3dd7f6 too.
-    ['an SSN in a shape glued to an amount after its label', 'SSN 900-12-3456150.00', 'SSN 900-12-3456150.00'],
-    ['an SSN in a shape glued to a year after its label', 'SSN 01/01/2020900-12-3456', 'SSN 01/01/2020900-12-3456'],
-    ['a spaced labeled SSN glued to a two-digit amount', 'SSN 900 12 345615.00', 'SSN 900 12 345615.00'],
-    ['a spaced labeled SSN glued to an amount with one decimal', 'SSN 900 12 3456150.0', 'SSN 900 12 3456150.0'],
-    ['a spaced labeled phone glued to a two-digit amount', 'Phone 202 555 012315.00', 'Phone 202 555 012315.00'],
-    ['a spaced labeled phone glued to a one-digit amount', 'Phone 202 555 01231.00', 'Phone 202 555 01231.00'],
+    // A spaced SSN or phone glued digit to digit to an amount after its label, which the scan reads as one long group
+    // (review GATEWAY1-3): refused only where a run of its groups from the label's first group, or from the amount the
+    // label reaches, holds 9 or 10 digits (re-review GATEWAY1-2, review PHI2-6). Sent at cc3dd7f6 too. In its own shape,
+    // its groups joined with no white space, it is refused since co-001/redact-ssn-phone-leaks (the rows it closed, below).
     // An amount-shaped SSN whose first group reads as a date with the number before it ("10-9.00"; sent at cc3dd7f6 too).
     ['an amount-shaped SSN whose first group a date reading joins to the number before it', 'SSN $10-9.00 12 3456', 'SSN $10-9.00 12 3456'],
-    // An SSN or phone whose label is behind a number and then a span (a digit in its label window, as "Phone 1:
-    // 555-0100": re-review GATEWAY1-1; sent at cc3dd7f6 too).
-    ['an amount-shaped SSN after the label’s number and an amount', 'TTY 1: 7,439.10 942.77 3098', 'TTY 1: 7,439.10 942.77 3098'],
     // A labeled SSN or phone split five, one, then an amount with one decimal digit before the cents: the units column
     // before a money amount ends the chain, as a service-line row's does (review GATEWAY2-1; cc3dd7f6 sent it too).
     ['a labeled SSN split five, one and an amount', 'Soc Sec 93798 4 1.46', 'Soc Sec 93798 4 1.46'],
@@ -1134,6 +1163,26 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     const redacted = redactLetter(letter, A, AC);
     expect(redacted.text).toBe(sent);
     expect(holdsIdentifier(redacted.text, A, AC)).toBe(false);
+  });
+
+  // Residuals pinned in the table above until co-001/redact-ssn-phone-leaks (MOD-21; docs/adr/0054, its amendment) closed
+  // them. Each was sent at cc3dd7f6, and from the range fix on, as its row's last column says; each is refused now.
+  it.each([
+    // A Social Security label glued to the word before it by a lost space is the label to the scan (G3).
+    ['an amount-shaped SSN after an SSN label glued to the word before it', 'PatientSSN 900.12 3456', 'PatientSSN 900.12 3456'],
+    // An SSN or phone label is read through the call's own identifier to the number on its line (G4).
+    ['an amount-shaped SSN after its label and the patient’s name', 'SSN Vantree 900.12 3456', 'SSN [PATIENT_NAME] 900.12 3456'],
+    ['an SSN of a five-digit group after its label and the patient’s name', 'SSN for Zephyra Vantree: 90012-3456', 'SSN for [PATIENT_NAME] [PATIENT_NAME]: 90012-3456'],
+    // Another number's digits glued to an SSN's own shape, after it or before it (G1).
+    ['an SSN in a shape glued to an amount after its label', 'SSN 900-12-3456150.00', 'SSN 900-12-3456150.00'],
+    ['an SSN in a shape glued to a year after its label', 'SSN 01/01/2020900-12-3456', 'SSN 01/01/2020900-12-3456'],
+    // The scan's read over the numbers before an amount goes through a label's own list number, as "Phone 1: 555-0100" is
+    // read through it (G5).
+    ['an amount-shaped SSN after the label’s number and an amount', 'TTY 1: 7,439.10 942.77 3098', 'TTY 1: 7,439.10 942.77 3098'],
+  ])('refuses what was a recorded residual until co-001/redact-ssn-phone-leaks closed it: %s (%j, sent until then as %j)', (_case, letter) => {
+    const redacted = redactLetter(letter, A, AC);
+    expect(holdsIdentifier(redacted.text, A, AC)).toBe(true);
+    expect(() => denialLetterSpec.prepare({ ...syntheticLetterInput(), patient: A, claims: AC, text: letter })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
   });
 
   it.each([
@@ -1194,8 +1243,8 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['PHI3-1', ['JANE Q ZEPHYRA'], 'Social Security number of MsZephyra: 900.12 3456', null],
     ['PHI3-1', ['JANE Q ZEPHYRA'], 'SSN DearJane 900.12 3456', null],
     ['PHI3-1', ['JANE Q ZEPHYRA'], 'SSN ZEPHYRAJane 900.12 3456', null],
-    // PHI3-2: a lone ten starting 0 or 1 after the glued name, and a word between the name and the number.
-    ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN MsZephyra0900123456', 'Re: SSN MsZephyra[SSN]'],
+    // PHI3-2: a lone ten starting 0 or 1 after the glued name, and a word between the name and the number. Its first
+    // input, "Re: SSN MsZephyra0900123456", is no longer handled as cc3dd7f6 handled it: the test after this table.
     ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN Zephyra1900123456', null],
     ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: SSN for Zephyra1900123456', null],
     ['PHI3-2', ['JANE Q ZEPHYRA'], 'Re: Fax ZephyraPaid900.12 3456', null],
@@ -1229,6 +1278,16 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     if (sent !== null) {
       expect(redacted.text).toBe(sent);
     }
+  });
+
+  // PHI3-2's first input was sent at cc3dd7f6, and until co-001/redact-ssn-phone-leaks, as "Re: SSN MsZephyra[SSN]": the
+  // patient's name glued to the number's placeholder. A pattern's placeholder is a number to what is glued to it (MOD-21,
+  // G7), so the name stands glued to a digit there, as in "Re: SSN Zephyra1900123456" above, and the letter is refused.
+  it('refuses review round 3’s input with the name glued to an SSN’s placeholder, which cc3dd7f6 sent (PHI3-2; closed by co-001/redact-ssn-phone-leaks)', () => {
+    const who = round3(['JANE Q ZEPHYRA']);
+    const redacted = redactLetter('Re: SSN MsZephyra0900123456', who, AC);
+    expect(redacted.text).toBe('Re: SSN MsZephyra[SSN]');
+    expect(holdsIdentifier(redacted.text, who, AC)).toBe(true);
   });
 
   // The judge's review round 1 of the range fix (2026-11-07): each finding's input, refused (null) or sent as written here.

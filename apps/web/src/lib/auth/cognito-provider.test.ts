@@ -491,6 +491,22 @@ describe('CognitoAuthProvider: administration', () => {
     await provider.globalSignOut('sub-1');
     expect(sent).toEqual([{ command: 'AdminUserGlobalSignOutCommand', input: { UserPoolId: 'us-east-1_Synthetic', Username: 'sub-1' } }]);
   });
+
+  it('gives up a sign-out Cognito never answers: the request is aborted at the bound and the caller is told (docs/adr/0094, D7)', async () => {
+    const aborted: boolean[] = [];
+    const hanging = {
+      send: (_command: unknown, options?: { readonly abortSignal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          options?.abortSignal?.addEventListener('abort', () => {
+            aborted.push(true);
+            reject(Object.assign(new Error('SYNTHETIC request aborted'), { name: 'AbortError' }));
+          });
+        }),
+    } as unknown as CognitoClient;
+    const provider = new CognitoAuthProvider({ client: hanging, confirmClient: attempts(hanging), userPoolId: 'us-east-1_Synthetic', clientId: CLIENT_ID, verifier, signOutTimeoutMs: 20 });
+    await expect(provider.globalSignOut('sub-1')).rejects.toMatchObject({ name: 'AbortError' });
+    expect(aborted).toEqual([true]);
+  });
 });
 
 describe('CognitoAuthProvider: a forgotten password (SGN-05, SGN-06)', () => {
