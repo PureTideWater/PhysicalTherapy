@@ -1,6 +1,113 @@
 # Status: Queues item 37, the key registry (Lane A)
 
-## RESUME-BLOCK (2026-11-12, W44, session_019i9ifCbvaBHG1q7YBdjKGM): the web half's FLOW is built (cut A, items 1 and 2); the code SCREEN and cut B are NOT started
+## RESUME-BLOCK (2026-11-12, W45, session_019i9ifCFdvWD98TKN6iy9fs): cut A is whole (the flow verified, the code SCREEN built); next is cut B, none of it started
+
+**WIP `co-001/wip-key-registry` c2450a78** (one commit on dde86284). No PR is open. No migration was touched. The
+successor needs this block, W44's below (the flow, its named points) and W43's "exact next step" items 4 to 6.
+
+### What W45 built (W43's item 3; `apps/web` only)
+- `lib/routes/sign-in.ts`: the action **`answerRegistrationCode`** (`sign_in.registration_code`, POST of the
+  `/sign-in/register-key` form, rate limit `mfa` by the sealed step, in `SIGN_IN_ROUTES`). Zod: `registrationCode`
+  (`lib/routes/schemas.ts`: at most 32 characters, spaces and hyphens dropped, upper-cased, then the shape, eight of
+  the 32 symbols). It reads the sealed `register_key` step (none: the grant of an unstarted step is given back, then
+  the restart), calls the flow's `answerRegistrationCode`, and settles: `open` seals the digest and returns to the
+  same page, which now shows the key ceremony; `refused` is `MESSAGES.registration_code`, the step kept.
+  `registerKeyPage` returns `codeRequired: true` and `supportEmail` only when the sealed step has `codeRequired` and
+  no `code`; it asks the database nothing, so showing the screen counts no try. **The judge is never called without
+  a code by anything W45 added.**
+- `app/sign-in/actions.ts`: the server action `registrationCodeStep`. `app/sign-in/register-key/page.tsx`: the code
+  form in place of the key ceremony when `codeRequired`.
+- **Who may act, as built:** this is a sign-in step, so there is no session and no role. The handler requires the
+  sealed step (password and authenticator code proven, the step begun after the mark, inside its limit); Postgres
+  judges for `app_actor_id()` alone under the account's lock (`hardware_key_registration_judge`), counts a wrong code
+  and records `key_registration_refused`; `hardware_key_record` judges again at the registration. The audit events
+  are the functions' own. Nothing new is logged; the code is in no cookie, result or log line (tested).
+- Tests first, seen failing (three on the missing route, one on the missing `codeRequired`), then green:
+  `lib/routes/sign-in-routes.db.test.ts`, describe "SGN-27: the code screen" (4 cases; number SGN-27 reused, none
+  new taken). Written after their code, said plainly: `lib/routes/schemas.test.ts` (2 cases) and
+  `lib/auth/registration-code.test.ts` (2 cases; W44's helper had no unit test).
+
+### What was red on dde86284, and what W45 did
+- **`apps/web/src/lib/server/lock-timeout.test.ts` (unit; the flow's): fixed.** Its inventory of places that reach
+  the application pool said 5 for `lib/auth/sign-in.ts`; the flow made it 7 (the judgement, whose counted try must
+  commit, and the key's record; both before any session). The count and its comment now say so. Not loosened: the
+  list is still exact by file and count.
+- **`pnpm typecheck` failed in three projects only because this container had not installed W43's worker dependency**
+  (`@aws-sdk/client-cognito-identity-provider`); `pnpm install --frozen-lockfile --offline` once, then green. A
+  machine matter, not the code's. **The setup script should run that install after checking out a WIP ref.**
+- **`pnpm test:db` whole: one suite's `afterAll` timed out at 30 s** (`apps/worker/src/reconcile/reconcile.large
+  .db.test.ts`; its one test passed) while typecheck and lint ran beside it on this machine. Alone it passes. Not the
+  web half's and not touched; told to the orchestrator.
+- Nothing else was red.
+
+### What is green (on c2450a78, PostgreSQL 18, Node 24)
+- `pnpm typecheck`: 24 projects passed. `pnpm lint`: 1,956 files, 0 errors, 0 warnings. `pnpm lint:logs`: 1,206
+  files, every call allowlisted.
+- The web's unit tests (`vitest run --project unit apps/web`): **126 files, 1,696 passed, 0 failed** (run on the tree
+  one type-only edit before the commit; the two unit files W45 added, 6 passed, run again after).
+- `pnpm test:db` whole, 32 minutes, started on dde86284 and running while W45 edited (so a mixed tree; said, not
+  hidden): **175 files, 174 passed and the one above failed in its hook; 10,416 tests passed, 1 skipped, 0 failed.**
+- On the committed tree, alone: `sign-in-routes.db.test.ts` 38, `sign-in.db.test.ts` 72 and
+  `reconcile.large.db.test.ts` 1: **3 files, 111 passed.**
+- **Not run:** `pnpm test:e2e`, `pnpm test:golden`, the whole unit suite outside `apps/web`, and the whole database
+  suite again on c2450a78 exactly.
+
+### NOT done, said first to whoever reviews: the screen has not been seen in a browser
+W45 stopped at its token limit before driving the page. Keyboard order, focus after a refusal and after the right
+code, and the layout at 390 px and 1280 px are **read from the code and the shared components, not observed**. What
+is needed: an e2e journey (best written with cut B's console route, which makes the removal and the code the honest
+way; a persona of its own, since a removal would break every other spec's key) and before and after screenshots for
+the UX and brand reviewer. Expected from the components, to be confirmed: Tab order is the code field, Continue,
+then the timer's Start again, then the support link; the field is a secret one (`autoComplete="one-time-code"`), so
+`ActionForm` empties it after a refusal and focuses the error as on the authenticator-code step; the right code
+redirects to the same path, a full navigation, so focus starts at the top of the key step.
+
+### For the UX and brand review: the screen and its words (`app/sign-in/register-key/page.tsx`)
+- Title and h1, unchanged: "Register a hardware key" (with "Step n of n" when numbered). Card title: the email.
+- Card text, new: "The hardware key for this account was removed. To register a new one, first enter the code
+  PaidWhole gave you. Your password and authenticator code alone open nothing for this account."
+- Field label: "Code from PaidWhole". Hint: "Eight letters and digits. Spaces, hyphens and lower case are fine."
+  Button: "Continue".
+- Field issues: "fill this in" (empty); "enter the eight letters and digits of the code PaidWhole gave you" (wrong
+  shape; never reaches the database).
+- Refusal (W44's words, now shown): "That code did not open registration. Check the code PaidWhole gave you and try
+  again." One answer for no opening, a wrong code, a spent or dead opening. It names no account and no state.
+- Under the card, new: "No code? A PaidWhole administrator gives it to you by phone. Write to {support address} from
+  the address you sign in with."
+- The timer and its two notes are the key step's, unchanged.
+- **What a refresh keeps:** the step (the sealed cookie) and its time left; never the typed code. After the right
+  code a refresh shows the key ceremony (the digest is sealed, not the code). Start again ends the step as before.
+- **Points W45 names for that review:** (1) the card says the key "was removed" to a person who has proven password
+  and authenticator code only; it is true whenever the screen shows, but the reviewer may prefer words that do not
+  state it. (2) "by phone" states the runbook's channel before the runbook exists. (3) The code is set in the
+  field's ordinary face, not mono; BRAND.md asks mono for codes shown, and this one is typed, as the six-digit field
+  is. (4) `autoComplete="one-time-code"` is used for the secret-field behaviour; a phone may offer an SMS code there.
+
+### Named points for the two reviews (W45 adds; W44's, W43's and W33's stand)
+- **Auth review, W44's point stands and is not solved here:** `judge` asked with no code counts a try, and the free
+  "closed?" helper is granted to no role. W45's screen and action never ask without a code; the one case W44 named
+  (a removal confirmed for an account with no key row) still spends a try at the key routes' first judgement.
+- **Auth review:** the code action is counted in `mfa` by the sealed step, the same budget as the key routes; a
+  person who spends it on codes is refused by the rate limit before the database's five tries are reached or not,
+  whichever is first. Whether the code deserves a budget of its own is the review's.
+- **Auth review:** a code typed for an account that is not closed is answered as a step forward (`not_closed`), not
+  a refusal; it reveals only what the page already showed that person.
+- **Auth review:** the shape's refusal differs from the wrong code's (an issue on the field against the one
+  refusal). The shape is public and the difference says nothing of an account or an opening; named for completeness.
+
+### The exact next step: cut B (W43's items 4 and 5, none started; another session takes it)
+The four console routes (request, confirm, cancel, open; `newRegistrationCode` and `registrationCodeDigest` from
+`lib/auth/registration-code.ts`, the code shown once to the opener), the removal of `signOutAtProviderAfterCommit`
+and the reset's provider call, the two alarms swapped; then W43's item 6; then the e2e journey and screenshots named
+above, the two build reviews, ADR 0095, the test-matrix rows, the runbooks and the PR.
+
+### Machine notes
+PostgreSQL 18 was stopped when this container woke (W33's start command, in its block, brought it up). The shell's
+default Node is 22: put `/opt/node24/bin` first on PATH. Database tests need `DATABASE_URL=postgres://postgres:test@
+localhost:5433/postgres`. The ops worktree was one commit behind origin at the start (W44's block was not in it);
+`git pull --rebase` first. W45 holds nothing else: no PR, no subagent, no scheduled task, no background run.
+
+## The earlier block (2026-11-12, W44, session_019i9ifCbvaBHG1q7YBdjKGM): the web half's FLOW (cut A, items 1 and 2); still the reference for the flow and its named points
 
 **WIP `co-001/wip-key-registry` dde86284** (one commit on e85c3b40). No PR is open. No migration was touched. W44
 handed over at about 250k tokens, most of it reading. The successor needs this block, W43's below (its "exact next
