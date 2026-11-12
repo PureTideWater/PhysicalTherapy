@@ -352,6 +352,9 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['a digit and a CR LF, repeated, then the name with a part written apart, to 30,000 characters', ['JANE Q VANTREE'], `${fillTo('5\r\n', 30_000 - 8)}Vant ree`, ['SYN555001']],
     ['a digit and a bare line break, repeated, then the name with a part written apart, to 30,000 characters', ['JANE Q VANTREE'], `${fillTo('5\n', 30_000 - 9)} Vant ree`, ['SYN555001']],
     ['a digit and a bare line break, repeated, then one CR LF, to 30,000 characters', ['JANE Q VANTREE'], `${fillTo('5\n', 30_000 - 2)}\r\n`, ['SYN555001']],
+    // The dearest letter found that MOD-23 leaves read (review D, D-TIME-1): a date glued to a letter (NFKC writes U+33FE
+    // as a day and its sign) and a semicolon, repeated, with one CR LF, so the check reads it twice.
+    ['a day’s sign and a semicolon, repeated, then one CR LF, to 57,972 characters', ['JANE Q VANTREE'], `${'\u33FE;'.repeat(28_985)}\r\n`, ['SYN555001']],
     ['dates with a claim’s digits between them (5.0 s before)', ['JANE VANTREE'], fill('1-1-11 555001 '), ['555001']],
     // Social Security and phone numbers by pattern (docs/adr/0054, amendment of 2026-11-04; twins NPA-555-01xx, 9xx).
     ['phones back to back', ['JANE Q VANTREE'], fill('(202) 555-0123 '), ['SYN555001']],

@@ -2208,10 +2208,18 @@ CT-1's rows, each refused by the count: one digit to a line and a name written a
 script's digit with U+2028 or U+0085, 0.77 to 0.90 s; both a CR LF and the name, 49,984 characters, 0.67 to 0.80 s
 (2.8 to 2.9 s before). The dearest letters this item's readings leave read: dates with a CR LF and a name written
 apart, 25,000 characters, 0.77 to 0.87 s; dates with a CR LF, 50,000, 0.75 to 0.91 s; prose with a name written apart,
-150,000, 0.83 to 0.87 s; one digit to a line with a name written apart, 30,000, 0.49 to 0.70 s. The dearest letter
-found that is still read is the base's own and holds nothing of this item's (dates written with spaces alone,
-100,000 characters: 0.90 to 1.30 s here). Under coverage, as `pnpm test` runs, every timed row of
-`denial-letter.test.ts` holds its 3 s at the unchanged allowance.
+150,000, 0.83 to 0.87 s; one digit to a line with a name written apart, 30,000, 0.49 to 0.70 s. **The dearest letter
+found that this item leaves read** (review D, D-TIME-1) is of the base's dearest family, a date glued to a letter
+(U+33FE, which NFKC writes `31日`) and `;` repeated, with one CR LF, so that the check reads it twice: 57,972
+characters, 1.66 to 2.00 s (the base 1.04 to 1.33 s on it; from about 61,000 characters it is refused). It is no dearer
+than the dearest letter the base reads (the same family with no CR LF at 93,006 characters, 1.7 to 2.3 s on the base),
+and it is a row of `denial-letter.test.ts` now. Under coverage, as `pnpm test` runs, every timed row holds its 3 s on
+its first run with no allowance (three runs of the file: no retry; the largest first runs are the base's own rows at
+2.0 to 2.3 s, this item's at most about 1.4 s).
+
+Two letters with nothing of this item's are refused where the base reads them, by the 1% to 5% the wider reading adds
+to a letter at the budget's edge (review D, D-TIME-3): U+33FE and `;` to 93,006 characters with no CR LF (read here to
+about 88,000), and the table's dates with one CR LF.
 
 **What stays as the amendment of 2026-11-11 wrote it.** The three rules of the wider reading, what it reads, the rule
 that a wider match is applied only to a letter the first reading's check does not refuse, and K-1. Under the budget the
@@ -2226,6 +2234,17 @@ they stand; the same answer and count on every run; a letter the first reading r
 past it; and a property (every letter past the budget that holds a name written apart is refused). In
 `denial-letter.test.ts` the item's rows that are still read stand at lengths the budget holds, and thirteen letters,
 CT-1's among them with U+2028 and U+0085, are refused by the count within the 3 s. No row of the base was changed.
+
+**Review.** One adversarial review of this delta (review D; `designs/lane-b-redact-item-26/reviews/d` on
+`claude/build-ops`), each finding run again before it was recorded. PHI: no finding. 31,072 generated letters on both
+paths and 40 letters past the old character bound: nothing the base or the reader before this amendment replaces or
+refuses was sent; the redaction's count was never less than the base's (equal in 505, greater in 30,567) and the
+check's own work never less in about 6,000 texts; odd counts and the state after a throw behave as on the base. Time:
+no letter still sent passes 3 s (D-TIME-1 above, 26 families searched to 400,000 characters); the rows near 3 s by
+test duration under coverage (D-TIME-2) were settled by the helper's own figures, above; D-TIME-3 is recorded above.
+The gate, the base against this reader, letter for letter: 975,489 letters, 13 differ, each the recorded cost of a name
+whose letters are ordinary words apart (`in a` for INA); nothing the base redacts or refuses sent; 462,984 refused by
+both, so no letter of the gate is refused by the count. Against the reader before this amendment: 0 differ.
 
 **Left, each recorded.** The costs in the table above and C-PHI-1 to C-PHI-3 (the amendment of 2026-11-11, "Left,
 each recorded") are for Queues item 34 to weigh. The wider reading builds the call's forms once more per entry and is
