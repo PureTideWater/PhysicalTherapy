@@ -20,7 +20,8 @@ import { EARLIEST_WRITTEN_YEAR, LATEST_WRITTEN_YEAR, type LetterClaim, type Pati
  * - text that holds none of the patient's forms is sent unchanged, common phrases, amounts and deadlines included;
  * - the one-patient screen is offered another patient's ID however it is written, digits alone too, and never a
  *   placeholder's word.
- * A fixed number of runs, as the repository's property tests use; no precondition filters a run.
+ * A fixed number of runs, as the repository's property tests use; no precondition filters a run of MOD-13, MOD-14 or
+ * MOD-15 (MOD-16 filters one shape out of its letters of what must stay, said where it does: keepsWhatMustStay).
  */
 
 // ---------------------------------------------------------------------------------------------------
@@ -1639,6 +1640,16 @@ interface KeptSegment {
   /** A deadline readDate reads, or a reference the verifier keeps: quoted from this segment. */
   readonly deadline?: string;
   readonly reference?: string;
+  /** A service period or a range (kind 17): a letter that holds one writes no unlabeled local number (keptLetter, change 1). */
+  readonly ranged?: true;
+  /**
+   * The segment ends with a range's own end, no word after it (kind 17), or with a date not written year first (kind 1:
+   * "5/14/2026", "May 14, 2026", "14-MAY-26"): a word glued to it is, to a held letter's reading, a word glued to a
+   * range's end (keptLetter, change 2).
+   */
+  readonly rangeEnd?: true;
+  /** The segment without its unlabeled local number, as a letter that holds a period or range writes it (keptLetter, change 1). */
+  readonly withoutLocal?: string;
 }
 
 const NEUTRAL = ['Paid ', 'Seen ', 'Billed ', 'Row ', 'Amount ', 'Date ', 'Item ', 'Total ', 'Noted '];
@@ -1666,7 +1677,10 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
         return { text: `${neutral}${amount}` };
       case 1: {
         const written = writeDate(iso, pick);
-        return written.readable ? { text: `Appeal by ${written.text}`, deadline: written.text } : { text: `${neutral}${written.text}` };
+        // A date written year first ("2026-05-14", "20260514") is read as cc3dd7f6 read it, glued to a word or not; any other
+        // ends its segment as a range's end does (keptLetter, change 2).
+        const ends = /^[0-9]{4}/u.test(written.text) ? {} : { rangeEnd: true as const };
+        return written.readable ? { text: `Appeal by ${written.text}`, deadline: written.text, ...ends } : { text: `${neutral}${written.text}`, ...ends };
       }
       case 2:
         return { text: `${['NPI ', 'Rendering NPI ', 'Provider '][pick % 3] ?? 'NPI '}${withCheckDigit(`${['1', '2'][pick % 2] ?? '1'}${nine.slice(1, 9)}`)}` };
@@ -1752,27 +1766,70 @@ const keptSegment: fc.Arbitrary<KeptSegment> = fc
         // A word after it that starts like an ordinal suffix ("St. Mary", "Rd. 9", "TH", "nd floor"), which the scan's glued
         // reading keeps after a year (review GATEWAY1-1).
         const after = ['', '', 'Paid', '.Paid', paid, 'St. Mary', 'Rd. 9', 'TH', 'nd floor'][Math.floor(pick / 143) % 9] ?? '';
-        return { text: `${before}${range}${after}` };
+        return { text: `${before}${range}${after}`, ranged: true, ...(after === '' ? { rangeEnd: true as const } : {}) };
       }
       default:
-        return { text: 'Hours 8:00-5:00, 555-0100 local' };
+        return { text: 'Hours 8:00-5:00, 555-0100 local', withoutLocal: 'Hours 8:00-5:00' };
     }
   });
 
 const mod16Patient: PatientIdentifiers = { pseudonym: 'synthetic-patient-16', names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['SYNMEMBER0042'] };
 const mod16Claims: LetterClaim[] = [{ claimId: 'synthetic-claim-1', patientPseudonym: 'synthetic-patient-16', claimNumbers: ['SYNCLAIM0001'] }];
 
+/** A segment that begins with a word and holds a bare nine or ten ("Ref. No. 2025550123", "NPI 1234567893", "Total 2820753079"). */
+const WORD_THEN_BARE = /^\p{L}[^]*(?<![0-9])[0-9]{9,10}(?![0-9])/u;
+
+/**
+ * MOD-16's letter: its segments, each followed by its join. Since co-001/redact-ssn-phone-leaks (docs/adr/0054; MOD-21,
+ * MOD-22) a letter whose digit chain only the range fix's barriers hold (a held letter, which cc3dd7f6 refused) is read
+ * with nothing taken on trust, and three shapes this generator used to write are refused there. They are no longer
+ * written, the generator changed in these three places and nowhere else, and each is pinned on both sides (held:
+ * refused; not held: sent unchanged) in redact.leaks.test.ts:
+ * 1. a letter that holds a service period or a range (kind 17) writes no unlabeled local number: the segment "Hours
+ *    8:00-5:00, 555-0100 local" is written there as "Hours 8:00-5:00". A local number with no label is a shape no
+ *    structure decides: in a held letter it is refused, and in any other it is sent, as ADR 0054 records;
+ * 2. a segment that begins with a word and holds a bare nine or ten is never glued, with nothing between, to a segment
+ *    that ends with a range's own end or with a date not written year first: a space is written. "…2026Ref. No.
+ *    2025550123" is a word glued to a range's end and then a bare number, which the reference's noun no longer names in
+ *    a held letter (the same number set apart by a space stays named). A date glued to a word is such an end too where
+ *    only the range fix reads it: one with its month as a word, and a numeric one after an amount's cents and a full
+ *    stop ("Amount 02-20-2028Authorization 7128561863" after a held range); a date written year first never is;
+ * 3. no letter holds a run of digits that begins or ends with the patient's date of birth run together with a two-digit
+ *    year: keepsWhatMustStay filters such a letter out (BIRTH_RUN_TOGETHER), since a held letter is refused for it.
+ */
+function keptLetter(pieces: readonly (readonly [KeptSegment, string])[]): { readonly text: string; readonly segments: readonly KeptSegment[] } {
+  const ranged = pieces.some(([segment]) => segment.ranged === true);
+  const segments = pieces.map(([segment]) => (ranged && segment.withoutLocal !== undefined ? { ...segment, text: segment.withoutLocal } : segment));
+  // Nothing between two cells only where one ends in no letter and the next begins with one, so no word is glued
+  // to another and no number to another; and never between a range's end and a word that a bare nine or ten follows.
+  const glues = (i: number) => {
+    const [left, right] = [segments[i], segments[i + 1]];
+    return left !== undefined && right !== undefined && !/\p{L}$/u.test(left.text) && /^\p{L}/u.test(right.text) && !(left.rangeEnd === true && WORD_THEN_BARE.test(right.text));
+  };
+  const text = segments.map((segment, i) => `${segment.text}${i === segments.length - 1 ? '' : pieces[i]?.[1] === '' && !glues(i) ? ' ' : (pieces[i]?.[1] ?? ' ')}`).join('');
+  return { text, segments };
+}
+
+/**
+ * MOD-16's patient's date of birth (1980-03-14) with a two-digit year, run together in each order of year, month and day,
+ * and with month and day of two digits each in the three orders a date is written in.
+ * A run of digits that begins or ends with one of them is the date of birth to a held letter's reading, whatever number
+ * it is a part of (an ICN, a ZIP, a compact date of service such as 20280314), so the letter is refused: a fail-safe
+ * refusal the property does not count against what must stay. Read here on the letter's own text, never by the redactor.
+ */
+const BIRTH_RUN_TOGETHER = ['80314', '80143', '31480', '14380', '38014', '14803', '800314', '031480', '140380'];
+const holdsBirthRunTogether = (text: string) => (text.match(/[0-9]{5,}/gu) ?? []).some((run) => BIRTH_RUN_TOGETHER.some((birth) => run.startsWith(birth) || run.endsWith(birth)));
+
 /** MOD-16's property: a letter of what must stay is sent unchanged, refused by no check, and its deadlines and references still verify. */
 const keepsWhatMustStay = fc.property(fc.array(fc.tuple(keptSegment, fc.constantFrom(...KEPT_JOINS)), { minLength: 1, maxLength: 8 }), (pieces) => {
-  // Nothing between two cells only where one ends in no letter and the next begins with one, so no word is glued
-  // to another and no number to another.
-  const glues = (i: number) => !/\p{L}$/u.test(pieces[i]?.[0].text ?? '') && /^\p{L}/u.test(pieces[i + 1]?.[0].text ?? '');
-  const text = pieces.map(([segment, join], i) => `${segment.text}${i === pieces.length - 1 ? '' : join === '' && !glues(i) ? ' ' : join}`).join('');
+  const { text, segments } = keptLetter(pieces);
+  // Change 3: a letter that holds the date of birth run together is not one of what must stay (a few in ten thousand).
+  fc.pre(!holdsBirthRunTogether(text));
   const screened = redactLetterForScreen(text, mod16Patient, mod16Claims);
   expect(screened, JSON.stringify(text)).toMatchObject({ text: text.normalize('NFKC'), replaced: 0 });
   expect(holdsIdentifier(screened.text, mod16Patient, mod16Claims), JSON.stringify(text)).toBe(false);
   const input = { documentId: '00000000-0000-4000-8000-000000000016', documentSha256: '0'.repeat(64), text, patient: mod16Patient, claims: mod16Claims, otherPatients: { holdsOtherPatient: () => Promise.resolve(false) } };
-  for (const [segment] of pieces) {
+  for (const segment of segments) {
     const output = {
       payer: null,
       claim_references: segment.reference === undefined ? [] : [{ written: segment.reference, quote: segment.text.split('\n').at(-1) ?? segment.text }],

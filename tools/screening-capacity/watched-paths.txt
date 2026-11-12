@@ -483,6 +483,7 @@ packages/pricing/src/release.ts
 packages/pricing/src/trace.ts
 packages/pricing/src/types.ts
 packages/pricing/src/windows.ts
+packages/redact/src/confusables.ts
 packages/redact/src/index.ts
 packages/redact/src/redact.ts
 packages/rules/src/build.ts

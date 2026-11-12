@@ -8,7 +8,10 @@
  *
  * Where it is set: on every transaction the routes' wrapper opens for a signed-in request (http/invoke.ts, BOUNDED:
  * the scope sets it as the transaction's first statement, before its own opening read), and on the queue producer's
- * pool (uploads/queue.ts), whose sends a handler makes while that transaction is open. Nowhere else: sign-in, the
+ * pool (uploads/queue.ts), whose sends a handler makes while that transaction is open; and, since Queues item 25 (b),
+ * on the one transaction the free screening's upload stores itself in (screening/routes.ts, withBoundedLockWaits:
+ * submit_screening() makes a second upload of one practice or address wait for the first, and the route is public),
+ * answered there in the screening's own sentence, not as `busy`. Nowhere else: sign-in, the
  * session's read, the rate limit's count, the public forms, and billing's, the e-signature vendor's and the model
  * gateway's pools wait as they always have, since they commit in steps or must never give a write up, and none of
  * them meets a lock a reconcile pass holds. What they can still wait behind is a schema change of their own tables (a

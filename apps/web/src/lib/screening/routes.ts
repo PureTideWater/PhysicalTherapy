@@ -6,6 +6,8 @@ import {
   type ScopeClient,
   type ScopePool,
   type ScreeningWaitReason,
+  CommitOutcomeUnknownError,
+  committed,
   withPublicSnapshot,
 } from '@tp/db/runtime';
 import { type Cents, cents } from '@tp/money';
@@ -47,9 +49,10 @@ import { InputError, type Issue, type MutationResult, NotFoundError } from '../h
 import { BILLING_ARRANGEMENT_LABELS, PROSPECT_SOURCE_OPTIONS } from '../routes/onboarding';
 import { FILL_THIS_IN, NO_PATIENT_INFORMATION, atMostCharacters, optionalText } from '../routes/schemas';
 import type { ScreeningLaunch } from '../server/config';
+import { WEB_LOCK_TIMEOUT_MS } from '../server/lock-timeout';
 import { ZIP_CODE_FORMAT, parseZipCode } from '../zip';
 import { ADDRESS_REFUSED, MAILBOX_UNCONFIRMED, addressHint } from './address';
-import { SCREENING_BOUNCE_BUDGET, SCREENING_PAUSED } from './messages';
+import { SCREENING_BOUNCE_BUDGET, SCREENING_BUSY, SCREENING_PAUSED } from './messages';
 import { contentQuarters, quarterRowsLayBefore } from './content-span';
 import { SCREENING_STANDINGS, type ScreeningStanding } from './labels';
 import { screeningRateAccount } from './rate';
@@ -186,6 +189,47 @@ async function withClient<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeC
     return await work(client);
   } finally {
     client.release();
+  }
+}
+
+/** PostgreSQL's lock_not_available: a statement gave up waiting for a lock at the transaction's lock_timeout. */
+const LOCK_NOT_AVAILABLE = '55P03';
+
+/**
+ * Runs `work` in a transaction of its own in which no wait for a lock passes the web's limit (server/lock-timeout.ts:
+ * three seconds a lock), and commits it reading the answer. submit_screening() makes the later of two uploads of one
+ * practice or contact address wait for the earlier to commit (its advisory locks, then the rows it replaces); without
+ * a limit each waiting upload held one of the web's few connections for as long as the first ran, on a route anyone
+ * can post to. A wait that reaches the limit is PostgreSQL's 55P03, the transaction is rolled back, and nothing of the
+ * upload is stored.
+ */
+async function withBoundedLockWaits<T>(pool: ScopePool<ScopeClient>, work: (client: ScopeClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+  } catch (error) {
+    client.release(true);
+    throw error;
+  }
+  // A connection whose transaction could not be ended, or whose commit went unanswered, never goes back to the pool.
+  let discard = false;
+  try {
+    await client.query("SELECT set_config('lock_timeout', $1, true)", [`${String(WEB_LOCK_TIMEOUT_MS)}ms`]);
+    const result = await work(client);
+    await committed(client);
+    return result;
+  } catch (error) {
+    try {
+      await client.query('ROLLBACK');
+    } catch {
+      discard = true;
+    }
+    if (error instanceof CommitOutcomeUnknownError) {
+      discard = true;
+    }
+    throw error;
+  } finally {
+    client.release(discard);
   }
 }
 
@@ -679,7 +723,7 @@ export const screeningSubmit = publicRoute({
     }
     let runId: string;
     try {
-      runId = await withClient(services.pool, async (client) => {
+      runId = await withBoundedLockWaits(services.pool, async (client) => {
         // The database hashes the rows it stores (their canonical form); no hash is taken from the browser.
         const result = await client.query<{ run_id: string }>(
           `SELECT submit_screening($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
@@ -720,6 +764,13 @@ export const screeningSubmit = publicRoute({
       const refused = pgError(error);
       if (refused?.code === '23514' || refused?.code === '23505') {
         throw new InputError([submitIssue(refused.constraint)]);
+      }
+      if (refused?.code === LOCK_NOT_AVAILABLE) {
+        // Something held a lock this upload needs for the whole wait: most often another upload of the same practice
+        // or contact address, else a transaction on a screening it replaces, or a schema change. By its code and the
+        // request alone: never the practice, the address or which lock it was.
+        services.logger.warn('a screening upload waited past the lock timeout and was refused', { error_code: 'SCREENING_UPLOAD_BUSY', request_id: request.requestId });
+        throw new InputError([{ field: 'input', message: SCREENING_BUSY }]);
       }
       throw error;
     }

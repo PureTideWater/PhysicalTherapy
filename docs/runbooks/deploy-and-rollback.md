@@ -279,6 +279,26 @@ operator_screening_run_keys(uuid), operator_screening_run_records(uuid), operato
 operator_screening_record(...), operator_screening_complete(...), operator_screening_fail(...) FROM tp_operator`, with
 their exact signatures from the migration, once no platform task of an image before PR 6b-3 can run.
 
+## A migration that cannot get a lock (ADR 0009, the amendment of 2026-11-11)
+
+Every migration waits at most two seconds for any one lock. When a wait reaches that, the runner rolls the migration
+back, pauses (1, 2, 4, 8, then 15 seconds) and tries it again, twenty times in all, about five minutes. While it
+pauses it holds and queues nothing, so requests and jobs go on. If no try gets through, the deploy fails: cdk reports
+"the migration task … stopped without migrating (exit code 1, …)", and the migration's log group `/tp/<env>/migration`
+ends with
+
+> db:migrate: `<file>` failed: a lock it needs stayed held (tried 20 times, waiting 2000 ms for each lock); it changed nothing; run the deploy again when no long job is running (docs/adr/0009)
+
+That migration changed nothing (a migration before it in the same deploy stays applied: each commits on its own), and
+no service moved (step 4). It means a transaction held one of the migration's tables through the whole five minutes: a
+reconcile pass, a long triage or audit report, or jobs running back to back. Run the deploy again at a quieter hour.
+Never take the locks by hand, and never end another session's transaction, or cancel a job or a vacuum, to make room.
+A migration with a lock loop of its own (the sections below) fails in its own words instead, and is not tried again.
+The runner starts no new try once the whole run has lasted thirty minutes (the deploy waits fifty for the task), so
+the same message can say fewer than 20 tries. If the log instead ends with "failed and may be partly applied", stop:
+that migration ended the runner's transaction itself, part of it may be in the database and it is not recorded. Do not run the
+deploy again; compare the database with the file first (ADR 0009, the amendment's item 7).
+
 ## A line's stage lock (ADR 0083; SUITE-CAP-1b)
 
 **The migration's lock loop.** `20261109090000_line_status_heads.sql` takes `claim`'s SHARE lock and `line_status`'s
@@ -393,6 +413,11 @@ while it still runs, selects `operator_record_mail_event()`'s six columns by nam
 `PasswordNoticeEmail` statement and the platform task `SUPPORT_EMAIL` (from the stack's `SupportEmail` parameter), and
 adds the alarms `PASSWORD_NOTICE_UNDELIVERED`, `PasswordNoticeRecordFailed`, `PasswordResetSessionsNotEnded` and
 `PasswordResetProviderSignOutFailed`; while IAM propagates, a refused first send is retried a minute later.
+
+The release that carries ADR 0094 adds one alarm, `MembershipEndProviderSignOutFailed`, and no migration: End membership
+then commits whatever Cognito answers and asks Cognito to sign the person out only afterwards. Rolled back, the previous
+web asks Cognito inside End membership's transaction again (a refusal there ends nothing and shows an error) and
+writes no line the alarm counts, so the alarm stays silent, not broken.
 
 **The rolling platform deploy.** The platform service rolls with a minimum of 100% and a maximum of 200%
 (`infra/lib/environments.ts`), so an old and a new platform task overlap, and an old task cannot read an SES event of

@@ -532,6 +532,9 @@ describe.each(ENVIRONMENTS)('%s: compute', (environment: EnvironmentName) => {
       expect(propertiesOf(functions[1] as CfnResource).Handler).toBe('index.isComplete');
       expect(MIGRATION_RUNNER_SOURCE.length).toBeLessThan(4096);
       expect(MIGRATION_TIMEOUT.toMinutes()).toBeLessThan(60);
+      // The migration runner stops trying again thirty minutes into a run (packages/db/src/migrate.ts,
+      // MIGRATION_LOCK_WAIT.budgetMs, pinned in its own test); this limit leaves twenty more for a last try.
+      expect(MIGRATION_TIMEOUT.toMinutes()).toBeGreaterThanOrEqual(50);
       expect(MIGRATION_POLL_INTERVAL.toSeconds()).toBe(15);
       const machine = onlyResource(template, 'AWS::StepFunctions::StateMachine')[1];
       expect(JSON.stringify(propertiesOf(machine).DefinitionString)).toMatch(new RegExp(`IntervalSeconds\\\\":${String(MIGRATION_POLL_INTERVAL.toSeconds())},`));
