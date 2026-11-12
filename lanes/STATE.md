@@ -1,11 +1,11 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-12 01:30 UTC by Lane A's orchestrator, at its handover. **Keep it current:** the orchestrator rewrites it after every
+Updated 2026-11-12 08:00 UTC by Lane A's orchestrator, at its handover. **Keep it current:** the orchestrator rewrites it after every
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
 ## Accounts and pace
-- **Orchestrator:** session_019i9ifCaMokBYHaARonYamS, from 2026-11-12 01:30 UTC, at the default effort; session_019i9ifBCrxfV35CFDVHLTad held the seat from 2026-11-11 09:15 UTC to 2026-11-12 01:30 UTC and handed over at about 390k tokens of context; it holds nothing. The co-founder talks to the orchestrator.
+- **Orchestrator:** the successor of session_019i9ifCaMokBYHaARonYamS, from 2026-11-12 08:00 UTC, at the default effort (it writes its own ID here at its first update); session_019i9ifCaMokBYHaARonYamS held the seat from 01:30 to 08:00 UTC and handed over at about 285k tokens of context; it holds nothing but the handback reminder trig_01FBw6p9jcYPWX2xLDDXe2q2, which it deletes at the handover. The co-founder talks to the orchestrator.
 - **Sessions that hold something (all on this account):**
   - **W16** session_019i9ifEMVhfmHMsi6UzykXB (Lane A; default effort; about 150k tokens): schema PR 4 on WIP 0e38fd73, ready on WIP 9090c4b3 (S1 and N1 fixed after the co-founder's word). It is opening the PR now, then posts the suggested approval line.
   - **W33** session_019i9ifBTTYtTEJn5cydNmex (Lane A; default effort), from 2026-11-12 06:35 UTC: ONLY the database half of Queues item 37 (the migration, policies, triggers and functions that turn W32's 26 failing-first tests green) from WIP `co-001/wip-key-registry` c0c43f2d and the note at v3 (section 16 rules). **Ready since 06:51 UTC (its draft passes the 26 tests, WIP 7e0192af); it waits for the co-founder to type `/new-migration key_registry` and then `/new-migration key_registry_validate` in its session** (https://claude.ai/code/session_019i9ifBTTYtTEJn5cydNmex). After it: a session for the handlers and the job, then one for the build's two reviews and the PR.
