@@ -301,7 +301,7 @@ export const CHECK_WORK_BUDGET = 420_000_000;
  * site counts.
  */
 const WORK = {
-  comparison: 1,
+  comparison: 4,
   formCharacter: 2,
   identifierCharacter: 3_500,
   mayBe: 30,
