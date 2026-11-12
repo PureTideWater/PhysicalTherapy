@@ -3335,7 +3335,11 @@ function appliedMatches(normal: string, subject: Subject, claims: number): Found
   return chainLeft(written(normal, merge(settled)), subject, claims, false) ? settled : found;
 }
 
-/** The letter as NFKC text and the spans redaction replaces in it, in order, each with its placeholder: what redactLetter writes. */
+/**
+ * The letter as NFKC text and the spans redaction replaces in it, in order, each with its placeholder: what redactLetter
+ * writes. Past the wider reading's work bound (WIDER_WORK_BOUND) the text is that text with the mark the check refuses
+ * after its last character (unreadPastTheBound), and the spans are the first reading's, each where it was.
+ */
 export function redactionSpans(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
   const normal = unbracketed(text);
   const subject = letterSubject(patient, claims);

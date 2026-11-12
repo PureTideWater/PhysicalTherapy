@@ -961,6 +961,35 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
       expect(holdsIdentifier(spans.slice(0, -1), van, claims)).toBe(false);
     });
 
+    // Review C of the work bound (designs/lane-b-redact-item-26/reviews/c-phi on claude/build-ops): no letter the base
+    // refuses sent, nothing it redacts shown. Its three other findings, recorded for Queues item 34 and pinned here.
+    it('C-PHI-1 and C-PHI-2, recorded: one character past the bound a letter the base sends is refused, and its text is the first reading’s with the mark', () => {
+      const letter = `${FILL.repeat(7141)} Patient Zephy ra was seen.`;
+      expect(letter).toHaveLength(WIDER_WORK_BOUND + 1);
+      expect(sentOrRefused(letter, patient, claims)).toBe(REFUSED);
+      expect(sentOrRefused(letter.slice(1), patient, claims)).toBe(`${FILL.repeat(7141).slice(1)} Patient [PATIENT_NAME] was seen.`);
+      // The text of the letter refused: the name written apart as the letter writes it (the first reading reads none),
+      // then the mark. Nothing but the check stands between it and a caller, as for every refused letter.
+      expect(redactLetter(letter, patient, claims).text).toBe(`${letter}\u0001`);
+      const { text, spans } = redactionSpans(letter, patient, claims);
+      expect(text).toBe(`${letter}\u0001`);
+      expect(spans).toEqual([]);
+    });
+
+    it('C-PHI-3, recorded: each path counts the text its own first reading wrote, so a letter can be past the bound on one and under it on the other', () => {
+      // The screen's first reading writes this letter eight characters longer than the path without the screen does
+      // (work 100,001 against 99,985). The base sends it on both paths; here the screen's path refuses it by the bound.
+      const who = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['3456150.00', '12-3456', '345.678']);
+      const numbers = claimsOf('56150', '0123', '1/02/2020', '12/3456');
+      const core = '76543210 \r\njan e J-Member ID:: ja-\nNE\nq\nzЕpHуRa​900‑12‑3456\n900 12 5615001/02/2020\r\n\r\n1-800-555-0199​12/3456\r\n';
+      const letter = `${core}\n${FILL.repeat(7200).slice(0, 49_870)}\r\n\nPatient Zephy ra was seen.`;
+      expect(sentOrRefused(letter, who, numbers)).toBe(REFUSED);
+      expect(redactLetterForScreen(letter, who, numbers).text.endsWith('\u0001')).toBe(true);
+      const sent = redactLetter(letter, who, numbers).text;
+      expect(holdsIdentifier(sent, who, numbers)).toBe(false);
+      expect(sent.endsWith('\nPatient [PATIENT_NAME] was seen.')).toBe(true);
+    });
+
     it('gives a letter the same answer, to the character, on every run', () => {
       for (const letter of [padded(WIDER_WORK_BOUND), padded(WIDER_WORK_BOUND + 1), padded(WIDER_WORK_BOUND / 2 + 2, '\r\nThank you.\r\n')]) {
         const once = redactLetterForScreen(letter, patient, claims);
