@@ -842,6 +842,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // The Social Security, phone and own-identifier forms the range fix exposed, closed (the orchestrator's rulings A, A' and B of 2026-11-07; docs/adr/0054, amendment of 2026-11-11).
   'MOD-21': none(10, 'Letters are written in memory by the tests, a property among them, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   'MOD-22': none(10, 'Letters are written in memory by the tests, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/redact/src/confusables.test.ts']),
+  // The letter check's work budget (docs/adr/0054, amendment of 2026-11-12).
+  'MOD-24': none(10, 'Letters are written in memory by the tests; no file.', ['packages/model-gateway/src/functions/denial-letter.test.ts']),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
   'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
   'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),
@@ -1158,6 +1160,12 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/auth/cognito-provider.test.ts',
     'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
     'packages/db/src/sign-in-not-before.db.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  'SGN-19': none(1, 'Synthetic personas have a membership ended through both routes with a provider twin whose sign-out fails, and steps begun before it are answered after; no file.', [
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/src/lib/auth/provider-sign-out.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
     'infra/test/monitoring.test.ts',
   ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one

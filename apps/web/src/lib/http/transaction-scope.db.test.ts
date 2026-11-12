@@ -181,11 +181,28 @@ describe('a COMMIT that fails is reported as not saved', () => {
     expect(lines.filter((line) => line.error_code === 'COMMIT_NOT_APPLIED').map((line) => [line.level, line.request_id])).toEqual([['error', requestId]]);
   });
 
+  /**
+   * Whether a statement on one connection is the COMMIT of the request's own transaction: the session's resolving
+   * transaction commits first on the same pool (auth/sessions.ts, Queues item 25 (d)), and these faults are the
+   * request's, so the transaction that resolved the session commits as it is.
+   */
+  function requestsOwnCommit(): (text: string) => boolean {
+    let resolving = false;
+    return (text) => {
+      if (text.startsWith('BEGIN')) {
+        resolving = false;
+      }
+      resolving ||= text.includes('resolve_session');
+      return text === 'COMMIT' && !resolving;
+    };
+  }
+
   it('keeps the refusal a known code has when the server refuses the COMMIT itself', async () => {
     const refusing: Services['pool'] = {
       connect: async () => {
         const client = await app.connect();
-        const query = (text: string, values?: unknown[]) => (text === 'COMMIT' ? client.query('ROLLBACK').then(() => Promise.reject(Object.assign(new Error('SYNTHETIC lock words'), { code: '55P03', severity: 'ERROR' }))) : client.query(text, values));
+        const mine = requestsOwnCommit();
+        const query = (text: string, values?: unknown[]) => (mine(text) ? client.query('ROLLBACK').then(() => Promise.reject(Object.assign(new Error('SYNTHETIC lock words'), { code: '55P03', severity: 'ERROR' }))) : client.query(text, values));
         return { query: query as ScopeClient['query'], release: (destroy?: boolean | Error) => client.release(destroy) };
       },
     };
@@ -202,18 +219,23 @@ describe('a COMMIT that fails is reported as not saved', () => {
       connect: async () => {
         const client = await app.connect();
         // The commit is made, and its answer is lost on the way back.
-        const query = (text: string, values?: unknown[]) => (text === 'COMMIT' ? client.query('COMMIT').then(() => Promise.reject(Object.assign(new Error('SYNTHETIC socket words'), { code: 'ECONNRESET' }))) : client.query(text, values));
+        const mine = requestsOwnCommit();
+        const query = (text: string, values?: unknown[]) => (mine(text) ? client.query('COMMIT').then(() => Promise.reject(Object.assign(new Error('SYNTHETIC socket words'), { code: 'ECONNRESET' }))) : client.query(text, values));
         return { query: query as ScopeClient['query'], release: (destroy?: boolean | Error) => client.release(destroy) };
       },
     };
+    let unknown = 0;
     work = async ({ services: mine, afterCommit }) => {
       await mine.queue.enqueue('reconcile', DAILY());
-      afterCommit(() => Promise.resolve((after += 1)));
+      afterCommit(() => Promise.resolve((after += 1)), { whenCommitUnknown: () => Promise.resolve((unknown += 1)) });
+      afterCommit(() => Promise.resolve((after += 1)), { whenCommitUnknown: () => Promise.reject(new Error('SYNTHETIC words of the work')) });
     };
     const sent = await press(servicesWith({ pool: losing }));
     expect((sent.outcome as { thrown: unknown }).thrown).toBeInstanceOf(CommitOutcomeUnknownError);
     expect(await saved(sent)).toEqual({ audit: 1, key: 1 });
     expect([queue.jobs, queue.open, after]).toEqual([[{ type: 'reconcile', payload: DAILY() }], 0, 0]);
+    // Work a handler left for exactly this case runs (docs/adr/0094, D6), and its own failure changes nothing.
+    expect(unknown).toBe(1);
     expect(lines.filter((line) => line.error_code === 'COMMIT_OUTCOME_UNKNOWN').map((line) => [line.level, line.request_id])).toEqual([['error', sent.requestId]]);
     expect(JSON.stringify(lines)).not.toContain('SYNTHETIC');
   });

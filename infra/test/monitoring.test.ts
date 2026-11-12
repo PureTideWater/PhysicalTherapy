@@ -62,6 +62,7 @@ import {
   PASSWORD_RESET_NOT_DELIVERED_MESSAGE,
   PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES,
   PASSWORD_RESET_OUTCOME_UNKNOWN_MESSAGE,
+  MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE,
   PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE,
   PASSWORD_RESET_REQUESTED_MESSAGE,
   PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE,
@@ -127,7 +128,7 @@ describe('the failed sign-in burst contract with the web app (PRD 19: failed sig
 describe('the reset and enrolment signal contract with the web app (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
   const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, '../..', file), 'utf8');
 
-  it('pins the thirteen counted lines, their codes and thresholds, and the per-user line, as literals', () => {
+  it('pins the fourteen counted lines, their codes and thresholds, and the per-user line, as literals', () => {
     // Literals, so an edit to the constants cannot pass by changing both sides.
     expect(RESET_AND_ENROLMENT_COUNTS).toEqual([
       {
@@ -149,6 +150,8 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
       { metricName: 'PasswordResetSessionsNotEnded', message: 'security event: password reset sessions not ended', errorCodes: [], threshold: 1, periodSeconds: 300 },
       // A completed reset whose sign-out at the provider failed: a key-registration step begun before it can still register a key (docs/adr/0091, D10).
       { metricName: 'PasswordResetProviderSignOutFailed', message: 'security event: password reset provider sign-out failed', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      // An ended membership whose sign-out at the provider did not happen: the membership and the sessions stay ended (docs/adr/0094).
+      { metricName: 'MembershipEndProviderSignOutFailed', message: 'security event: membership end provider sign-out failed', errorCodes: [], threshold: 1, periodSeconds: 300 },
       // A sign-in step begun before a reset and refused after it (docs/adr/0093, D5): every step but the hardware-key sign-in's, where no password was proved.
       {
         metricName: 'SignInStepRefusedAfterReset',
@@ -185,6 +188,11 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
     expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId });`);
     // The completed reset whose sign-out at the provider failed (docs/adr/0091, D10): the user's ID, the request's and the error's name alone.
     expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId, error_code: errorCode(error) });`);
+    // The ended membership whose sign-out at the provider did not happen (docs/adr/0094): all three of the web's lines (no subject, the provider's failure, a commit with no answer) hold these words
+    // and carry the user's ID, the request's ID and a code alone.
+    const signOut = source('apps/web/src/lib/auth/provider-sign-out.ts');
+    expect(signOut.split(`deps.logger.error('${MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE}', { user_id: ids.userId, request_id: ids.requestId, error_code: `)).toHaveLength(4);
+    expect(signOut.match(/deps\.logger\./g)).toHaveLength(3);
     // The user's ID and the request's alone: the address is never in it (the rule keys on $.user_id).
     expect(flow).toContain(`this.deps.logger.info('${PASSWORD_RESET_REQUESTED_MESSAGE}', { user_id: userId, request_id: context.requestId });`);
   });
@@ -317,10 +325,11 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // a password-changed email SES accepted whose record failed (D9), and the web's refused validation and validation cap. Reset and enrolment (R-11; docs/adr/0088, D7): the web's
     // undelivered requests (configuration, throttle), failed requests, refused enrolments, refused client credentials,
     // the start-up probe's refusal, a completed reset whose sessions were not ended (docs/adr/0091, D15) and one whose
-    // sign-out at the provider failed (docs/adr/0091, D10), and the four around a reset (docs/adr/0093: a step refused
+    // sign-out at the provider failed (docs/adr/0091, D10), an ended membership whose sign-out there did not happen
+    // (docs/adr/0094), and the four around a reset (docs/adr/0093: a step refused
     // after it, a hardware key registered across it, an unknown outcome, a crossed account). The user pool's message trigger (docs/adr/0081, the
     // code-email amendment): a message left to the pool's template, and the web's reset request answered after its floor.
-    expect(filters).toHaveLength(39);
+    expect(filters).toHaveLength(40);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -538,7 +547,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   describe('reset and enrolment signals reach the operator (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
     const web = stack.monitoring.webLogGroup;
 
-    it('counts each of the thirteen lines on the web log group alone, by message and, for undelivered requests and a refused step, by code, and alarms at its threshold', () => {
+    it('counts each of the fourteen lines on the web log group alone, by message and, for undelivered requests and a refused step, by code, and alarms at its threshold', () => {
       for (const count of RESET_AND_ENROLMENT_COUNTS) {
         const codes = count.errorCodes as readonly string[];
         const pattern =
@@ -566,7 +575,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       }
       const counted = filters.filter(([, filter]) => RESET_AND_ENROLMENT_COUNTS.some((count) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${count.metricName}"`)));
       expect(counted).toHaveLength(RESET_AND_ENROLMENT_COUNTS.length);
-      expect(counted).toHaveLength(13);
+      expect(counted).toHaveLength(14);
     });
 
     it('says, for each of the two completed resets that page (docs/adr/0091, D10 and D15), what happened, what to do and which runbook section', () => {

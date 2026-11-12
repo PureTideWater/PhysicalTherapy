@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { type LetterClaim, type PatientIdentifiers, WIDER_WORK_BOUND, holdsIdentifier, holdsNameOrNumber, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
+import { CHECK_WORK_BUDGET, type LetterClaim, type PatientIdentifiers, checkWorkOf, holdsIdentifier, holdsNameOrNumber, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
 
 import { timed } from './test-support/time-budget';
 
@@ -882,153 +882,155 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
     expect(sentOrRefused('SSN on file.  Statement\r\nNo. 900-12-3456150.00', JANE, JANE_CLAIMS)).toBe('SSN on file.  Statement\r\nNo. 900-12-3456150.00');
   });
 
-  // The wider reading's work bound (docs/adr/0054, amendment of 2026-11-11, "the work bound"). A wider match is applied
-  // only after the first reading's check has read the letter the first reading wrote once more, twice where it holds a
-  // CR LF: that re-reading is the wider reading's work, counted in characters. Past WIDER_WORK_BOUND the check is not
-  // run and the letter is refused: by a count, never by a clock, so a letter has one answer on every machine and run.
-  describe('the work bound of the wider reading', () => {
+  // MOD-23 on the check's work budget (docs/adr/0054, amendment of 2026-11-12, "item 26's readings on the counter"). A
+  // wider match is applied only after the first reading's check has read the letter the first reading wrote once more,
+  // twice where it holds a CR LF, and the check itself reads a CR LF letter in both writings. Each of those readings
+  // counts its work on the letter's one counter (CHECK_WORK_BUDGET), charged as the first is; a letter they take past
+  // the budget is refused: by a count, never by a clock, so a letter has one answer on every machine and run.
+  describe('the wider reading and the second reading on the check’s work budget', () => {
+    const LONG = { timeout: 60_000 };
     const FILL = 'paid in full. ';
     /** A letter of exactly `length` characters: words no reading takes, `middle`, then the name with a part written apart. */
     const padded = (length: number, middle = '') => {
       const tail = `${middle} Dear Zephy ra,`;
       return `${FILL.repeat(Math.ceil(length / FILL.length)).slice(0, length - tail.length)}${tail}`;
     };
+    /** The path prepare runs: the redaction, then the check with the work the redaction spent. */
+    const screenPath = (letter: string, who: PatientIdentifiers = patient, numbers: readonly LetterClaim[] = claims) => {
+      const screened = redactLetterForScreen(letter, who, numbers);
+      return holdsIdentifier(screened.text, who, numbers, checkWorkOf(screened)) ? REFUSED : screened.text;
+    };
+    /** The reading without the screen: redactLetter, then the check from nothing. */
     const letterPath = (letter: string) => {
       const sent = redactLetter(letter, patient, claims).text;
       return holdsIdentifier(sent, patient, claims) ? REFUSED : sent;
     };
+    const applied = (letter: string) => `${letter.slice(0, -'Zephy ra,'.length)}[PATIENT_NAME],`;
+    /** One digit to a line: the dearest text the reader reads, per character. */
+    const DEAR = '5\n'.repeat(100_000);
 
-    it('is a fixed count of characters: the size of the letter the reader’s time budget is proved on', () => {
-      expect(WIDER_WORK_BOUND).toBe(100_000);
+    it('reads a letter with a name written apart within the budget, and refuses the same letter past it', LONG, () => {
+      const within = padded(100_000);
+      expect(screenPath(within)).toBe(applied(within));
+      expect(letterPath(within)).toBe(applied(within));
+      // Twice as long, the redaction (two readings and the check between them) still ends within the budget and applies
+      // the wider match; the check, counting on from there, is past it and refuses.
+      const over = padded(200_000);
+      const screened = redactLetterForScreen(over, patient, claims);
+      expect(screened.text).toBe(applied(over));
+      expect(checkWorkOf(screened)).toBeLessThanOrEqual(CHECK_WORK_BUDGET);
+      expect(holdsIdentifier(screened.text, patient, claims, checkWorkOf(screened))).toBe(true);
+      // Three times as long, the redaction itself is past it: not one character of the letter comes back.
+      const far = redactLetterForScreen(padded(300_000), patient, claims);
+      expect(far).toMatchObject({ text: '\u0001', replaced: 0, candidates: [] });
+      expect(checkWorkOf(far)).toBe(CHECK_WORK_BUDGET + 1);
+      expect(screenPath(padded(300_000))).toBe(REFUSED);
     });
 
-    it('reads a letter whose re-reading is exactly the bound, and refuses the letter one character longer', () => {
-      const within = padded(WIDER_WORK_BOUND);
-      expect(within).toHaveLength(WIDER_WORK_BOUND);
-      const sent = sentOrRefused(within, patient, claims);
-      expect(sent).toBe(`${within.slice(0, -'Zephy ra,'.length)}[PATIENT_NAME],`);
-      expect(letterPath(within)).toBe(sent);
-      const over = padded(WIDER_WORK_BOUND + 1);
-      expect(over).toHaveLength(WIDER_WORK_BOUND + 1);
-      expect(sentOrRefused(over, patient, claims)).toBe(REFUSED);
-      expect(letterPath(over)).toBe(REFUSED);
+    it('charges a CR LF letter for both writings the check reads: it is refused at a length its writing with line feeds is read at', LONG, () => {
+      const feeds = padded(150_000, '\nThank you.\n');
+      expect(screenPath(feeds)).toBe(applied(feeds));
+      expect(screenPath(padded(150_000, '\r\nThank you.\r\n'))).toBe(REFUSED);
+      const within = padded(100_000, '\r\nThank you.\r\n');
+      expect(screenPath(within)).toBe(applied(within));
     });
 
-    it('counts a CR LF letter in both writings the check reads: its length, and its length with each CR LF as a line feed', () => {
-      // Two CR LF: 50,001 characters as written and 49,999 with line feeds are the bound exactly; one more is past it.
-      const within = padded(WIDER_WORK_BOUND / 2 + 1, '\r\nThank you.\r\n');
-      expect(within.length + within.replaceAll('\r\n', '\n').length).toBe(WIDER_WORK_BOUND);
-      expect(sentOrRefused(within, patient, claims)).toBe(`${within.slice(0, -'Zephy ra,'.length)}[PATIENT_NAME],`);
-      const over = padded(WIDER_WORK_BOUND / 2 + 2, '\r\nThank you.\r\n');
-      expect(over.length + over.replaceAll('\r\n', '\n').length).toBe(WIDER_WORK_BOUND + 2);
-      expect(sentOrRefused(over, patient, claims)).toBe(REFUSED);
-      expect(letterPath(over)).toBe(REFUSED);
-    });
-
-    it('counts the text the first reading wrote, placeholders and all, which is what its check reads again', () => {
-      // "Zephyra" is seven characters and its placeholder fourteen: a letter seven under the bound is read again as the
-      // bound exactly, and one of six under it as one past the bound.
-      const within = padded(WIDER_WORK_BOUND - 7, ' Zephyra');
-      expect(sentOrRefused(within, patient, claims)).toBe(`${within.slice(0, -' Zephyra Dear Zephy ra,'.length)} [PATIENT_NAME] Dear [PATIENT_NAME],`);
-      expect(sentOrRefused(padded(WIDER_WORK_BOUND - 6, ' Zephyra'), patient, claims)).toBe(REFUSED);
-    });
-
-    it('shows nothing the first reading redacts in the letter it refuses past the bound', () => {
-      const over = padded(WIDER_WORK_BOUND + 1, ' Jane Zephyra, member SYNMEMBER0042, claim SYNCLAIM0001, born 03/14/1980.');
-      for (const text of [redactLetterForScreen(over, patient, claims).text, redactLetter(over, patient, claims).text]) {
-        expect(holdsIdentifier(text, patient, claims)).toBe(true);
-        expect(text).toContain(' [PATIENT_NAME] [PATIENT_NAME], member [MEMBER_ID], claim [CLAIM_1], born [DATE_OF_BIRTH].');
-        expect(text).not.toMatch(/Jane|Zephyra|SYNMEMBER0042|SYNCLAIM0001|03\/14\/1980/u);
+    it('charges the second reading of a CR LF letter that holds nothing for the wider reading to apply (K-1), as the first is charged', LONG, () => {
+      const lines = (ending: string, length: number) => `${`${FILL}${ending}`.repeat(Math.floor(length / (FILL.length + ending.length)))}Dear Jane Zephyra, your claim SYNCLAIM0001 was paid.`;
+      const sentOf = (letter: string) => letter.replace('Jane Zephyra', '[PATIENT_NAME] [PATIENT_NAME]').replace('SYNCLAIM0001', '[CLAIM_1]');
+      for (const ending of ['\n', '\r\n']) {
+        expect(screenPath(lines(ending, 150_000))).toBe(sentOf(lines(ending, 150_000)));
       }
-      const { text, spans } = redactionSpans(over, patient, claims);
-      expect(holdsIdentifier(text, patient, claims)).toBe(true);
-      expect(spans.map((span) => span.placeholder)).toEqual(['[PATIENT_NAME]', '[PATIENT_NAME]', '[MEMBER_ID]', '[CLAIM_1]', '[DATE_OF_BIRTH]']);
+      // At 200,000 characters the letter of line feeds is read, as on the base; with CR LF line endings the check reads
+      // it twice, which is past the budget.
+      expect(screenPath(lines('\n', 200_000))).toBe(sentOf(lines('\n', 200_000)));
+      expect(screenPath(lines('\r\n', 200_000))).toBe(REFUSED);
     });
 
-    it('refuses past the bound by the mark, where the check alone would send the first reading’s text', () => {
+    it('returns no text of a letter past the budget with the screen, and without it the first reading’s text with the mark the check refuses', LONG, () => {
       // For a patient VAN VANTREE the first reading takes "Van" of "Van tree" and leaves "tree"; the wider reading joins
-      // the two. Past the bound the wider match is not applied, and the first reading's text holds nothing the check
-      // reads: without the mark it would be sent with "tree" in clear. With it the letter is refused.
+      // the two. Past the budget the wider match is not applied: without the mark the first reading's text could be
+      // sent with "tree" in clear by a check that found nothing else in it. With it the letter is refused.
       const van = patientOf(['VAN VANTREE']);
-      expect(sentOrRefused('Dear Van tree, your claim', van, claims)).toBe('Dear [PATIENT_NAME], your claim');
-      const over = `${FILL.repeat(Math.ceil(WIDER_WORK_BOUND / FILL.length))}Dear Van tree, your claim`;
-      const { text } = redactLetterForScreen(over, van, claims);
-      expect(holdsIdentifier(text, van, claims)).toBe(true);
-      expect(text.endsWith('Dear [PATIENT_NAME] tree, your claim\u0001')).toBe(true);
-      expect(holdsIdentifier(text.slice(0, -1), van, claims)).toBe(false);
-      const spans = redactLetter(over, van, claims).text;
-      expect(holdsIdentifier(spans, van, claims)).toBe(true);
-      expect(holdsIdentifier(spans.slice(0, -1), van, claims)).toBe(false);
+      expect(screenPath('Dear Van tree, your claim', van)).toBe('Dear [PATIENT_NAME], your claim');
+      const over = `${DEAR}Jane Vantree, member SYNMEMBER0042, claim SYNCLAIM0001, born 03/14/1980. Dear Van tree, your claim`;
+      expect(redactLetterForScreen(over, van, claims).text).toBe('\u0001');
+      expect(screenPath(over, van)).toBe(REFUSED);
+      // redactLetter and redactionSpans run the first reading with no counter, as on the base; what MOD-23 adds counts
+      // from nothing, and past the budget they write the first reading's text, every span it replaced replaced, and
+      // the mark after it.
+      const { text, spans } = redactionSpans(over, van, claims);
+      expect(redactLetter(over, van, claims).text).toBe(`${DEAR}Jane [PATIENT_NAME], member [MEMBER_ID], claim [CLAIM_1], born [DATE_OF_BIRTH]. Dear [PATIENT_NAME] tree, your claim\u0001`);
+      expect(text).toBe(`${over}\u0001`);
+      expect(spans.map((span) => span.placeholder)).toEqual(['[PATIENT_NAME]', '[MEMBER_ID]', '[CLAIM_1]', '[DATE_OF_BIRTH]', '[PATIENT_NAME]']);
+      for (const count of [undefined, 0, 1]) {
+        expect(holdsIdentifier(redactLetter(over, van, claims).text, van, claims, count)).toBe(true);
+      }
     });
 
-    // Review C of the work bound (designs/lane-b-redact-item-26/reviews/c-phi on claude/build-ops): no letter the base
-    // refuses sent, nothing it redacts shown. Its three other findings, recorded for Queues item 34 and pinned here.
-    it('C-PHI-1 and C-PHI-2, recorded: one character past the bound a letter the base sends is refused, and its text is the first reading’s with the mark', () => {
-      const letter = `${FILL.repeat(7141)} Patient Zephy ra was seen.`;
-      expect(letter).toHaveLength(WIDER_WORK_BOUND + 1);
-      expect(sentOrRefused(letter, patient, claims)).toBe(REFUSED);
-      expect(sentOrRefused(letter.slice(1), patient, claims)).toBe(`${FILL.repeat(7141).slice(1)} Patient [PATIENT_NAME] was seen.`);
-      // The text of the letter refused: the name written apart as the letter writes it (the first reading reads none),
-      // then the mark. Nothing but the check stands between it and a caller, as for every refused letter.
+    // Review C of item 26's first bound (designs/lane-b-redact-item-26/reviews/c-phi on claude/build-ops): no letter the
+    // base refuses sent, nothing it redacts shown. Its three other findings as they stand on the counter, recorded for
+    // Queues item 34 and pinned here.
+    it('C-PHI-1, recorded: a letter the base sends is refused where MOD-23’s readings take it past the budget', LONG, () => {
+      // The base reads this letter of 200,000 characters and sends it with the name written apart in clear.
+      const letter = `${FILL.repeat(14_284)} Patient Zephy ra was seen.`;
+      expect(letter.length).toBeGreaterThan(200_000);
+      expect(screenPath(letter)).toBe(REFUSED);
+      const shorter = letter.slice(letter.length - 150_000);
+      expect(screenPath(shorter)).toBe(`${shorter.slice(0, -'Zephy ra was seen.'.length)}[PATIENT_NAME] was seen.`);
+    });
+
+    it('C-PHI-2, recorded: without the screen, the text of a letter refused by the count is the first reading’s with the mark, the name written apart as the letter writes it', LONG, () => {
+      const letter = `${DEAR} Patient Zephy ra was seen.`;
+      // With the screen no text comes back at all (the base's own refusal past the budget).
+      expect(redactLetterForScreen(letter, patient, claims).text).toBe('\u0001');
+      // Without it: the first reading reads no name here, so the text is the letter and the mark. Nothing but the check
+      // stands between it and a caller, as for every refused letter.
       expect(redactLetter(letter, patient, claims).text).toBe(`${letter}\u0001`);
-      const { text, spans } = redactionSpans(letter, patient, claims);
-      expect(text).toBe(`${letter}\u0001`);
-      expect(spans).toEqual([]);
+      expect(redactionSpans(letter, patient, claims)).toEqual({ text: `${letter}\u0001`, spans: [] });
+      expect(letterPath(letter)).toBe(REFUSED);
     });
 
-    it('C-PHI-3, recorded: each path counts the text its own first reading wrote, so a letter can be past the bound on one and under it on the other', () => {
-      // The screen's first reading writes this letter eight characters longer than the path without the screen does
-      // (work 100,001 against 99,985). The base sends it on both paths; here the screen's path refuses it by the bound.
-      const who = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['3456150.00', '12-3456', '345.678']);
-      const numbers = claimsOf('56150', '0123', '1/02/2020', '12/3456');
-      const core = '76543210 \r\njan e J-Member ID:: ja-\nNE\nq\nzЕpHуRa​900‑12‑3456\n900 12 5615001/02/2020\r\n\r\n1-800-555-0199​12/3456\r\n';
-      const letter = `${core}\n${FILL.repeat(7200).slice(0, 49_870)}\r\n\nPatient Zephy ra was seen.`;
-      expect(sentOrRefused(letter, who, numbers)).toBe(REFUSED);
-      expect(redactLetterForScreen(letter, who, numbers).text.endsWith('\u0001')).toBe(true);
-      const sent = redactLetter(letter, who, numbers).text;
-      expect(holdsIdentifier(sent, who, numbers)).toBe(false);
-      expect(sent.endsWith('\nPatient [PATIENT_NAME] was seen.')).toBe(true);
+    it('C-PHI-3, recorded: each path counts its own work, so a letter can be refused by the count with the screen and sent without it', LONG, () => {
+      // With the screen one budget holds the redaction's first reading, MOD-23's readings and the check. Without it the
+      // first reading runs uncounted, as on the base, MOD-23's readings count from nothing, and the check counts from
+      // nothing again: this letter is past the budget on the first path and within it on the second, redacted alike.
+      const letter = padded(300_000);
+      expect(screenPath(letter)).toBe(REFUSED);
+      expect(letterPath(letter)).toBe(applied(letter));
     });
 
-    it('gives a letter the same answer, to the character, on every run', () => {
-      for (const letter of [padded(WIDER_WORK_BOUND), padded(WIDER_WORK_BOUND + 1), padded(WIDER_WORK_BOUND / 2 + 2, '\r\nThank you.\r\n')]) {
+    it('gives a letter the same answer and the same count on every run', LONG, () => {
+      for (const letter of [padded(100_000), padded(200_000), padded(300_000), padded(150_000, '\r\nThank you.\r\n')]) {
         const once = redactLetterForScreen(letter, patient, claims);
-        const held = holdsIdentifier(once.text, patient, claims);
-        for (let run = 0; run < 3; run += 1) {
+        const held = holdsIdentifier(once.text, patient, claims, checkWorkOf(once));
+        for (let run = 0; run < 2; run += 1) {
           const again = redactLetterForScreen(letter, patient, claims);
           expect(again).toEqual(once);
-          expect(holdsIdentifier(again.text, patient, claims)).toBe(held);
+          expect(checkWorkOf(again)).toBe(checkWorkOf(once));
+          expect(holdsIdentifier(again.text, patient, claims, checkWorkOf(again))).toBe(held);
         }
       }
     });
 
-    it.each(HELD_FRAMES)('refuses a letter the first reading refuses on either side of the bound: %j', (held) => {
+    it.each(HELD_FRAMES)('refuses a letter the first reading refuses, within the budget and past it: %j', LONG, (held) => {
       const short = `${held}Dear Zephy ra,`;
-      const within = `${held}${padded(WIDER_WORK_BOUND - held.length)}`;
-      const over = `${held}${padded(WIDER_WORK_BOUND + 1 - held.length)}`;
+      const within = `${held}${padded(100_000 - held.length)}`;
+      const over = `${held}${padded(300_000 - held.length)}`;
       for (const letter of [short, within, over, `${over}\r\n`]) {
+        expect(screenPath(letter)).toBe(REFUSED);
         expect(sentOrRefused(letter, patient, claims)).toBe(REFUSED);
         expect(letterPath(letter)).toBe(REFUSED);
       }
     });
 
-    it('reads a letter of any length that holds nothing for the wider reading to apply, as before', () => {
-      // No wider match, no work: the bound is no limit on a letter's length. With CR LF and without.
-      for (const ending of ['\n', '\r\n']) {
-        const long = `${`${FILL}${ending}`.repeat(10_000)}Dear Jane Zephyra, your claim SYNCLAIM0001 was paid.`;
-        expect(long.length).toBeGreaterThan(WIDER_WORK_BOUND + 50_000);
-        expect(sentOrRefused(long, patient, claims)).toBe(`${`${FILL}${ending}`.repeat(10_000)}Dear [PATIENT_NAME] [PATIENT_NAME], your claim [CLAIM_1] was paid.`);
-      }
-    });
-
-    it('refuses every letter past the bound that holds a name written apart, whatever else it holds', () => {
+    it('refuses every letter past the budget that holds a name written apart, whatever else it holds', LONG, () => {
       const pieces = fc.constantFrom('Your claim was denied. ', 'Service 01/02/2026 ', 'Paid $120.00 ', 'CO-45 ', 'Dear Zephyra, ', 'ref SYNCLAIM0001 ', 'Call 555-0100. ', '\r\n', '\n', 'in a ', 'Zeph. yra ', '1 1 11 ');
       fc.assert(
         fc.property(fc.array(pieces, { minLength: 1, maxLength: 12 }), fc.integer({ min: 1, max: 400 }), (parts, extra) => {
-          const body = parts.join('');
-          const letter = `${body}${padded(WIDER_WORK_BOUND + extra)}`;
-          expect(sentOrRefused(letter, patient, claims)).toBe(REFUSED);
-          expect(letterPath(letter)).toBe(REFUSED);
+          const letter = `${parts.join('')}${padded(300_000 + extra)}`;
+          expect(redactLetterForScreen(letter, patient, claims).text).toBe('\u0001');
+          expect(screenPath(letter)).toBe(REFUSED);
         }),
         { numRuns: 15 },
       );

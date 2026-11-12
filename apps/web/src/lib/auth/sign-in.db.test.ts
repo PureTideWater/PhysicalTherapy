@@ -637,6 +637,31 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(await notices(user.id)).toEqual([QUEUED]);
   });
 
+  it('a reset’s sweep and its audit event are one transaction: while the event cannot be written no session ends, and the try that writes it ends them all (Queues item 25 (d))', async () => {
+    // The fault is armed for the confirmation alone: the request's own events are written as they are.
+    let confirming = false;
+    const kept = await person();
+    await signedIn(kept.email);
+    const failed = paced(failing(/INSERT INTO audit_event/, 2, () => confirming));
+    await failed.flow.requestPasswordReset(kept.email, context());
+    confirming = true;
+    expect(await failed.flow.confirmPasswordReset(kept.email, codeFor(kept.email), CHOSEN, context())).toEqual({ kind: 'sessions_not_ended' });
+    confirming = false;
+    // Both tries swept the sessions and then failed at the event: each sweep rolled back with it.
+    expect(await openSessions(kept.id)).toBe(1);
+    expect((await events(kept.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual([]);
+
+    const swept = await person();
+    await signedIn(swept.email);
+    const retried = paced(failing(/INSERT INTO audit_event/, 1, () => confirming));
+    await retried.flow.requestPasswordReset(swept.email, context());
+    confirming = true;
+    expect(await retried.flow.confirmPasswordReset(swept.email, codeFor(swept.email), CHOSEN, context())).toEqual({ kind: 'reset', locked: false, keepEmail: true });
+    confirming = false;
+    expect(await openSessions(swept.id)).toBe(0);
+    expect((await events(swept.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual(['password_reset_completed:email_code']);
+  });
+
   it('SGN-07: a revoke that fails once is retried; failing twice it is logged, the provider still signs out, and the reset answers the generic failure (review R-3)', async () => {
     const once = await person();
     await signedIn(once.email);
@@ -1525,6 +1550,67 @@ describe('SGN-18: a reset whose outcome at the provider is unknown is never repo
     expect(order[0]).toBe('lock');
     expect(order.indexOf('lock')).toBeLessThan(order.indexOf('session'));
     expect(order.filter((entry) => entry === 'lock')).toHaveLength(1);
+  });
+});
+
+/**
+ * What End membership commits (both routes: the membership ended, every session of the account ended), with the
+ * provider's sign-out never performed, as when it fails after the commit (docs/adr/0094).
+ */
+async function membershipEndedWithoutProviderSignOut(userId: string): Promise<void> {
+  await asOwner(owner, [], async () => {
+    await owner.query('UPDATE membership SET ends_at = now() WHERE user_id = $1 AND ends_at IS NULL', [userId]);
+    await owner.query(`UPDATE user_session SET ended_at = now(), end_reason = 'revoked' WHERE user_id = $1 AND ended_at IS NULL`, [userId]);
+  });
+}
+
+async function liveMemberships(userId: string): Promise<number> {
+  const { rows } = await owner.query<{ count: string }>('SELECT count(*) AS count FROM membership WHERE user_id = $1 AND (ends_at IS NULL OR ends_at > now())', [userId]);
+  return Number(rows[0]?.count ?? -1);
+}
+
+// These state what a step begun before End membership still does while the provider's sign-out has not happened. The
+// membership's end moves no mark ("user".sign_in_not_before), so ADR 0093's rule refuses none of them: each opens a
+// session, which carries no role, and the second leaves a key on the account. Closing them is the mark's move in
+// membership_ended's own transaction, a migration (LANES.md Queues item 37; docs/adr/0094, "Left open"). When it lands,
+// each `signed_in` and `key_registered` below becomes the refusal SGN-17 states for a reset.
+describe('SGN-19: a sign-in step begun before End membership, the provider’s sign-out never performed (docs/adr/0094)', () => {
+  it('SGN-19: a code step begun before End membership still opens a session after it, for an account that holds no role (open until Queues item 37)', async () => {
+    const user = await person();
+    await addMembership(owner, await createOrganization(owner, 'group'), user.id, 'analyst');
+    const before = await signedIn(user.email);
+    const begun = pendingOf(await flow.start(user.email, PASSWORD, context()));
+    expect(begun.step).toBe('mfa');
+    await membershipEndedWithoutProviderSignOut(user.id);
+    // What the commit holds whatever the provider answers: no role, and no session that was open.
+    expect(await liveMemberships(user.id)).toBe(0);
+    expect(await openSessions(user.id)).toBe(0);
+    expect((await resolveSession(app, before.sessionToken, 'test')).state).toBe('ended');
+    // The mark did not move, so the step is not refused.
+    expect(await markOf(user.id)).toBeNull();
+    const finished = await flow.answerTotp(begun, nextCode(), context());
+    expect(finished.kind).toBe('signed_in');
+    expect(await openSessions(user.id)).toBe(1);
+    expect(await liveMemberships(user.id)).toBe(0);
+    expect((await securityEvents(user.id)).filter((event) => event.startsWith('step_before_reset'))).toEqual([]);
+  });
+
+  it('SGN-19: a key-registration step begun before End membership still registers a key after it, and the key then signs in to an account that holds no role (open until Queues item 37)', async () => {
+    const { staff, begun, key } = await registrationBegun();
+    await membershipEndedWithoutProviderSignOut(staff.id);
+    expect(await liveMemberships(staff.id)).toBe(0);
+    expect(await markOf(staff.id)).toBeNull();
+    expect(await flow.completeKeyRegistration(begun.pending, key.create(begun.options), context())).toEqual({ kind: 'key_registered' });
+    expect((await store.bySub(staff.sub))?.credentials).toHaveLength(1);
+    // The runbook's query finds it: one hardware_key_registered for the user after the membership's end.
+    expect((await events(staff.id)).filter((event) => event.startsWith('hardware_key_registered'))).toHaveLength(1);
+    const keyStart = await flow.beginKey(staff.email);
+    if ('kind' in keyStart) {
+      throw new Error('expected options');
+    }
+    expect((await flow.completeKey(keyStart.pending, key.get(keyStart.options), context())).kind).toBe('signed_in');
+    expect(await openSessions(staff.id)).toBe(1);
+    expect(await liveMemberships(staff.id)).toBe(0);
   });
 });
 
