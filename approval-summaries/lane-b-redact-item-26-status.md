@@ -2,7 +2,30 @@ ACTING Lane B (W36, https://claude.ai/code/session_019i9ifBWTdAErWCMzjfhzn3) hol
 
 # Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
 
-## RESUME-BLOCK, current (W36, session_019i9ifBWTdAErWCMzjfhzn3, 2026-11-12 about 08:20 UTC; BUILT on the counter, tests green, the gate and the battery RUNNING, the delta review NOT yet run; no PR)
+## RESUME-BLOCK, current (W36, session_019i9ifBWTdAErWCMzjfhzn3, 2026-11-12 about 10:50 UTC; draft PR #158 OPEN on e013634b, CI by subscription; verified locally; NOT merged)
+
+- **Where it stands.** `co-001/redact-item-26` = WIP `co-001/wip-redact-item-26` = **e013634b** (the base adaf7897
+  contained; a85ea22d the merge and the readings on the counter, a447958e MOD-23 in the registry, e013634b review D's
+  row and the ADR). Draft PR **#158** into `claude/build-platform`, description from the template; W36 is subscribed.
+- **Proof, all on e013634b's reader.** Gate (`designs/lane-b-redact-item-26/gate/report-ab-*.md`, `report-fb-*.md`):
+  against adaf7897, 975,489 letters, 13 differ (each the recorded cost of a name whose letters are ordinary words apart),
+  no PHI class, 462,984 refused on both sides: **0 real-shaped letters newly refused by the count**; against c52f262a 0
+  differ. Battery (`battery-{hr,rr,hf,rf}-e013634b.out`): head and base-as-head the same answers on recorded and fresh
+  seeds. Review D (`reviews/d/report.md`): no blocking finding; no fix round. Full local suite once, Node 24: unit with
+  coverage 14,350 passed, db 10,287 (PostgreSQL 18: `DATABASE_URL=postgres://postgres:test@localhost:5433/postgres`;
+  the servers had stopped and were started with `pg_ctl` as in `tools/setup-container.sh`), golden 381, e2e 87,
+  typecheck, lint, lint:logs, verify-content. MOD-15 (Queues item 38) did not fail locally.
+- **Left to do.** On green required checks: ready the PR, `git fetch origin refs/pull/156/head` and look for the
+  founder's commit on `docs/product/domain-model.md` (if it is there and #156 is not merged: do NOT merge, tell the
+  orchestrator, wait); if the base moved, merge it and push first; merge; verify with `git ls-remote`; final state here.
+- **For the queue (lesser findings; ADR 0054's new amendment holds each):** D-TIME-1 (the dearest letter left read,
+  57,972 characters with one CR LF, 1.7 to 2.0 s; a row now); D-TIME-3 (two letters with nothing of item 26's refused at
+  the budget's edge); the cost table (letters refused at a third to two thirds of the base's length); C-PHI-1 to
+  C-PHI-3 as they stand; the reviewer's stated limits (the first reading's charge shown >= the base's by counts, not
+  per site; no search at the budget's edge). The orchestrator's seat moved at 08:00 UTC by a peer note; W36 reports to
+  both sessions.
+
+## RESUME-BLOCK of W36 at 08:20 UTC (superseded by the block above; W36, session_019i9ifBWTdAErWCMzjfhzn3, 2026-11-12 about 08:20 UTC; BUILT on the counter, tests green, the gate and the battery RUNNING, the delta review NOT yet run; no PR)
 
 - **Where it stands.** WIP `co-001/wip-redact-item-26` = **a85ea22d** (the base adaf7897 merged into c52f262a, item
   26's readings on the base's counter, the character bound removed); local branch `co-001/redact-item-26` is one
