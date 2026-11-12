@@ -6,7 +6,7 @@ import { InputRefusedError } from '../errors';
 import { figureInQuote, inQuote, normalized, readDate, wholeInQuote } from '../figures';
 import { isSha256, sha256Hex } from '../hash';
 import { PROMPTS } from '../prompts';
-import { type LetterClaim, type PatientIdentifiers, compactIdentifier, holdsIdentifier, redactLetterForScreen } from '@tp/redact';
+import { type LetterClaim, type PatientIdentifiers, checkWorkOf, compactIdentifier, holdsIdentifier, redactLetterForScreen } from '@tp/redact';
 import type { PurposeSpec, Verified } from '../spec';
 import { frameText } from '../untrusted';
 
@@ -228,7 +228,9 @@ export const denialLetterSpec = Object.freeze<PurposeSpec<DenialLetterInput, Den
       throw new InputRefusedError('no_text', 'the letter has no text to read');
     }
     const redacted = redactLetterForScreen(input.text, input.patient, input.claims);
-    if (holdsIdentifier(redacted.text, input.patient, input.claims)) {
+    // One work budget for the whole check: the check starts from what the redaction spent, and a letter past the
+    // budget in either is refused here, by the check's own answer (CHECK_WORK_BUDGET in @tp/redact).
+    if (holdsIdentifier(redacted.text, input.patient, input.claims, checkWorkOf(redacted))) {
       throw new InputRefusedError('identifier_left', 'the letter still holds an identifier after redaction; it is not sent');
     }
     return {
