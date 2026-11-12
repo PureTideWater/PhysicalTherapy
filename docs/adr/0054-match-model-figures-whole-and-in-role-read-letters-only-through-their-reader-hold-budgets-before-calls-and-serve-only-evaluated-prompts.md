@@ -2306,19 +2306,35 @@ would have ordinary letters refused. At 6 the cost is a tenth of 5's and `Accoun
 privacy is 5 (the reader itself expects a five-digit patient control number). Not measured: a diagnosis code written
 without its point.
 
-**Open: W51's finding, a fix owed before this merges.** Stage 6's generated set (below) found two forms where rule (a)
-does not refuse and digits of the number are sent. Neither is a residual: the ruling of 2026-11-12 is that (a) is to
-be read on the letter as written, before any replacement, and the letter refused whatever placeholder took a part of
-the number. The fix is not in this tree yet.
+**Rule (a) is read on the letter as written (W51's finding, closed).** Stage 6's generated set (below) found two
+forms where rule (a) did not refuse and digits of the number were sent. Neither was a residual: the ruling of
+2026-11-12 is that (a) is read on the letter as written, before any replacement, and the letter refused whatever
+placeholder took a part of the number. The check read the rule only on the redacted text, where a placeholder had
+already taken a part of the number. The redaction now reads it first, on the NFKC letter in each writing of its line
+endings the check reads (`gluedBeforeRedaction`), and where a digits-only number of five digits or more stands whole
+and glued to a letter it returns the first reading's text with the mark the check refuses at its first line; nothing
+of the wider reading is applied to such a letter. One place is not counted: the whole written number under one span
+of the first reading (`Acct12345`, `Fax X8852780545 ext`, a label or phone word against it; `Fax X900123456 ext`, the
+whole of it a pattern's), where nothing of the number is left to send and the base redacts and sends the letter. A
+placeholder for a part hides nothing, whichever reading writes it.
 
 - A digits-only number held with a separator, one piece of five or more and one under five, written whole with a
-  letter glued on the short piece's side: (c) replaces the long piece, and the check, which reads the text after
-  replacement, no longer finds the number. Held `21318-5`, `Fax 21318-5B ext` is sent as `Fax [MEMBER_ID]-5B ext`;
-  held `1/852830`, `Fax X1/852830 ext` as `Fax X1/[MEMBER_ID] ext`; held `97537335/1821`, `[MEMBER_ID]/1821B`. One
-  to four digits are sent (the base sent the whole number). 130 of the set's 768 letters of this form.
+  letter glued on the short piece's side: (c) replaced the long piece and the rest was sent. Held `21318-5`, `Fax
+  21318-5B ext` was `Fax [MEMBER_ID]-5B ext`; held `1/852830`, `Fax X1/852830 ext` was `Fax X1/[MEMBER_ID] ext`; held
+  `97537335/1821`, `[MEMBER_ID]/1821B`. Now refused: 130 letters of the generated set (the base sent the whole number).
 - A number of ten to twelve digits glued to a letter, with a joiner or a stored separator inside it: the Social
-  Security or phone reading takes nine or ten of its digits and one to three are sent (`Fax X8-852780545 ext` for a
-  member ID `8852780545` is `Fax X8-[SSN] ext`). The base writes the same text: 108 letters of the set.
+  Security or phone reading took nine or ten of its digits and one to three were sent (`Fax X8-852780545 ext` for a
+  member ID `8852780545` was `Fax X8-[SSN] ext`, on the base too). Now refused: 108 letters of the set, each a letter
+  the base sends with those digits in clear.
+
+The generated set on this tree: 0 failures of 13,780 letters (238 before), no PHI class against the base, 5,213
+refused (4,975 before; the 238 and no other), every other form's counts as stage 6 recorded them. The gate, full and
+with no cache, on this tree against a97d73e4: 975,489 letters, 2 differ as before (A-4's), 462,984 refused by both, no
+real-shaped letter newly refused, the slowest letter 973 ms (the base 964 ms). The reading is charged on the letter's
+counter as the check's is and costs nothing for a call with no such number; the two rows nearest the budget are at
+403,548,210 and 414,023,090 units, both sent, as before, the budget and every weight unchanged. Tests: the rows of
+MOD-25 under "read on the raw letter", each seen failing before the fix, and a property over a number held with or
+without a separator.
 
 **What it costs, each pinned by a test; every one is a placeholder or a refusal, never a leak.**
 
@@ -2373,8 +2389,8 @@ worker (`designs/lane-b-redact-item-34/scripts/generated.sh` on `claude/build-op
 is shown; (a) refuses the glued number at 5 to 12 digits on each side, with another script's digits and by piece
 (where the first reading had not already replaced it); (c), A-5, (b) and A-4 replace the value in every letter of
 their forms, or the letter is refused; A-6 refuses 1,200 of 1,200; every residual above is sent as pinned, as the base
-sends it; and its 238 failures are the two open forms above, with a joiner, a CR LF or a stored separator inside the
-number.
+sends it; and its 238 failures were the two forms of rule (a) closed above, with a joiner, a CR LF or a stored
+separator inside the number (0 on the tree with that fix).
 
 The battery of the earlier rounds (W5's and W13's scripts, as item 26 ran it), four runs: this reader and the base
 a97d73e4 each as "head", with the recorded seeds and with seeds not used before. Every verdict line of the reader's
