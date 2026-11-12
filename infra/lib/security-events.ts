@@ -72,6 +72,21 @@ export const PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM = {
 } as const;
 
 /**
+ * The provider_sign_outs job not running (docs/adr/0095, D16). The platform heartbeat says the process is alive and
+ * the final-failure filter says a run failed; neither hears a schedule that stops firing this one job, and then no
+ * sign-out is sent and none becomes late, so the alarm above stays silent. The job writes this line once a run, every
+ * minute, with a count only (apps/worker/src/platform/provider-sign-outs.ts). The alarm is on the line's absence:
+ * `missedPeriods` consecutive periods with none, a period with no data counting as missed.
+ */
+export const PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM = {
+  alarmName: 'ProviderSignOutsNotRunning',
+  metricName: 'ProviderSignOutsRun',
+  message: 'provider sign-outs run',
+  periodSeconds: 300,
+  missedPeriods: 2,
+} as const;
+
+/**
  * A removed hardware key used (docs/adr/0095): a sign-in answered with a key that two platform administrators removed
  * from the account. The web refuses it and logs the line at error with the user's ID and the request's ID only
  * (apps/web/src/lib/auth/sign-in.ts). Someone still holds the removed key: one alarms.

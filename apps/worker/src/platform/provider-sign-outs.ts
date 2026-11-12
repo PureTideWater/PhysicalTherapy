@@ -75,6 +75,11 @@ export type ProviderSignOutStep = (typeof PROVIDER_SIGN_OUT_STEPS)[number];
 
 /** The paging line's words: the alarm ProviderSignOutNotDelivered counts them (infra/lib/constructs/monitoring.ts). */
 export const PROVIDER_SIGN_OUT_NOT_DELIVERED = 'security event: provider sign-out not delivered';
+/**
+ * The run's own line, once a run, with a count only: the alarm ProviderSignOutsNotRunning is on its absence, so a
+ * schedule that stops firing this job is heard (infra/lib/security-events.ts; docs/adr/0095, D16).
+ */
+export const PROVIDER_SIGN_OUTS_RUN = 'provider sign-outs run';
 
 /** One or more of the run's steps failed; the others ran. Names the steps, never an error's message. */
 export class ProviderSignOutRunFailed extends Error {
@@ -183,6 +188,9 @@ export async function runProviderSignOuts(options: ProviderSignOutOptions): Prom
       return (rows[0] as { removed: number } | undefined)?.removed ?? 0;
     }),
   );
+  // Written whether or not a step failed (a failed step has its own line and fails the run): the run happened. The
+  // words are PROVIDER_SIGN_OUTS_RUN's, written out: the log lint reads fixed text only (a test ties the two).
+  logger.info('provider sign-outs run', { record_count: done + failed });
   if (failedSteps.length > 0) {
     throw new ProviderSignOutRunFailed(failedSteps);
   }

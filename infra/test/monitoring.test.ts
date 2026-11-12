@@ -63,6 +63,7 @@ import {
   PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES,
   PASSWORD_RESET_OUTCOME_UNKNOWN_MESSAGE,
   PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM,
+  PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM,
   PASSWORD_RESET_REQUESTED_MESSAGE,
   PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE,
   REMOVED_HARDWARE_KEY_USED_MESSAGE,
@@ -329,9 +330,10 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // the start-up probe's refusal, a completed reset whose sessions were not ended (docs/adr/0091, D15), a removed
     // hardware key used (docs/adr/0095), and the four around a reset (docs/adr/0093: a step refused
     // after it, a hardware key registered across it, an unknown outcome, a crossed account). Platform again: the
-    // job's provider sign-out not delivered (docs/adr/0095), in place of the web's two lines about the provider's sign-out. The user pool's message trigger (docs/adr/0081, the
+    // job's provider sign-out not delivered (docs/adr/0095), in place of the web's two lines about the provider's sign-out, and the
+    // job's own run line, whose absence alarms (docs/adr/0095, D16). The user pool's message trigger (docs/adr/0081, the
     // code-email amendment): a message left to the pool's template, and the web's reset request answered after its floor.
-    expect(filters).toHaveLength(41);
+    expect(filters).toHaveLength(42);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -357,6 +359,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.monitoring.mailValidationCapAlarm,
       ...Object.values(stack.monitoring.resetAndEnrolmentAlarms),
       stack.monitoring.providerSignOutNotDeliveredAlarm,
+      stack.monitoring.providerSignOutsNotRunningAlarm,
       stack.monitoring.resetRequestsPerUserAlarm,
       stack.mailStreams.accountBounceWarningAlarm,
       stack.mailStreams.accountBounceHighAlarm,
@@ -642,6 +645,49 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       expect(words).toContain('LATE:');
       expect(words).toContain('GAVE_UP:');
       expect(words).toContain('docs/adr/0095');
+      expect(words.length).toBeLessThanOrEqual(1024);
+    });
+
+    // docs/adr/0095, D16: the heartbeat says the platform process is alive and the final-failure filter says a run
+    // failed; neither hears a schedule that stops firing this one job, after which no sign-out is sent and none is late.
+    it('alarms when the provider_sign_outs job writes no run line for ten minutes, missing data breaching, and says when it returns', () => {
+      const platform = stack.monitoring.platformLogGroup;
+      expect(PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM).toEqual({ alarmName: 'ProviderSignOutsNotRunning', metricName: 'ProviderSignOutsRun', message: 'provider sign-outs run', periodSeconds: 300, missedPeriods: 2 });
+      const { metricName, message } = PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM;
+      expect(propertiesOf(filterFor(metricName, platform))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, platform)),
+        FilterPattern: `{ $.msg = "${message}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Worker', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.providerSignOutsNotRunningAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Worker',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 300,
+        EvaluationPeriods: 2,
+        ComparisonOperator: 'LessThanThreshold',
+        Threshold: 1,
+        TreatMissingData: 'breaching',
+        AlarmActions: [topic],
+        OKActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      const holding = filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`));
+      expect(holding).toHaveLength(1);
+      // The line is the job's own, written once a run whether or not a step failed, with a count and no ID.
+      const job = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/platform/provider-sign-outs.ts'), 'utf8');
+      expect(job).toContain(`export const PROVIDER_SIGN_OUTS_RUN = '${message}';`);
+      expect(job).toContain(`logger.info('${message}', { record_count: done + failed });`);
+      // The job runs every minute, so ten minutes hold ten lines when it is scheduled.
+      const jobs = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/jobs/platform.ts'), 'utf8');
+      expect(jobs).toContain("provider_sign_outs: '* * * * *',");
+      const words = String(alarm.AlarmDescription);
+      expect(words).toContain(`The ${environment} provider_sign_outs job has written no run line for ten minutes`);
+      expect(words).toContain('no sign-out is being sent at Cognito');
+      expect(words).toContain('none can become late, so ProviderSignOutNotDelivered stays silent');
+      expect(words).toContain('docs/runbooks/incident-response.md, "The provider sign-out job not running"');
+      expect(words).toContain('docs/adr/0095, D16');
       expect(words.length).toBeLessThanOrEqual(1024);
     });
 

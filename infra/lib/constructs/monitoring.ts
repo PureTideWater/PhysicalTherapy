@@ -74,6 +74,7 @@ import {
 import {
   PASSWORD_RESET_REQUESTED_MESSAGE,
   PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM,
+  PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM,
   RESET_AND_ENROLMENT_COUNTS,
   RESET_REQUESTS_PER_USER,
   type ResetAndEnrolmentMetricName,
@@ -214,6 +215,8 @@ export class Monitoring extends Construct {
   readonly mailValidationCapAlarm: cloudwatch.Alarm;
   /** A provider sign-out the platform job reports late or given up (PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM; docs/adr/0095). */
   readonly providerSignOutNotDeliveredAlarm: cloudwatch.Alarm;
+  /** The provider_sign_outs job silent for ten minutes (PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM; docs/adr/0095, D16). */
+  readonly providerSignOutsNotRunningAlarm: cloudwatch.Alarm;
   /** One alarm per reset or enrolment line counted (RESET_AND_ENROLMENT_COUNTS). */
   readonly resetAndEnrolmentAlarms: Readonly<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>>;
   /** Counts each account's reset requests by its user ID (PASSWORD_RESET_REQUESTED_MESSAGE). */
@@ -641,6 +644,24 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.providerSignOutNotDeliveredAlarm.addAlarmAction(notify);
+
+    // The job's own run line, counted like a heartbeat: its absence is the alarm (docs/adr/0095, D16).
+    const signOutRuns = counted(
+      this.platformLogGroup,
+      PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM.metricName,
+      { namespace: JOB_FAILED_METRIC.namespace, metricName: PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM.metricName },
+      logs.FilterPattern.stringValue('$.msg', '=', PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM.message),
+    );
+    this.providerSignOutsNotRunningAlarm = new cloudwatch.Alarm(this, PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM.alarmName, {
+      alarmDescription: `The ${props.environmentName} provider_sign_outs job has written no run line for ten minutes, so no sign-out is being sent at Cognito for an ended membership, a password reset or a key removal, and none can become late, so ProviderSignOutNotDelivered stays silent. Nothing is undone: the app's own sessions ended and its sign-in mark moved when each cause committed, and the sign-outs wait, queued. If PlatformHeartbeatMissed is raised too the platform service is down; if not, this one job is not being scheduled or not finishing. During a deploy or a rollback of the platform service it is the expected signal. See docs/runbooks/incident-response.md, "The provider sign-out job not running" (docs/adr/0095, D16).`,
+      metric: signOutRuns.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM.periodSeconds) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      threshold: 1,
+      evaluationPeriods: PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM.missedPeriods,
+      treatMissingData: cloudwatch.TreatMissingData.BREACHING,
+    });
+    this.providerSignOutsNotRunningAlarm.addAlarmAction(notify);
+    this.providerSignOutsNotRunningAlarm.addOkAction(notify);
 
     const resetAndEnrolmentAlarms: Partial<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>> = {};
     for (const count of RESET_AND_ENROLMENT_COUNTS) {

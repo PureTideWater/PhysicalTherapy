@@ -45,9 +45,18 @@ beforeEach(async () => {
   await owner.query('DELETE FROM provider_sign_out');
 });
 
+/**
+ * The captured lines: `lines` holds every line but the run's own ('provider sign-outs run', once a run, which the
+ * absence alarm reads), so each test names exactly the lines its case writes; `runs` holds the run's own.
+ */
 function capture() {
   const lines: Record<string, unknown>[] = [];
-  return { lines, logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }) };
+  const runs: Record<string, unknown>[] = [];
+  const sink = (line: string) => {
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    (parsed.msg === 'provider sign-outs run' ? runs : lines).push(parsed);
+  };
+  return { lines, runs, logger: createLogger({ sink }) };
 }
 
 interface Queued {
@@ -321,6 +330,24 @@ describe('the provider_sign_outs job (JOB-08; docs/adr/0095)', () => {
     await run(twin.adapter, logger);
     expect(await audits('provider_sign_out_undelivered', one.user)).toHaveLength(1);
     expect(lines).toHaveLength(2);
+  });
+
+  // The absence alarm reads this line (ProviderSignOutsNotRunning; docs/adr/0095, D16): a schedule that stops firing the
+  // job writes none, and nothing else says so.
+  it('writes its run line once a run, with a count and nothing else, when rows were due and when a step failed', async () => {
+    await queued();
+    const first = capture();
+    await run(provider().adapter, first.logger);
+    const written = first.runs;
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatchObject({ level: 'info' });
+    expect(Number(written[0]?.record_count)).toBeGreaterThanOrEqual(1);
+    expect(Object.keys(written[0] ?? {}).filter((key) => !['level', 'time', 'msg', 'service', 'env', 'record_count'].includes(key))).toEqual([]);
+    const failing = capture();
+    await expect(run(provider().adapter, failing.logger, { refuse: 'operator_key_removals_expire' })).rejects.toEqual(new ProviderSignOutRunFailed(['removals_expire']));
+    expect(failing.runs).toHaveLength(1);
+    // Nothing but the step's own line beside it.
+    expect(failing.lines.map((line) => line.msg)).toEqual(['provider sign-out step failed']);
   });
 
   it('a failing expiry step stops neither the sign-outs before it nor the step after it, and the run fails naming it', async () => {
