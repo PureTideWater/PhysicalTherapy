@@ -1,9 +1,10 @@
+import type { RoiLinks } from '@tp/db';
 import { recordAuditEvent, requirePracticePermission } from '@tp/db/runtime';
 import { type LedgerEntry, type LedgerTotals, type ProofLevel, type RoiStatement, caseEntries, entriesById, ledgerTotals, periodEntries, roiStatement } from '@tp/ledger';
 import { type Cents, ZERO_CENTS, parseCents } from '@tp/money';
 
 import { PAID_INVOICE_FEES } from '../billing/fees';
-import { ACTIONABLE_NOW } from '../triage/actionable-now';
+import { ACTIONABLE_NOW, ACTIONABLE_NOW_LINE_IDS } from '../triage/actionable-now';
 import { type Scope, ledgerEntries, practiceLedgerSettings } from './ledger';
 
 /**
@@ -111,22 +112,26 @@ export interface GeneratedStatement {
 interface OpenCaseRow {
   readonly id: string;
   readonly actionable_cents: string;
+  /** The priced lines the figure sums, in ID order. */
+  readonly line_ids: readonly string[];
 }
 
 /**
  * The cases still being worked (any not resolved or closed, as the practice home and Cases count them) with
  * each one's live figure (ACTIONABLE_NOW: its lines still actionable on their pricing in effect; docs/adr/
  * 0082), never the case's stored ask. An input to roiStatement(), which sums it as the statement's
- * actionable figure for open cases.
+ * actionable figure for open cases. Beside each figure, the priced lines it sums (ACTIONABLE_NOW_LINE_IDS: the same
+ * rows, read in this same statement, so one snapshot; a line that moves on between two queries could otherwise make a
+ * correct statement's figure and list disagree and the database refuse it).
  */
-export const OPEN_CASES_ACTIONABLE = `SELECT c.id, ${ACTIONABLE_NOW('c')}::text AS actionable_cents
+export const OPEN_CASES_ACTIONABLE = `SELECT c.id, ${ACTIONABLE_NOW('c')}::text AS actionable_cents, ${ACTIONABLE_NOW_LINE_IDS('c')} AS line_ids
        FROM "case" c
       WHERE c.practice_id = $1 AND c.state NOT IN ('resolved', 'closed_written_off')
       ORDER BY c.opened_at, c.id`;
 
 /**
  * Generates an ROI statement for the practice and period from its entries and stores it with the
- * entries each figure sums: on demand by a person who reconciles postings (in their own name, audited),
+ * entries each figure sums and the priced lines its actionable figure counted: on demand by a person who reconciles postings (in their own name, audited),
  * or quarterly by the reconcile job (once per quarter; null when that quarter's statement exists).
  */
 export async function generateRoiStatement(
@@ -150,7 +155,16 @@ export async function generateRoiStatement(
     pursuitHours: await sources.pursuitHours.hoursLogged(scope, practiceId, periodFrom, periodTo),
     openCases: open.map((row) => ({ caseId: row.id, actionableCents: parseCents(row.actionable_cents) })),
   });
-  const links = { recovered: statement.links.recovered, interest: statement.links.interest, approved_unposted: statement.links.approvedUnposted, actionable_open: statement.links.actionableOpen };
+  // The lines the actionable figure counted: those of exactly the cases the statement links, in the cases' order. No
+  // figure is computed here; the database checks the statement's figure against these lines (roi_statement_rules()).
+  const lineIds = new Map(open.map((row) => [row.id, row.line_ids]));
+  const links: RoiLinks = {
+    recovered: statement.links.recovered,
+    interest: statement.links.interest,
+    approved_unposted: statement.links.approvedUnposted,
+    actionable_open: statement.links.actionableOpen,
+    actionable_open_lines: statement.links.actionableOpen.flatMap((caseId) => lineIds.get(caseId) ?? []),
+  };
   const { rows } = await scope.client.query<{ id: string }>(
     `INSERT INTO roi_statement (practice_id, period_from, period_to, proof_level, fees_cents, recovered_cents, interest_cents, approved_unposted_cents, actionable_open_cents, pursuit_hours, links, generated_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
