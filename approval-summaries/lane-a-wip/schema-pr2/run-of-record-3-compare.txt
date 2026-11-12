@@ -1,0 +1,12 @@
+2026-11-12T01:29:08Z queue 3 start: tree a26f1b600db47c76287110132857ea3102c7ae1a seeds from fd14d89f8ecdd14f24f6fe3e6b47b2e6f8391bdb draft sha256 9f0d553046486acd
+cap3_r_2000_none_w27 exit 0: pass 41772 ms; statements 14068; sql 39612 ms; ts 2149 ms; heap peak 110.1 MiB; locks/backend 1
+cap3_r_2000_pr2_w27 exit 0: pass 18898 ms; statements 14068; sql 16664 ms; ts 2222 ms; heap peak 109.1 MiB; locks/backend 1
+2026-11-12T01:32:00Z compare cap3_r_2000 w27: cap3_r_2000_pr2_w27.dump.ndjson: IDENTICAL row for row, in order, seq included [settle entries in match seq order: before ['t'], after ['t']] (20635 rows: audit_event 2626, case 5, ledger_entry 4000, ledger_match 4000, line_status 8000, posting_row 2000, source_document 4); entry cents by stage {"approved": 6000000, "posted": 6000000}
+cap3_fx_10000_none_w27 exit 0: pass 183192 ms; statements 70186; sql 173655 ms; ts 9527 ms; heap peak 152.8 MiB; locks/backend 1
+cap3_fx_10000_pr2_w27 exit 0: pass 75455 ms; statements 70186; sql 66570 ms; ts 8873 ms; heap peak 169.5 MiB; locks/backend 1
+2026-11-12T01:36:41Z compare cap3_fx_10000 w27: cap3_fx_10000_pr2_w27.dump.ndjson: IDENTICAL row for row, in order, seq included [settle entries in match seq order: before ['t'], after ['t']] (102907 rows: audit_event 12897, case 1, ledger_entry 20000, ledger_match 20000, line_status 40000, posting_row 10000, source_document 9); entry cents by stage {"approved": 161270000, "posted": 161270000}
+body hashes per run (ledger_entry_rules, ledger_line_net):
+cap3_fx_10000_none_w27.bodies.txt: abbcba68f46fd135 f151e27ea09f28c1
+cap3_fx_10000_pr2_w27.bodies.txt: 834cdefc070b08db 5d0a94c0a294a732
+cap3_r_2000_none_w27.bodies.txt: abbcba68f46fd135 f151e27ea09f28c1
+cap3_r_2000_pr2_w27.bodies.txt: 834cdefc070b08db 5d0a94c0a294a732
