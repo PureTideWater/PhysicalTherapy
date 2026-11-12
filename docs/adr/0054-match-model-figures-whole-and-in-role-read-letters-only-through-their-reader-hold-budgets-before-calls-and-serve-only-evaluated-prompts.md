@@ -1803,7 +1803,7 @@ comparisons of matches, and a heavier comparison can only refuse a letter sooner
 reference speed, a name then `a;` repeated to 196,918 in 1.08 s, ordinary prose to 300,668 in 0.91 s, a digit to a
 line to 56,803 in 0.56 s. What moved is CT-2's shape alone: initials beside a name with one look-alike character are
 read to 23,875 characters (0.32 s) and refused from there on, and with the name written once with a joiner to 17,314
-(0.27 s); before, they were read to about 48,000 and 29,000. The review of that change found nothing the base redacts
+(0.27 s); before, they were read to about 39,500 and 29,200. The review of that change found nothing the base redacts
 or refuses sent, and each timed row within its 3 s on a cold first run with coverage on (1.93 s at most).
 
 **Open residual, pinned: the first check of a fresh process with hundreds of identifiers on the call. It does not pass
