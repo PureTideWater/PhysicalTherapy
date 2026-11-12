@@ -2,16 +2,18 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- roi_statement_rules()
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 5a8bc6319828acb2
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ad925199131cb411
 -- Trigger function of: roi_statement.roi_statement_rules
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.roi_statement_rules()
  RETURNS trigger
  LANGUAGE plpgsql
  SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+ SET plan_cache_mode TO 'force_custom_plan'
 AS $function$
 DECLARE
   sums record;
+  lines record;
 BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'an ROI statement keeps its figures; a new one is generated' USING ERRCODE = 'check_violation';
@@ -57,6 +59,26 @@ BEGIN
     INTO sums;
   IF sums.linked <> sums.found OR sums.recovered <> NEW.recovered_cents OR sums.interest <> NEW.interest_cents THEN
     RAISE EXCEPTION 'an ROI statement''s recovered and interest are the sums of the entries it links' USING ERRCODE = 'check_violation';
+  END IF;
+  -- Its actionable figure is the variance of the priced lines it links (from #93's F9; docs/adr/0082 Decision 7), each
+  -- once and each a line of a case it links. A statement without the key (one written before this migration, or by the
+  -- image before it during a deploy or after a rollback) keeps today's rule: its actionable figure is not checked.
+  IF NEW.links ? 'actionable_open_lines' THEN
+    SELECT (SELECT count(*) FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines')) AS linked,
+           count(*) FILTER (WHERE m.case_id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'actionable_open') x)) AS found,
+           coalesce(sum(m.variance_cents), 0) AS cents
+      FROM (SELECT DISTINCT x::uuid AS id FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines') x) i
+     CROSS JOIN LATERAL (
+           SELECT p.variance_cents,
+                  (SELECT l.case_id FROM case_line l
+                    WHERE l.service_line_id = p.service_line_id AND l.priced_line_id = p.id AND l.practice_id = NEW.practice_id) AS case_id
+             FROM priced_line p
+            WHERE p.id = i.id AND p.practice_id = NEW.practice_id
+           OFFSET 0) m
+      INTO lines;
+    IF lines.linked <> lines.found OR lines.cents <> NEW.actionable_open_cents THEN
+      RAISE EXCEPTION 'an ROI statement''s actionable figure is the variance of the priced lines it links, each once and each a line of a case it links' USING ERRCODE = 'check_violation';
+    END IF;
   END IF;
   RETURN NEW;
 END;

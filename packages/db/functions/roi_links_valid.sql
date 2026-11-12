@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- roi_links_valid(jsonb)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 49416713dd4d13dd
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 13c4dd46b9203095
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.roi_links_valid(links jsonb)
@@ -12,7 +12,9 @@ CREATE OR REPLACE FUNCTION public.roi_links_valid(links jsonb)
  SET search_path TO 'pg_catalog', 'public', 'pg_temp'
 AS $function$
   SELECT jsonb_typeof(links) = 'object'
-     AND (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(links) k) = ARRAY['actionable_open', 'approved_unposted', 'interest', 'recovered']
+     AND coalesce((SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(links) k), '{}') IN (
+           ARRAY['actionable_open', 'approved_unposted', 'interest', 'recovered'],
+           ARRAY['actionable_open', 'actionable_open_lines', 'approved_unposted', 'interest', 'recovered'])
      AND NOT EXISTS (
        SELECT 1 FROM jsonb_each(links) e
         WHERE jsonb_typeof(e.value) <> 'array'

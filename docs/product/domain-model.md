@@ -2,8 +2,8 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `9090c4b317f4ee0543325f0b5af37cdd6318f786` on branch `co-001/payer-response-db-rules`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
-- Migrations applied: 52; head `20261114090000_payer_response_document_rules.sql`
+- Generated at commit `7b05fd87ffce087fc6ace008a89a68084b26e925` on branch `co-001/wip-schema-pr5` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Migrations applied: 53; head `20261115090000_roi_statement_actionable_lines.sql`
 - PostgreSQL 18; schema `public`: 101 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 41 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 93 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 184 policies
@@ -3975,7 +3975,7 @@ Maintains `updated_at`: `ledger_match_updated_at`.
 - Class: PHI (registered); registry policy `roi_statement_tenant`, registered by `20261023120000_recovery_ledger`, qualifies: yes
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: Ledger and reconciliation (PHI): Generated statement
-- Created by `20261023120000_recovery_ledger` (ADR 0042); its DDL, policies or trigger functions changed by `20261024120000_reconciliation_and_roi_documents`, `20261029150000_billing`, `20261108090000_suspension_refusal`
+- Created by `20261023120000_recovery_ledger` (ADR 0042); its DDL, policies or trigger functions changed by `20261024120000_reconciliation_and_roi_documents`, `20261029150000_billing`, `20261108090000_suspension_refusal`, `20261115090000_roi_statement_actionable_lines`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`actionable_open_cents`, `approved_unposted_cents`, `document_key`, `fees_cents`, `generated_by`, `id`, `interest_cents`, `links`, `period_from`, `period_to`, `practice_id`, `proof_level`, `pursuit_hours`, `recovered_cents`)
@@ -4043,6 +4043,7 @@ Invariants enforced by triggers:
   - "an ROI statement is generated on demand by a person who reconciles postings, in their own name"
   - "the quarterly statement is generated in no one's name"
   - "an ROI statement's recovered and interest are the sums of the entries it links"
+  - "an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links"
 
 ## 11. Model gateway
 
@@ -7377,8 +7378,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `resend_invitation(uuid)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `3a38c7bc37517a80` |
 | `resolve_session(text)` | `TABLE(outcome text, ended_now boolean, session_id uuid, user_id uuid, device_id uuid, mfa_method text, started_at timestamp with time zone, expires_at timestamp with time zone, last_seen_at timestamp with time zone, user_status text, mfa_enrolled boolean, hardware_key_required boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1dc349b28fbd9045` |
 | `revoke_user_sessions(uuid)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `49398f19386615ff` |
-| `roi_links_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `49416713dd4d13dd` |
-| `roi_statement_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5a8bc6319828acb2` |
+| `roi_links_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `13c4dd46b9203095` |
+| `roi_statement_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp`<br>`plan_cache_mode=force_custom_plan` |  |  | `ad925199131cb411` |
 | `roles_permit(text[],text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1e0aed05610a51f5` |
 | `rule_content_no_truncate()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `5da9160cf53a8d06` |
 | `rule_record_immutable()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `f638f6a6b42be99a` |
@@ -7544,6 +7545,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 50 | `20261112090000_sign_in_not_before.sql` | ADR 0009, ADR 0049, ADR 0081, ADR 0083, ADR 0091, ADR 0093 | `1fe539f67b26b1edb2c22adcea8aee41b94091808488e40e0dd5f3f93a1d1e71` |
 | 51 | `20261113090000_ledger_lookups.sql` | ADR 0087 | `9f0d553046486acd37229ae24bf516ff52a21caaf3316a4ec45623a17f089165` |
 | 52 | `20261114090000_payer_response_document_rules.sql` | ADR 0085 | `2f2ef154a282abc1e455baedd0f7762f829c5c0323a8ebcae4cba3619a114b3f` |
+| 53 | `20261115090000_roi_statement_actionable_lines.sql` | ADR 0082 | `d46c35c52ea8945f65e7eec712b3aac7a7cfe07994c010699ee2fc084fd27e55` |
 
 ## Cross-checks
 
@@ -7559,6 +7561,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261114090000_payer_response_document_rules.sql` (52 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261115090000_roi_statement_actionable_lines.sql` (53 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: Tyler Williams  Date: 2026-11-12  Document SHA-256: `922ff5e3f7e81884d1aaaa1937a46fe1b2ff645c889dd60dc62e8e1e086b061b`
+Approved by: ________  Date: ________  Document SHA-256: `e8dfbd1b1cb6ed3f2ebfe670e29d993f9602ab06c207fb86a8e427970be362f8`
