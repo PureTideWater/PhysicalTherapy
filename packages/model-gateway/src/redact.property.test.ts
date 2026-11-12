@@ -1442,6 +1442,9 @@ const PATTERN_EXACT = /^\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|SSN|PHONE|CLAI
  * through the call's own identifier (appliedMatches in packages/redact: Found.fresh), so there, and only there, a number
  * both readings take whole may carry the lower-ranked label: [PHONE] where every match together gives [SSN]. The span is
  * the same and a placeholder is written either way; nothing else may differ (Queues item 38, fast-check seed 1596478644).
+ * This asks for more than the design gives in one way: a number only such a match takes stays as written in the screen's
+ * text of a refused letter. The generator writes none (every number it writes is taken without the label read through),
+ * so a letter that holds one fails here, and is read again before anything is allowed for it.
  */
 function sendsNoSsnOrPhoneIn({ patient, claims, segments, refused }: PatternCase): void {
   let text = '';
@@ -1477,7 +1480,7 @@ function sendsNoSsnOrPhoneIn({ patient, claims, segments, refused }: PatternCase
       at += lower.length;
       from = span.end;
     }
-    expect(screened.text.slice(at)).toBe(text.slice(from));
+    expect(screened.text.slice(at), `${JSON.stringify(text)} -> ${JSON.stringify(screened.text)}`).toBe(text.slice(from));
   } else {
     expect(screened.text).toBe(applied);
   }
@@ -1535,7 +1538,9 @@ describe('MOD-15: every Social Security and phone number is redacted, and a lett
     const screened = redactLetterForScreen(refusedLetter, patient, claims);
     expect(screened.text).toBe('Ref 900-12-34 56 on file. SSN [MEMBER_ID]. Noted. \n[PHONE]. Noted. SSN [SSN]. Noted. ');
     expect(holdsIdentifier(screened.text, patient, claims)).toBe(true);
-    // Without the survivor the letter is sent, and every entry writes the same text.
+    // Without the survivor the letter is sent, and every entry writes the same text. [SSN] over this phone number is how
+    // far a label is read through the call's own number today: a change that narrows that reading changes these lines
+    // with it, to [PHONE], never to the number as written.
     const sentText = 'SSN [MEMBER_ID]. Noted. \n[SSN]. Noted. SSN [SSN]. Noted. ';
     expect(redactLetter(letter, patient, claims).text).toBe(sentText);
     expect(redactLetterForScreen(letter, patient, claims).text).toBe(sentText);
