@@ -1793,14 +1793,33 @@ sooner than it would have been read (at most 1.7 s; 5,000,000 characters in unde
 of 40 characters, which took 40 s for a letter of 19 characters, in 1 ms). Item 26's second reading counts in the same
 counter and so shares this bound; it is given no time of its own.
 
-**The first check of a fresh process is not held to the 3 s where the call carries hundreds of identifiers.** The
-engine compiles each identifier's pattern the first time it meets it: a letter of 19 characters takes 1.8 s on the
-first check of a fresh process with 300 claim numbers of 15 characters (0.11 s after), 4.1 s with 1,000 of nine
-(0.25 s after) and 15.7 s with 1,250 of 40 (1.05 s after). The weight of an identifier's character (3,500 units at each
-entry) is set for a warm process, so that a patient with some thousands of claim numbers is still read; holding the
-first check to 3 s would take about seven times the weight and refuse every letter of a patient with more than about
-250 claims. Which of the two holds is the orchestrator's ruling, asked on 2026-11-12; this row is pinned until it is
-given.
+**Open residual, pinned: the first check of a fresh process with hundreds of identifiers on the call. It does not pass
+the 3 s.** The engine compiles each identifier's pattern the first time it meets it, so the first check a process makes
+costs many times its later ones, for a letter of any length (measured with a letter of 19 characters):
+
+| The call's claim numbers | First check of a fresh process | Later checks |
+| --- | --- | --- |
+| 300 of 15 characters | 1.8 s | 0.11 s |
+| 1,000 of nine characters | **4.1 s** | 0.25 s |
+| 1,250 of 40 characters (50,000 characters, near the ceiling of about 60,000) | **15.7 to 17.4 s** | 1.05 s |
+
+This is the merged reader's own cost, not the budget's. The orchestrator's ruling (2026-11-12 02:05 UTC): the weight of
+an identifier's character (`WORK.identifierCharacter`, one constant, 3,500 units at each entry) is set for a warm
+process. Both choices send nothing the base refuses, so it is a question of latency and not of privacy; the identifiers
+come from the call, the practice's own claims, and not from the letter's author, so the threat the 3 s rule holds (a
+crafted letter) is held by the warm bound; a weight that held the first check to 3 s (about seven times this one) would
+refuse to a person every letter of a patient with more than about 250 claims. The 3 s rows are not loosened or
+re-timed; above the ceiling the call is refused by the count, before a pattern is built.
+
+Who calls the check: `prepare` of the denial-letter reader, through `ModelGateway.readDenialLetter` (and `requestFor`,
+which builds a request without sending it, for the local provider and tests). The reader is v1.5 behind the flag
+`model.read_denial_letter`, off unless a row turns it on, and no web action and no worker job calls it yet
+(`apps/` holds no call), so no caller's timeout meets the cold figure today. The caller, when it is built, is to be a
+worker job whose timeout holds the cold figure at the ceiling, or to wait for the cure.
+
+The cure is queued, not built here (Queues item 39, before launch): the call's identifiers matched without a pattern
+built per identifier per check (one pass over a prepared set, or patterns kept for the process), proven on the
+975,489-letter gate with none differing.
 
 **What it refuses.** At 100,000 characters: CT-2's letters (in the redaction), 50,000 initials beside a name with no
 look-alike, and the letters of one digit to a line (bare line feed, CR LF, a dash before the line feed, another
