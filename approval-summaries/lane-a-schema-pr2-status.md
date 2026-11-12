@@ -4,25 +4,23 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
 `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 2. Grant: `approval-summaries/founder-asks-2026-10-27.md`,
 "Decided 2026-11-06"; the granted text: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` at 38123394.
 
-## RESUME-BLOCK (W27, https://claude.ai/code/session_019i9ifBp9zpTBLKudEaqjLq; 2026-11-12, AFTER the push)
-- **State:** #143's head is **a26f1b600db47c76287110132857ea3102c7ae1a** (the base fd14d89f merged into a3a32024;
-  pushed through the hook). W27 is subscribed; W15 was told to unsubscribe. CI runs on a26f1b60; expected green but
-  `domain model` and `all green`, which wait for the founder's line.
-- **The suggestion** (discussion_r4541570803) is NOT outdated after the push (line 7551); the approval line is
-  untouched (still blank; hash 47fae5d1 holds).
-- **The proof on the merged tree (seeds from fd14d89f without the migration; `lane-a-wip/schema-pr2/run-of-record-3-compare.txt`):**
-  spread R 2,000 lines 41.8 s to 18.9 s, IDENTICAL row for row (20,635 rows); F 10,000 lines 183.2 s to 75.5 s,
-  IDENTICAL (102,907 rows); body hashes per run abbcba68/f151e27e before, 834cdefc/5d0a94c0 after. The kit as
-  assembled: the five scripts of `lane-a-wip/schema-pr2/probe/` plus `seed.mts`, `common.mts`, `pass.mts`
-  (`lane-b-suite-cap-3-wip/probe/`) and `seedF.mts` (`lane-b-suite-cap-3-wip/probe-rev/`) in one directory `$S/pr2-probe`.
-- **Checks on a26f1b60 (local):** typecheck, lint, lint:copy, lint:logs, check:fixtures, synth --all (no diff);
-  `db:domain-model --check` and `--check --strict` on a fresh PostgreSQL 18 database, the document unchanged; both
-  `ledger-lookups.db.test.ts` files (14 tests); `pnpm test:db` in 4 shards, all green (10,287 passed, 1 skipped).
-- **Next:** "green at a26f1b60" (or the first failure) to the orchestrator when CI ends. Then wait for the founder's
-  "Commit suggestion". When it arrives: W11's merge step below, items 1, 2 and 4, ONLY if the base is still
-  fd14d89f; if the base moved, tell the orchestrator the file list and wait for the ruling. After the merge: verify
-  with git ls-remote, tell the orchestrator and W16 (session_019i9ifEMVhfmHMsi6UzykXB), write the final state here, unsubscribe.
-- Nothing is running on W27's machine; the private cluster and the base worktree are removed.
+## RESUME-BLOCK (W27, https://claude.ai/code/session_019i9ifBp9zpTBLKudEaqjLq; 2026-11-12 04:30 UTC, after the second base merge's push)
+- **State:** #143's head is **2f266302** = the founder's commit **cee1702c** (GitHub's web commit, 03:55 UTC, on
+  a26f1b60; one line of `docs/product/domain-model.md`, the approval line exactly as suggested, hash 47fae5d1;
+  verified by W27 and by the orchestrator) plus a merge of the base **891bf993** (#151, dependencies: workflows,
+  manifests, the lockfile, pnpm-workspace.yaml, two tools/stryker tests; none of the proof's paths, so no proof
+  re-run). The orchestrator's ruling (2026-11-12 04:20 UTC) ordered this merge on top of his commit: the merge
+  changes neither the line nor the approved text (schema files and approvers.json byte-identical to cee1702c).
+- **Checks on 2f266302 (local):** install from the base's lockfile; typecheck, lint, lint:copy, lint:logs,
+  check:fixtures, synth --all (no diff); `db:domain-model --check --strict --require-approval` on a fresh database
+  passes ("carries an approval for this text"); both `ledger-lookups.db.test.ts` files (14 tests). CI is running.
+- **The proof of record for the merged tree** stays the run on a26f1b60 (`lane-a-wip/schema-pr2/run-of-record-3-compare.txt`):
+  IDENTICAL at R 2,000 (20,635 rows) and F 10,000 (102,907 rows).
+- **Next:** when every required check is green on 2f266302, `approval-of-record` included, and the base is still
+  891bf993: mark ready, merge (a merge commit), verify with git ls-remote, tell the orchestrator and W16
+  (session_019i9ifEMVhfmHMsi6UzykXB), write the final state here, unsubscribe. If `approval-of-record` asks for the
+  founder's review of the latest commit: do nothing else, tell the orchestrator at once. If the base moves again:
+  tell the orchestrator, wait.
 
 ## RESUME-BLOCK for the base merge (W15, 2026-11-12 01:50 UTC; W15 pushed NOTHING to #143 and hands this step on)
 **The orchestrator's ruling (2026-11-12 01:25 UTC, session_019i9ifCaMokBYHaARonYamS): merge the base into #143 NOW,
