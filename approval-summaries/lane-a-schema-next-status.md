@@ -13,6 +13,10 @@ from W11. Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md`.
   heap-exhaustion case (SIGABRT): passed alone on rerun, fails the same way on the base's checkout here, untouched by
   this PR. If CI fails on it, it is the base's and is reported, not skipped.
 - **Reviews: all done, nothing owed** (tenant isolation; database twice; the fixes' delta). See the files beside the kit.
+- **2026-11-12 05:55 UTC: the suggested approval line is posted** (discussion_r4546820790, on line 7564 at 155bcbe6;
+  Tyler Williams, 2026-11-12, the hash above) and its link sent to the orchestrator with the founder's reading. CI at
+  that time: green but for the blank line (the domain model job and so all green); two mutation shards and capacity
+  still running. **What is left: wait for the founder's commit, then the merge step at the end of the next bullet.**
 - **Next:** (7) when CI is green but for the blank approval line (`domain model` / approval jobs): post the suggested
   line by the skill's `gh api` route as ONE pull-request comment on the last line of `docs/product/domain-model.md`
   at the head (the founder's name as on the base's line, the date, the hash above); send its link to the orchestrator
