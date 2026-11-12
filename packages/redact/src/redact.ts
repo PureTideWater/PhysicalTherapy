@@ -289,8 +289,10 @@ export const BARRIER = '\u0001';
  * of the reading; the only answer it changes is from sent to refused. Callers with no refusal to give (redactLetter,
  * redactionSpans, the narrative's and the verifier's readings) run no counter and read as before.
  *
- * The unit is one comparison of two matches (2 to 5 ns on the reference machine, by the letter); the dearest letter
- * found that is still read takes about 2.3 s there (the ADR records the measurements), inside the reader's 3 s.
+ * A comparison of two matches costs four units (WORK.comparison): 2 to 5 ns each on the reference machine, by the
+ * letter, and about 13 ns under coverage instrumentation, so a letter is refused after 105 million of them at most. The
+ * dearest letter found that is still read takes about 2.3 s there (the ADR records the measurements), inside the
+ * reader's 3 s.
  */
 export const CHECK_WORK_BUDGET = 420_000_000;
 

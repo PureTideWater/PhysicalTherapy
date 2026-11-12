@@ -1740,9 +1740,13 @@ for the whole letter, and past a fixed budget the letter is refused by the check
 goes to a person), never sent on a partial reading.
 
 - **The counter** is `checkWorkSpent` in `packages/redact/src/redact.ts`, counted by `work(units)`; the budget is
-  `CHECK_WORK_BUDGET` = 420,000,000 units. One unit is one comparison of two matches.
+  `CHECK_WORK_BUDGET` = 420,000,000 units. A comparison of two matches costs four units (`WORK.comparison`). It cost
+  one as built and went to four on 2026-11-12 (the orchestrator's ruling, 04:10 UTC): with coverage instrumentation on,
+  as `pnpm test` and CI run the tests, a comparison takes about 13 ns and not 3, and CT-2's letters, refused only after
+  420 million of them, took 4.0 to 5.6 s of the 3 s. At four units they are refused after about 105 million (1.2 to
+  1.7 s with coverage on). The budget was tightened; the test's 3 s, its rows and how they are run did not change.
 - **What is counted** (`WORK`): every comparison of the five searches of a list of matches in `matchesIn` and
-  `redactLetterForScreen` (`someOf`, which answers as `Array.prototype.some` answers), one for one; and the readings the
+  `redactLetterForScreen` (`someOf`, which answers as `Array.prototype.some` answers), four units each; and the readings the
   measurement showed as drivers of some letter's time, each at a fixed weight: a view built (per character), a label's
   window, a label scanned, a date's readings, a search of a sorted list, a digit read across a line break, a join of two
   tokens, a look-alike fold and a digit-for-letter reading; each reading of the letter for the call's own identifiers
