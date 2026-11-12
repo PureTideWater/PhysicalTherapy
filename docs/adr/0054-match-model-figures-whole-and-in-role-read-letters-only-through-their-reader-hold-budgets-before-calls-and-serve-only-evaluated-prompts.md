@@ -1811,11 +1811,27 @@ crafted letter) is held by the warm bound; a weight that held the first check to
 refuse to a person every letter of a patient with more than about 250 claims. The 3 s rows are not loosened or
 re-timed; above the ceiling the call is refused by the count, before a pattern is built.
 
+**Open residual, pinned: thousands of short identifiers on the call. It does not pass the 3 s either.** The charge for
+the call's identifiers is by their characters; the time of the check grows with the square of their number (the review
+of fix round 2's delta, G-1). With a letter of 19 characters, in a warm process, read and sent under the budget:
+
+| The call's claim numbers | At the reference speed |
+| --- | --- |
+| 6,300 of 9 characters | **3.1 s** |
+| 9,400 of 6 digits | **6.9 s** |
+| 14,000 of 4 characters | **11.1 s** |
+| 18,500 of 3 characters | **18.4 s** |
+
+Up to 3,000 claim numbers of nine characters a letter sized to the budget is read in 1.4 to 1.8 s. This too is the
+merged reader's own cost and the call's, not the letter's. The orchestrator's ruling (2026-11-12 02:55 UTC): no third
+fix round; it is pinned here, not within the 3 s, and item 39 cures it, since matching without a pattern per identifier
+removes the square in the count.
+
 Who calls the check: `prepare` of the denial-letter reader, through `ModelGateway.readDenialLetter` (and `requestFor`,
 which builds a request without sending it, for the local provider and tests). The reader is v1.5 behind the flag
 `model.read_denial_letter`, off unless a row turns it on, and no web action and no worker job calls it yet
-(`apps/` holds no call), so no caller's timeout meets the cold figure today. The caller, when it is built, is to be a
-worker job whose timeout holds the cold figure at the ceiling, or to wait for the cure.
+(`apps/` holds no call), so no caller's timeout meets the cold figure today. The check has no caller in `apps/` today, and
+item 39 must merge before the first caller is wired.
 
 The cure is queued, not built here (Queues item 39, before launch): the call's identifiers matched without a pattern
 built per identifier per check (one pass over a prepared set, or patterns kept for the process), proven on the
@@ -1865,6 +1881,12 @@ as `prepare` does, `holdsIdentifier(text, patient, claims, checkWorkOf(redacted)
   fresh, 3.15 s after fourteen other families, before the charge per identifier; that charge bounds it: T-4).
 - The count is the same on every machine for one version of Unicode: it follows the engine's `normalize`, `\p{}`
   classes and case mapping. Node 22 and 24 here both carry Unicode 17.0, so no difference of data was exercised (T-5).
+- Recorded by the review of fix round 2's delta, for the queue (the status file on `claude/build-ops` names the
+  report): a call of 60,000 to 120,000 characters of identifiers is refused only after the redaction has run (0.6 to
+  0.7 s), and the check called alone with no count reads such a call (G-2); an empty identifier is charged nothing
+  (G-3); a list of identifiers that is not an array of strings (`claimNumbers` a string, `memberIds` a Set) now throws
+  a TypeError where the base read it, a crash and not a letter sent (G-4, G-5); one name of 14,000 words throws the
+  engine's "Invalid regular expression" out of the reading, in the base's own `formsOf` (G-7).
 - `someOf` answers as `Array.prototype.some` on the dense lists its five callers give it, which no test mutates; on a
   sparse list or one that grows under the test it would not (P-4). An uncounted public function called inside a
   counted entry would throw past the budget through itself into the entry's own refusal; no code calls one so (P-3).
