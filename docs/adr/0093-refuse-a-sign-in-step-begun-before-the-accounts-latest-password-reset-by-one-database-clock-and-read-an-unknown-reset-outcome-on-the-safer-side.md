@@ -1,6 +1,7 @@
 # 0093. Refuse a sign-in step begun before the account's latest password reset, by one database clock, and read an unknown reset outcome on the safer side
 
-- **Status:** proposed (`LANES.md` Queues item 28, `co-001/step-before-reset`, the schema pull request after
+- **Status:** accepted (2026-11-11: the founder approved the regenerated domain model, CO-02, and the pull request
+  merged as 3bff4fd6; `LANES.md` Queues item 28, `co-001/step-before-reset`, the schema pull request after
   [0091](0091-tell-an-accounts-address-when-its-password-changes-from-an-outbox-the-database-writes-in-the-changes-own-transaction.md)'s;
   migration `20261112090000_sign_in_not_before.sql`). The founder's approval of the regenerated domain model (CO-02)
   accepts it. **Required before launch**, together with
