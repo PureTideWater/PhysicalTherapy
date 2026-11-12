@@ -1,0 +1,36 @@
+5s
+37001
+Finalize GroupAggregate (actual time=212648.855..212651.856 rows=1000.00 loops=1)
+  Group Key: practice_id
+  Buffers: shared hit=5229 read=256253
+  ->  Gather Merge (actual time=212648.846..212651.508 rows=3000.00 loops=1)
+        Workers Planned: 2
+        Workers Launched: 2
+        Buffers: shared hit=5229 read=256253
+        ->  Sort (actual time=212547.335..212547.390 rows=1000.00 loops=3)
+              Sort Key: practice_id
+              Sort Method: quicksort  Memory: 71kB
+              Buffers: shared hit=5229 read=256253
+              Worker 0:  Sort Method: quicksort  Memory: 71kB
+              Worker 1:  Sort Method: quicksort  Memory: 71kB
+              ->  Partial HashAggregate (actual time=212546.958..212547.102 rows=1000.00 loops=3)
+                    Group Key: practice_id
+                    Batches: 1  Memory Usage: 121kB
+                    Buffers: shared hit=5215 read=256253
+                    Worker 0:  Batches: 1  Memory Usage: 121kB
+                    Worker 1:  Batches: 1  Memory Usage: 121kB
+                    ->  Parallel Bitmap Heap Scan on roi_statement (actual time=218.243..142260.638 rows=333333.33 loops=3)
+                          Recheck Cond: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+                          Heap Blocks: exact=17225 lossy=66041
+                          Buffers: shared hit=4031 read=256252
+                          Worker 0:  Heap Blocks: exact=17483 lossy=66403
+                          Worker 1:  Heap Blocks: exact=16989 lossy=65859
+                          ->  Bitmap Index Scan on roi_statement_by_period (actual time=205.202..205.202 rows=1000000.00 loops=1)
+                                Index Cond: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+                                Index Searches: 1
+                                Buffers: shared hit=3912 read=6329
+Planning:
+  Buffers: shared hit=121 read=4
+Planning Time: 1.469 ms
+Execution Time: 212652.032 ms
+Time: 212654.297 ms (03:32.654)

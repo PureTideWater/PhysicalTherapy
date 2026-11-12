@@ -1,0 +1,16 @@
+14:25:58 VACUUM ANALYZE m1
+14:26:05 plans, analyzed
+14:26:06 preflight, analyzed, no lock
+14:29:24 preflight, analyzed, lock
+14:32:40 floor (superuser, the function alone)
+14:35:53 whole scope through the index, one statement
+14:39:26 failing case
+14:42:47 writer beside the scan, no lock (5 rows at 60 s, committed at once)
+14:46:07 writer beside the closing, lock (1 row at 150 s, open 90 s)
+14:50:08 create and load m2 (analyzed while empty)
+NOTICE:  database "pr5w41_m2" does not exist, skipping
+  exit 0
+14:54:49 plans, analyzed empty
+14:54:49 preflight, analyzed empty, lock
+14:58:15 the note's 3.3 as written (whole scope, one scan)
+15:10:30 done B

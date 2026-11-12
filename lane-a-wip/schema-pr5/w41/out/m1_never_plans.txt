@@ -1,0 +1,86 @@
+pg_class: roi_statement reltuples=-1 relpages=0 allvisible=0; roi_statement_by_period reltuples=0 relpages=1 allvisible=0; roi_statement_pkey reltuples=0 relpages=1 allvisible=0; roi_statement_quarterly reltuples=0 relpages=1 allvisible=0
+38
+PLAN scan, custom
+Aggregate (actual time=235.148..235.149 rows=1.00 loops=1)
+  Buffers: shared hit=26 read=1013 written=870
+  ->  Bitmap Heap Scan on roi_statement s (actual time=0.790..22.631 rows=1000.00 loops=1)
+        Recheck Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = '7f1ab539-daaf-404b-80d3-8c4d778c569e'::uuid))
+        Heap Blocks: exact=1000
+        Buffers: shared read=1012 written=869
+        ->  Bitmap Index Scan on roi_statement_by_period (actual time=0.463..0.464 rows=1000.00 loops=1)
+              Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = '7f1ab539-daaf-404b-80d3-8c4d778c569e'::uuid))
+              Index Searches: 1
+              Buffers: shared read=12 written=12
+Planning:
+  Buffers: shared hit=121 read=5 written=5
+Planning Time: 0.372 ms
+Execution Time: 235.244 ms
+PLAN scan, generic
+Aggregate (actual time=295.160..295.161 rows=1.00 loops=1)
+  Buffers: shared hit=1012
+  ->  Bitmap Heap Scan on roi_statement s (actual time=0.417..3.945 rows=1000.00 loops=1)
+        Recheck Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = $1))
+        Heap Blocks: exact=1000
+        Buffers: shared hit=1012
+        ->  Bitmap Index Scan on roi_statement_by_period (actual time=0.297..0.297 rows=1000.00 loops=1)
+              Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = $1))
+              Index Searches: 1
+              Buffers: shared hit=12
+Planning Time: 0.194 ms
+Execution Time: 295.191 ms
+PLAN closing count, generic
+Aggregate (actual time=2.040..2.041 rows=1.00 loops=1)
+  Buffers: shared hit=1012
+  ->  Bitmap Heap Scan on roi_statement s (actual time=0.565..1.956 rows=1000.00 loops=1)
+        Recheck Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = $1))
+        Heap Blocks: exact=1000
+        Buffers: shared hit=1012
+        ->  Bitmap Index Scan on roi_statement_by_period (actual time=0.396..0.396 rows=1000.00 loops=1)
+              Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = $1))
+              Index Searches: 1
+              Buffers: shared hit=12
+Planning Time: 0.190 ms
+Execution Time: 2.067 ms
+37001
+PLAN probe, whole scope
+Result (actual time=1.071..1.071 rows=1.00 loops=1)
+  Buffers: shared read=3
+  InitPlan 1
+    ->  Seq Scan on roi_statement (actual time=1.068..1.069 rows=1.00 loops=1)
+          Filter: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+          Buffers: shared read=3
+Planning Time: 1.142 ms
+Execution Time: 1.089 ms
+PLAN whole-scope count, thepsql:plans.sql:22: error: unterminated quoted string
+
+Finalize Aggregate
+  ->  Gather
+        Workers Planned: 2
+        ->  Partial Aggregate
+              ->  Parallel Seq Scan on roi_statement
+                    Filter: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+PLAN whole-scope check in one statement, thepsql:plans.sql:24: error: unterminated quoted string
+
+Finalize GroupAggregate
+  Group Key: practice_id
+  ->  Gather Merge
+        Workers Planned: 2
+        ->  Sort
+              Sort Key: practice_id
+              ->  Partial HashAggregate
+                    Group Key: practice_id
+                    ->  Parallel Seq Scan on roi_statement
+                          Filter: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+PLAN the same with enable_seqscan off (not run)
+Finalize GroupAggregate
+  Group Key: practice_id
+  ->  Gather Merge
+        Workers Planned: 2
+        ->  Sort
+              Sort Key: practice_id
+              ->  Partial HashAggregate
+                    Group Key: practice_id
+                    ->  Parallel Bitmap Heap Scan on roi_statement
+                          Recheck Cond: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+                          ->  Bitmap Index Scan on roi_statement_by_period
+                                Index Cond: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))

@@ -1,0 +1,8 @@
+planted: 3 in 2 practices
+0
+Time: 0.210 ms
+psql:preflight.sql:87: ERROR:  3 of 1000003 stored ROI statements, in 2 of 1000 practices, fail the new roi_links_valid; nothing is changed. Statement IDs (the first 3): 4b787a5c-bd33-4977-ada6-285cc621e70d, dc35b24a-146d-42be-a094-9d303d3dc3fc, cc667b3b-2aa5-483b-8f1e-2fb3d59dc402
+CONTEXT:  PL/pgSQL function inline_code_block line 76 at RAISE
+Time: 200432.211 ms (03:20.432)
+psql:fail.sql:16: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+body after rollback: 49416713dd4d13dd

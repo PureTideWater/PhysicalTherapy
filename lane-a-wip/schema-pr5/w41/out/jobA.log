@@ -1,0 +1,7 @@
+14:17:32 create m1
+NOTICE:  database "pr5w41_m1" does not exist, skipping
+14:17:32 load m1
+  exit 0
+14:22:30 plans, never analyzed
+14:22:30 preflight, never analyzed, no lock
+14:25:53 done A

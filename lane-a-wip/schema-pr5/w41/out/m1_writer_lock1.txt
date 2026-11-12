@@ -1,0 +1,14 @@
+
+io before: heap 9828104 (read 2741482), index 9078194
+5s
+A installed: 13c4dd46b9203095
+1
+Time: 0.122 ms
+psql:preflight.sql:87: ERROR:  roi_statement stayed in use for 30 seconds at the preflight's closing count; run the deploy again
+CONTEXT:  PL/pgSQL function inline_code_block line 31 at RAISE
+Time: 216537.930 ms (03:36.538)
+psql:run_preflight.sql:12: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:run_preflight.sql:13: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+
+io after: heap 10828106 (read 2991480), index 9091001
+body after rollback: 49416713dd4d13dd

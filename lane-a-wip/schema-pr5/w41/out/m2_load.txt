@@ -1,0 +1,3 @@
+Time: 271970.730 ms (04:31.971)
+loaded: 1000000 statements, 1000 practices, table 2137 MB
+pg_class: roi_statement reltuples=0 relpages=0 allvisible=0; roi_statement_by_period reltuples=0 relpages=1 allvisible=0; roi_statement_pkey reltuples=0 relpages=1 allvisible=0; roi_statement_quarterly reltuples=0 relpages=1 allvisible=0

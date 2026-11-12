@@ -1,0 +1,25 @@
+
+io before: heap 11078113 (read 3241484), index 9091019
+5s
+A installed: 13c4dd46b9203095
+1
+Time: 0.053 ms
+psql:preflight.sql:87: NOTICE:  preflight: 1000007 statements checked in 1000 practices, 0 refused; scan 196734 ms, lock wait 9013 ms, closing 433 ms, 1 practices read again (lock held from then to commit: t)
+Time: 206181.118 ms (03:26.181)
+scope after: {}
+lock: pg_locks AccessShareLock x1
+lock: pg_proc AccessShareLock x1
+lock: pg_proc_oid_index AccessShareLock x1
+lock: pg_proc_proname_args_nsp_index AccessShareLock x1
+lock: practice AccessShareLock x1
+lock: practice_by_organization AccessShareLock x1
+lock: practice_pkey AccessShareLock x1
+lock: roi_statement AccessShareLock x1
+lock: roi_statement_by_period AccessShareLock x1
+lock: roi_statement_pkey AccessShareLock x1
+lock: roi_statement_quarterly AccessShareLock x1
+lock: roi_statement ShareLock x1
+lock: transactionid ExclusiveLock x1
+
+io after: heap 12087130 (read 3493319), index 9116657
+body after rollback: 49416713dd4d13dd
