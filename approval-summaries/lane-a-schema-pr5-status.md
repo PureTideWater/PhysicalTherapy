@@ -1,51 +1,47 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
-## RESUME-BLOCK (W42, session_019i9ifCwck5Ufy8GGyahgjE; 2026-11-12 about 16:40 UTC; build step 1, WAITING for a person's typed command)
-- **Where it stands:** step 1's tests are written and fail on the base; the migration's text is drafted in a scratch
-  file and rehearsed green; **no migration file exists.** A person types, in W42's session (or the session that
-  takes step 1 over): `/new-migration roi_statement_actionable_lines`. No session creates, names or timestamps the
-  file itself.
-- **The orchestrator's answers (2026-11-12 15:45 UTC), built to:** 1 yes, the closing count takes the short SHARE lock
-  (the PR's description must say the preflight does not take only reading locks); 2 cold storage is a recorded
-  residual, the limit stays 5 minutes; 3 no self-stop; 4 the refusal prints counts only.
-- **WIP ref:** `co-001/wip-schema-pr5` at `48deee2e` (cut from claude/build-platform 1f652b6f, PR 4 merged). It holds:
-  - `packages/db/src/roi-statement-actionable-lines-migration.db.test.ts` (10 tests: the passing case with every
-    policy, relation's row security and FORCE, grant, column grant, trigger, constraint, role and index compared
-    before and after; T1; T3; T3b; P1; P2a to P2e; P3; P4; P5). It finds the file by its suffix, so it needs no edit
-    once the file exists. On the base: fails, "expected one migration named ... found 0".
-  - `packages/db/src/catalog.db.test.ts`: T2b. On the base: fails on the two hashes and the header line only (owner,
-    grants, volatility, the CHECK and the trigger already equal).
-- **The draft:** `lane-a-wip/schema-pr5/w42/roi_statement_actionable_lines.draft.sql` (file SHA-256 `d46c35c52ea8945f...`):
-  header (3.6, with the lock sentence and the cold-storage residual), 3.1, Appendix A pasted from `w35/A.sql`, the
-  3.3 block (the reference block without its switch and its ID list; one closing pass under the lock, since the lock
-  makes the three rounds dead code), Appendix D2 with the header line pasted from `w35/D2h.sql`, 3.5 (both hashes and
-  the stored header line). The bodies in it hash to `13c4dd46b9203095` and `ad925199131cb411`.
-- **Rehearsed (PostgreSQL 18.4, port 5433, SYNTHETIC rows):** the test file, pointed at the draft by an uncommitted
-  copy since removed, 10 of 10 green in 4.5 s; on a database with the draft applied both stored bodies hash to the
-  granted hashes and `pg_get_functiondef` prints the header line after the search path. Not yet run: the tests
-  against the real file, T2b green, `pnpm test:db` whole, lint and typecheck of the whole (the two test files are
-  clean under eslint, prettier and `@tp/db` typecheck).
-- **After the typed command, step 1's remainder (W42, or its successor):** create the file as the skill says and
-  fill it with the draft, byte for byte (`cmp` the two granted statements against `w35/A.sql` and `w35/D2h.sql`);
-  `pnpm db:migrate` on a fresh database and prove both hashes and the header line there; the new test file and
-  `catalog.db.test.ts` green; `pnpm test:db` (catalog and cross-tenant); other tests that pin a migration list or
-  count (`migrate.db.test.ts`) adjusted if they fail; push the WIP ref; rewrite this block; one line to the
-  orchestrator. NOT in step 1: `docs/product/domain-model.md` and `packages/db/functions` (step 5's; so the
-  domain-model drift case of the database suite is expected to fail until then, and is named in the report if it does).
-- **Found while testing, no fault in a granted text, for the description and step 2:**
-  - a malformed ID under `recovered` or `interest` is refused 22P02 only when the practice has a ledger entry to
-    compare with; with none the trigger refuses by its own rule (23514, no constraint name) and never reaches the
-    cast. Today's body does the same. A malformed ID under `actionable_open_lines` is always 22P02; a value that is
-    no array under a key the trigger reads is 22023. T3b pins each.
+## RESUME-BLOCK (W42, session_019i9ifCwck5Ufy8GGyahgjE; 2026-11-12; build step 1 is DONE; next is the build cut's step 2, the writer)
+- **Built (step 1):** a person typed `/new-migration roi_statement_actionable_lines` in W42's session; the file is
+  `packages/db/migrations/20261115090000_roi_statement_actionable_lines.sql`, created with the marker set and removed
+  in a trap, byte-identical to the rehearsed draft (`lane-a-wip/schema-pr5/w42/roi_statement_actionable_lines.draft.sql`);
+  `w35/A.sql` and `w35/D2h.sql` are each in it once, byte for byte. Sections: header (the lock sentence: it does NOT
+  take only reading locks; the cold-storage residual; no self-stop), 1 starting bodies, 2 Appendix A, 3 the
+  stored-statement preflight (one practice at a time; one closing pass under SHARE NOWAIT, 30 tries; the guard;
+  counts only), 4 Appendix D2 with the header line, 5 self-check (both hashes and the stored header line).
+- **WIP ref:** `co-001/wip-schema-pr5` at `9887dd77` (cut from claude/build-platform 1f652b6f): the migration,
+  `packages/db/src/roi-statement-actionable-lines-migration.db.test.ts` (10 tests) and T2b in
+  `packages/db/src/catalog.db.test.ts`. Nothing else is changed: no Drizzle schema (step 2's), no domain model.
+- **Proved (PostgreSQL 18.4, SYNTHETIC rows):**
+  - failing first: on the base the new file failed ("expected one migration ... found 0") and T2b failed on the
+    two hashes and the header line only;
+  - on a database migrated fresh by `pnpm db:migrate`: `roi_links_valid` `13c4dd46b9203095`, `roi_statement_rules`
+    `ad925199131cb411` (the full hashes equal the granted ones; the same from `pg_get_functiondef`'s print), and
+    ` SET plan_cache_mode TO 'force_custom_plan'` printed after the `SET search_path` line;
+  - the two test files: 33 of 33; the passing case compares every policy, each relation's row security and FORCE
+    setting, owner and grants, column grants, triggers, constraints, the tp_ roles and indexes before and after: equal;
+  - `pnpm test:db` whole (after `pnpm install --frozen-lockfile`, which this machine needed for `@tp/redact`):
+    10,354 passed, 1 skipped, 3 failed, all three the drift checks that wait for step 5
+    (`domain-model.db.test.ts` "matches the schema", `function-files.db.test.ts` DBF-01 and DBF-04's `--check`).
+    Catalog and cross-tenant pass. eslint, prettier and `@tp/db` typecheck clean on the two test files.
+- **Not done, by the brief:** `docs/product/domain-model.md` and `packages/db/functions` are not regenerated (step
+  5); no approval line; no PR; no review subagent; `w41/jobA.sh` and `jobB.sh` against the real file (step 4).
+- **For the PR's description and the later steps:**
+  - the description must say the preflight does not take only reading locks (the orchestrator's answer 1), and carry
+    the cold-storage residual (answer 2);
+  - the closing count is ONE pass under the lock (the reference block's three rounds are dead code once the lock is
+    always taken): for the two reviews to confirm;
+  - P5 is read as "what the file does" (comments and quoted text set aside before the words are looked for);
+  - a malformed ID under `recovered` or `interest` is refused 23514 by the trigger's own rule when the practice has
+    no ledger entry (pinned by T3b); 22P02 with entries is by reading the body, not by a test; under
+    `actionable_open_lines` it is always 22P02 (pinned); a non-array under a key the trigger reads is 22023 (pinned);
   - T3b's last clause (the application's error path shows no quoted value to a person or a log) is not a database
-    test: it belongs with the writer (step 2).
-  - `roi_statement_quarterly` (one statement a practice and period in no one's name) means a test that stores
-    several job statements gives each its own period.
-  - P5 is read as "what the file does": comments and quoted text are set aside before the words are looked for,
-    since the grant's own header says "granted" and the block reads `pg_policy` and `pg_roles`.
-- **Next after step 1:** the build cut's step 2, the writer (note 4.1): `apps/worker/src/triage/actionable-now.ts`,
-  `apps/worker/src/reconcile/statements.ts`, `packages/db/src/schema/ledger.ts`; T4 to T8, T11, T15, T16.
-- **Holds:** the WIP ref above. Scratch databases are dropped. PostgreSQL 18 runs on this session's machine only.
+    test: it goes with the writer, step 2;
+  - `roi_statement_quarterly` allows one job statement a practice and period: tests that store several give each
+    its own period.
+- **Next, one session:** step 2, the writer (note 4.1): `apps/worker/src/triage/actionable-now.ts`,
+  `apps/worker/src/reconcile/statements.ts`, `packages/db/src/schema/ledger.ts`; T4 to T8, T11, T15, T16. It reads
+  W41's "The builder reads" list below (the note's sections 4 to 7).
+- **Holds:** the WIP ref. Scratch databases dropped.
 
 ## Superseded as the top block by W42's above (its "The builder reads" list still stands): RESUME-BLOCK (W41, session_019i9ifBHTHrNAPcLzYZj2P9; 2026-11-12 about 15:40 UTC; the preflight's design step is done; W41 has stood down)
 - **Where it stands:** the grant is whole (Appendix A, 2026-11-07; Appendix D2 with its one header line, 2026-11-12;
