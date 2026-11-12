@@ -1,5 +1,25 @@
 # The schema chain after PR 2: #143's merge step, then schema PR 4 (the first skip)
 
+## FINAL STATE: MERGED (W40, https://claude.ai/code/session_019i9ifAz4H3EULGVa7AanUj, 2026-11-12 14:58 UTC; schema PR 4, #156)
+- **#156 merged as 1f652b6f** into `claude/build-platform` (parents f7b777d3 and 46d84f71), method merge, expected head
+  46d84f71. Before it: the founder's commit of the approval line, 9c6cd37a (2026-11-12 13:50 UTC), verified on the branch;
+  the base f7b777d3 (#158, #159) merged on top of it as 46d84f71, one push through the hook.
+- **The founder's line is byte for byte his:** `docs/product/domain-model.md` is the same file at 9c6cd37a, 46d84f71 and
+  1f652b6f; `pnpm db:domain-model --check --require-approval` passed on a freshly migrated PostgreSQL 18 database (52
+  migrations); document SHA-256 `922ff5e3f7e81884d1aaaa1937a46fe1b2ff645c889dd60dc62e8e1e086b061b`.
+- **Required checks on 46d84f71:** all green, mutation, screening-capacity gate and approval-of-record green; marked
+  ready 14:54 UTC, approval-of-record's re-run green 14:54 UTC, merged 14:58 UTC. No check was re-run.
+- **The description** was corrected where the founder's commit made it untrue (the summary regenerated on 46d84f71, the
+  approval line no longer "blank" or "awaiting", one row added to Checks); the copy is
+  `lane-a-wip/schema-pr4/pr-description.md` (its closing attribution lines differ from the live description's).
+- **The push runs the merge started on 1f652b6f** (ci 43242793078, mutation 43242795543, screening-capacity
+  43242792769) were running or queued when this was written; nobody is subscribed to them.
+- **Owed after it** (from the RESUME-BLOCK below and the PR): nothing by this chain's sessions; W16 and W40 stand down.
+  The web half is Lane B's: write `filed_for_submission_id` (the upload route, the contract lists, the response
+  form's list), close the handler-lock crossing and cast the document id before hashing (ADR 0085's amendment), and
+  decide what the form does when its upload duplicates an unlinked copy. Schema PR 3 (slice 4's export render) keeps
+  its place and is not built.
+
 Lane A, W15 (https://claude.ai/code/session_019i9if9aX9NMhnMVmJCk4BM), from 2026-11-11 18:12 UTC. It took the chain
 from W11. Plan: `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md`.
 
