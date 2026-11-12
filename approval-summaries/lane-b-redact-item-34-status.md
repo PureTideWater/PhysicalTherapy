@@ -45,6 +45,20 @@ WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. N
   amendment: the two fix rounds, R1-2's cost, R1-3 and R1-4 as residuals for Queues item 40, the `$300.00USD` line,
   the new counts; test-matrix MOD-25 if its text names the forms; (4) the PR branch from the WIP head, the base
   merged, the full local suite once, one push, the draft PR, the merge as W56's brief orders.
+- **The delta review of round 1 arrived after this block was written (`reviews/review-3-fix-round-1.md`; no blocker
+  by its own scale, NOT yet verified by W56):**
+  - **R3-1, to verify and rule on before the PR:** every-place scanning changes the counted units in 3,119 of 24,120
+    fuzzed letters (up to 3.96 times). Names `['AAAAAAAA']`, text `'A '.repeat(49000)`: the base and the pre-fix head
+    SEND it fully hidden at 341,006,350 units; 483ac960 REFUSES it by the count at 420,000,001. The two budget rows
+    were measured unchanged on 483ac960 (above), and the gate of 483ac960 was running, unread: its "real-shaped newly
+    refused" count decides whether this is a cost (a crafted letter refused, to a person; the budget is not raised)
+    or a reason to bound the scan (for instance, ask at every place only inside the last match).
+  - R3-2: no timed test for the drafter's check, a separator of several characters (`ZZ12345 - 01`) or a run repeated
+    after near misses; each is linear on the fix. R3-3: the R1-1 tests assert the rest is not shown as one run, not
+    that the real writing is hidden whole. R3-4 (outside the delta): one letter the base refuses was sent by the
+    pre-fix head with 5 of 8 name letters in clear; 483ac960 hides it whole; that class was not searched further.
+  - Held: 0 of 54,702 letters where the base or the pre-fix head hides or refuses what the fix shows; the old and
+    new patterns agree on every compared string.
 - **For the queue (lesser findings, not built):** R1-3, R1-4 (item 40); R1-5 (`redactLetter`'s text holds a glued
   number in clear with the mark; no product caller shows a refused letter); R1-6 (A-6 reads only `\n\r+`: `\f\r`,
   `\v\r`, U+2028 or U+0085 with a CR are sent where the one-character control is refused); R2-3 (the (d) test bounds
