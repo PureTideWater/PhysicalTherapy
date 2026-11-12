@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- ledger_entry_rules()
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: abbcba68f46fd135
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 834cdefc070b08db
 -- Trigger function of: ledger_entry.ledger_entry_rules
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.ledger_entry_rules()
@@ -46,7 +46,7 @@ BEGIN
     IF (target.case_id, target.service_line_id, target.match_id) IS DISTINCT FROM (NEW.case_id, NEW.service_line_id, NEW.match_id) THEN
       RAISE EXCEPTION 'a correction is of its entry''s case, line and match' USING ERRCODE = 'check_violation';
     END IF;
-    IF NEW.match_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM ledger_match m WHERE m.id = NEW.match_id AND m.reversed_at IS NULL) THEN
+    IF NEW.match_id IS NOT NULL AND (SELECT m.reversed_at IS NULL FROM ledger_match m WHERE m.id = NEW.match_id) IS NOT TRUE THEN
       RAISE EXCEPTION 'a correction is of an entry whose match stands; a reversed match''s entries are never corrected again' USING ERRCODE = 'check_violation';
     END IF;
     IF NEW.stage = 'reversed' AND NEW.amount_cents <> -target.amount_cents THEN
@@ -74,8 +74,8 @@ BEGIN
     NEW.effective_on := dated;
     RETURN NEW;
   END IF;
-  SELECT * INTO matched FROM ledger_match m WHERE m.id = NEW.match_id AND m.practice_id = NEW.practice_id AND m.reversed_at IS NULL;
-  IF NOT FOUND THEN
+  SELECT * INTO matched FROM ledger_match m WHERE m.id = NEW.match_id;
+  IF NOT FOUND OR matched.practice_id IS DISTINCT FROM NEW.practice_id OR matched.reversed_at IS NOT NULL THEN
     RAISE EXCEPTION 'an entry comes from a standing match' USING ERRCODE = 'check_violation';
   END IF;
   IF matched.evidence_id IS DISTINCT FROM NEW.evidence_id OR (matched.service_line_id IS NOT NULL AND matched.service_line_id IS DISTINCT FROM NEW.service_line_id)
