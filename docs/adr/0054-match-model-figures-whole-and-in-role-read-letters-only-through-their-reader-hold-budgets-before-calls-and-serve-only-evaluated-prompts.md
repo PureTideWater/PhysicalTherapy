@@ -1869,7 +1869,9 @@ reader, a comparison at four units):
   tenth of the budget. One file is newly refused when read whole as a letter, which it is not: the synthetic ZIP-code
   table (`fixtures/synthetic/cms/ZIP9_SYNTHETIC.txt`, 729,000 characters).
 - The battery of the reviews' generators and fuzzers, every call run on both readers: no text differs, nothing the
-  base refuses is sent, none newly refused (the counts are in the pull request).
+  base refuses is sent, none newly refused. On the final reader: 101 runs of the scripts, recorded seeds and fresh
+  ones, 1,116,939 redactions and 1,045,920 checks made on both readers, none differing; the longest letter among them
+  is 20,000 characters and the dearest costs 19.0 million units.
 
 **Where item 26 hooks in.** Its wider reading and its second reading run inside the two entries (inside
 `redactedForScreen`, and inside `holdsIdentifier`'s `try`), where the helpers they call count in `checkWorkSpent`
