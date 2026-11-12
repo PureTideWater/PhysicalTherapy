@@ -1,6 +1,91 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
-## RESUME-BLOCK (W55, session_019i9ifDhHKEbRRr5mquRDNa; 2026-11-12 about 22:25 UTC; build step 2, the writer, is DONE; step 3, the readers, is NOT started and is handed over at the context line)
+## RESUME-BLOCK (W57, session_019i9ifB2vvAfQen1Y2vmLFZ; 2026-11-13 about 00:30 UTC; build step 3, the readers, is DONE; steps 4 to 6 are the last session's)
+- **WIP ref:** `co-001/wip-schema-pr5` at `7b05fd87` (on `cf1e4a80`, step 2; `9887dd77`, step 1). Step 3 changes four
+  files, no migration, no granted text, no arithmetic:
+  - `apps/worker/src/reconcile/print.ts`: `STATEMENT_COLUMNS` replaces `s.links` by note 4.2's four-key
+    `jsonb_build_object(...) AS links`. The web's `STATEMENT_SELECT` (`apps/web/src/lib/reconciliation/queries.ts`)
+    is built from that constant, so the detail page, the CSV and the list changed with it and `queries.ts` is not
+    edited. Every read is the scope it was (the route's `report.read` check, `readWithAudit`, the job's scope and the
+    table's policies); no new query, no new log line.
+  - tests: `apps/worker/src/reconcile/statement-lines.db.test.ts` (a new describe: T12 print with T9, T9 after a
+    write-off and a re-price, T10, T3b's last clause), `apps/web/src/lib/reconciliation/statement-readers.db.test.ts`
+    (T12: detail, CSV, list) and `apps/worker/src/reconcile/test-support/statement-twins.ts` (one statement stored
+    twice in the manager's name, with the list and without; a scope that records the statement rows a reader's query
+    received; the previous image's column list).
+- **Failing first, each on an assertion (the files loaded):** T12 print, T12 detail, T12 CSV, T12 list, T9's
+  re-priced case and T10, all on the keys of the row the reader received (five, four expected). Guards that passed
+  before the change: T9's PDF record itself (step 1's migration already lets the UPDATE through) and T3b's last clause.
+- **What each test holds:**
+  - T12: for the five-key and the four-key copy of one statement (SYNTHETIC LED-06 through the recoupment: recovered
+    entries and one listed line), every reader receives exactly four keys, and the print's HTML, the detail's whole
+    object and the CSV's bytes are equal but for the statement's own ID; the list's rows likewise.
+  - T9: the PDF's UPDATE records on both copies, once (`already_printed` after); a five-key statement whose listed
+    line was written off and its run priced again still prints, and the row is as written but for `document_key` and
+    `pdf_sha256`. Since `priced_line` is immutable no stored statement can be made to fail the rule afterwards, so
+    "the block does not run on UPDATE" is shown by this and by the trigger's text, not by a statement that would be
+    refused today.
+  - T10: the four-key writer (`four-key-writer.ts`) stores and its PDF records on the migrated database; today's
+    five-key row read by the previous column list gives the same `StoredStatement` as today's. **Not built here:**
+    "the new writer against the unmigrated database is refused" has no test of its own in step 3; it rests on the
+    migration test's T3 (`before["five keys"]` is false under the old `roi_links_valid`). If the reviews want the
+    writer itself run on the previous head, it belongs in `packages/db/src/roi-statement-actionable-lines-migration.db.test.ts`.
+  - T3b's last clause: a malformed ID is refused 22P02 and PostgreSQL's words quote it; the job's log line carries
+    `attemptErrorCode` only (`DB_22P02`), never the words; a well-formed stranger ID gets the rule's own words
+    (23514), which hold no ID and no digit. **Residual, for the database review:** on the web, any code but 23514,
+    42501, 55000 and the lock timeout is rethrown by `apps/web/src/lib/http/invoke.ts` (`refusal`), and what the
+    framework then writes to the server's log for an uncaught 22P02 is not tested. The writer cannot send a malformed
+    ID (they are `priced_line.id` cast by Postgres), so no request reaches that path today.
+- **Green on `7b05fd87` (PostgreSQL 18.4, scratch database `w57`, SYNTHETIC only):** `pnpm typecheck` clean;
+  `pnpm lint` whole, once: 1,952 files, 0 errors, 0 warnings (step 2's owed run); `pnpm lint:logs` clean;
+  `pnpm test:golden` 381 of 381; `pnpm test:db` whole: 10,368 passed, 1 skipped, 3 failed, exactly the three known
+  drift checks (`domain-model.db.test.ts` "matches the schema", `function-files.db.test.ts` DBF-01 and DBF-04's
+  `--check`), which step 5 regenerates. CAS-51's time budget passed in the whole run this time (nothing ran beside
+  it). Unit tests near the change (`apps/worker/src/reconcile`, `apps/worker/src/report`,
+  `apps/web/src/lib/reconciliation`): 131 of 131. **Not run in step 3:** `pnpm test` whole and `pnpm test:e2e`;
+  `packages/db/src/migrate.test.ts` (the runbook's quote of the migration's lock-loop message) still fails until
+  step 5 writes that record.
+- **T13:** `git diff --stat 9887dd77^ 7b05fd87` touches no LED test file and no file of the ledger oracle but
+  `statement-lines.db.test.ts` (step 2's own, extended); `ledger.db.test.ts` and `chain.db.test.ts` pass untouched in
+  the whole run. The last session repeats the `git diff --stat` on the PR's final head.
+- **Changed screens and prints (for the UX and brand review):** none a person can see. The ROI statements list, the
+  statement's detail page, its CSV and its printed PDF read the same four keys as before and T12 holds their output
+  equal, to the byte, to a statement without the list. No word, figure, order, markup or style changed; no file that
+  `tools/brand-copy` scans was touched (`statement-html.ts` is not edited).
+- **Still owed (W55's, carried):**
+  - **The cost of note 4.1 is not measured.** The plain path runs the line predicate twice a line. Step 4 (T14)
+    measures the writer's query at A's month (30,795 lines) before and after; past 1 s of growth the build takes the
+    one-pass form the note gives (a derived table behind `OFFSET 0`, as `ACTIONABLE_NOW_OF`), and T5 then still
+    compares with `ACTIONABLE_NOW('c')`. Both timings and the choice go in this file.
+  - T11 covers the CAS worlds, HOM-01's CAS-08 and LED-06; "a month of worked cases" at size and the other LED worlds
+    are not in it. T5's worlds are as W55's block below lists them.
+  - `pnpm test` whole on the final head, with `migrate.test.ts` green once the deploy runbook
+    (`docs/runbooks/deploy-and-rollback.md`) quotes 20261115090000's lock-loop failure as the deploy log shows it.
+- **Points for the two reviews (W42's and W55's below stand; W57 adds):**
+  - database: the readers' `jsonb_build_object` still reads the stored `links` value once a row (detoasted whole for
+    a large list) and sends four keys; the list page does this for up to 20 rows. T14 may time the list page at A's
+    month beside the writer.
+  - database: the web's rethrown path above.
+  - money: no reader computes anything new; `storedStatement()` already picked the four keys by name.
+- **For the last session (the orchestrator's notes, carried):**
+  - the migration's timestamp 20261115090000 is also the key registry's first migration's on its own branch:
+    whichever PR opens second takes the base with the other's migration and is renamed to sort after it, by the
+    co-founder's typed `/new-migration` in that session;
+  - the preflight takes a short SHARE lock for its closing count: the PR's description says so under "What the
+    founder should know before approving" (it corrects "it takes only reading locks"); cold storage is a recorded
+    residual; the refusal prints counts only;
+  - note 4.1's cost at A's month is measured in step 4, the one-pass form if over 1 s;
+  - the deploy runbook's quote for `migrate.test.ts`.
+- **A caution for whoever formats (W55's):** no prettier config for `apps/worker`; `prettier --write` with defaults
+  restyles whole files.
+- **Machine note:** this container came up with the servers stopped and Node 22 first on PATH although
+  `/tmp/setup-container.log` ended OK; `bash tools/setup-container.sh` from `/home/user/ops` started PostgreSQL, and
+  the suites ran with `PATH=/opt/node24/bin:/opt/pnpm-bin:$PATH`.
+- **Next, one session:** steps 4 to 6: the measurements (T14), the domain model's regeneration, the records (ADR 0082's
+  amendment, reconciliation-001, the runbook), the two adversarial reviews (money, database) on the whole, the PR.
+- **Holds:** the WIP ref. The scratch database `w57` (port 5433) is on this machine only.
+
+## Superseded as the top block by W57's above: RESUME-BLOCK (W55, session_019i9ifDhHKEbRRr5mquRDNa; 2026-11-12 about 22:25 UTC; build step 2, the writer, is DONE; step 3, the readers, is NOT started and is handed over at the context line)
 - **WIP ref:** `co-001/wip-schema-pr5` at `cf1e4a80` (on `9887dd77`, step 1). Step 2 changes seven files, no migration,
   no granted text, no arithmetic:
   - `apps/worker/src/triage/actionable-now.ts`: the `FROM ... WHERE` of `ACTIONABLE_NOW` is one private fragment
