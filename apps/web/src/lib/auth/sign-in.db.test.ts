@@ -1569,47 +1569,45 @@ async function liveMemberships(userId: string): Promise<number> {
   return Number(rows[0]?.count ?? -1);
 }
 
-// These state what a step begun before End membership still does while the provider's sign-out has not happened. The
-// membership's end moves no mark ("user".sign_in_not_before), so ADR 0093's rule refuses none of them: each opens a
-// session, which carries no role, and the second leaves a key on the account. Closing them is the mark's move in
-// membership_ended's own transaction, a migration (LANES.md Queues item 37; docs/adr/0094, "Left open"). When it lands,
-// each `signed_in` and `key_registered` below becomes the refusal SGN-17 states for a reset.
-describe('SGN-19: a sign-in step begun before End membership, the provider’s sign-out never performed (docs/adr/0094)', () => {
-  it('SGN-19: a code step begun before End membership still opens a session after it, for an account that holds no role (open until Queues item 37)', async () => {
+// A step begun before End membership, with the provider's sign-out not yet performed. Since migration 20261115090000
+// (LANES.md Queues item 37; docs/adr/0095, closing docs/adr/0094's "Left open") the membership's end moves the
+// account's mark ("user".sign_in_not_before) in its own transaction, whoever ends it, so ADR 0093's rule refuses each
+// step as SGN-17 states for a reset: no session opens and no key stays on the account.
+describe('SGN-19: a sign-in step begun before End membership is refused after it, the provider’s sign-out not yet performed (docs/adr/0095)', () => {
+  it('SGN-19: a code step begun before End membership opens no session after it, and the refusal is recorded', async () => {
     const user = await person();
     await addMembership(owner, await createOrganization(owner, 'group'), user.id, 'analyst');
     const before = await signedIn(user.email);
     const begun = pendingOf(await flow.start(user.email, PASSWORD, context()));
     expect(begun.step).toBe('mfa');
     await membershipEndedWithoutProviderSignOut(user.id);
-    // What the commit holds whatever the provider answers: no role, and no session that was open.
+    // What the commit holds whatever the provider answers: no role, no session that was open, and the mark moved.
     expect(await liveMemberships(user.id)).toBe(0);
     expect(await openSessions(user.id)).toBe(0);
     expect((await resolveSession(app, before.sessionToken, 'test')).state).toBe('ended');
-    // The mark did not move, so the step is not refused.
-    expect(await markOf(user.id)).toBeNull();
+    expect(await markOf(user.id)).toBeInstanceOf(Date);
+    // The step is refused before the provider is asked.
+    const asked = vi.spyOn(provider, 'answerTotp');
     const finished = await flow.answerTotp(begun, nextCode(), context());
-    expect(finished.kind).toBe('signed_in');
-    expect(await openSessions(user.id)).toBe(1);
+    const calls = asked.mock.calls.length;
+    asked.mockRestore();
+    expect(finished).toEqual(EXPIRED);
+    expect(calls).toBe(0);
+    expect(await openSessions(user.id)).toBe(0);
     expect(await liveMemberships(user.id)).toBe(0);
-    expect((await securityEvents(user.id)).filter((event) => event.startsWith('step_before_reset'))).toEqual([]);
+    expect(await securityEvents(user.id)).toEqual(['step_before_reset_mfa']);
   });
 
-  it('SGN-19: a key-registration step begun before End membership still registers a key after it, and the key then signs in to an account that holds no role (open until Queues item 37)', async () => {
+  it('SGN-19: a key-registration step begun before End membership registers no key after it: the step is refused before the provider registers anything, and the refusal is recorded', async () => {
     const { staff, begun, key } = await registrationBegun();
     await membershipEndedWithoutProviderSignOut(staff.id);
     expect(await liveMemberships(staff.id)).toBe(0);
-    expect(await markOf(staff.id)).toBeNull();
-    expect(await flow.completeKeyRegistration(begun.pending, key.create(begun.options), context())).toEqual({ kind: 'key_registered' });
-    expect((await store.bySub(staff.sub))?.credentials).toHaveLength(1);
-    // The runbook's query finds it: one hardware_key_registered for the user after the membership's end.
-    expect((await events(staff.id)).filter((event) => event.startsWith('hardware_key_registered'))).toHaveLength(1);
-    const keyStart = await flow.beginKey(staff.email);
-    if ('kind' in keyStart) {
-      throw new Error('expected options');
-    }
-    expect((await flow.completeKey(keyStart.pending, key.get(keyStart.options), context())).kind).toBe('signed_in');
-    expect(await openSessions(staff.id)).toBe(1);
+    expect(await markOf(staff.id)).toBeInstanceOf(Date);
+    expect(await flow.completeKeyRegistration(begun.pending, key.create(begun.options), context())).toEqual(EXPIRED);
+    expect((await store.bySub(staff.sub))?.credentials).toEqual([]);
+    expect(await securityEvents(staff.id)).toEqual(['step_before_reset_register_key']);
+    expect((await events(staff.id)).filter((event) => event.startsWith('hardware_key_registered'))).toEqual([]);
+    expect(await openSessions(staff.id)).toBe(0);
     expect(await liveMemberships(staff.id)).toBe(0);
   });
 });
