@@ -29,6 +29,8 @@ export const POSTGRES_TYPES: Readonly<Record<string, string>> = {
   PgBigInt64: 'bigint',
   PgNumeric: 'numeric',
   PgArray: 'ARRAY',
+  // The schema's one custom type: bytea (schema/identity.ts, the key registry's digests and public keys).
+  PgCustomColumn: 'bytea',
 };
 
 export async function crossCheck(client: Queryable): Promise<string> {

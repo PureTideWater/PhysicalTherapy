@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: d0c75c27551b0f52
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f13d6212aaf9a029
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_record_mail_event(message_id text, stream text, event text, mail_at timestamp with time zone, event_at timestamp with time zone, recipient text, kind text, subject uuid, recipient_user uuid, practice uuid, bounce_kind text, bounce_subtype text, complaint_type text, request text)
@@ -26,6 +26,7 @@ DECLARE
   touched_invoice uuid;
   touched_stage text;
   touched_password_notice uuid;
+  touched_key_notice uuid;
 BEGIN
   recorded := false;
   notice_undelivered := NULL;
@@ -41,6 +42,8 @@ BEGIN
   END IF;
   IF kind = 'password_changed' THEN
     PERFORM pg_advisory_xact_lock(hashtextextended('password_notice:' || message_id, 0));
+  ELSIF kind = 'hardware_keys_removed' THEN
+    PERFORM pg_advisory_xact_lock(hashtextextended('hardware_key_notice:' || message_id, 0));
   END IF;
   IF practice IS NOT NULL OR kind IN ('support_grant_opened', 'support_grant_closed') THEN
     PERFORM operator_assert_scope(practice);
@@ -146,6 +149,16 @@ BEGIN
     RETURNING p.id INTO touched_password_notice;
     IF touched_password_notice IS NOT NULL AND held.state <> 'delivered' AND password_notice_report_undelivered(touched_password_notice, request) THEN
       password_notice_undelivered := touched_password_notice;
+    END IF;
+  END IF;
+
+  IF held.stream = 'transactional' AND held.kind = 'hardware_keys_removed' AND held.state IN ('delivered', 'bounced', 'suppressed', 'rejected') THEN
+    UPDATE hardware_key_notice n SET state = CASE WHEN held.state = 'delivered' THEN 'delivered' ELSE 'undelivered' END
+     WHERE n.ses_message_id = message_id
+       AND (n.state = 'sent' OR (n.state = 'delivered' AND held.state IN ('bounced', 'suppressed', 'rejected')))
+    RETURNING n.id INTO touched_key_notice;
+    IF touched_key_notice IS NOT NULL AND held.state <> 'delivered' THEN
+      PERFORM hardware_key_notice_report_undelivered(touched_key_notice, request);
     END IF;
   END IF;
 
