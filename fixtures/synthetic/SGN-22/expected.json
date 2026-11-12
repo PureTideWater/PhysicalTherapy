@@ -2,10 +2,10 @@
   "case": "SGN-22",
   "module": "SGN",
   "title": "The invariant: no live session without a live key, none begun at or before the mark",
-  "assertion": "Held today by its parts: the database refuses any key session whose digest is not a live key of the account and any session begun at or before the account's mark (SGN-20, SGN-17), and a confirmation that commits on a second connection after the app read the registry and before the session's insert is refused under the account's lock and answered as a stale session (SGN-26, case 7). Not yet written: the property over interleavings of sign-in, confirmation, End membership and reset in each order of the account lock, and the count that resolveSession issues the same statements as before the registry",
+  "assertion": "Over a sign-in, a removal's confirmation, End membership and a reset on one account, on two connections in each order of the account's lock, the second seen waiting on the first: a sign-in that holds the lock first is ended by whichever of the three waited for it; a sign-in begun before one of them and waiting on it is refused when it commits (user_session_hardware_key_live after a confirmation, user_session_sign_in_not_before after the other two); a sign-in begun after its clock and before its commit is refused after a confirmation and opens after the other two only because its key is live; any two of the three in either order leave no session, and a step begun before them opens none; after each, no live session of the account has a digest that is not a live key of it and none began at or before the mark. Resolving a session issues the statements it issued before the registry (BEGIN, the one resolving statement, COMMIT: three, one read), for a key session and a code session alike, and the registry's migrations do not name resolve_session",
   "synthetic": true,
   "completesIn": 1,
-  "assertedBy": ["apps/web/src/lib/auth/sign-in.db.test.ts","packages/db/src/key-registry.db.test.ts"],
+  "assertedBy": ["packages/db/src/key-registry.db.test.ts","apps/web/src/lib/routes/session-end.db.test.ts"],
   "codeListRelease": null,
   "noFileReason": "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
   "files": [],
@@ -13,7 +13,5 @@
   "uploads": [],
   "scenario": null,
   "outcome": null,
-  "notes": [
-    "The property over interleavings (sign-in, confirmation, End membership and reset in each order of the account lock) and resolveSession's statement count are not yet written; the named tests hold the invariant's parts (SGN-20's refusals, SGN-26 case 7 on two connections)."
-  ]
+  "notes": []
 }

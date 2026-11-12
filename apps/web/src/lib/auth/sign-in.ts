@@ -162,9 +162,25 @@ interface KeyRow {
 
 /**
  * Whether a key's response must show user verification. One constant for the app's own two checks; the user pool
- * requires the same (infra/lib/platform-stack.ts), and the provider twin does.
+ * requires the same (infra/lib/constructs/identity.ts; infra/test/identity.test.ts reads this line and holds the pool's
+ * setting to it, so the two cannot drift), and the provider twin does.
  */
 export const KEY_USER_VERIFICATION_REQUIRED = true;
+
+/**
+ * What a hardware-key step is refused with when the provider's relying-party ID is not the app's. It names the setting
+ * and where the other value comes from, and carries neither value.
+ */
+export const RELYING_PARTY_MISMATCH =
+  'WEBAUTHN_RP_ID (unset: the host of APP_ORIGIN) is not the relying-party ID of the user pool (the stack’s application domain name): hardware-key steps are refused until the two are the same';
+
+/** The platform's failure, never the person's: thrown, so the request fails and nothing is counted against anyone. */
+export class RelyingPartyMismatch extends Error {
+  constructor() {
+    super(RELYING_PARTY_MISMATCH);
+    this.name = 'RelyingPartyMismatch';
+  }
+}
 
 /** An unknown credential at the provider is deleted by the cleaning only when the provider registered it longer ago than this (docs/adr/0095). */
 export const UNKNOWN_CREDENTIAL_GRACE_MS = 15 * 60_000;
@@ -349,6 +365,27 @@ export class SignInFlow {
    * Runs a step that calls the provider: a refused client credential (docs/adr/0088, D2) is logged as a security event
    * by the provider's error name and answered as the platform's failure, before anything counts it as the person's.
    */
+  private relyingParty: 'unchecked' | 'same' | 'differs' = 'unchecked';
+
+  /**
+   * One relying-party ID (docs/adr/0095): the pool's and the app's are two settings, and the app verifies every key's
+   * response against its own. The provider's is read from the options of the first key step that carries one and
+   * compared once in this process; when it differs the difference is logged at error, once, and this and every later
+   * key step is refused, the later ones before the provider is asked. Without it each honest key would be refused as a
+   * wrong credential, with nothing to say why. Called with no argument by the steps that hold no options.
+   */
+  private oneRelyingParty(theirs?: string, context?: SignInContext): void {
+    if (this.relyingParty === 'unchecked' && theirs !== undefined) {
+      this.relyingParty = theirs === this.deps.webauthn.rpId ? 'same' : 'differs';
+      if (this.relyingParty === 'differs') {
+        this.deps.logger.error('configuration: the relying-party ID is not the provider’s; hardware-key steps are refused', { request_id: context?.requestId ?? null });
+      }
+    }
+    if (this.relyingParty === 'differs') {
+      throw new RelyingPartyMismatch();
+    }
+  }
+
   private async guarded<R>(context: SignInContext | undefined, refusal: R, run: () => Promise<R>): Promise<R> {
     try {
       return await run();
@@ -806,6 +843,7 @@ export class SignInFlow {
 
   /** Hardware-key sign-in: the browser's request options. A locked account gets none. */
   async beginKey(email: string, context?: SignInContext): Promise<{ readonly options: PublicKeyCredentialRequestOptionsJSON; readonly pending: Pending } | FlowResult> {
+    this.oneRelyingParty();
     // The attempt's start, before the account is read and the provider asked (docs/adr/0093, D3).
     const began = await this.beganNow();
     const account = await this.account({ email });
@@ -814,6 +852,7 @@ export class SignInFlow {
     }
     return this.guarded<{ readonly options: PublicKeyCredentialRequestOptionsJSON; readonly pending: Pending } | FlowResult>(context, refused('client_credential'), async () => {
       const { options, challenge } = await this.deps.provider.beginKeySignIn(email);
+      this.oneRelyingParty(options.rpId, context);
       return { options, pending: { step: 'key', email, challenge, began, assertion: options.challenge } };
     });
   }
@@ -825,6 +864,7 @@ export class SignInFlow {
    * stale one is refused in authenticated(), after the assertion.
    */
   async completeKey(pending: Pending, response: AuthenticationResponseJSON, context: SignInContext): Promise<FlowResult> {
+    this.oneRelyingParty();
     if (pending.step !== 'key' || pending.began === undefined || pending.assertion === undefined) {
       return refused('expired');
     }
@@ -893,6 +933,7 @@ export class SignInFlow {
   }
 
   async beginKeyRegistration(pending: Pending, context?: SignInContext): Promise<{ readonly options: PublicKeyCredentialCreationOptionsJSON; readonly pending: Pending } | FlowResult> {
+    this.oneRelyingParty();
     if (pending.step !== 'register_key') {
       return refused('expired');
     }
@@ -903,10 +944,12 @@ export class SignInFlow {
       return this.codeScreen(pending);
     }
     const { options, challenge } = await this.deps.provider.beginKeyRegistration(pending.grant);
+    this.oneRelyingParty(options.rp.id, context);
     return { options, pending: { ...pending, challenge, creation: options.challenge } };
   }
 
   async completeKeyRegistration(pending: Pending, response: RegistrationResponseJSON, context: SignInContext): Promise<FlowResult> {
+    this.oneRelyingParty();
     if (pending.step !== 'register_key' || pending.challenge === undefined || pending.creation === undefined) {
       return refused('expired');
     }

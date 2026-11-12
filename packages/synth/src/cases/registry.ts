@@ -1206,9 +1206,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/auth/sign-in.db.test.ts',
   ]),
   'SGN-22': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
-    'apps/web/src/lib/auth/sign-in.db.test.ts',
     'packages/db/src/key-registry.db.test.ts',
-  ], ["The property over interleavings (sign-in, confirmation, End membership and reset in each order of the account lock) and resolveSession's statement count are not yet written; the named tests hold the invariant's parts (SGN-20's refusals, SGN-26 case 7 on two connections)."]),
+    'apps/web/src/lib/routes/session-end.db.test.ts',
+  ]),
   'SGN-23': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
     'packages/db/src/key-registry.db.test.ts',
     'apps/web/src/lib/routes/console-routes.db.test.ts',

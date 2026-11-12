@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync, readdirSync } from 'node:fs';
 
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -10,7 +11,7 @@ import { type MigratedDatabase, type TenantWorld, addMembership, createMigratedD
 
 /**
  * The hardware-key registry and its two-person removal, in the database (LANES.md Queues item 37; docs/adr/0095;
- * test matrix SEC-25 to SEC-27, SGN-20, SGN-23 to SGN-25 and SGN-27's database rows). What the database proves: the
+ * test matrix SEC-25 to SEC-27, SGN-20, SGN-22 to SGN-25 and SGN-27's database rows). What the database proves: the
  * four tables are closed to both runtime roles and to every tenant; every function is owned, pathed and granted as
  * designed; a key session opens only for a live key of its account, and a code session never for an account whose
  * registration is closed; a removal needs two platform administrators seven days in the role, each in a fresh session
@@ -633,5 +634,185 @@ describe('SGN-27: registration, and registration after a removal', () => {
     const own = await removed(adminTarget.id);
     expect(await failure(asUser(adminTarget.id, 'SELECT hardware_key_registration_open($1, $2, $3, $4)', [own.removal, randomUUID(), secret, request()]))).not.toBe('accepted');
     expect(await count('hardware_key_removal WHERE id = $1 AND registration_opened_at IS NOT NULL', [own.removal])).toBe(0);
+  });
+});
+
+/**
+ * SGN-22, the invariant itself (docs/adr/0095; the design's section 5): a session never needs its key looked up again
+ * because nothing that removes a key or moves the mark can pass a session's insert without one of the two waiting on
+ * the account's row. Each case runs two transactions on two connections of the application's role: the first does its
+ * work and holds the account's lock uncommitted, the second is seen WAITING on a lock, the first commits, the second
+ * ends as the database decides. Then, by the owner's read of what is committed: no live session of the account whose
+ * digest is not a live key of it, and none begun at or before the account's mark.
+ */
+describe('SGN-22: no live session without a live key, and none begun at or before the mark, in each order of the account’s lock', () => {
+  type Step = (client: pg.PoolClient) => Promise<unknown>;
+  interface Actor {
+    readonly as: string;
+    readonly step: Step;
+  }
+  type Mover = 'confirmation' | 'end membership' | 'reset';
+  const MOVERS: readonly Mover[] = ['confirmation', 'end membership', 'reset'];
+
+  /** A member with one live key, one open key session, a device, and a membership an administrator can end. */
+  async function account() {
+    const made = await member();
+    const membership = randomUUID();
+    await seeded(`INSERT INTO membership (id, organization_id, user_id, role, created_at) VALUES ($1, $2, $3, 'support', now() - interval '30 days')`, [membership, internal, made.id]);
+    return { ...made, membership, device: await device(made.id) };
+  }
+  type Account = Awaited<ReturnType<typeof account>>;
+
+  /** The session's insert as the flow writes it, for a step that began at `at`. */
+  const signIn = (target: Account, at: string): Actor => ({
+    as: target.id,
+    step: (client) =>
+      client.query("INSERT INTO user_session (user_id, device_id, token_sha256, mfa_method, sign_in_began_at, key_credential_sha256) VALUES ($1, $2, $3, 'webauthn', $4::timestamptz, $5)", [
+        target.id,
+        target.device,
+        tokenHash(),
+        at,
+        target.credential,
+      ]),
+  });
+
+  /** What removes the keys or moves the mark, each as its route runs it; everything it needs is made before the race. */
+  async function mover(kind: Mover, target: Account): Promise<Actor> {
+    if (kind === 'confirmation') {
+      const [requester, confirmer] = [await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, target.id);
+      const acting = await confirmer.session();
+      return { as: confirmer.id, step: (client) => client.query('SELECT * FROM hardware_key_removal_confirm($1, $2, $3)', [removal, acting, request()]) };
+    }
+    if (kind === 'end membership') {
+      const by = await administrator();
+      return { as: by.id, step: (client) => client.query('UPDATE membership SET ends_at = now() WHERE id = $1', [target.membership]) };
+    }
+    // The web's completed reset (endedByReset): the account's lock, the sweep, the event that moves the mark.
+    return {
+      as: target.id,
+      step: async (client) => {
+        await client.query('SELECT sign_in_lock_account()');
+        await client.query('SELECT revoke_user_sessions($1)', [target.id]);
+        await client.query("INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, purpose) VALUES ($1, 'user', 'password_reset_completed', 'user', $1, 'email_code')", [target.id]);
+      },
+    };
+  }
+
+  async function begin(actor: Actor): Promise<{ client: pg.PoolClient; pid: number }> {
+    const client = await app.connect();
+    await client.query('BEGIN');
+    const { rows } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid, set_config('app.actor_id', $1, true), set_config('app.practice_ids', '{}', true)", [actor.as]);
+    return { client, pid: rows[0]?.pid ?? 0 };
+  }
+
+  /** Whether the backend comes to wait on a lock (it is polled for five seconds: a step that never waits is a finding). */
+  async function waitsOnALock(pid: number): Promise<boolean> {
+    for (let tries = 0; tries < 250; tries += 1) {
+      if ((await count("pg_stat_activity WHERE pid = $1 AND wait_event_type = 'Lock'", [pid])) === 1) return true;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    return false;
+  }
+
+  /** The invariant, over what is committed for the account. */
+  async function standing(target: Account) {
+    const { rows } = await owner.query<{ live: number; without_a_live_key: number; at_or_before_the_mark: number }>(
+      `SELECT count(*)::int AS live,
+              (count(*) FILTER (WHERE s.mfa_method = 'webauthn' AND NOT EXISTS (
+                 SELECT 1 FROM hardware_key k WHERE k.user_id = s.user_id AND k.credential_sha256 = s.key_credential_sha256 AND k.removed_at IS NULL)))::int AS without_a_live_key,
+              (count(*) FILTER (WHERE u.sign_in_not_before IS NOT NULL AND s.sign_in_began_at <= u.sign_in_not_before))::int AS at_or_before_the_mark
+         FROM user_session s JOIN "user" u ON u.id = s.user_id
+        WHERE s.user_id = $1 AND s.ended_at IS NULL`,
+      [target.id],
+    );
+    return rows[0];
+  }
+  const HOLDS = { without_a_live_key: 0, at_or_before_the_mark: 0 };
+
+  /**
+   * `first` runs and holds its locks; `between` runs while it is uncommitted and names the second actor; the second is
+   * started and must be seen waiting; `first` commits; the second ends, committed or refused. The invariant is read
+   * once both have ended.
+   */
+  async function race(target: Account, first: Actor, between: () => Promise<Actor>): Promise<{ waited: boolean; second: 'accepted' | Failure; afterSecond: unknown }> {
+    const one = await begin(first);
+    let two: Awaited<ReturnType<typeof begin>> | undefined;
+    try {
+      await first.step(one.client);
+      const second = await between();
+      two = await begin(second);
+      const outcome = failure(second.step(two.client));
+      const waited = await waitsOnALock(two.pid);
+      await one.client.query('COMMIT');
+      const result = await outcome;
+      await two.client.query(result === 'accepted' ? 'COMMIT' : 'ROLLBACK');
+      return { waited, second: result, afterSecond: await standing(target) };
+    } catch (error) {
+      await one.client.query('ROLLBACK').catch(() => undefined);
+      await two?.client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      one.client.release();
+      two?.client.release();
+    }
+  }
+
+  it.each(MOVERS)('a sign-in that holds the lock first is ended by the %s that waited for it', async (kind) => {
+    const target = await account();
+    // Made before the race: a removal's request takes the account's row too.
+    const moves = await mover(kind, target);
+    const result = await race(target, signIn(target, await began()), () => Promise.resolve(moves));
+    expect(result).toMatchObject({ waited: true, second: 'accepted', afterSecond: { live: 0, ...HOLDS } });
+  });
+
+  it.each(MOVERS)('a sign-in begun before the %s and waiting on it is refused once it commits', async (kind) => {
+    const target = await account();
+    const at = await began();
+    const result = await race(target, await mover(kind, target), () => Promise.resolve(signIn(target, at)));
+    expect(result).toMatchObject({
+      waited: true,
+      second: refusedBy(kind === 'confirmation' ? 'user_session_hardware_key_live' : 'user_session_sign_in_not_before'),
+      afterSecond: { live: 0, ...HOLDS },
+    });
+  });
+
+  // The step begins after the mover's clock was read and before its commit: the mark alone would let it through, since
+  // it began after the mark. After a confirmation the registry refuses it under the lock (the key is gone); after End
+  // membership or a reset the key is still live, and a sign-in begun after the mark is one the design lets open.
+  it.each(MOVERS)('a sign-in begun after the %s’s clock and before its commit opens only on a live key', async (kind) => {
+    const target = await account();
+    // A step's start is cut to the millisecond (sign_in_step_began), so one read in the mark's own millisecond is at or
+    // before it and refused; the case is the step that begins clearly after.
+    const result = await race(target, await mover(kind, target), async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return signIn(target, await began());
+    });
+    expect(result).toMatchObject(
+      kind === 'confirmation'
+        ? { waited: true, second: refusedBy('user_session_hardware_key_live'), afterSecond: { live: 0, ...HOLDS } }
+        : { waited: true, second: 'accepted', afterSecond: { live: 1, ...HOLDS } },
+    );
+  });
+
+  const PAIRS = MOVERS.flatMap((first) => MOVERS.filter((second) => second !== first).map((second) => [first, second] as const));
+  it.each(PAIRS)('the %s and then the %s, the second waiting for the first: no session is left, and a step begun before either opens none', async (first, second) => {
+    const target = await account();
+    const at = await began();
+    const later = await mover(second, target);
+    const result = await race(target, await mover(first, target), () => Promise.resolve(later));
+    expect(result).toMatchObject({ waited: true, second: 'accepted', afterSecond: { live: 0, ...HOLDS } });
+    const after = await failure(withActor(app, target.id, (scope) => signIn(target, at).step(scope.client)));
+    expect(after).toMatchObject({ code: '23514' });
+    expect(await standing(target)).toMatchObject({ live: 0, ...HOLDS });
+  });
+
+  it('adds nothing to the request path in the database: the registry’s migrations do not name resolve_session', () => {
+    const migrations = new URL('../migrations/', import.meta.url);
+    const registry = readdirSync(migrations).filter((name) => name.startsWith('20261115'));
+    expect(registry).toHaveLength(2);
+    for (const name of registry) {
+      expect(readFileSync(new URL(name, migrations), 'utf8')).not.toMatch(/resolve_session/);
+    }
   });
 });

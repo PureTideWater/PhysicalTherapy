@@ -14,7 +14,7 @@ import { newRegistrationCode, registrationCodeDigest } from './registration-code
 import { Sealer } from './seal';
 import { ClientSecret } from './secret-hash';
 import { listDevices, resolveSession } from './sessions';
-import { type FlowResult, type Pending, RESET_REQUEST_FLOOR_MS, SignInFlow } from './sign-in';
+import { type FlowResult, type Pending, RELYING_PARTY_MISMATCH, RESET_REQUEST_FLOOR_MS, RelyingPartyMismatch, SignInFlow } from './sign-in';
 import { SoftAuthenticator } from './test-support/soft-authenticator';
 import { totpCode } from './totp';
 
@@ -2299,5 +2299,70 @@ describe('SGN-26: a removal’s confirmation beside a sign-in in flight (docs/ad
     expect(await codeSignIn(user.email, watched)).toEqual({ kind: 'refused', reason: 'hardware_key_required' });
     expect(await openSessions(user.id)).toBe(0);
     expect(logged(lines, 'security event: code session refused while key registration is closed')).toEqual([expect.objectContaining({ level: 'warn', user_id: user.id })]);
+  });
+});
+
+describe('one relying-party ID: the web refuses every hardware-key step when the provider’s differs from its own (docs/adr/0095; the key registry’s design, section 5)', () => {
+  const LINE = 'configuration: the relying-party ID is not the provider’s; hardware-key steps are refused';
+  const THEIRS = 'localhost';
+  const OURS = 'app.synthetic.test';
+
+  function differing() {
+    const lines: string[] = [];
+    const use = new SignInFlow({ webauthn: { rpId: OURS, origin: ORIGIN }, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
+    const logged = () => lines.map((line) => JSON.parse(line) as Record<string, unknown>).filter((entry) => entry.msg === LINE);
+    return { use, logged };
+  }
+  const refusal = (attempt: Promise<unknown>): Promise<unknown> => attempt.then(() => 'answered', (error: unknown) => error);
+
+  it('refuses the first key sign-in step and every key step after it, by a message that names the setting and no value, logged once at error; the provider is asked once', async () => {
+    const { staff, key } = await staffWithKey();
+    const honest = await flow.beginKey(staff.email);
+    if ('kind' in honest) {
+      throw new Error('expected options');
+    }
+    const { use, logged } = differing();
+    const asked = vi.spyOn(provider, 'beginKeySignIn');
+    const first = await refusal(use.beginKey(staff.email, context()));
+    expect(first).toBeInstanceOf(RelyingPartyMismatch);
+    const { message } = first as Error;
+    expect(message).toBe(RELYING_PARTY_MISMATCH);
+    expect(message).toContain('WEBAUTHN_RP_ID');
+    expect(message).not.toContain(THEIRS);
+    expect(message).not.toContain(OURS);
+    expect(logged()).toEqual([expect.objectContaining({ level: 'error', request_id: expect.any(String) })]);
+    expect(JSON.stringify(logged())).not.toContain(OURS);
+    // Latched: the next steps are refused before the provider is asked, and no second line is written.
+    expect(await refusal(use.beginKey(staff.email, context()))).toBeInstanceOf(RelyingPartyMismatch);
+    expect(await refusal(use.completeKey(honest.pending, key.get(honest.options), context()))).toBeInstanceOf(RelyingPartyMismatch);
+    const unkeyed = await person({ internal: true });
+    const step = pendingOf(await use.answerTotp(pendingOf(await use.start(unkeyed.email, PASSWORD, context())), nextCode(), context()));
+    const registering = vi.spyOn(provider, 'beginKeyRegistration');
+    expect(await refusal(use.beginKeyRegistration(step, context()))).toBeInstanceOf(RelyingPartyMismatch);
+    expect(registering).not.toHaveBeenCalled();
+    registering.mockRestore();
+    expect(asked).toHaveBeenCalledTimes(1);
+    asked.mockRestore();
+    expect(logged()).toHaveLength(1);
+    expect(await openSessions(staff.id)).toBe(0);
+  });
+
+  it('refuses when the first key step is a registration, and registers nothing', async () => {
+    const staff = await person({ internal: true });
+    const { use, logged } = differing();
+    const step = pendingOf(await use.answerTotp(pendingOf(await use.start(staff.email, PASSWORD, context())), nextCode(), context()));
+    expect(await refusal(use.beginKeyRegistration(step, context()))).toBeInstanceOf(RelyingPartyMismatch);
+    expect(logged()).toHaveLength(1);
+    expect(await refusal(use.completeKeyRegistration({ ...step, challenge: 'x', creation: 'x' } as Pending, new SoftAuthenticator(ORIGIN).create({ challenge: 'eA', rp: { name: 'Test', id: THEIRS }, user: { id: 'eA', name: 'x', displayName: 'x' }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }] }), context()))).toBeInstanceOf(RelyingPartyMismatch);
+    expect(await keyRows(staff.id)).toEqual([]);
+  });
+
+  it('compares once: a flow whose ID is the provider’s goes on, and writes no line', async () => {
+    const lines: string[] = [];
+    const use = new SignInFlow({ webauthn: WEBAUTHN, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
+    const { staff, key } = await staffWithKey();
+    expect((await keySignIn(staff.email, key, use)).kind).toBe('signed_in');
+    expect((await keySignIn(staff.email, key, use)).kind).toBe('signed_in');
+    expect(lines.filter((line) => line.includes('relying-party'))).toEqual([]);
   });
 });
