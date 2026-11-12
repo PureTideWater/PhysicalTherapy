@@ -136,7 +136,11 @@ Recorded, not fixed here:
    ends the person's sessions in every organization and signs the account out everywhere, by design (PRD 3). A second
    press after a success answers not found, which is true and reads oddly. The wrapper's warn line for failed
    after-commit work says a job's schedule takes it up, which is not so for this work; it is reached only if the
-   logger itself throws. The provider's client has no timeout for its other calls.
+   logger itself throws. The provider's client has no timeout for its other calls. From the fix round's own review
+   (`...-review-delta1.md`, nothing blocking): the wrapper reads any `CommitOutcomeUnknownError` leaving a request's
+   transaction as its own commit's, which is so today (only the scope's COMMIT throws it there) and should be tied
+   to the commit having been attempted before a handler ever commits a second connection; and the reset's sign-out
+   line (`sign-in.ts`) logs an error's name without D8's check.
 
 ## Alternatives considered
 
