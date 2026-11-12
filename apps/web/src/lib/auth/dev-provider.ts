@@ -13,7 +13,7 @@ import {
 
 import type { DevCredentialStore, DevUserRecord } from './dev-store';
 import { DEFAULT_SCRYPT_COST, type ScryptCost, hashPassword, passwordProblems, verifyPassword } from './password';
-import type { AuthProvider, AuthStep, EnsuredUser, KeyChallenge, NewPasswordStep, PasswordResetResult, TotpSetup } from './provider';
+import type { AuthProvider, AuthStep, EnsuredUser, KeyChallenge, NewPasswordStep, PasswordResetResult, ProviderHardwareKey, TotpSetup } from './provider';
 import type { Sealer } from './seal';
 import { PASSWORD_RESET_CODE_SECONDS, PROVIDER_CHALLENGE_SECONDS, PROVIDER_GRANT_SECONDS } from './step-limits';
 import { newTotpSecret, totpUri, verifyTotp } from './totp';
@@ -261,8 +261,9 @@ export class DevAuthProvider implements AuthProvider {
     return updated === undefined ? { kind: 'expired' } : this.authenticated(updated, 'webauthn');
   }
 
-  async hasHardwareKey(grant: string): Promise<boolean> {
-    return ((await this.granted(grant))?.credentials.length ?? 0) > 0;
+  async listHardwareKeys(grant: string): Promise<readonly ProviderHardwareKey[]> {
+    // A credential stored before the time was kept reads as old: it has had its fifteen minutes.
+    return ((await this.granted(grant))?.credentials ?? []).map((credential) => ({ credentialId: credential.id, createdAt: new Date(credential.createdAt ?? 0) }));
   }
 
   async beginKeyRegistration(grant: string): Promise<KeyChallenge<PublicKeyCredentialCreationOptionsJSON>> {
@@ -308,7 +309,7 @@ export class DevAuthProvider implements AuthProvider {
       ...current,
       credentials: [
         ...current.credentials,
-        { id: credential.id, publicKey: Buffer.from(credential.publicKey).toString('base64url'), counter: credential.counter, transports: credential.transports },
+        { id: credential.id, publicKey: Buffer.from(credential.publicKey).toString('base64url'), counter: credential.counter, transports: credential.transports, createdAt: this.now().toISOString() },
       ],
     }));
     return true;

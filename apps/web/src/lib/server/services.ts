@@ -202,6 +202,8 @@ function provider(config: WebConfig, sealer: Sealer, logger: Logger): AuthProvid
 
 export interface ServiceParts {
   readonly origin: string;
+  /** The WebAuthn relying party the app's own check of a key expects (docs/adr/0095); the origin's host when absent. */
+  readonly rpId?: string;
   readonly pool: ScopePool<ScopeClient>;
   /** Tests that bill give billing's login (MigratedDatabase.billingUrl); otherwise billing refuses. */
   readonly billingPool?: BillingPool;
@@ -268,7 +270,7 @@ export function createServices(parts: ServiceParts): Services {
     keys: parts.keys,
     sealer: parts.sealer,
     logger,
-    signIn: new SignInFlow({ pool: parts.pool, provider: parts.provider, logger, ...(parts.pace === undefined ? {} : { now: parts.pace.now, sleep: parts.pace.sleep }) }),
+    signIn: new SignInFlow({ webauthn: { rpId: parts.rpId ?? new URL(parts.origin).hostname, origin: parts.origin }, pool: parts.pool, provider: parts.provider, logger, ...(parts.pace === undefined ? {} : { now: parts.pace.now, sleep: parts.pace.sleep }) }),
     now: parts.now ?? (() => new Date()),
     uploads: parts.uploads ?? new LocalUploadTargets(parts.origin, documents, parts.sealer),
     queue: parts.queue ?? NO_QUEUE,
@@ -310,6 +312,7 @@ export function servicesFromConfig(config: WebConfig): Services {
   const store = documents.kind === 's3' ? new DocumentStore(new S3SealedBytes({ client: new S3Client({}), bucket: documents.bucket })) : new DocumentStore(new LocalSealedBytes(documents.dir));
   return createServices({
     origin: config.origin,
+    rpId: config.rpId,
     pool,
     billingPool,
     esignPool: config.esignDatabaseUrl === null ? null : openPool(config.esignDatabaseUrl, WEB_POOL_CONNECTIONS.esign),

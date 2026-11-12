@@ -100,6 +100,12 @@ export interface EnsuredUser {
   readonly neverSignedIn: boolean;
 }
 
+export interface ProviderHardwareKey {
+  /** The credential ID, base64url, as the browser's response names it. */
+  readonly credentialId: string;
+  readonly createdAt: Date | undefined;
+}
+
 export interface AuthProvider {
   readonly name: 'cognito' | 'dev';
   signIn(email: string, password: string): Promise<AuthStep>;
@@ -110,7 +116,12 @@ export interface AuthProvider {
   /** WebAuthn sign-in: the request options for the browser, and the challenge to answer with. */
   beginKeySignIn(email: string): Promise<KeyChallenge<PublicKeyCredentialRequestOptionsJSON>>;
   completeKeySignIn(challenge: string, response: AuthenticationResponseJSON): Promise<AuthStep>;
-  hasHardwareKey(grant: string): Promise<boolean>;
+  /**
+   * The hardware keys the provider holds for the grant's user, each with when the provider registered it (docs/adr/0095).
+   * Read only to clean up after a refused key sign-in: whether an account holds a key is the registry's answer, never
+   * the provider's. `createdAt` absent: the provider did not say, and such a credential is never deleted as unknown.
+   */
+  listHardwareKeys(grant: string): Promise<readonly ProviderHardwareKey[]>;
   beginKeyRegistration(grant: string): Promise<KeyChallenge<PublicKeyCredentialCreationOptionsJSON>>;
   /** Whether the hardware key was verified and registered. */
   completeKeyRegistration(grant: string, challenge: string, response: RegistrationResponseJSON): Promise<boolean>;

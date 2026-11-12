@@ -54,7 +54,7 @@ describe('pnpm db:seed', () => {
       deliverInvitation: () => Promise.resolve(),
       now: () => clock,
     });
-    const flow = new SignInFlow({ pool, provider, logger: createLogger({ sink: () => undefined }) });
+    const flow = new SignInFlow({ webauthn: { rpId: 'localhost', origin: 'http://localhost:3100' }, pool, provider, logger: createLogger({ sink: () => undefined }) });
     try {
       for (const persona of SYNTHETIC_PERSONAS) {
         const context = { deviceToken: undefined, userAgent: null, requestId: `seed-${persona.key}` };

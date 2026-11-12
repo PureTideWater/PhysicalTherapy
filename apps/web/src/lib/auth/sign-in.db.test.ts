@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import { type DatabaseClient, type DatabasePool, databaseClient, openPool, readDatabaseUrl, withActor } from '@tp/db';
 import { type ScopeClient, type ScopePool, recordAuditEvent } from '@tp/db/runtime';
@@ -10,6 +10,7 @@ import { type CognitoClient, CognitoAuthProvider } from './cognito-provider';
 import { DevAuthProvider } from './dev-provider';
 import { MemoryDevStore } from './dev-store';
 import { hashPassword } from './password';
+import { newRegistrationCode, registrationCodeDigest } from './registration-code';
 import { Sealer } from './seal';
 import { ClientSecret } from './secret-hash';
 import { listDevices, resolveSession } from './sessions';
@@ -27,6 +28,8 @@ const ORIGIN = 'http://localhost:3100';
 const CHEAP = { n: 1024, r: 8, p: 1 };
 const PASSWORD = 'Synthetic-Pass-2026';
 const SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
+/** What the app's own check of a key's response expects: the provider twin's relying party (docs/adr/0095). */
+const WEBAUTHN = { rpId: 'localhost', origin: ORIGIN };
 
 let database: MigratedDatabase;
 let owner: DatabaseClient;
@@ -60,7 +63,7 @@ beforeAll(async () => {
     scryptCost: CHEAP,
     faults: { lostResetAnswer: () => lostAnswer, keyRemovalFails: () => keyRemovalFails },
   });
-  flow = new SignInFlow({ pool: app, provider, logger: createLogger({ sink: () => undefined }) });
+  flow = new SignInFlow({ webauthn: WEBAUTHN, pool: app, provider, logger: createLogger({ sink: () => undefined }) });
 });
 
 afterAll(async () => {
@@ -278,7 +281,7 @@ describe('internal roles must use a hardware key', () => {
     if (done.kind === 'signed_in') {
       expect(await resolveSession(app, done.session.sessionToken, 'test')).toMatchObject({ state: 'active', session: { mfaMethod: 'webauthn', hardwareKeyRequired: true } });
     }
-    expect(await events(staff.id)).toEqual(expect.arrayContaining(['hardware_key_registered:webauthn', 'sign_in:webauthn']));
+    expect(await events(staff.id)).toEqual(expect.arrayContaining(['hardware_key_registered:', 'sign_in:webauthn']));
   });
 
   it('counts a rejected hardware key as a failed attempt', async () => {
@@ -328,7 +331,7 @@ function paced(pool: ScopePool<ScopeClient> = app): { readonly flow: SignInFlow;
     pace.at += ms;
     return Promise.resolve();
   };
-  return { flow: new SignInFlow({ pool, provider, logger, now: () => pace.at, sleep }), pace, lines };
+  return { flow: new SignInFlow({ webauthn: WEBAUTHN, pool, provider, logger, now: () => pace.at, sleep }), pace, lines };
 }
 
 /** The structured log lines with this message. */
@@ -1275,19 +1278,22 @@ describe('SGN-17: a sign-in step begun before a password reset is refused after 
     expect(logged(crossed.lines, CROSSED_LINE)).toEqual([expect.objectContaining({ level: 'warn', user_id: subject.id, request_id: request.requestId })]);
     expect(await openSessions(subject.id)).toBe(0);
 
-    // The clean path (review S3 of the fix round): the key is registered, no reset, and the audit write fails.
+    // The clean path (review S3 of the fix round, restated by docs/adr/0095): the provider registered the key, no reset,
+    // and the registry's record, which carries the audit event, fails. The key is removed at the provider with the
+    // grant, said by IDs, and the person is told to try again; a key with no row would open nothing either way.
     const clean = await registrationBegun();
-    const broken = paced(failing(/audit_event/, 1));
+    const broken = paced(failing(/hardware_key_record/, 1));
     const release = vi.spyOn(provider, 'release');
     const second = context();
-    await expect(broken.flow.completeKeyRegistration(clean.begun.pending, clean.key.create(clean.begun.options), second)).rejects.toThrow('synthetic failure');
+    expect(await broken.flow.completeKeyRegistration(clean.begun.pending, clean.key.create(clean.begun.options), second)).toEqual({ kind: 'refused', reason: 'key_not_registered' });
     expect(release.mock.calls).toHaveLength(1);
     release.mockRestore();
-    expect(logged(broken.lines, 'hardware key registered but not audited')).toEqual([
-      expect.objectContaining({ level: 'error', user_id: clean.staff.id, request_id: second.requestId, error_code: 'Error' }),
+    expect(logged(broken.lines, 'hardware key registered at the provider but not recorded')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: clean.staff.id, request_id: second.requestId, error_code: 'Error', outcome_code: 'removed' }),
     ]);
     expect(logged(broken.lines, KEY_ACROSS_RESET_LINE)).toEqual([]);
-    expect((await store.bySub(clean.staff.sub))?.credentials).toHaveLength(1);
+    expect((await store.bySub(clean.staff.sub))?.credentials).toEqual([]);
+    expect((await events(clean.staff.id)).filter((event) => event.startsWith('hardware_key_registered'))).toEqual([]);
 
     // A step sealed before the crossed state was refused outright carries the address's account (review S4 of the fix
     // round). Only that account is reset; the key stays. The key's own account is asked to lock first: the database has
@@ -1849,7 +1855,7 @@ function credentialRefused(): { readonly flow: SignInFlow; readonly pace: Pace; 
     pace.at += ms;
     return Promise.resolve();
   };
-  return { flow: new SignInFlow({ pool: app, provider: refusing, logger: createLogger({ sink: (line) => lines.push(line) }), now: () => pace.at, sleep }), pace, lines, sent };
+  return { flow: new SignInFlow({ webauthn: WEBAUTHN, pool: app, provider: refusing, logger: createLogger({ sink: (line) => lines.push(line) }), now: () => pace.at, sleep }), pace, lines, sent };
 }
 
 const CREDENTIAL_REFUSED = 'security event: client credential refused';
@@ -1882,7 +1888,7 @@ describe('SEC-20: a refused client credential is the platform’s failure, never
     const began = Date.now();
     expect(await refusing.answerTotp({ step: 'mfa', email: user.email, challenge, began }, '123456', context())).toEqual(UNAVAILABLE);
     expect(await refusing.newPassword({ step: 'new_password', email: user.email, challenge, began }, CHOSEN, context())).toEqual(UNAVAILABLE);
-    expect(await refusing.completeKey({ step: 'key', email: user.email, challenge, began }, {} as never, context())).toEqual(UNAVAILABLE);
+    expect(await refusing.completeKey({ step: 'key', email: user.email, challenge, began, assertion: 'synthetic' }, {} as never, context())).toEqual(UNAVAILABLE);
     expect(await refusing.beginKey(user.email)).toEqual(UNAVAILABLE);
     expect((await owner.query('SELECT failed_sign_ins FROM "user" WHERE id = $1', [user.id])).rows).toEqual([{ failed_sign_ins: 0 }]);
     expect(await events(user.id)).toEqual([]);
@@ -1944,5 +1950,361 @@ describe('SEC-23: each reset request for an account is logged by its user ID alo
     expect(await failed.requestPasswordReset(user.email, request)).toEqual({ step: 'reset', email: user.email });
     expect(logged(lines, 'password reset request failed')).toHaveLength(1);
     expect(logged(lines, RESET_REQUESTED)).toEqual([{ level: 'info', msg: RESET_REQUESTED, time: expect.any(String), user_id: user.id, request_id: request.requestId }]);
+  });
+});
+
+/**
+ * The key registry in the flow (docs/adr/0095; Queues item 37). Synthetic accounts and soft keys only. The two-person
+ * removal is the database's own (packages/db/src/key-registry.db.test.ts holds its rules); here it is called as two
+ * administrators would, so the flow meets a real confirmed removal.
+ */
+const sha = (value: Uint8Array | string): Buffer => createHash('sha256').update(value).digest();
+const requestId = (): string => `test-${randomUUID()}`;
+
+async function seededWithTriggersOff(sql: string, values: unknown[]): Promise<void> {
+  await owner.query('BEGIN');
+  try {
+    await owner.query("SET LOCAL session_replication_role = 'replica'");
+    await owner.query(sql, values);
+    await owner.query('COMMIT');
+  } catch (error) {
+    await owner.query('ROLLBACK');
+    throw error;
+  }
+}
+
+interface Administrator {
+  readonly id: string;
+  session(): Promise<string>;
+}
+
+/** A platform administrator eight days in the role, with a recorded key and, on asking, a key session opened just now. */
+async function administrator(): Promise<Administrator> {
+  const { id } = await person();
+  // Seeded with the triggers off, as the database's own tests do: a membership eight days old with no escalation event.
+  await seededWithTriggersOff("INSERT INTO membership (id, organization_id, user_id, role, created_at) VALUES ($1, $2, $3, 'platform_admin', now() - interval '8 days')", [
+    randomUUID(),
+    await createOrganization(owner, 'internal'),
+    id,
+  ]);
+  await seededWithTriggersOff('UPDATE "user" SET hardware_key_required = true WHERE id = $1', [id]);
+  const credential = sha(randomBytes(16));
+  const began = async (): Promise<string> => (await app.query<{ at: string }>('SELECT sign_in_step_began()::text AS at')).rows[0]?.at ?? '';
+  const at = await began();
+  await withActor(app, id, (scope) => scope.client.query('SELECT * FROM hardware_key_record($1, $2, $3, $4::timestamptz, $5)', [credential, randomBytes(77), null, at, requestId()]));
+  return {
+    id,
+    session: async () => {
+      const start = await began();
+      return withActor(app, id, async (scope) => {
+        const device = await scope.client.query<{ id: string }>("INSERT INTO user_device (user_id, token_sha256, label) VALUES ($1, $2, 'Test browser') RETURNING id", [id, sha(randomBytes(32)).toString('hex')]);
+        const session = await scope.client.query<{ id: string }>(
+          "INSERT INTO user_session (user_id, device_id, token_sha256, mfa_method, sign_in_began_at, key_credential_sha256) VALUES ($1, $2, $3, 'webauthn', $4::timestamptz, $5) RETURNING id",
+          [id, device.rows[0]?.id, sha(randomBytes(32)).toString('hex'), start, credential],
+        );
+        return session.rows[0]?.id ?? '';
+      });
+    },
+  };
+}
+
+/** Two administrators confirm the removal of every key of the account. Answers the removal and one who may open registration. */
+async function keysRemoved(target: string): Promise<{ readonly removal: string; readonly opener: Administrator }> {
+  const [requester, confirmer] = [await administrator(), await administrator()];
+  const asked = await requester.session();
+  const removal = await withActor(app, requester.id, async (scope) => (await scope.client.query<{ id: string }>('SELECT hardware_key_removal_request($1, $2, $3) AS id', [target, asked, requestId()])).rows[0]?.id ?? '');
+  const confirming = await confirmer.session();
+  await withActor(app, confirmer.id, (scope) => scope.client.query('SELECT * FROM hardware_key_removal_confirm($1, $2, $3)', [removal, confirming, requestId()]));
+  return { removal, opener: confirmer };
+}
+
+/** An administrator opens registration with a new one-time code, which only its digest reaches the database. */
+async function registrationOpened(removal: string, opener: Administrator): Promise<string> {
+  const code = newRegistrationCode();
+  const session = await opener.session();
+  await withActor(app, opener.id, (scope) => scope.client.query('SELECT hardware_key_registration_open($1, $2, $3, $4)', [removal, session, registrationCodeDigest(code), requestId()]));
+  return code;
+}
+
+async function keySignIn(email: string, key: SoftAuthenticator, use: SignInFlow = flow, with_ = context(), credentialId?: Uint8Array): Promise<FlowResult> {
+  const start = await use.beginKey(email);
+  if ('kind' in start) {
+    throw new Error('expected options');
+  }
+  return use.completeKey(start.pending, key.get(start.options, credentialId), with_);
+}
+
+/** Password and code, to the step the flow answers for an account that must hold a key. */
+const codeSignIn = async (email: string, use: SignInFlow = flow): Promise<FlowResult> => use.answerTotp(pendingOf(await use.start(email, PASSWORD, context())), nextCode(), context());
+
+async function keyRows(userId: string): Promise<{ digest: string; live: boolean }[]> {
+  const { rows } = await owner.query<{ digest: string; live: boolean }>("SELECT encode(credential_sha256, 'hex') AS digest, removed_at IS NULL AS live FROM hardware_key WHERE user_id = $1 ORDER BY registered_at", [userId]);
+  return rows;
+}
+
+const storedIds = async (sub: string): Promise<string[]> => ((await store.bySub(sub))?.credentials ?? []).map((credential) => credential.id);
+const CREDENTIALS = { kind: 'refused', reason: 'credentials' } as const;
+const B64 = (value: Uint8Array): string => Buffer.from(value).toString('base64url');
+
+describe('SGN-21: a key sign-in opens a session only for a live key of the registry, checked by the app itself (docs/adr/0095)', () => {
+  it('SGN-27: a registration records the key’s digest and public key with its audit event, and the session carries the digest', async () => {
+    const { staff, key } = await staffWithKey();
+    expect(await keyRows(staff.id)).toEqual([{ digest: sha(key.credentialId).toString('hex'), live: true }]);
+    expect((await events(staff.id)).filter((event) => event.startsWith('hardware_key_registered'))).toEqual(['hardware_key_registered:']);
+    const done = await keySignIn(staff.email, key);
+    expect(done.kind).toBe('signed_in');
+    const { rows } = await owner.query<{ digest: string }>("SELECT encode(key_credential_sha256, 'hex') AS digest FROM user_session WHERE user_id = $1", [staff.id]);
+    expect(rows).toEqual([{ digest: sha(key.credentialId).toString('hex') }]);
+  });
+
+  it('SGN-21: a key the provider holds and the registry does not is refused with the words of a wrong credential, recorded, counts no failure, and the cleaning deletes an old unknown credential, never a live one or a young unknown one', async () => {
+    const { staff, key } = await staffWithKey();
+    const [old, young] = [await staffWithKey(), await staffWithKey()];
+    const [oldCredential] = (await store.bySub(old.staff.sub))?.credentials ?? [];
+    const [youngCredential] = (await store.bySub(young.staff.sub))?.credentials ?? [];
+    if (oldCredential === undefined || youngCredential === undefined) {
+      throw new Error('expected two credentials');
+    }
+    await store.update(staff.sub, (current) => ({
+      ...current,
+      credentials: [...current.credentials, { ...oldCredential, createdAt: new Date(Date.now() - 20 * 60_000).toISOString() }, { ...youngCredential, createdAt: new Date().toISOString() }],
+    }));
+    const { flow: watched, lines } = paced();
+    const release = vi.spyOn(provider, 'release');
+    const with_ = context();
+    expect(await keySignIn(staff.email, old.key, watched, with_)).toEqual(CREDENTIALS);
+    expect(release.mock.calls).toHaveLength(1);
+    release.mockRestore();
+    expect(await securityEvents(staff.id)).toEqual(['key_refused_not_registered']);
+    expect(await openSessions(staff.id)).toBe(0);
+    expect((await events(staff.id)).filter((event) => event.startsWith('sign_in_failed'))).toEqual([]);
+    expect(await storedIds(staff.sub)).toEqual([B64(key.credentialId), B64(young.key.credentialId)]);
+    expect(logged(lines, 'hardware key leftovers cleaned')).toEqual([expect.objectContaining({ user_id: staff.id, request_id: with_.requestId, record_count: 1, error_code: null })]);
+    expect(logged(lines, 'security event: removed hardware key used')).toEqual([]);
+    for (const secret of [B64(old.key.credentialId), sha(old.key.credentialId).toString('hex'), B64(key.credentialId)]) {
+      expect(lines.join('\n')).not.toContain(secret);
+    }
+    expect((await keySignIn(staff.email, key)).kind).toBe('signed_in');
+  });
+
+  it('SGN-21: a removed key is refused, recorded, pages with IDs only, and is deleted at the provider by that grant', async () => {
+    const { staff, key } = await staffWithKey();
+    await keysRemoved(staff.id);
+    expect(await keyRows(staff.id)).toEqual([{ digest: sha(key.credentialId).toString('hex'), live: false }]);
+    await pastTheMark();
+    const { flow: watched, lines } = paced();
+    const with_ = context();
+    expect(await keySignIn(staff.email, key, watched, with_)).toEqual(CREDENTIALS);
+    expect(await securityEvents(staff.id)).toContain('key_refused_removed');
+    expect(logged(lines, 'security event: removed hardware key used')).toEqual([expect.objectContaining({ level: 'error', user_id: staff.id, request_id: with_.requestId })]);
+    expect(await storedIds(staff.sub)).toEqual([]);
+    expect(await openSessions(staff.id)).toBe(0);
+  });
+
+  it('SGN-21: an assertion the provider accepts but the registered public key did not sign is refused and logged by the error’s class name alone; a response whose id is not its rawId is refused as malformed', async () => {
+    const { staff, key } = await staffWithKey();
+    const other = await staffWithKey();
+    const [foreign] = (await store.bySub(other.staff.sub))?.credentials ?? [];
+    if (foreign === undefined) {
+      throw new Error('expected a credential');
+    }
+    // The provider twin now holds another key's public key under this account's credential ID.
+    await store.update(staff.sub, (current) => ({ ...current, credentials: current.credentials.map((credential) => ({ ...credential, publicKey: foreign.publicKey })) }));
+    const { flow: watched, lines } = paced();
+    expect(await keySignIn(staff.email, other.key, watched, context(), key.credentialId)).toEqual(CREDENTIALS);
+    expect(await securityEvents(staff.id)).toEqual(['key_refused_assertion']);
+    expect(await openSessions(staff.id)).toBe(0);
+    const [line] = logged(lines, 'security event: hardware key assertion refused by the registry');
+    expect(line).toMatchObject({ level: 'error', user_id: staff.id });
+    expect(String(line?.error_code)).toMatch(/^[A-Za-z]+$/);
+    expect(await storedIds(staff.sub)).toEqual([B64(key.credentialId)]);
+
+    // Malformed: the provider twin is made to accept a sound response while the flow is handed one whose id is not its rawId.
+    const sound = await staffWithKey();
+    const start = await watched.beginKey(sound.staff.email);
+    if ('kind' in start) {
+      throw new Error('expected options');
+    }
+    const good = sound.key.get(start.options);
+    const complete = provider.completeKeySignIn.bind(provider);
+    const accepts = vi.spyOn(provider, 'completeKeySignIn').mockImplementationOnce((challenge) => complete(challenge, good));
+    expect(await watched.completeKey(start.pending, { ...good, rawId: B64(randomBytes(16)) }, context())).toEqual(CREDENTIALS);
+    accepts.mockRestore();
+    expect(await securityEvents(sound.staff.id)).toEqual(['key_refused_malformed']);
+    expect(await openSessions(sound.staff.id)).toBe(0);
+  });
+
+  it('SGN-27: a registration the provider accepts and the app’s own verification refuses records nothing, removes the key at the provider and says so by IDs', async () => {
+    const lines: string[] = [];
+    const strict = new SignInFlow({ webauthn: { rpId: 'localhost', origin: 'https://another-origin.synthetic.test' }, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
+    const staff = await person({ internal: true });
+    const key = new SoftAuthenticator(ORIGIN);
+    const begun = await strict.beginKeyRegistration(pendingOf(await codeSignIn(staff.email, strict)), context());
+    if ('kind' in begun) {
+      throw new Error('expected options');
+    }
+    const with_ = context();
+    expect(await strict.completeKeyRegistration(begun.pending, key.create(begun.options), with_)).toEqual({ kind: 'refused', reason: 'key_not_registered' });
+    expect(await storedIds(staff.sub)).toEqual([]);
+    expect(await keyRows(staff.id)).toEqual([]);
+    const [line] = logged(lines, 'hardware key registered at the provider but not recorded');
+    expect(line).toMatchObject({ level: 'error', user_id: staff.id, request_id: with_.requestId, outcome_code: 'removed' });
+    expect(String(line?.error_code)).toMatch(/^[A-Za-z_]+$/);
+  });
+
+  it('SGN-27: a second key beside a live one is refused by the registry and removed at the provider', async () => {
+    const staff = await person({ internal: true });
+    const first = await flow.beginKeyRegistration(pendingOf(await codeSignIn(staff.email)), context());
+    const second = await flow.beginKeyRegistration(pendingOf(await codeSignIn(staff.email)), context());
+    if ('kind' in first || 'kind' in second) {
+      throw new Error('expected options');
+    }
+    const [one, two] = [new SoftAuthenticator(ORIGIN), new SoftAuthenticator(ORIGIN)];
+    expect(await flow.completeKeyRegistration(first.pending, one.create(first.options), context())).toEqual({ kind: 'key_registered' });
+    expect(await flow.completeKeyRegistration(second.pending, two.create(second.options), context())).toEqual({ kind: 'refused', reason: 'key_not_registered' });
+    expect(await storedIds(staff.sub)).toEqual([B64(one.credentialId)]);
+    expect(await keyRows(staff.id)).toEqual([{ digest: sha(one.credentialId).toString('hex'), live: true }]);
+  });
+});
+
+describe('SGN-27: after a removal, registration is closed until an administrator opens it with a one-time code (docs/adr/0095)', () => {
+  const REFUSED_CODE = { kind: 'refused', reason: 'registration_code' } as const;
+  const tries = async (removal: string): Promise<number | undefined> =>
+    (await owner.query<{ tries: number }>('SELECT registration_code_tries AS tries FROM hardware_key_removal WHERE id = $1', [removal])).rows[0]?.tries;
+
+  it('SGN-27: a closed account is asked for the code before the provider is asked for anything; no opening and a wrong code answer alike; the right code registers, consumes the opening and leaves its event and notice; the removed key then opens nothing (SGN-26, case 11)', async () => {
+    const { staff, key } = await staffWithKey();
+    const { removal, opener } = await keysRemoved(staff.id);
+    await pastTheMark();
+    const asks = vi.spyOn(provider, 'beginKeyRegistration');
+    const step = pendingOf(await codeSignIn(staff.email));
+    expect(step).toMatchObject({ step: 'register_key', codeRequired: true });
+    expect(await flow.beginKeyRegistration(step, context())).toMatchObject({ kind: 'pending', pending: { step: 'register_key', codeRequired: true } });
+    // No opening stands: any code is refused, and no try is counted against nothing.
+    expect(await flow.answerRegistrationCode(step, newRegistrationCode(), context())).toEqual(REFUSED_CODE);
+    expect(await tries(removal)).toBe(0);
+    const code = await registrationOpened(removal, opener);
+    // Reaching the screen again counts no try.
+    expect(await flow.beginKeyRegistration(step, context())).toMatchObject({ kind: 'pending' });
+    expect(await tries(removal)).toBe(0);
+    expect(await flow.answerRegistrationCode(step, newRegistrationCode(), context())).toEqual(REFUSED_CODE);
+    expect(await tries(removal)).toBe(1);
+    expect(asks.mock.calls).toHaveLength(0);
+    asks.mockRestore();
+    expect(await securityEvents(staff.id)).toContain('key_registration_refused');
+    // The code as a person types it: lower case, with a space.
+    const open = pendingOf(await flow.answerRegistrationCode(step, `${code.slice(0, 4).toLowerCase()} ${code.slice(4).toLowerCase()}`, context()));
+    expect(open).toMatchObject({ step: 'register_key' });
+    expect(JSON.stringify(open)).not.toContain(code);
+    const begun = await flow.beginKeyRegistration(open, context());
+    if ('kind' in begun) {
+      throw new Error('expected options');
+    }
+    const next = new SoftAuthenticator(ORIGIN);
+    expect(await flow.completeKeyRegistration(begun.pending, next.create(begun.options), context())).toEqual({ kind: 'key_registered' });
+    expect(await keyRows(staff.id)).toEqual([
+      { digest: sha(key.credentialId).toString('hex'), live: false },
+      { digest: sha(next.credentialId).toString('hex'), live: true },
+    ]);
+    expect(await securityEvents(staff.id)).toContain('key_registered_after_removal');
+    expect((await owner.query<{ kind: string }>('SELECT kind FROM hardware_key_notice WHERE user_id = $1 ORDER BY kind', [staff.id])).rows.map((row) => row.kind)).toEqual(['registered_after_removal', 'registration_opened', 'removed']);
+    // The removed key is still at the provider twin: it opens nothing and is deleted by its own grant; the new key signs in.
+    expect(await storedIds(staff.sub)).toEqual([B64(key.credentialId), B64(next.credentialId)]);
+    expect(await keySignIn(staff.email, key)).toEqual(CREDENTIALS);
+    expect(await storedIds(staff.sub)).toEqual([B64(next.credentialId)]);
+    expect((await keySignIn(staff.email, next)).kind).toBe('signed_in');
+    // The opening is consumed: the same code opens nothing more.
+    expect(await codeSignIn(staff.email)).toEqual({ kind: 'refused', reason: 'hardware_key_required' });
+  });
+
+  it('SGN-27: the fifth wrong code spends the opening, and an opening made before a reset is dead: the right code is then refused like any other', async () => {
+    const spent = await staffWithKey();
+    const first = await keysRemoved(spent.staff.id);
+    await pastTheMark();
+    const code = await registrationOpened(first.removal, first.opener);
+    const step = pendingOf(await codeSignIn(spent.staff.email));
+    for (let wrong = 0; wrong < 5; wrong += 1) {
+      expect(await flow.answerRegistrationCode(step, newRegistrationCode(), context())).toEqual(REFUSED_CODE);
+    }
+    expect(await tries(first.removal)).toBe(5);
+    expect(await flow.answerRegistrationCode(step, code, context())).toEqual(REFUSED_CODE);
+
+    const reset = await staffWithKey();
+    const second = await keysRemoved(reset.staff.id);
+    await pastTheMark();
+    const dead = await registrationOpened(second.removal, second.opener);
+    await resetRecorded(reset.staff.id);
+    await pastTheMark();
+    expect(await flow.answerRegistrationCode(pendingOf(await codeSignIn(reset.staff.email)), dead, context())).toEqual(REFUSED_CODE);
+    expect(await keyRows(reset.staff.id)).toEqual([{ digest: sha(reset.key.credentialId).toString('hex'), live: false }]);
+  });
+
+  it('SGN-27: a pending step that claims an open code it was never given is judged again before the provider is asked, and at the completion', async () => {
+    const { staff } = await staffWithKey();
+    await keysRemoved(staff.id);
+    await pastTheMark();
+    const step = pendingOf(await codeSignIn(staff.email));
+    if (step.step !== 'register_key') {
+      throw new Error('expected the registration step');
+    }
+    const forged: Pending = { ...step, codeRequired: undefined, code: registrationCodeDigest(newRegistrationCode()).toString('hex') };
+    const asks = vi.spyOn(provider, 'beginKeyRegistration');
+    const completes = vi.spyOn(provider, 'completeKeyRegistration');
+    expect(await flow.beginKeyRegistration(forged, context())).toMatchObject({ kind: 'pending', pending: { codeRequired: true } });
+    expect(await flow.completeKeyRegistration({ ...forged, challenge: 'forged', creation: 'forged' }, new SoftAuthenticator(ORIGIN).create({ challenge: 'forged', rp: { id: 'localhost', name: 'Test' }, user: { id: 'x', name: 'x', displayName: 'x' }, pubKeyCredParams: [] }), context())).toMatchObject({ kind: 'pending', pending: { codeRequired: true } });
+    expect(asks.mock.calls).toHaveLength(0);
+    expect(completes.mock.calls).toHaveLength(0);
+    asks.mockRestore();
+    completes.mockRestore();
+    expect(await storedIds(staff.sub)).toHaveLength(1);
+  });
+});
+
+describe('SGN-26: a removal’s confirmation beside a sign-in in flight (docs/adr/0095)', () => {
+  it('SGN-26, cases 4 and 5: a key step and a code step begun before a confirmation open nothing after it', async () => {
+    const { staff, key } = await staffWithKey();
+    const keyStep = await flow.beginKey(staff.email);
+    if ('kind' in keyStep) {
+      throw new Error('expected options');
+    }
+    await keysRemoved(staff.id);
+    expect(await flow.completeKey(keyStep.pending, key.get(keyStep.options), context())).toEqual(EXPIRED);
+    expect(await openSessions(staff.id)).toBe(0);
+    expect(await securityEvents(staff.id)).toContain('step_before_reset_key');
+  });
+
+  it('SGN-26, case 6: a key registration begun before a confirmation registers nothing after it, and the provider is not asked', async () => {
+    const waiting = await registrationBegun();
+    await keysRemoved(waiting.staff.id);
+    expect(await flow.completeKeyRegistration(waiting.begun.pending, waiting.key.create(waiting.begun.options), context())).toEqual(EXPIRED);
+    expect(await storedIds(waiting.staff.sub)).toEqual([]);
+    expect(await keyRows(waiting.staff.id)).toEqual([]);
+  });
+
+  it('SGN-26, case 7: a confirmation that commits after the app read the registry and before the session’s insert is refused by the database under the account’s lock, answered as a stale session and recorded', async () => {
+    const { staff, key } = await staffWithKey();
+    const give = provider.release.bind(provider);
+    // The grant is given back between the app's own check and the insert: the removal commits there.
+    const during = vi.spyOn(provider, 'release').mockImplementationOnce(async (...args) => {
+      await keysRemoved(staff.id);
+      await give(...args);
+    });
+    expect(await keySignIn(staff.email, key)).toEqual(EXPIRED);
+    during.mockRestore();
+    expect(await openSessions(staff.id)).toBe(0);
+    const recorded = await securityEvents(staff.id);
+    expect(recorded.some((event) => event === 'key_refused_removed' || event === 'step_before_reset_key')).toBe(true);
+  });
+
+  it('SGN-20: a password-and-code session for an account whose registration is closed is refused by the database although the account is not one that must hold a key, and answered as a key being required', async () => {
+    // A removal confirmed for an account with no key closes it too (docs/adr/0095), and this account's flag is false.
+    const user = await person();
+    await signedIn(user.email);
+    await keysRemoved(user.id);
+    await pastTheMark();
+    const { flow: watched, lines } = paced();
+    expect(await codeSignIn(user.email, watched)).toEqual({ kind: 'refused', reason: 'hardware_key_required' });
+    expect(await openSessions(user.id)).toBe(0);
+    expect(logged(lines, 'security event: code session refused while key registration is closed')).toEqual([expect.objectContaining({ level: 'warn', user_id: user.id })]);
   });
 });

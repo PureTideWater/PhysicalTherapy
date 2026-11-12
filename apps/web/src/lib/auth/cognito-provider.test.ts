@@ -406,9 +406,9 @@ describe('CognitoAuthProvider: passkeys', () => {
       CompleteWebAuthnRegistrationCommand: [{}, named('WebAuthnClientMismatchException'), named('InternalErrorException')],
       RevokeTokenCommand: {},
     });
-    expect(await provider.hasHardwareKey(grant)).toBe(false);
-    expect(await provider.hasHardwareKey(grant)).toBe(true);
-    expect(await provider.hasHardwareKey(grant)).toBe(false);
+    expect(await provider.listHardwareKeys(grant)).toHaveLength(0);
+    expect(await provider.listHardwareKeys(grant)).toHaveLength(1);
+    expect(await provider.listHardwareKeys(grant)).toHaveLength(0);
     const begun = await provider.beginKeyRegistration(grant);
     expect(begun.options).toMatchObject({ challenge: 'r' });
     await expect(provider.beginKeyRegistration(grant)).rejects.toThrow('no registration options');
@@ -423,7 +423,7 @@ describe('CognitoAuthProvider: passkeys', () => {
     expect(sent.filter((call) => call.command !== 'RevokeTokenCommand').every((call) => !carriesCredential(call.input))).toBe(true);
     await provider.release(JSON.stringify({ a: 'only-access' }));
     expect(sent.filter((call) => call.command === 'RevokeTokenCommand')).toHaveLength(1);
-    await expect(provider.hasHardwareKey('{}')).rejects.toThrow('access token');
+    await expect(provider.listHardwareKeys('{}')).rejects.toThrow('access token');
   });
 });
 

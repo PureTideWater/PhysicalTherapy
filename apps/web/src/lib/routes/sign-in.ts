@@ -76,6 +76,8 @@ const MESSAGES = {
   credentials: 'That did not match. Check the email, the password or the code, and try again.',
   no_account: 'That did not match. Check the email, the password or the code, and try again.',
   key_not_registered: 'The hardware key was not registered. Try again with the key connected.',
+  // One answer whether no registration is open or the code is wrong (docs/adr/0095).
+  registration_code: 'That code did not open registration. Check the code PaidWhole gave you and try again.',
   invitation_expired: 'This invitation has expired. Ask your organization’s administrator to send it again.',
 } as const;
 
@@ -242,6 +244,9 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
           return { error: MESSAGES.no_account };
         case 'key_not_registered':
           return { error: MESSAGES.key_not_registered };
+        case 'registration_code':
+          // The step stays: the person may try the code again, and the database counts the tries.
+          return { error: MESSAGES.registration_code };
         case 'enrolment_not_open':
           // No press of this form can enrol the account: the attempt ends, and the kept email with it.
           clearSignIn(cookies);

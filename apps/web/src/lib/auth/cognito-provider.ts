@@ -34,6 +34,7 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
   type RegistrationResponseJSON,
   type TotpSetup,
+  type ProviderHardwareKey,
 } from './provider';
 import { type ClientSecret, clientSecretValue, secretHash } from './secret-hash';
 import { totpUri } from './totp';
@@ -500,9 +501,24 @@ export class CognitoAuthProvider implements AuthProvider {
     }
   }
 
-  async hasHardwareKey(grant: string): Promise<boolean> {
-    const response = await this.options.client.send(new ListWebAuthnCredentialsCommand({ AccessToken: parseGrant(grant).a }));
-    return (response.Credentials ?? []).length > 0;
+  async listHardwareKeys(grant: string): Promise<readonly ProviderHardwareKey[]> {
+    const AccessToken = parseGrant(grant).a;
+    const keys: ProviderHardwareKey[] = [];
+    let NextToken: string | undefined;
+    // A user pool holds at most twenty passkeys a user; five pages is a bound, never reached.
+    for (let page = 0; page < 5; page += 1) {
+      const response = await this.options.client.send(new ListWebAuthnCredentialsCommand({ AccessToken, ...(NextToken === undefined ? {} : { NextToken }) }));
+      for (const credential of response.Credentials ?? []) {
+        if (typeof credential.CredentialId === 'string') {
+          keys.push({ credentialId: credential.CredentialId, createdAt: credential.CreatedAt instanceof Date ? credential.CreatedAt : undefined });
+        }
+      }
+      NextToken = response.NextToken;
+      if (NextToken === undefined) {
+        break;
+      }
+    }
+    return keys;
   }
 
   async beginKeyRegistration(grant: string): Promise<KeyChallenge<PublicKeyCredentialCreationOptionsJSON>> {
