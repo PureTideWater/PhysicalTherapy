@@ -165,7 +165,6 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     const password = invitations[0]?.password ?? '';
     expect(passwordProblems(password)).toEqual([]);
     expect((await dev.signIn('new@synthetic.test', password)).kind).toBe('new_password_required');
-    await expect(dev.globalSignOut()).resolves.toBeUndefined();
     await expect(dev.release()).resolves.toBeUndefined();
     expect(passwordProblems(temporaryPassword())).toEqual([]);
   });

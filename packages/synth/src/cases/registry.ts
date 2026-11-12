@@ -1172,7 +1172,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   ]),
   'SGN-19': none(1, 'Synthetic personas have a membership ended through both routes with a provider twin whose sign-out fails, and steps begun before it are answered after; no file.', [
     'apps/web/src/lib/routes/console-routes.db.test.ts',
-    'apps/web/src/lib/auth/provider-sign-out.test.ts',
+    'apps/web/src/lib/auth/no-provider-sign-out.test.ts',
     'apps/web/src/lib/auth/sign-in.db.test.ts',
     'infra/test/monitoring.test.ts',
   ]),

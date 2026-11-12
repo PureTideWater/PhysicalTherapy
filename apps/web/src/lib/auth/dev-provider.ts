@@ -428,8 +428,4 @@ export class DevAuthProvider implements AuthProvider {
     );
     return updated?.passwordHash === passwordHash ? { kind: 'reset' } : REJECTED;
   }
-
-  globalSignOut(): Promise<void> {
-    return Promise.resolve();
-  }
 }

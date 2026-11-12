@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPracticeCipher, openPool, readDatabaseUrl, withActor, withJobScope, withPracticeScope } from '@tp/db';
+import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type ScopeClient, databaseClient, openPracticeCipher, openPool, readDatabaseUrl, withActor, withJobScope, withPracticeScope } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { loadRelease } from '@tp/rules/loader';
@@ -359,20 +359,20 @@ describe('members', () => {
     expect(invitations).toHaveLength(sent);
   });
 
-  it('ends a membership: the user’s sessions end at once and the provider signs them out', async () => {
+  it('ends a membership: the user’s sessions end at once and the provider’s sign-out is queued for the job', async () => {
     const userId = await createUser(owner);
     const membershipId = await addMembership(owner, world.organizationId, userId, 'analyst');
     const token = await sessionFor(userId, 'totp');
     expect((await resolveSession(app, token, 'test')).state).toBe('active');
-    const signOut = vi.spyOn(provider, 'globalSignOut');
     expect(await run(endMembership, admin.token, { membershipId })).toMatchObject({ status: 'ok', data: { redirect: `/console/organizations/${world.organizationId}` } });
-    expect(signOut).toHaveBeenCalledWith(`synthetic-${userId}`);
-    signOut.mockRestore();
+    expect((await owner.query(`SELECT 1 FROM provider_sign_out WHERE user_id = $1 AND reason = 'membership_ended'`, [userId])).rowCount).toBe(1);
     expect(await resolveSession(app, token, 'test')).toEqual({ state: 'ended', reason: 'ended' });
     expect(await run(endMembership, admin.token, { membershipId })).toEqual({ status: 'not_found' });
+    expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE user_id = $1', [userId])).rowCount).toBe(1);
   });
 
-  // docs/adr/0094 (Queues item 29): the provider is asked only once End membership has committed, and its failure undoes nothing.
+  // docs/adr/0095 (Queues item 37; docs/adr/0094's open case closed): End membership queues the provider's sign-out in
+  // its own transaction and the outbox job sends it. The web asks the provider nothing, after the commit or otherwise.
   describe.each([
     { name: 'the console', route: () => endMembership, actor: () => admin.token, input: (membershipId: string) => ({ membershipId }), params: () => ({}) },
     {
@@ -382,50 +382,78 @@ describe('members', () => {
       input: (membershipId: string) => ({ membershipId, confirm: 'on' }),
       params: () => ({ organizationId: world.organizationId }),
     },
-  ])('End membership in $name when the provider’s sign-out fails (SGN-19)', ({ route, actor, input, params }) => {
-    it('ends the membership, the sessions and writes the audit event; the provider is asked after the commit and its failure is one logged line', async () => {
+  ])('End membership in $name leaves the provider’s sign-out to the outbox job (SGN-19)', ({ route, actor, input, params }) => {
+    it('ends the membership and the sessions, writes the audit event and one queued row of IDs with it; the web has no call to the provider and writes no line of its own', async () => {
       const userId = await createUser(owner);
       const membershipId = await addMembership(owner, world.organizationId, userId, 'analyst');
       const token = await sessionFor(userId, 'totp');
       const lines: Record<string, unknown>[] = [];
       const logged = { ...services, logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }) };
-      const seen: { ended: boolean; sessions: number }[] = [];
-      const signOut = vi.spyOn(provider, 'globalSignOut').mockImplementation(async () => {
-        // Another connection sees only what has committed.
-        const membership = await owner.query('SELECT 1 FROM membership WHERE id = $1 AND ends_at IS NOT NULL', [membershipId]);
-        const open = await owner.query('SELECT 1 FROM user_session WHERE user_id = $1 AND ended_at IS NULL', [userId]);
-        seen.push({ ended: membership.rowCount === 1, sessions: open.rowCount ?? -1 });
-        throw Object.assign(new Error(`no sign-out for synthetic-${userId}`), { name: 'TooManyRequestsException' });
-      });
       const actorToken = await actor();
       const requestId = `test-${randomUUID()}`;
       const answer = await route().invoke(
         { cookies: new Jar(actorToken), params: params(), input: { csrfToken: csrfTokenFor(services.sealer, actorToken), requestKey: randomUUID(), ...input(membershipId) }, requestId, userAgent: null },
         logged,
       );
-      expect(signOut).toHaveBeenCalledExactlyOnceWith(`synthetic-${userId}`);
-      signOut.mockRestore();
       expect(answer).toMatchObject({ status: 'ok' });
-      expect(seen).toEqual([{ ended: true, sessions: 0 }]);
+      // The web's provider has no sign-out to call: what asks is apps/worker's adapter, from the row.
+      expect(provider).not.toHaveProperty('globalSignOut');
       expect(await resolveSession(app, token, 'test')).toEqual({ state: 'ended', reason: 'ended' });
-      expect((await owner.query(`SELECT 1 FROM audit_event WHERE action = 'membership_ended' AND object_id = $1 AND request_id = $2`, [membershipId, requestId])).rowCount).toBe(1);
-      const failures = lines.filter((line) => line['msg'] === 'security event: membership end provider sign-out failed');
-      expect(failures).toHaveLength(1);
-      expect(failures[0]).toMatchObject({ level: 'error', user_id: userId, request_id: requestId, error_code: 'TooManyRequestsException' });
-      // IDs and a code only: no address, no provider subject, no error text.
+      const event = await owner.query<{ id: string }>(`SELECT id FROM audit_event WHERE action = 'membership_ended' AND object_id = $1 AND request_id = $2`, [membershipId, requestId]);
+      expect(event.rowCount).toBe(1);
+      // One row, of the audit event that caused it, committed with it: the account, the cause, the request. No try yet.
+      const queued = await owner.query<Record<string, unknown>>('SELECT * FROM provider_sign_out WHERE user_id = $1', [userId]);
+      expect(queued.rows).toHaveLength(1);
+      expect(queued.rows[0]).toMatchObject({ user_id: userId, reason: 'membership_ended', source_event_id: event.rows[0]?.id, request_id: requestId, attempts: 0, done_at: null });
+      // IDs only, in the row and in the lines: no address, no provider subject.
+      expect(JSON.stringify(queued.rows)).not.toMatch(/synthetic-|@/);
+      expect(lines.filter((line) => line['msg'] === 'security event: membership end provider sign-out failed')).toEqual([]);
       expect(JSON.stringify(lines)).not.toMatch(/synthetic-|@/);
     });
 
-    it('asks the provider nothing when End membership is refused', async () => {
-      const signOut = vi.spyOn(provider, 'globalSignOut');
+    it('queues nothing when End membership rolls back at its commit: the row is written in the act’s transaction and goes with it', async () => {
+      const userId = await createUser(owner);
+      const membershipId = await addMembership(owner, world.organizationId, userId, 'analyst');
+      const token = await sessionFor(userId, 'totp');
+      // The server refuses the request's own COMMIT: everything the act wrote (the end, the audit event, the row) is undone.
+      const refusing: Services['pool'] = {
+        connect: async () => {
+          const client = await app.connect();
+          let resolving = false;
+          const query = (text: string, values?: unknown[]) => {
+            if (text.startsWith('BEGIN')) {
+              resolving = false;
+            }
+            resolving ||= text.includes('resolve_session');
+            return text === 'COMMIT' && !resolving
+              ? client.query('ROLLBACK').then(() => Promise.reject(Object.assign(new Error('SYNTHETIC lock words'), { code: '55P03', severity: 'ERROR' })))
+              : client.query(text, values);
+          };
+          return { query: query as ScopeClient['query'], release: (destroy?: boolean | Error) => client.release(destroy) };
+        },
+      };
       const actorToken = await actor();
+      const requestId = `test-${randomUUID()}`;
       const answer = await route().invoke(
-        { cookies: new Jar(actorToken), params: params(), input: { csrfToken: csrfTokenFor(services.sealer, actorToken), requestKey: randomUUID(), ...input(randomUUID()) }, requestId: `test-${randomUUID()}`, userAgent: null },
+        { cookies: new Jar(actorToken), params: params(), input: { csrfToken: csrfTokenFor(services.sealer, actorToken), requestKey: randomUUID(), ...input(membershipId) }, requestId, userAgent: null },
+        { ...services, pool: refusing },
+      );
+      expect(answer.status).not.toBe('ok');
+      expect((await owner.query('SELECT 1 FROM membership WHERE id = $1 AND ends_at IS NULL', [membershipId])).rowCount).toBe(1);
+      expect((await owner.query('SELECT 1 FROM audit_event WHERE request_id = $1', [requestId])).rowCount).toBe(0);
+      expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE user_id = $1 OR request_id = $2', [userId, requestId])).rowCount).toBe(0);
+      expect((await resolveSession(app, token, 'test')).state).toBe('active');
+    });
+
+    it('queues nothing when End membership is refused', async () => {
+      const actorToken = await actor();
+      const requestId = `test-${randomUUID()}`;
+      const answer = await route().invoke(
+        { cookies: new Jar(actorToken), params: params(), input: { csrfToken: csrfTokenFor(services.sealer, actorToken), requestKey: randomUUID(), ...input(randomUUID()) }, requestId, userAgent: null },
         services,
       );
       expect(answer).toEqual({ status: 'not_found' });
-      expect(signOut).not.toHaveBeenCalled();
-      signOut.mockRestore();
+      expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE request_id = $1', [requestId])).rowCount).toBe(0);
     });
   });
 
@@ -1196,14 +1224,12 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
     expect(refusals.flatMap((each) => each.events)).toEqual([]);
     expect((await removalOf(target.id))?.state).toBe('requested');
 
-    const signOut = vi.spyOn(provider, 'globalSignOut');
     const confirmed = await act(confirmKeyRemoval, await second.token(), input);
     expect(confirmed.outcome).toMatchObject({ status: 'ok', data: { redirect: `/console/organizations/${admin.internalId}` } });
     expect(confirmed.events).toEqual(['hardware_key_removal_confirmed']);
     expect((await owner.query('SELECT 1 FROM hardware_key WHERE user_id = $1 AND removed_at IS NULL', [target.id])).rowCount).toBe(0);
     // The provider is the outbox job's to ask (docs/adr/0095): the web writes the row's cause and calls nothing.
-    expect(signOut).not.toHaveBeenCalled();
-    signOut.mockRestore();
+    expect(provider).not.toHaveProperty('globalSignOut');
     expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE user_id = $1', [target.id])).rowCount).toBe(1);
 
     // The session of the closed account: ended, so the wrapper turns it away and nothing is written for it.

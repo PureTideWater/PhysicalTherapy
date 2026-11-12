@@ -27,7 +27,6 @@ import {
 import { runsInEffect } from '../pricing/queries';
 import { ZIP_CODE_FORMAT, parseZipCode, zipCodeText } from '../zip';
 import { canSetCorrespondence, correspondenceSettingsPath } from '../packets/contact';
-import { signOutAtProviderAfterCommit } from '../auth/provider-sign-out';
 import { revokeUserSessions } from '../auth/sessions';
 import { organizationRoute, practiceRoute } from '../http/invoke';
 import { InputError, type Issue, type MutationResult, NotFoundError } from '../http/route';
@@ -1086,15 +1085,7 @@ export const endMembershipAction = organizationRoute({
   params: z.object({ organizationId: opaqueId }),
   input: z.object({ membershipId: opaqueId, confirm: z.literal('on', { message: 'confirm that this person loses access now' }) }),
   audit: { action: 'membership_ended', objectType: 'membership' },
-  handle: async ({ scope, organizationId, input, request, services, afterCommit }): Promise<MutationResult> => {
-    // Read while the membership stands: once it has ended, row-level security hides the person's row from an
-    // administrator who administers them nowhere else, and the provider would never be asked (docs/adr/0094).
-    const sub = (
-      await scope.client.query<{ cognito_sub: string }>(
-        'SELECT u.cognito_sub FROM membership m JOIN "user" u ON u.id = m.user_id WHERE m.id = $1 AND m.organization_id = $2 AND m.user_id <> app_actor_id() AND (m.ends_at IS NULL OR m.ends_at > now())',
-        [input.membershipId, organizationId],
-      )
-    ).rows[0]?.cognito_sub;
+  handle: async ({ scope, organizationId, input }): Promise<MutationResult> => {
     let ended: { user_id: string } | undefined;
     try {
       ended = (
@@ -1113,8 +1104,9 @@ export const endMembershipAction = organizationRoute({
       throw new NotFoundError();
     }
     await revokeUserSessions(scope, ended.user_id);
-    // The provider is asked once this has committed, and its failure undoes nothing (docs/adr/0094).
-    signOutAtProviderAfterCommit(afterCommit, services, { userId: ended.user_id, requestId: request.requestId }, sub);
+    // The provider's own sign-out is not asked for here (docs/adr/0095): this route's `membership_ended` event, written
+    // in this transaction, queues it in the database (audit_event_provider_sign_out), which reads the account itself, so
+    // this route no longer reads the person's provider subject at all. The worker's job `provider_sign_outs` sends it.
     return { objectId: input.membershipId, redirect: `/settings/organizations/${organizationId}/users?notice=ended` };
   },
   sample: { params: (refs) => ({ organizationId: refs.organizationId }), input: (refs) => ({ membershipId: refs.spareMembershipId, confirm: 'on' }) },

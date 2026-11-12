@@ -163,6 +163,4 @@ export interface AuthProvider {
    * and read as a refused code. An answer that does not say whether the password changed is 'outcome_unknown'.
    */
   confirmPasswordReset(email: string, code: string, password: string): Promise<PasswordResetResult>;
-  /** Signs the user out of the provider everywhere (their membership ended, their sessions were revoked). */
-  globalSignOut(sub: string): Promise<void>;
 }

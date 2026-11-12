@@ -73,6 +73,7 @@ import {
 } from '../screening';
 import {
   PASSWORD_RESET_REQUESTED_MESSAGE,
+  PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM,
   RESET_AND_ENROLMENT_COUNTS,
   RESET_REQUESTS_PER_USER,
   type ResetAndEnrolmentMetricName,
@@ -211,6 +212,8 @@ export class Monitoring extends Construct {
   /** An address validation AWS refused (MAIL_VALIDATION_REFUSED_CODE). */
   readonly mailValidationRefusedAlarm: cloudwatch.Alarm;
   readonly mailValidationCapAlarm: cloudwatch.Alarm;
+  /** A provider sign-out the platform job reports late or given up (PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM; docs/adr/0095). */
+  readonly providerSignOutNotDeliveredAlarm: cloudwatch.Alarm;
   /** One alarm per reset or enrolment line counted (RESET_AND_ENROLMENT_COUNTS). */
   readonly resetAndEnrolmentAlarms: Readonly<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>>;
   /** Counts each account's reset requests by its user ID (PASSWORD_RESET_REQUESTED_MESSAGE). */
@@ -613,15 +616,32 @@ export class Monitoring extends Construct {
       SecondFactorEnrolmentRefused: `A ${props.environmentName} sign-in that passed the password was refused second-factor enrolment outside a live invitation (docs/adr/0088, D3): read the user ID, and treat it as an attempted takeover until the person is confirmed.`,
       ClientCredentialRefused: `Cognito refused the ${props.environmentName} web client's credential, so sign-in fails for everyone: check the client secret and the client ID the web task was given (docs/adr/0088, D2).`,
       ClientCredentialProbeRefused: `A ${props.environmentName} web task's start-up probe found its Cognito client credential refused, so its health check fails and the deploy rolls back: check the client secret and the client ID the new task definition was given (docs/adr/0088, D8).`,
-      PasswordResetSessionsNotEnded: `A ${props.environmentName} password reset changed the password at Cognito, but the app could not end the account's sessions or record the reset, so no password-changed email was queued: read the user ID from the line, end the account's sessions and tell the person another way (docs/runbooks/incident-response.md, "A password reset whose sessions were not ended"; docs/adr/0091, D15).`,
-      PasswordResetProviderSignOutFailed: `A ${props.environmentName} password reset was completed, but the sign-out at Cognito that follows it failed, so a hardware-key registration begun before the reset can still be completed for up to 15 minutes: read the user ID from the line, look in the audit log for hardware_key_registered by that user since the reset, and if there is one treat it as a takeover, end the account's sessions and tell the founder; a sign_in by authenticator code is the person's own (docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed"; docs/adr/0091, D10).`,
-      MembershipEndProviderSignOutFailed: `A ${props.environmentName} membership was ended and the account's sessions ended with it, but the sign-out at Cognito that follows did not happen, so a hardware-key registration begun before it can still be completed for up to 15 minutes, and nothing sends the sign-out again: read the user ID and the error code from the line, confirm membership_ended in the audit log by the line's request ID, look there for hardware_key_registered by that user since, and if there is one, or the account is thought to be in another's hands, give the user ID to the founder (docs/runbooks/incident-response.md, "An ended membership whose provider sign-out failed").`,
+      PasswordResetSessionsNotEnded: `A ${props.environmentName} password reset changed the password at Cognito, but the app could not end the account's sessions or record the reset, so no password-changed email and no sign-out at Cognito was queued: read the user ID from the line, end the account's sessions and tell the person another way (docs/runbooks/incident-response.md, "A password reset whose sessions were not ended"; docs/adr/0091, D15).`,
       SignInStepRefusedAfterReset: `A ${props.environmentName} sign-in step begun before the account's latest password reset was answered after it and refused, so someone proved the old password around the reset from another browser or device: read the user ID and the step from the line, tell the person, and at the code step (mfa) tell them their second factor may be known too, which a reset does not change (docs/runbooks/incident-response.md, "A sign-in step refused after a password reset"; docs/adr/0093, D5).`,
       HardwareKeyRegisteredAcrossReset: `A ${props.environmentName} hardware key was registered while the account's password reset was being recorded: read the line's error code. removed: confirm with the person. not_removed: the key is still on the account and the account is locked, so have the key removed through the founder's break-glass before anyone unlocks it. not_removed_not_locked: the key signs in, so go to the break-glass now (docs/runbooks/incident-response.md, "A hardware key registered across a password reset"; docs/adr/0093, D6).`,
       PasswordResetOutcomeUnknown: `Cognito did not say whether a ${props.environmentName} password reset changed the password, so the app ended the account's sessions and sent no password-changed email: read the user ID from the line, find out at Cognito whether the password changed, and tell the person another way (docs/runbooks/incident-response.md, "A password reset whose outcome is unknown"; docs/adr/0093, D9).`,
       SignInRefusedCrossedAccount: `A ${props.environmentName} sign-in was refused because the address typed names one account and Cognito's subject another, which a sound database never holds: read the user ID from the line (the subject's account), compare the app's accounts and Cognito's users for that address, and let neither sign in until they agree (docs/runbooks/incident-response.md, "A sign-in refused for a crossed account"; docs/adr/0093, D5).`,
+      RemovedHardwareKeyUsed: `Someone answered a ${props.environmentName} hardware-key sign-in with a key that two platform administrators removed from the account; the sign-in was refused, so whoever holds the removed key tried to use it: read the user ID from the line, ask the person on a channel you already hold whether it was their old key, and treat anything else as an attempted takeover: read the account's audit events since the removal and tell the founder (docs/runbooks/incident-response.md, the hardware key section; docs/adr/0095).`,
       PasswordResetRequestOverFloor: `Three ${props.environmentName} password reset requests in an hour were answered after their floor, so their timing could tell an account from none: find the slow call (Cognito, the message trigger's cold start), or raise RESET_REQUEST_FLOOR_MS (docs/adr/0081).`,
     };
+    // The provider's sign-out is the platform job's (provider_sign_outs; docs/adr/0095), so a sign-out that does not
+    // arrive is counted on the platform log group, built like the mail-code alarms. The web writes no such line.
+    const signOutNotDelivered = counted(
+      this.platformLogGroup,
+      PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM.metricName,
+      { namespace: JOB_FAILED_METRIC.namespace, metricName: PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM.metricName },
+      logs.FilterPattern.stringValue('$.msg', '=', PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM.message),
+    );
+    this.providerSignOutNotDeliveredAlarm = new cloudwatch.Alarm(this, PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM.metricName, {
+      alarmDescription: `A ${props.environmentName} account whose membership ended, whose password was reset or whose hardware keys were removed has not been signed out at Cognito by the provider_sign_outs job. Nothing is undone: the app's own sessions ended and its sign-in mark moved when the cause committed, so only Cognito's own tokens are still good. Read the line's error code, sign-out ID and user ID. LATE: tries have failed and the job keeps trying; read its warnings (provider sign-out attempt failed) for the error's name and mend that. GAVE_UP: the job has stopped trying this one; confirm the cause in the audit log by the request ID, and have the user signed out at Cognito through the founder's break-glass (docs/runbooks/incident-response.md, the hardware key section; docs/adr/0095).`,
+      metric: signOutNotDelivered.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM.periodSeconds) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM.threshold,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.providerSignOutNotDeliveredAlarm.addAlarmAction(notify);
+
     const resetAndEnrolmentAlarms: Partial<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>> = {};
     for (const count of RESET_AND_ENROLMENT_COUNTS) {
       const message = logs.FilterPattern.stringValue('$.msg', '=', count.message);

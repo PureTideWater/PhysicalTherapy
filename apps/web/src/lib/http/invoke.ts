@@ -347,7 +347,9 @@ interface Request {
  * - not committed (anything thrown; a COMMIT the server answered with ROLLBACK): the jobs are rolled back with it,
  *   no after-commit work runs, and the outcome is the refusal, or the error is thrown on. Never `ok`;
  * - not known (the commit ended without an answer): the jobs are committed (request-sends.ts says why), nothing
- *   else runs but the work a handler left for this case (AfterCommitOptions.whenCommitUnknown), and the error is thrown on: the person is told neither that it saved nor that it did not.
+ *   else runs, and the error is thrown on: the person is told neither that it saved nor that it did not. What must
+ *   follow a request that may have saved is written in its transaction and taken up by a job (the provider's
+ *   sign-out: docs/adr/0095), never left as work for this case.
  */
 async function transacted<R>(
   services: Services,
@@ -356,18 +358,14 @@ async function transacted<R>(
   refuse: (error: unknown) => Promise<Outcome<never>>,
 ): Promise<Outcome<R>> {
   const committed: (() => Promise<unknown>)[] = [];
-  const unknown: (() => Promise<unknown>)[] = [];
   const sends = new RequestSends(services.queue, services.logger, requestId);
   let outcome: Outcome<R>;
   try {
     outcome = await transact({
       // The handler's queue is the request's sends by their one door: it can queue with the request, and cannot hold or settle them.
       services: signedInServices(services, sends.door()),
-      afterCommit: (work, options) => {
+      afterCommit: (work) => {
         committed.push(work);
-        if (options?.whenCommitUnknown !== undefined) {
-          unknown.push(options.whenCommitUnknown);
-        }
       },
       hold: () => sends.hold(),
     });
@@ -378,8 +376,6 @@ async function transacted<R>(
       services.logger.error('a request’s transaction was rolled back at its commit; nothing was saved', { error_code: 'COMMIT_NOT_APPLIED', request_id: requestId });
     } else if (error instanceof CommitOutcomeUnknownError) {
       services.logger.error('a request’s commit ended without an answer; whether it saved is not known', { error_code: 'COMMIT_OUTCOME_UNKNOWN', request_id: requestId });
-      // Only the work a handler left for exactly this case runs (docs/adr/0094, D6).
-      await runCommitted(unknown, services);
     }
     return refuse(error);
   }

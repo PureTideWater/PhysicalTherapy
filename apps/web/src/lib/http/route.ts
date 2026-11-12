@@ -349,17 +349,7 @@ export type PublicContext<P, I> = BaseContext<P, I, Services>;
  * that fails or is refused. A failure of the work is logged by code and does not change the outcome: the request's
  * records are already committed, and the job's own schedule takes it up.
  */
-export type AfterCommit = (work: () => Promise<unknown>, options?: AfterCommitOptions) => void;
-
-export interface AfterCommitOptions {
-  /**
-   * Run instead of the work when the commit ended without an answer, so whether the request saved is not known
-   * (docs/adr/0094, D6): for work whose absence would be a silent security gap if the request did save, and which is
-   * harmless if it did not. Its failure is logged by code and changes nothing. Most work leaves this out: it runs
-   * only for a commit that is known.
-   */
-  readonly whenCommitUnknown?: () => Promise<unknown>;
-}
+export type AfterCommit = (work: () => Promise<unknown>) => void;
 
 export interface ActorContext<P, I> extends BaseContext<P, I, SignedInServices> {
   readonly actor: Actor;

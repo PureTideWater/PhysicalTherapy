@@ -942,7 +942,7 @@ export class SignInFlow {
   private async keyRegistered(pending: Extract<Pending, { step: 'register_key' }>, response: RegistrationResponseJSON, context: SignInContext): Promise<FlowResult> {
     const credentialId = response.id;
     // The check above read the committed mark, so a registration already at the provider when a reset commits still
-    // registers, and the reset's provider sign-out comes after its commit (docs/adr/0093, D6). Judged once more; a
+    // registers, and the provider is signed out of only after the reset's commit, by the job (docs/adr/0093, D6; 0095). Judged once more; a
     // judgement that throws is read as a refusal, the safer side.
     let across: Judgement[];
     let unjudged = false;
@@ -1098,8 +1098,8 @@ export class SignInFlow {
    * Sets a new password with the mailed code (docs/adr/0081, the forgotten password). The account is looked up first,
    * the provider asked second (docs/adr/0091, D15; review SEC-02 of 2026-11-11): a database that cannot be reached
    * throws from the lookup while the provider still holds the old password and the code is unspent, so the person tries
-   * again, and nothing after the provider's answer needs the lookup, so a reset whose sessions cannot be ended, or whose
-   * provider sign-out fails, is always logged by the user's ID. The lookup decides nothing before that answer: the
+   * again, and nothing after the provider's answer needs the lookup, so a reset whose sessions cannot be ended
+   * is always logged by the user's ID. The lookup decides nothing before that answer: the
    * provider is asked for every address, with an account or none, and a refusal is answered alike for both. The code is
    * the authorization: a refused one is one answer, counts no failure and writes nothing (a count would mark real
    * accounts by timing and let anyone lock one). On a reset, one transaction as the account ends every session and
@@ -1147,9 +1147,10 @@ export class SignInFlow {
   /**
    * What a reset does to the account, or a reset that may have happened: one transaction as the account takes its row
    * lock first (docs/adr/0093, D2), ends every session and records the event, on which the database moves the
-   * account's mark and ends its sessions itself (D1); retried once, a second failure logged (review R-3). Then the
-   * provider signs the user out everywhere, its failure logged and never failing the reset (review SEC-N1). Answers
-   * whether the sessions ended and the event was recorded.
+   * account's mark and ends its sessions itself (D1) and queues the provider's own sign-out (docs/adr/0095: the worker's
+   * job `provider_sign_outs` sends it; nothing here asks the provider, so a reset never waits on it and a try that
+   * rolls back queues nothing); retried once, a second failure logged (review R-3). Answers whether the sessions
+   * ended and the event was recorded.
    */
   private async endedByReset(account: Account, action: 'password_reset_completed' | 'password_reset_outcome_unknown', purpose: string, context: SignInContext): Promise<boolean> {
     let ended = false;
@@ -1167,11 +1168,6 @@ export class SignInFlow {
     }
     if (!ended) {
       this.deps.logger.error('security event: password reset sessions not ended', { user_id: account.user_id, request_id: context.requestId });
-    }
-    try {
-      await this.deps.provider.globalSignOut(account.cognito_sub);
-    } catch (error) {
-      this.deps.logger.error('security event: password reset provider sign-out failed', { user_id: account.user_id, request_id: context.requestId, error_code: errorCode(error) });
     }
     return ended;
   }

@@ -23,11 +23,12 @@ const MANAGED_POLICIES_ALLOWED: readonly string[] = ['ReadOnlyAccess', 'service-
  * and decrypt data keys only with an encryption context of practice_id alone; every other use of
  * the key is through S3 for named resources (it reads no database login: docs/adr/0061).
  */
-describe('the application role\'s Cognito actions match what the web app sends', () => {
-  it('covers every administrative (IAM-signed) command of the Cognito provider, and no other', () => {
+describe('the application role\'s Cognito actions match what the web app and the worker send', () => {
+  it('covers every administrative (IAM-signed) command of the web\'s Cognito provider and the worker\'s one, and no other; the web sends no sign-out (docs/adr/0095)', () => {
     const source = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/auth/cognito-provider.ts'), 'utf8');
     const admin = [...new Set([...source.matchAll(/new (Admin\w+)Command\(/g)].map((match) => `cognito-idp:${match[1] ?? ''}`))].sort();
-    expect(admin).toEqual([...USER_POOL_ADMIN_ACTIONS].sort());
+    expect(admin).toEqual(['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser']);
+    expect([...admin, 'cognito-idp:AdminUserGlobalSignOut'].sort()).toEqual([...USER_POOL_ADMIN_ACTIONS].sort());
   });
 
   it('covers the worker\'s one administrative command, the provider_sign_outs job\'s global sign-out, and the worker sends no other (docs/adr/0095)', () => {

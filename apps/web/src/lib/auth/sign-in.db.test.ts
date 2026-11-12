@@ -389,6 +389,11 @@ async function requested(): Promise<number> {
   return Number(rows[0]?.count ?? -1);
 }
 
+/** The provider sign-outs queued for an account, by cause and the cause's request (the outbox job asks: docs/adr/0095). */
+async function signOutsQueued(userId: string): Promise<{ reason: string; request_id: string }[]> {
+  return (await owner.query<{ reason: string; request_id: string }>('SELECT reason, request_id FROM provider_sign_out WHERE user_id = $1 ORDER BY queued_at, id', [userId])).rows;
+}
+
 async function openSessions(userId: string): Promise<number> {
   const { rows } = await owner.query<{ count: string }>('SELECT count(*) AS count FROM user_session WHERE user_id = $1 AND ended_at IS NULL', [userId]);
   return Number(rows[0]?.count ?? -1);
@@ -548,13 +553,11 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     const { flow: reset, lines } = paced();
     await reset.requestPasswordReset(user.email, context());
     const code = codeFor(user.email);
-    const signOut = vi.spyOn(provider, 'globalSignOut');
     const request = context();
     expect(await reset.confirmPasswordReset(user.email, wrong(code), CHOSEN, request)).toEqual({ kind: 'rejected' });
     expect(await reset.confirmPasswordReset(`${randomUUID()}@synthetic.test`, code, CHOSEN, context())).toEqual({ kind: 'rejected' });
     expect(await reset.confirmPasswordReset(user.email, code, 'weakpassword', context())).toMatchObject({ kind: 'invalid_password', problems: expect.arrayContaining(['a digit']) });
-    expect(signOut).not.toHaveBeenCalled();
-    signOut.mockRestore();
+    expect(await signOutsQueued(user.id)).toEqual([]);
     expect(await events(user.id)).toEqual(['password_reset_requested:unverified_request']);
     expect((await owner.query('SELECT failed_sign_ins, locked_at FROM "user" WHERE id = $1', [user.id])).rows).toEqual([{ failed_sign_ins: 0, locked_at: null }]);
     expect(logged(lines, 'password reset code refused')).toContainEqual(expect.objectContaining({ level: 'warn', request_id: request.requestId, error_code: expect.any(String) }));
@@ -577,20 +580,18 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(await noticeCount()).toBe(queued);
   });
 
-  it('SGN-07: a reset ends every session, then signs out at the provider, records the reset, and still asks for the second factor', async () => {
+  it('SGN-07: a reset ends every session, records the reset and queues the provider’s sign-out for the job in that transaction, calls the provider’s sign-out from nowhere in the web, and still asks for the second factor', async () => {
     const user = await person();
     const session = await signedIn(user.email);
     const { flow: reset, lines } = paced();
     await reset.requestPasswordReset(user.email, context());
-    let openAtSignOut = -1;
-    const signOut = vi.spyOn(provider, 'globalSignOut').mockImplementation(async () => {
-      openAtSignOut = await openSessions(user.id);
-    });
     const request = context();
     expect(await reset.confirmPasswordReset(user.email, codeFor(user.email), CHOSEN, request)).toEqual({ kind: 'reset', locked: false, keepEmail: true });
-    expect(signOut.mock.calls).toEqual([[user.sub]]);
-    signOut.mockRestore();
-    expect(openAtSignOut).toBe(0);
+    // The web has no way to ask the provider (docs/adr/0095): the row, written with the reset, is the outbox job's to send.
+    expect(provider).not.toHaveProperty('globalSignOut');
+    expect(await signOutsQueued(user.id)).toEqual([{ reason: 'password_reset_completed', request_id: request.requestId }]);
+    expect(logged(lines, 'security event: password reset provider sign-out failed')).toEqual([]);
+    expect(await openSessions(user.id)).toBe(0);
     expect((await resolveSession(app, session.sessionToken, 'test')).state).not.toBe('active');
     expect(await events(user.id)).toEqual(expect.arrayContaining(['password_reset_requested:unverified_request', 'password_reset_completed:email_code']));
     expect((await events(user.id)).filter((event) => event.startsWith('sign_in_failed'))).toEqual([]);
@@ -623,19 +624,21 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(await notices(later.id)).toEqual([QUEUED]);
   });
 
-  it('SGN-07: a provider sign-out that fails is logged and the reset still lands (review SEC-N1)', async () => {
+  it('SGN-07: the reset lands without waiting on the provider, whose sign-out is one queued row of IDs and no line of the web’s (review SEC-N1; docs/adr/0095)', async () => {
     const user = await person();
     await signedIn(user.email);
     const { flow: reset, lines } = paced();
     await reset.requestPasswordReset(user.email, context());
-    const signOut = vi.spyOn(provider, 'globalSignOut').mockRejectedValueOnce(Object.assign(new Error('synthetic'), { name: 'InternalErrorException' }));
     const request = context();
     expect(await reset.confirmPasswordReset(user.email, codeFor(user.email), CHOSEN, request)).toEqual({ kind: 'reset', locked: false, keepEmail: true });
-    signOut.mockRestore();
-    expect(logged(lines, 'security event: password reset provider sign-out failed')).toEqual([
-      expect.objectContaining({ level: 'error', user_id: user.id, request_id: request.requestId, error_code: 'InternalErrorException' }),
-    ]);
-    // The sessions ended before the sign-out was tried, so the password-changed email is queued all the same (SGN-16).
+    expect(logged(lines, 'security event: password reset provider sign-out failed')).toEqual([]);
+    // The row: the account, the cause, the cause's event and request, and no try yet. Nothing of the person.
+    const queued = await owner.query<Record<string, unknown>>('SELECT * FROM provider_sign_out WHERE user_id = $1', [user.id]);
+    expect(queued.rows).toHaveLength(1);
+    expect(queued.rows[0]).toMatchObject({ user_id: user.id, reason: 'password_reset_completed', request_id: request.requestId, attempts: 0 });
+    expect(JSON.stringify(queued.rows)).not.toContain(user.email);
+    expect(JSON.stringify(queued.rows)).not.toContain(user.sub);
+    // The sessions ended with the reset, and the password-changed email is queued with it (SGN-16).
     expect(await openSessions(user.id)).toBe(0);
     expect(await notices(user.id)).toEqual([QUEUED]);
   });
@@ -665,7 +668,7 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect((await events(swept.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual(['password_reset_completed:email_code']);
   });
 
-  it('SGN-07: a revoke that fails once is retried; failing twice it is logged, the provider still signs out, and the reset answers the generic failure (review R-3)', async () => {
+  it('SGN-07: a revoke that fails once is retried; failing twice it is logged, no sign-out is queued for a reset that recorded nothing, and the reset answers the generic failure (review R-3)', async () => {
     const once = await person();
     await signedIn(once.email);
     const retried = paced(failing(/revoke_user_sessions/, 1));
@@ -673,18 +676,18 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(await retried.flow.confirmPasswordReset(once.email, codeFor(once.email), CHOSEN, context())).toEqual({ kind: 'reset', locked: false, keepEmail: true });
     expect(await openSessions(once.id)).toBe(0);
     expect((await events(once.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual(['password_reset_completed:email_code']);
-    // One notice: the failed try rolled back with everything it wrote (SGN-16).
+    // One notice and one sign-out queued: the failed try rolled back with everything it wrote (SGN-16).
     expect(await notices(once.id)).toEqual([QUEUED]);
+    expect((await signOutsQueued(once.id)).map((row) => row.reason)).toEqual(['password_reset_completed']);
 
     const twice = await person();
     await signedIn(twice.email);
     const failed = paced(failing(/revoke_user_sessions/, 2));
     await failed.flow.requestPasswordReset(twice.email, context());
-    const signOut = vi.spyOn(provider, 'globalSignOut');
     const request = context();
     expect(await failed.flow.confirmPasswordReset(twice.email, codeFor(twice.email), CHOSEN, request)).toEqual({ kind: 'sessions_not_ended' });
-    expect(signOut.mock.calls).toEqual([[twice.sub]]);
-    signOut.mockRestore();
+    // Both tries rolled back, so neither left a row: the line below is what reaches the operator.
+    expect(await signOutsQueued(twice.id)).toEqual([]);
     expect(await openSessions(twice.id)).toBe(1);
     expect(logged(failed.lines, 'security event: password reset sessions not ended')).toEqual([expect.objectContaining({ level: 'error', user_id: twice.id, request_id: request.requestId })]);
     // Neither try recorded the reset, so no password-changed email is queued: this line, which pages the operator
@@ -725,7 +728,7 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(logged(outage.lines, 'security event: password reset completed')).toEqual([expect.objectContaining({ level: 'warn', user_id: user.id, request_id: request.requestId })]);
   });
 
-  it('SGN-16: a reset the provider completes as the database becomes unreachable is logged as sessions not ended by the user’s ID, still signs out at the provider and answers the generic failure (docs/adr/0091, D15; review SEC-02 of 2026-11-11)', async () => {
+  it('SGN-16: a reset the provider completes as the database becomes unreachable is logged as sessions not ended by the user’s ID, queues no sign-out and answers the generic failure (docs/adr/0091, D15; review SEC-02 of 2026-11-11)', async () => {
     const user = await person();
     await signedIn(user.email);
     await paced().flow.requestPasswordReset(user.email, context());
@@ -738,14 +741,11 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
       reachable = false;
       return result;
     });
-    const signOut = vi.spyOn(provider, 'globalSignOut');
     const request = context();
     const answered = await outage.flow.confirmPasswordReset(user.email, codeFor(user.email), CHOSEN, request).catch((error: unknown) => error);
     confirmed.mockRestore();
-    const signedOut = [...signOut.mock.calls];
-    signOut.mockRestore();
     expect(answered).toEqual({ kind: 'sessions_not_ended' });
-    expect(signedOut).toEqual([[user.sub]]);
+    expect(await signOutsQueued(user.id)).toEqual([]);
     expect(logged(outage.lines, 'security event: password reset sessions not ended')).toEqual([expect.objectContaining({ level: 'error', user_id: user.id, request_id: request.requestId })]);
     expect(outage.lines.join('\n')).not.toContain(user.email);
     // The provider holds the new password; the app ended no session and recorded no reset, so no password-changed email
@@ -921,7 +921,7 @@ describe('SGN-17: a sign-in step begun before a password reset is refused after 
     expect(await notices(user.id)).toEqual([QUEUED]);
   });
 
-  it('SGN-17: a key-registration step begun before a reset registers no key after it, though the provider’s sign-out had no effect: refused at the options and at the verify, before the provider is asked, its grant given back', async () => {
+  it('SGN-17: a key-registration step begun before a reset registers no key after it, though the provider has not yet been asked to sign out: refused at the options and at the verify, before the provider is asked, its grant given back', async () => {
     // Before the reset: two accounts that must use a hardware key and have none prove the old password and a code; the
     // second has also asked for its options.
     const staff = await person({ internal: true });
@@ -931,13 +931,12 @@ describe('SGN-17: a sign-in step begun before a password reset is refused after 
     const { flow: reset, lines } = paced();
     for (const account of [staff, second.staff]) {
       await reset.requestPasswordReset(account.email, context());
-      // The provider's sign-out fails, so the grant stays good (the local provider's own sign-out ends no grant either).
-      const signOut = vi.spyOn(provider, 'globalSignOut').mockRejectedValueOnce(Object.assign(new Error('synthetic'), { name: 'InternalErrorException' }));
+      // The provider's sign-out is only queued (the job asks within about a minute), so the grant is still good.
       expect(await reset.confirmPasswordReset(account.email, codeFor(account.email), CHOSEN, context())).toEqual({ kind: 'reset', locked: false, keepEmail: true });
-      signOut.mockRestore();
       expect(await notices(account.id)).toEqual([QUEUED]);
+      expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE user_id = $1 AND done_at IS NULL', [account.id])).rowCount).toBe(1);
     }
-    expect(logged(lines, 'security event: password reset provider sign-out failed')).toHaveLength(2);
+    expect(logged(lines, 'security event: password reset provider sign-out failed')).toEqual([]);
     // After the reset: neither the options nor the verify reaches the provider, and each gives the grant back.
     const options = vi.spyOn(provider, 'beginKeyRegistration');
     const verify = vi.spyOn(provider, 'completeKeyRegistration');
@@ -1428,21 +1427,18 @@ describe('SGN-18: a reset whose outcome at the provider is unknown is never repo
   }
 
   it.each(['after', 'before'] as const)(
-    'SGN-18: an answer lost %s the provider took the confirmation ends every session, moves the mark, signs out at the provider, records the unknown outcome, queues no password-changed email and pages by the user’s ID',
+    'SGN-18: an answer lost %s the provider took the confirmation ends every session, moves the mark, records the unknown outcome and queues the provider’s sign-out with it, queues no password-changed email and pages by the user’s ID',
     async (when) => {
       const user = await person();
       const session = await signedIn(user.email);
       const begun = pendingOf(await flow.start(user.email, PASSWORD, context()));
       const { flow: reset, lines } = paced();
       await reset.requestPasswordReset(user.email, context());
-      const signOut = vi.spyOn(provider, 'globalSignOut');
       const request = context();
       const answered = await lost(when, reset, user.email, codeFor(user.email), request);
-      const signedOut = [...signOut.mock.calls];
-      signOut.mockRestore();
       // Never the code's refusal: its own answer, which the route says in the generic words.
       expect(answered).toEqual({ kind: 'outcome_unknown' });
-      expect(signedOut).toEqual([[user.sub]]);
+      expect(await signOutsQueued(user.id)).toEqual([{ reason: 'password_reset_outcome_unknown', request_id: request.requestId }]);
       expect(await openSessions(user.id)).toBe(0);
       expect((await resolveSession(app, session.sessionToken, 'test')).state).not.toBe('active');
       expect(await markOf(user.id)).toBeInstanceOf(Date);
@@ -1483,12 +1479,10 @@ describe('SGN-18: a reset whose outcome at the provider is unknown is never repo
   it('SGN-18: an unknown outcome for an address with no account is paged with no user, and writes nothing', async () => {
     const before = await owner.query<{ count: string }>('SELECT count(*) AS count FROM audit_event');
     const { flow: reset, lines } = paced();
-    const signOut = vi.spyOn(provider, 'globalSignOut');
     const request = context();
     const address = `${randomUUID()}@synthetic.test`;
     expect(await lost('before', reset, address, '123456', request)).toEqual({ kind: 'outcome_unknown' });
-    expect(signOut.mock.calls).toEqual([]);
-    signOut.mockRestore();
+    expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE request_id = $1', [request.requestId])).rowCount).toBe(0);
     expect((await owner.query<{ count: string }>('SELECT count(*) AS count FROM audit_event')).rows).toEqual(before.rows);
     expect(logged(lines, RESET_OUTCOME_UNKNOWN_LINE)).toEqual([
       { level: 'error', msg: RESET_OUTCOME_UNKNOWN_LINE, time: expect.any(String), user_id: null, request_id: request.requestId, error_code: 'DevLostAnswer' },
@@ -1496,7 +1490,7 @@ describe('SGN-18: a reset whose outcome at the provider is unknown is never repo
     expect(lines.join('\n')).not.toContain(address);
   });
 
-  it('SGN-18: an unknown outcome whose transaction fails once is retried; failing twice, the sessions stay, which is logged by the user’s ID beside the unknown outcome, and the provider still signs out', async () => {
+  it('SGN-18: an unknown outcome whose transaction fails once is retried; failing twice, the sessions stay, which is logged by the user’s ID beside the unknown outcome, and no sign-out is queued', async () => {
     const once = await person();
     await signedIn(once.email);
     const retried = paced(failing(/sign_in_lock_account/, 1));
@@ -1504,16 +1498,15 @@ describe('SGN-18: a reset whose outcome at the provider is unknown is never repo
     expect(await lost('after', retried.flow, once.email, codeFor(once.email))).toEqual({ kind: 'outcome_unknown' });
     expect(await openSessions(once.id)).toBe(0);
     expect((await events(once.id)).filter((event) => event.startsWith('password_reset_outcome_unknown'))).toEqual(['password_reset_outcome_unknown:unverified_code']);
+    expect((await signOutsQueued(once.id)).map((row) => row.reason)).toEqual(['password_reset_outcome_unknown']);
 
     const twice = await person();
     await signedIn(twice.email);
     const failed = paced(failing(/sign_in_lock_account/, 2));
     await failed.flow.requestPasswordReset(twice.email, context());
-    const signOut = vi.spyOn(provider, 'globalSignOut');
     const request = context();
     expect(await lost('after', failed.flow, twice.email, codeFor(twice.email), request)).toEqual({ kind: 'outcome_unknown' });
-    expect(signOut.mock.calls).toEqual([[twice.sub]]);
-    signOut.mockRestore();
+    expect(await signOutsQueued(twice.id)).toEqual([]);
     expect(await openSessions(twice.id)).toBe(1);
     expect(await markOf(twice.id)).toBeNull();
     expect((await events(twice.id)).filter((event) => event.startsWith('password_reset_outcome_unknown'))).toEqual([]);
