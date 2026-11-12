@@ -1,0 +1,38 @@
+instrumented 3 functions
+asemi 20k, 1 claim(s): calls in the redaction {"ownMatchesIn":2,"confusedMatchesIn":1,"confusedGluedIn":1}; in the whole check {"ownMatchesIn":3,"confusedMatchesIn":2,"confusedGluedIn":3}
+asemi 20k, 50 claim(s): calls in the redaction {"ownMatchesIn":2,"confusedMatchesIn":1,"confusedGluedIn":1}; in the whole check {"ownMatchesIn":3,"confusedMatchesIn":2,"confusedGluedIn":3}
+yen 20k, 1 claim(s): calls in the redaction {"ownMatchesIn":1,"confusedMatchesIn":1,"confusedGluedIn":1}; in the whole check {"ownMatchesIn":2,"confusedMatchesIn":2,"confusedGluedIn":3}
+yen 20k, 50 claim(s): calls in the redaction {"ownMatchesIn":1,"confusedMatchesIn":1,"confusedGluedIn":1}; in the whole check {"ownMatchesIn":2,"confusedMatchesIn":2,"confusedGluedIn":3}
+prose 20k, 1 claim(s): calls in the redaction {"ownMatchesIn":1,"confusedMatchesIn":1,"confusedGluedIn":1}; in the whole check {"ownMatchesIn":2,"confusedMatchesIn":2,"confusedGluedIn":3}
+prose 20k, 50 claim(s): calls in the redaction {"ownMatchesIn":1,"confusedMatchesIn":1,"confusedGluedIn":1}; in the whole check {"ownMatchesIn":2,"confusedMatchesIn":2,"confusedGluedIn":3}
+digitLF 20k, 1 claim(s): calls in the redaction {"ownMatchesIn":1,"confusedMatchesIn":1,"confusedGluedIn":1}; in the whole check {"ownMatchesIn":2,"confusedMatchesIn":2,"confusedGluedIn":3}
+digitLF 20k, 50 claim(s): calls in the redaction {"ownMatchesIn":1,"confusedMatchesIn":1,"confusedGluedIn":1}; in the whole check {"ownMatchesIn":2,"confusedMatchesIn":2,"confusedGluedIn":3}
+clean text of 33 characters: redaction spent 31790
+the check of that text spends 18480 units: read at spent = B - 18480 (false = holds), refused at B - 18480 + 1 (true)
+  spent = 0                      -> read (holds nothing)
+  spent = 0                      -> read (holds nothing)
+  spent = 0.5                    -> read (holds nothing)
+  spent = 419981519.5            -> read (holds nothing)
+  spent = 419981520.5            -> REFUSED (holds)
+  spent = 420000000              -> REFUSED (holds)
+  spent = 420000001              -> REFUSED (holds)
+  spent = -1                     -> REFUSED (holds)
+  spent = -1e-9                  -> REFUSED (holds)
+  spent = NaN                    -> REFUSED (holds)
+  spent = Infinity               -> REFUSED (holds)
+  spent = -Infinity              -> REFUSED (holds)
+  spent = 9007199254740991       -> REFUSED (holds)
+  spent = 5e-324                 -> read (holds nothing)
+  spent = '5'                    -> REFUSED (holds)
+  spent = '0'                    -> REFUSED (holds)
+  spent = ''                     -> REFUSED (holds)
+  spent = ' '                    -> REFUSED (holds)
+  spent = 0n                     -> THROWS TypeError: Cannot mix BigInt and other types, use explicit conversions
+  spent = null                   -> read (holds nothing)
+  spent = undefined (default 0)  -> read (holds nothing)
+  spent = true                   -> read (holds nothing)
+  spent = false                  -> read (holds nothing)
+  spent = []                     -> REFUSED (holds)
+  spent = [7]                    -> REFUSED (holds)
+  spent = {}                     -> REFUSED (holds)
+after those calls: clean text read true, redaction spent 31790 (counter state not left behind)

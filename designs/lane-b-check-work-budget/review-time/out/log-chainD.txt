@@ -1,0 +1,10 @@
+holdsIdentifier(920000 ch, spent = 0) -> REFUSED in 1441 ms cpu
+holdsIdentifier(920000 ch, spent = null) -> READ, holds nothing in 2233 ms cpu
+holdsIdentifier(920000 ch, spent = false) -> REFUSED in 1272 ms cpu
+holdsIdentifier(920000 ch, spent = 0) -> REFUSED in 952 ms cpu
+budget 420000000; checkWorkOf(result) 294002220; checkWorkOf(copy of the result) 0; checkWorkOf(structuredClone) 0
+asemi, 1 claim(s), fresh process WITH TRIAL CHARGE w=1   169896 ch   413.7 Mu  cpu   1744 ms (thread 1568, redact 1010)  ref   1924 ms    4.65 ns/u@ref  out 169909 sent  [cal 154/131]
+yensemi, 1 claim(s), fresh process WITH TRIAL CHARGE w=1   100000 ch   407.4 Mu  cpu   2163 ms (thread 1889, redact 786)  ref   2456 ms    6.03 ns/u@ref  out 200000 sent  [cal 179/127]
+prose, 1 claim(s), fresh process WITH TRIAL CHARGE w=1   293983 ch   413.7 Mu  cpu   1268 ms (thread 1081, redact 697)  ref   1353 ms    3.27 ns/u@ref  out 293983 sent  [cal 158/135]
+digitLF, 1 claim(s), fresh process WITH TRIAL CHARGE w=1    56254 ch   413.8 Mu  cpu   1067 ms (thread 1006, redact 539)  ref   1165 ms    2.82 ns/u@ref  out 56254 sent  [cal 165/132]
+packages/model-gateway/src/functions/denial-letter.ts:233:    if (holdsIdentifier(redacted.text, input.patient, input.claims, checkWorkOf(redacted))) {

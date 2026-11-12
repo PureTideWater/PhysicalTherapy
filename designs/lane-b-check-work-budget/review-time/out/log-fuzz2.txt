@@ -1,0 +1,36 @@
+screened 456 families; calibration 154 ms (reference 144)
+--- dearest per unit at the larger size
+  4.79 ns/u@ref at  46597 ch (81 Mu, 416 ms)    8.01 at 10000 (17 Mu)  pre="" unit="150.00_SSN"
+  4.60 ns/u@ref at  50000 ch (57 Mu, 281 ms)    2.58 at 10000 (11 Mu)  pre="" unit="\u0003½"
+  4.35 ns/u@ref at  48353 ch (82 Mu, 382 ms)    6.34 at 10000 (16 Mu)  pre="Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. " unit="Paid (202) 555-0123Zерhуrа/"
+  4.26 ns/u@ref at  23381 ch (162 Mu, 737 ms)    3.44 at 10000 (69 Mu)  pre="" unit="$150.00_ﷺ​"
+  4.23 ns/u@ref at  30246 ch (125 Mu, 566 ms)    6.80 at 10000 (41 Mu)  pre="" unit="㏾/"
+  4.18 ns/u@ref at  30778 ch (123 Mu, 550 ms)    3.64 at 10000 (40 Mu)  pre="" unit="㏾#"
+  4.15 ns/u@ref at  46345 ch (82 Mu, 362 ms)    3.33 at 10000 (18 Mu)  pre="" unit="㏾­900-12-3456#"
+  4.09 ns/u@ref at  42369 ch (89 Mu, 391 ms)    5.40 at 10000 (21 Mu)  pre="Jane Q Zephyra\n" unit="610303--Member ID;Service:5'"
+  4.05 ns/u@ref at  50000 ch (70 Mu, 305 ms)    4.05 at 10000 (14 Mu)  pre="Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. " unit="Zерhуrа_\u0003;Z'"
+  4.03 ns/u@ref at  38062 ch (99 Mu, 427 ms)    3.21 at 10000 (26 Mu)  pre="Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. " unit="½    (-5[SSN]\n٥"
+  3.84 ns/u@ref at  36541 ch (104 Mu, 428 ms)    3.39 at 10000 (28 Mu)  pre="Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. " unit="ZZ-1234-567--[PHONE]/ﷺ#"
+  3.79 ns/u@ref at  42225 ch (90 Mu, 363 ms)    3.54 at 10000 (21 Mu)  pre="Zeph∙yra Zephyra " unit="[CLAIM_7654321]:ﷺ - \u0003-\n"
+  3.75 ns/u@ref at  48271 ch (78 Mu, 314 ms)    3.55 at 10000 (16 Mu)  pre="" unit="150.00∙"
+  3.72 ns/u@ref at  41775 ch (91 Mu, 360 ms)    3.17 at 10000 (22 Mu)  pre="Zephyra " unit="on∙Claims150.00--"
+--- time per unit growing most with length
+  2.57 ns/u@ref at  45725 ch (83 Mu, 228 ms)    1.41 at 10000 (18 Mu)  pre="" unit="3 3 61;"
+  4.60 ns/u@ref at  50000 ch (57 Mu, 281 ms)    2.58 at 10000 (11 Mu)  pre="" unit="\u0003½"
+  3.49 ns/u@ref at  41359 ch (91 Mu, 341 ms)    2.16 at 10000 (22 Mu)  pre="Jane Q Zephyra\n" unit="RefЈ|"
+  3.64 ns/u@ref at  50000 ch (48 Mu, 186 ms)    2.26 at 10000 (10 Mu)  pre="" unit="900-12-3456 202 555 0123--$150.00 \u0003​"
+  2.75 ns/u@ref at  50000 ch (48 Mu, 142 ms)    1.85 at 10000 (8 Mu)  pre="" unit="900-12-3456\n    \u0001.3/3/61​​​[/SYN555001|"
+  1.82 ns/u@ref at  50000 ch (73 Mu, 142 ms)    1.25 at 10000 (15 Mu)  pre="" unit="$150.00\nSYN 555 001\n    "
+  3.20 ns/u@ref at  39849 ch (95 Mu, 325 ms)    2.19 at 10000 (24 Mu)  pre="" unit="ID J-"
+  2.62 ns/u@ref at  47061 ch (80 Mu, 226 ms)    1.83 at 10000 (17 Mu)  pre="Zeph∙yra Zephyra " unit="Claim\r\n"
+--- sized to the budget
+"|150.00_SSN"                237771 ch   413.7 Mu  cpu   1192 ms (thread 1064, redact 446)  ref   1381 ms    3.34 ns/u@ref  out 237771 sent  [cal 124/138]
+"|\u0003½"                 362130 ch   413.7 Mu  cpu   1546 ms (thread 1257, redact 1546)  ref   1751 ms    4.23 ns/u@ref  out 543194 HELD  [cal 127/131]
+"Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00   189562 ch   416.2 Mu  cpu   1249 ms (thread 1198, redact 999)  ref   1409 ms    3.38 ns/u@ref  out 189555 sent  [cal 128/129]
+"|$150.00_ﷺ​"                 59833 ch   413.7 Mu  cpu   1735 ms (thread 1583, redact 588)  ref   1954 ms    4.72 ns/u@ref  out 161544 sent  [cal 131/128]
+"|㏾/"                        100000 ch   413.2 Mu  cpu   1824 ms (thread 1574, redact 634)  ref   2025 ms    4.90 ns/u@ref  out 200000 sent  [cal 130/132]
+"|㏾#"                        103683 ch   413.7 Mu  cpu   1823 ms (thread 1624, redact 659)  ref   1983 ms    4.79 ns/u@ref  out 207367 sent  [cal 132/133]
+"|㏾­900-12-3456#"            235265 ch   413.7 Mu  cpu   1386 ms (thread 1296, redact 767)  ref   1574 ms    3.80 ns/u@ref  out 168051 sent  [cal 130/127]
+"|3 3 61;"                   228924 ch   413.7 Mu  cpu    977 ms (thread 748, redact 886)  ref   1126 ms    2.72 ns/u@ref  out 523251 sent  [cal 125/128]
+"Jane Q Zephyra\n|RefЈ|"     187193 ch   413.7 Mu  cpu   1382 ms (thread 1245, redact 613)  ref   1571 ms    3.80 ns/u@ref  out 187193 sent  [cal 127/128]
+done

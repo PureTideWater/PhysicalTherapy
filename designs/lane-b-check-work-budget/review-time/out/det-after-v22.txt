@@ -1,0 +1,30 @@
+ 0 len 5728 redaction 8943958 check 15306678 held false out 6065
+ 1 len 2840 redaction 5401000 check 7649828 held true out 3191
+ 2 len 24853 redaction 55844968 check 75951193 held true out 28822
+ 3 len 19661 redaction 13826250 check 23704030 held false out 19661
+ 4 len 24054 redaction 26404086 check 54641866 held false out 35410
+ 5 len 7687 redaction 20101378 check 26493606 held true out 8974
+ 6 len 8363 redaction 14926091 check 25378961 held false out 8370
+ 7 len 18790 redaction 41305910 check 56165763 held true out 21276
+ 8 len 19054 redaction 17600945 check 29354015 held false out 21079
+ 9 len 10775 redaction 9130950 check 12543370 held false out 7181
+10 len 13748 redaction 26797719 check 37971313 held true out 15636
+11 len 22414 redaction 33868640 check 59106610 held false out 31374
+12 len 12477 redaction 10192951 check 12978681 held false out 6667
+13 len 5359 redaction 8469768 check 13022008 held false out 6338
+14 len 11729 redaction 23228791 check 32703767 held true out 13450
+15 len 8290 redaction 8116910 check 18500780 held false out 17447
+16 len 7141 redaction 11893360 check 20541580 held false out 10983
+17 len 20618 redaction 36806880 check 53612770 held false out 20618
+18 len 27514 redaction 56311191 check 78816036 held true out 32215
+19 len 29599 redaction 40143012 check 65885032 held false out 43340
+20 len 5885 redaction 10180212 check 16809002 held false out 7852
+21 len 27721 redaction 27239590 check 52652010 held false out 27721
+22 len 19055 redaction 23168980 check 42521470 held false out 17864
+23 len 1736 redaction 1611420 check 2828040 held false out 1736
+24 len 15585 redaction 21115370 check 43663910 held false out 15585
+25 len 25580 redaction 27497280 check 48711750 held false out 23469
+26 len 100000 redaction 356972020 check 420000190 held true out 100000
+27 len 99989 redaction 420000001 check 420000001 held true out 1
+28 len 240000 redaction 352802220 check 436802220 held true out 240000
+29 len 60018 redaction 420000001 check 420000001 held true out 1

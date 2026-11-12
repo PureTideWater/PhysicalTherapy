@@ -1,0 +1,36 @@
+screened 473 families; calibration 152 ms (reference 144)
+--- dearest per unit at the larger size
+  4.59 ns/u@ref at  44495 ch (84 Mu, 409 ms)    6.58 at 10000 (19 Mu)  pre="Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. " unit="Date of birth:​​​Ј a­"
+  4.50 ns/u@ref at  40034 ch (94 Mu, 449 ms)    2.58 at 10000 (24 Mu)  pre="" unit="ID\r\n٥\f"
+  4.48 ns/u@ref at  32908 ch (115 Mu, 543 ms)    3.57 at 10000 (35 Mu)  pre="" unit="㏾,"
+  3.97 ns/u@ref at  31840 ch (119 Mu, 498 ms)    3.89 at 10000 (37 Mu)  pre="Zephyra " unit="㏾,"
+  3.91 ns/u@ref at  28033 ch (135 Mu, 558 ms)    7.96 at 10000 (48 Mu)  pre="Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. " unit="Zephyr--ﷺ--"
+  3.84 ns/u@ref at  39524 ch (96 Mu, 388 ms)    2.93 at 10000 (24 Mu)  pre="Zeph∙yra Zephyra " unit="a;"
+  3.84 ns/u@ref at  42240 ch (90 Mu, 363 ms)    3.41 at 10000 (21 Mu)  pre="Zephyra " unit="97110 ICN 0 "
+  3.83 ns/u@ref at  35642 ch (106 Mu, 429 ms)    3.21 at 10000 (30 Mu)  pre="Zephyra " unit="3rd|0|٥\nthe\r\n㏾ "
+  3.81 ns/u@ref at  38124 ch (99 Mu, 399 ms)    3.12 at 10000 (26 Mu)  pre="" unit="х;"
+  3.76 ns/u@ref at  50000 ch (55 Mu, 220 ms)    3.84 at 10000 (11 Mu)  pre="" unit="5#202 555 0123​St.,\u0002 "
+  3.76 ns/u@ref at  50000 ch (53 Mu, 212 ms)    2.69 at 10000 (11 Mu)  pre="Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. " unit="\u0002\t½\n"
+  3.69 ns/u@ref at  27867 ch (136 Mu, 529 ms)    5.02 at 10000 (49 Mu)  pre="" unit="5"
+  3.62 ns/u@ref at  40452 ch (93 Mu, 357 ms)    2.25 at 10000 (23 Mu)  pre="" unit="150.00|Jan5­Phone_"
+  3.62 ns/u@ref at  44414 ch (85 Mu, 325 ms)    6.22 at 10000 (19 Mu)  pre="" unit="Ј (--)#㏾,Zephyr"
+--- time per unit growing most with length
+  3.22 ns/u@ref at  50000 ch (45 Mu, 154 ms)    1.79 at 10000 (9 Mu)  pre="" unit="Z Z 1 2 3 4 5 6 7_"
+  4.50 ns/u@ref at  40034 ch (94 Mu, 449 ms)    2.58 at 10000 (24 Mu)  pre="" unit="ID\r\n٥\f"
+  2.79 ns/u@ref at  33997 ch (111 Mu, 328 ms)    1.62 at 10000 (33 Mu)  pre="" unit="J\t"
+  1.70 ns/u@ref at  47458 ch (80 Mu, 143 ms)    1.01 at 10000 (17 Mu)  pre="" unit="12­Zeph-\nyra/"
+  2.84 ns/u@ref at  47196 ch (85 Mu, 256 ms)    1.71 at 10000 (17 Mu)  pre="Zeph∙yra Zephyra " unit="DOB\r\nZEPHYRA-"
+  3.62 ns/u@ref at  40452 ch (93 Mu, 357 ms)    2.25 at 10000 (23 Mu)  pre="" unit="150.00|Jan5­Phone_"
+  2.48 ns/u@ref at  49730 ch (76 Mu, 198 ms)    1.57 at 10000 (15 Mu)  pre="Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. " unit="1961-03-03    3/3/61."
+  2.05 ns/u@ref at  50000 ch (30 Mu, 64 ms)    1.35 at 10000 (6 Mu)  pre="" unit="Zeph-\nyra\f\u0002 "
+--- sized to the budget
+"Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00   219097 ch   414.3 Mu  cpu   1470 ms (thread 1361, redact 573)  ref   1666 ms    4.02 ns/u@ref  out 219097 sent  [cal 127/129]
+"|ID\r\n٥\f"                 175423 ch   413.7 Mu  cpu   1468 ms (thread 1278, redact 660)  ref   1662 ms    4.02 ns/u@ref  out 175423 sent  [cal 127/127]
+"|㏾,"                        118537 ch   413.7 Mu  cpu   1862 ms (thread 1658, redact 586)  ref   2180 ms    5.27 ns/u@ref  out 237075 sent  [cal 127/123]
+"Zephyra |㏾,"                110914 ch   413.7 Mu  cpu   1991 ms (thread 1790, redact 580)  ref   2250 ms    5.44 ns/u@ref  out 221827 sent  [cal 127/128]
+"Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00    85921 ch   414.0 Mu  cpu   1838 ms (thread 1668, redact 655)  ref   2084 ms    5.03 ns/u@ref  out 218606 sent  [cal 130/127]
+"Zeph∙yra Zephyra |a;"       170949 ch   413.7 Mu  cpu   1704 ms (thread 1410, redact 1006)  ref   1976 ms    4.78 ns/u@ref  out 170962 sent  [cal 124/131]
+"Zephyra |97110 ICN 0 "      195216 ch   413.7 Mu  cpu   1610 ms (thread 1506, redact 803)  ref   1884 ms    4.55 ns/u@ref  out 195223 sent  [cal 126/123]
+"|Z Z 1 2 3 4 5 6 7_"        457680 ch   413.7 Mu  cpu   1062 ms (thread 809, redact 982)  ref   1245 ms    3.01 ns/u@ref  out 305124 sent  [cal 127/123]
+"|J\t"                       126513 ch   413.7 Mu  cpu    976 ms (thread 780, redact 463)  ref   1133 ms    2.74 ns/u@ref  out 126513 sent  [cal 124/124]
+done

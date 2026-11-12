@@ -1,0 +1,18 @@
+node v24.22.0
+U+33FE comma                 118537 ch   413.7 Mu  cpu   2190 ms (thread 1961, redact 543)  ref   2251 ms    5.44 ns/u@ref  out 237075 sent  [cal 151/140]
+plain 31日 comma              215472 ch   413.7 Mu  cpu   1629 ms (thread 1485, redact 551)  ref   1868 ms    4.52 ns/u@ref  out 215472 sent  [cal 126/126]
+plain 31日 LF                 188046 ch   413.7 Mu  cpu   1685 ms (thread 1560, redact 603)  ref   1944 ms    4.70 ns/u@ref  out 188046 sent  [cal 125/125]
+1日 comma                     184964 ch   413.7 Mu  cpu   1618 ms (thread 1452, redact 474)  ref   1879 ms    4.54 ns/u@ref  out 184964 sent  [cal 124/128]
+U+33E0 comma                 130093 ch   413.7 Mu  cpu   1657 ms (thread 1520, redact 535)  ref   1895 ms    4.58 ns/u@ref  out 195140 sent  [cal 127/126]
+U+33FE alone                  64910 ch   413.7 Mu  cpu   1558 ms (thread 1530, redact 352)  ref   1748 ms    4.22 ns/u@ref  out 194730 sent  [cal 130/128]
+5x comma                     198260 ch   413.7 Mu  cpu   1364 ms (thread 1146, redact 377)  ref   1566 ms    3.79 ns/u@ref  out 198260 sent  [cal 129/125]
+x5 comma                     198263 ch   413.7 Mu  cpu   1428 ms (thread 1220, redact 430)  ref   1622 ms    3.92 ns/u@ref  out 198263 sent  [cal 129/127]
+31é comma                    215472 ch   413.7 Mu  cpu   1339 ms (thread 1130, redact 404)  ref   1529 ms    3.70 ns/u@ref  out 215472 sent  [cal 133/126]
+U+33FE LF name before         96457 ch   413.8 Mu  cpu   2018 ms (thread 1850, redact 666)  ref   2284 ms    5.52 ns/u@ref  out 192914 sent  [cal 128/127]
+U+33FE, held prefix           88772 ch   414.0 Mu  cpu   1932 ms (thread 1743, redact 440)  ref   2220 ms    5.36 ns/u@ref  out 177484 sent  [cal 126/125]
+U+3358 0点 comma              130093 ch   413.7 Mu  cpu   1760 ms (thread 1539, redact 538)  ref   1984 ms    4.79 ns/u@ref  out 195140 sent  [cal 128/128]
+U+32C0 1月 comma              130093 ch   413.7 Mu  cpu   1749 ms (thread 1462, redact 478)  ref   1988 ms    4.81 ns/u@ref  out 195140 sent  [cal 129/127]
+1月31日 comma                  109154 ch   413.7 Mu  cpu   1789 ms (thread 1613, redact 468)  ref   2079 ms    5.03 ns/u@ref  out 218309 sent  [cal 124/125]
+U+33FE ;                     100000 ch   405.0 Mu  cpu   2078 ms (thread 1855, redact 694)  ref   2406 ms    5.94 ns/u@ref  out 200000 sent  [cal 124/127]
+U+33FE zwsp                   65323 ch   413.7 Mu  cpu   1331 ms (thread 1297, redact 345)  ref   1544 ms    3.73 ns/u@ref  out 130647 sent  [cal 126/124]
+done

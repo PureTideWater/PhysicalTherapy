@@ -1,0 +1,3 @@
+yensemi, 1 claim(s), fresh process   100000 ch   405.0 Mu  cpu   2073 ms (thread 1822, redact 789)  ref   2287 ms    5.65 ns/u@ref  out 200000 sent  [cal 150/131]
+asemi, 1000 claim(s), fresh process   171534 ch   417.8 Mu  cpu   5391 ms (thread 5087, redact 2914)  ref   5921 ms   14.17 ns/u@ref  out 171547 sent  <<< OVER 3 s  [cal 152/131]
+prose, 3000 claim(s), fresh process    34898 ch   409.7 Mu  cpu   2492 ms (thread 2422, redact 933)  ref   2784 ms    6.80 ns/u@ref  out 34898 sent  [cal 156/129]

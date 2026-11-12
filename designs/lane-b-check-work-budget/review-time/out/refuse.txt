@@ -1,0 +1,57 @@
+node v24.22.0 budget 420000000
+calibration 126 ms (reference 144)
+redactLetterForScreen 5M a                                     cpu 0.01 ms  ref 0.01 ms  -> "\u0001" spent 420000001
+holdsIdentifier(spent 0) 5M a                                  cpu 0.40 ms  ref 0.45 ms  -> true
+holdsIdentifier(spent B) 5M a                                  cpu 0.37 ms  ref 0.42 ms  -> true
+redactLetterForScreen 5M digit LF                              cpu 0.01 ms  ref 0.01 ms  -> "\u0001" spent 420000001
+holdsIdentifier(spent 0) 5M digit LF                           cpu 0.29 ms  ref 0.33 ms  -> true
+holdsIdentifier(spent B) 5M digit LF                           cpu 0.29 ms  ref 0.33 ms  -> true
+redactLetterForScreen 5M U+FDFA                                cpu 0.01 ms  ref 0.01 ms  -> "\u0001" spent 420000001
+holdsIdentifier(spent 0) 5M U+FDFA                             cpu 3.39 ms  ref 3.86 ms  -> true
+holdsIdentifier(spent B) 5M U+FDFA                             cpu 3.24 ms  ref 3.69 ms  -> true
+redactLetterForScreen 5M initials                              cpu 0.01 ms  ref 0.01 ms  -> "\u0001" spent 420000001
+holdsIdentifier(spent 0) 5M initials                           cpu 0.31 ms  ref 0.35 ms  -> true
+holdsIdentifier(spent B) 5M initials                           cpu 0.31 ms  ref 0.35 ms  -> true
+redactLetterForScreen 5M zwsp                                  cpu 0.00 ms  ref 0.00 ms  -> "\u0001" spent 420000001
+holdsIdentifier(spent 0) 5M zwsp                               cpu 3.37 ms  ref 3.84 ms  -> true
+holdsIdentifier(spent B) 5M zwsp                               cpu 3.02 ms  ref 3.44 ms  -> true
+redactLetterForScreen 50M a                                    cpu 0.01 ms  ref 0.01 ms  -> "\u0001" spent 420000001
+holdsIdentifier(spent 0) 50M a                                 cpu 3.33 ms  ref 3.80 ms  -> true
+holdsIdentifier(spent B) 50M a                                 cpu 2.87 ms  ref 3.27 ms  -> true
+redactLetterForScreen 1.3M a (just past the entry charge)      cpu 0.01 ms  ref 0.01 ms  -> "\u0001" spent 420000001
+holdsIdentifier(spent 0) 1.3M a (just past the entry charge)   cpu 0.08 ms  ref 0.09 ms  -> true
+holdsIdentifier(spent B) 1.3M a (just past the entry charge)   cpu 0.08 ms  ref 0.09 ms  -> true
+redactLetterForScreen 1.19M a (entry charge under the budget)  cpu 1.62 ms  ref 1.85 ms  -> "\u0001" spent 420000001
+holdsIdentifier(spent 0) 1.19M a (entry charge under the budget) cpu 4.32 ms  ref 4.91 ms  -> true
+holdsIdentifier(spent B) 1.19M a (entry charge under the budget) cpu 0.07 ms  ref 0.08 ms  -> true
+whole check, refused late: digit LF 100k          100000 ch  cpu 1267 ms  ref 1442.77 ms  -> redaction spent 356972020, refused true
+whole check, refused late: ct2 100k               99989 ch  cpu 738 ms  ref 840.43 ms  -> redaction spent 420000001 (past), refused true
+whole check, refused late: a-space 230k           230000 ch  cpu 896 ms  ref 1020.14 ms  -> redaction spent 338102220, refused true
+whole check, refused late: a-space 600k           600000 ch  cpu 1478 ms  ref 1682.17 ms  -> redaction spent 420000001 (past), refused true
+whole check, refused late: cyrillic word 210k     210000 ch  cpu 952 ms  ref 1083.63 ms  -> redaction spent 258603750, refused true
+whole check, refused late: prose 260k             254800 ch  cpu 1248 ms  ref 1420.81 ms  -> redaction spent 247626220, refused true
+holdsIdentifier(clean 29-char text, spent = 0 [0]) -> true
+holdsIdentifier(clean 29-char text, spent = 0 [0]) -> true
+holdsIdentifier(clean 29-char text, spent = 0.5 [0.5]) -> true
+holdsIdentifier(clean 29-char text, spent = 419989850 [419989850]) -> true
+holdsIdentifier(clean 29-char text, spent = 419989851 [419989851]) -> true
+holdsIdentifier(clean 29-char text, spent = 420000000 [420000000]) -> true
+holdsIdentifier(clean 29-char text, spent = 420000001 [420000001]) -> true
+holdsIdentifier(clean 29-char text, spent = -1 [-1]) -> true
+holdsIdentifier(clean 29-char text, spent = null [NaN]) -> true
+holdsIdentifier(clean 29-char text, spent = null [Infinity]) -> true
+holdsIdentifier(clean 29-char text, spent = null [-Infinity]) -> true
+holdsIdentifier(clean 29-char text, spent = 9007199254740991 [9007199254740991]) -> true
+holdsIdentifier(clean 29-char text, spent = 5e-324 [5e-324]) -> true
+holdsIdentifier(clean 29-char text, spent = '5' [5]) -> true
+holdsIdentifier(clean 29-char text, spent = '0' [0]) -> true
+holdsIdentifier(clean 29-char text, spent = 0n [0]) -> THROWS TypeError: Cannot mix BigInt and other types, use explicit conversions
+holdsIdentifier(clean 29-char text, spent = null [null]) -> true
+holdsIdentifier(clean 29-char text, spent = undefined [undefined]) -> true
+holdsIdentifier(clean 29-char text, spent = true [true]) -> true
+holdsIdentifier(clean 29-char text, spent = [] []) -> true
+holdsIdentifier(clean 29-char text, spent = {} [[object Object]]) -> true
+after those calls a clean letter still reads: holds true, redaction spent 27950
+largest entry charge: 350 x (2^29 - 24) = 187904810800; + budget = 188324810800; safe integer 9007199254740991; exact true
+checkWorkOf of an object the redaction did not return: 0 ; of a spread copy of a refused result: 356972020 -> copy 0
+done

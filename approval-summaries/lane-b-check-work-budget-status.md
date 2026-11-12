@@ -1,6 +1,44 @@
 # Lane B: the letter check's work budget (CT-2 on the merged base) — status
 
-## RESUME-BLOCK, current (W24, session_019i9ifDwfF9A5adSZApZYdY, 2026-11-12; BUILD DONE and green locally, handed on at the token limit BEFORE the reviews; no PR)
+## RESUME-BLOCK, current (W25, session_019i9ifCzDkV481emXJMM26J, 2026-11-12; reviews done, fix round 1 pushed, its delta review and the gate and battery on the fixed head running; no PR yet)
+
+- **Where it stands.** WIP `co-001/wip-check-work-budget` = **7a5a26bb** on base 58fb29e5 (the base is now fd14d89f,
+  #150, said not to touch packages/redact: merge it right before the last push). Local branch `co-001/check-work-budget`.
+  Commits on W24's 33380cd5: 70b1eb0f the MOD-24 row; c5fc89a8 fix round 1; 7a5a26bb a lint fix in a test.
+  Typecheck and lint pass; `denial-letter.test.ts` 1,038 pass (Node 24). Orchestrator's seat: session_019i9ifCaMokBYHaARonYamS
+  (as its former session said on 2026-11-12 01:24 UTC; check it exists before reporting there).
+- **Reviews** (`reviews/lane-b-check-work-budget-review-phi.md`, `-time.md`; scripts in
+  `designs/lane-b-check-work-budget/review-*`). PHI: no blocking finding; P-1 (a `null` count switched the counter
+  off) fixed; P-2, P-3, P-4 recorded in the ADR. TIME: **T-1 blocking** (a letter still read took 3.5 to 5.9 s with 400
+  to 1,000 claim numbers) **fixed in round 1**: `WORK.formCharacter` = 2 per character per name, member ID and claim
+  number at the top of `ownMatchesIn` and `confusedMatchesIn` (now 0.85 to 1.34 s at reference with 1,000); T-2 (the
+  dearest letter still read is 2.1 to 2.4 s at reference, U+33FE and `;` repeated, NOT the builder's 1.35 s) is under
+  the 3 s and RECORDED in the ADR, with the NFKC-length charge added; T-3 fixed (`typeof spent !== 'number'`); T-4,
+  T-5 recorded. **For the orchestrator's line: the dearest read letter is about 2.3 s, not 1.35 s.**
+- **Fix round 1's delta review**: `reviews/lane-b-check-work-budget-review-fix1-delta.md` (running; one more round is
+  allowed after it, reviewed on its delta only).
+- **Gate** (`/home/user/gate`, the kept gate with the check called as `prepare` calls it: `checkWorkOf` handed on;
+  trees given as `packages/redact/src` directories). On 33380cd5: 975,489 letters, same 975,489, differ 0
+  (`designs/lane-b-check-work-budget/gate/run1-33380cd5-report.md`). Fixtures (`gate/repo.mts`, `repo.out`): 10,830
+  strings x 2 patients, no text differs, newly refused only the 729,000-character ZIP table read whole. **To do: the
+  same two on the fixed head (run2 started), and again after the base merge.**
+- **Battery** (`battery/`: `shim-head-redact.ts` goes to `/home/user/fix/packages/model-gateway/src/redact.ts`; it runs
+  every call on the head, `/home/user/headsrc`, and on the base, `/home/user/tree-base`, and appends totals to
+  `/home/user/battery-out/shim.jsonl`, differences to `shim-bad.jsonl`; every other tree of the leaks battery's layout
+  is a copy of the base's two files; `recorded.sh` is the leaks battery less its gate and audit lines, `fresh.sh` the
+  seeded generators on fresh seeds). On 33380cd5, recorded seeds, 63 scripts before a container restart: 567,753
+  redactions, 516,552 checks, 0 texts differ, 0 base-refused-head-sent, 0 newly refused. **To do: both scripts on the
+  fixed head (started), then total `shim.jsonl`.**
+- **Then:** fix what the delta review finds (at most one more round); the full local suite once on Node 24 (output to
+  a file); merge the base, gate again; the ADR's battery line and the PR text take the final counts; draft PR into
+  claude/build-platform from the template, saying in plain words what is newly refused (crafted letters past the
+  budget; long letters on a call with hundreds of claim numbers) and why; subscribe; merge on green; one line to the
+  orchestrator (merge commit; hook: `checkWorkSpent` / `work()`, item 26's readings inside the two entries, hand
+  `checkWorkOf(redacted)` to `holdsIdentifier`; the 2.3 s).
+
+## Earlier block (W24), kept for the build's detail
+
+## RESUME-BLOCK of W24 (superseded: W24, session_019i9ifDwfF9A5adSZApZYdY, 2026-11-12; BUILD DONE and green locally, handed on at the token limit BEFORE the reviews; no PR)
 
 - **Where it stands.** WIP `co-001/wip-check-work-budget` = **33380cd5** (two commits on base 58fb29e5: bdf7b62b the
   counter, the budget and the tests; 33380cd5 ADR 0054's amendment). Local branch name `co-001/check-work-budget`.

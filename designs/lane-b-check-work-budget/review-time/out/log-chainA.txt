@@ -1,0 +1,10 @@
+/home/user/review-time/out/det-fresh-v24.txt ee0e1c2312fd765e unicode 17.0 icu 78.3 refused 3
+/home/user/review-time/out/det-after-v24.txt ee0e1c2312fd765e unicode 17.0 icu 78.3 refused 3
+/home/user/review-time/out/det-reversed-v24.txt ee0e1c2312fd765e unicode 17.0 icu 78.3 refused 3
+/home/user/review-time/out/det-fresh-v22.txt ee0e1c2312fd765e unicode 17.0 icu 78.3 refused 3
+/home/user/review-time/out/det-after-v22.txt ee0e1c2312fd765e unicode 17.0 icu 78.3 refused 3
+/home/user/review-time/out/det-reversed-v22.txt ee0e1c2312fd765e unicode 17.0 icu 78.3 refused 3
+prose, 200 claim(s), fresh process   200003 ch   414.6 Mu  cpu   1369 ms (thread 1248, redact 700)  ref   1559 ms    3.76 ns/u@ref  out 200003 sent  [cal 148/126]
+prose, 1000 claim(s), fresh process    84783 ch   407.8 Mu  cpu   1810 ms (thread 1699, redact 833)  ref   1977 ms    4.85 ns/u@ref  out 84783 sent  [cal 159/132]
+yen, 1000 claim(s), fresh process   118160 ch   414.3 Mu  cpu   3508 ms (thread 3252, redact 1218)  ref   3812 ms    9.20 ns/u@ref  out 236320 sent  <<< OVER 3 s  [cal 156/133]
+asemi, 400 claim(s), fresh process   171196 ch   415.4 Mu  cpu   3036 ms (thread 2820, redact 1737)  ref   3482 ms    8.38 ns/u@ref  out 171209 sent  <<< OVER 3 s  [cal 152/126]

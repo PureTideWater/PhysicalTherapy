@@ -1,0 +1,30 @@
+profile yensemi, 1 claim(s), 100000 ch, 405 Mu, 3 runs, 9712 ms sampled
+   26.6 %  (anonymous):2
+   14.9 %  datesIn:2
+    8.9 %  buildView:2
+    7.6 %  (garbage collector):0 [native]
+    4.8 %  set TextDecoder:0 [native]
+    4.4 %  compactIdentifier:2
+    4.1 %  __name:2
+    3.8 %  identifierTokenRuns:2
+    3.6 %  nameGlued:2
+    2.5 %  numberSuffix:2
+    2.4 %  labelWindow:2
+    2.2 %  post:115 [node:inspector]
+    1.8 %  scanLabeled:2
+    1.5 %  writtenTokens:2
+profile yen, 400 claim(s), 118388 ch, 414 Mu, 3 runs, 11552 ms sampled
+   24.9 %  (anonymous):2
+   10.5 %  ownMatchesIn:2
+    9.3 %  datesIn:2
+    6.8 %  buildView:2
+    6.7 %  (garbage collector):0 [native]
+    6.5 %  confusedMatchesIn:2
+    4.5 %  __name:2
+    4.5 %  set TextDecoder:0 [native]
+    4.1 %  identifierTokenRuns:2
+    2.8 %  writtenTokens:2
+    2.6 %  confusedGluedIn:2
+    2.3 %  nameGlued:2
+    2.1 %  compactIdentifier:2
+    1.2 %  survivorRead:2

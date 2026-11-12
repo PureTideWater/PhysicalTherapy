@@ -1,0 +1,66 @@
+== A. fresh-process answers of the base for the three small letters
+base PHI                                                       {"held":false,"text":"Re: [PATIENT_NAME], DOB [DATE_OF_BIRTH], member [MEMBER_ID], SSN [SSN], call [PHONE] about claim [CLAIM_1]. [PATIENT_NAME] [PATIENT_NAME]. was seen 11/01/2026; paid $150.00."}
+base LEFT held                                                 true
+base CLEAN held                                                false
+== B. refused past the budget, then normal letters: same as the base (which never threw)
+past in redaction: text is U+0001 / spent>budget / held        [true,true,true]
+  then PHI: head equals fresh base                             true
+  then LEFT: head equals fresh base                            true
+  then CLEAN: head equals fresh base                           true
+past in redaction, joiner: text is U+0001 / spent>budget / held [true,true,true]
+  then PHI: head equals fresh base                             true
+  then LEFT: head equals fresh base                            true
+  then CLEAN: head equals fresh base                           true
+past in check: text is U+0001 / spent>budget / held            [false,false,true]
+  then PHI: head equals fresh base                             true
+  then LEFT: head equals fresh base                            true
+  then CLEAN: head equals fresh base                           true
+past in check, other digit: text is U+0001 / spent>budget / held [false,false,true]
+  then PHI: head equals fresh base                             true
+  then LEFT: head equals fresh base                            true
+  then CLEAN: head equals fresh base                           true
+== C. the spent argument (holdsIdentifier(text, P, C, spent)); LEFT must be true for every value
+spent=undefined: LEFT -> / CLEAN ->                            true (7 ms) / false (2 ms)
+spent=0: LEFT -> / CLEAN ->                                    true (1 ms) / false (1 ms)
+spent=-0: LEFT -> / CLEAN ->                                   true (1 ms) / false (12 ms)
+spent=NaN: LEFT -> / CLEAN ->                                  true (0 ms) / true (0 ms)
+spent=-1: LEFT -> / CLEAN ->                                   true (0 ms) / true (0 ms)
+spent=Infinity: LEFT -> / CLEAN ->                             true (0 ms) / true (0 ms)
+spent=-Infinity: LEFT -> / CLEAN ->                            true (0 ms) / true (0 ms)
+spent=budget: LEFT -> / CLEAN ->                               true (0 ms) / true (0 ms)
+spent=budget+1: LEFT -> / CLEAN ->                             true (0 ms) / true (0 ms)
+spent=1e300: LEFT -> / CLEAN ->                                true (0 ms) / true (0 ms)
+spent="5": LEFT -> / CLEAN ->                                  true (0 ms) / true (0 ms)
+spent="": LEFT -> / CLEAN ->                                   true (0 ms) / true (0 ms)
+spent="abc": LEFT -> / CLEAN ->                                true (0 ms) / true (0 ms)
+spent=null: LEFT -> / CLEAN ->                                 true (1 ms) / false (1 ms)
+spent=true: LEFT -> / CLEAN ->                                 true (1 ms) / false (14 ms)
+spent=[]: LEFT -> / CLEAN ->                                   true (0 ms) / true (0 ms)
+spent=[7]: LEFT -> / CLEAN ->                                  true (0 ms) / true (0 ms)
+spent={}: LEFT -> / CLEAN ->                                   true (0 ms) / true (0 ms)
+spent=0n: LEFT -> / CLEAN ->                                   "THROWS TypeError: Cannot mix BigInt and other types, use explicit conversions" (0 ms) / "THROWS TypeError: Cannot mix BigInt and other types, use explicit conversions" (0 ms)
+spent={valueOf:()=>0}: LEFT -> / CLEAN ->                      true (1 ms) / false (7 ms)
+== C2. the count dropped or lost on a letter the check takes past the budget (base sends it; time only)
+base check of that letter                                      false (3419 ms)
+head, count handed on (as prepare does)                        true (1574 ms)
+head, count of a spread copy {...redacted} (0)                 false (2294 ms)
+head, count of a frozen redacted                               true (1727 ms)
+head, spent dropped (3 arguments)                              false (1641 ms)
+head, spent=null (runs NO counter)                             false (3935 ms)
+head, 100,000 chars of 5\n, spent=0                            false (3248 ms)
+== D. nesting: an entry run inside another (through a getter on the patient), and an uncounted public function inside a counted entry
+outer redaction with a past-budget redaction nested: equals base [true,true,true,["inner -> [true,true]"]]
+outer check with a past-budget check nested: answer            [false,"base",false,["inner -> false"]]
+outer check (LEFT) with a past-budget check nested: answer     [true,["inner -> false"]]
+redactLetter (no counter of its own) inside a counted redaction {"outerText":"\"\\u0001\"","outerSpentPastBudget":true,"held":true,"seen":["inner THROWS PastCheckWorkBudget"]}
+redactLetter outside any entry on the same letter              true (25083 ms)
+then PHI again equals fresh base                               true
+== E. fold outside the entries: every BMP code point and the astral letters, head = base, and no throw
+fold differences over U+0000..U+1FFFF                          0
+3,000,000 fold calls outside an entry (450,000,000 units if counted) no throw after 3000000
+== F. someOf against Array.prototype.some
+dense arrays: differing answers or call sequences in 20,000    0
+sparse [ ,1], test v===undefined: some / someOf                [false,true]
+list grown by the test: some / someOf                          [false,true]
+units for a hit at index 2 of 4 (expect 3) and a miss (expect 4) [3,4]
+a hit past the budget throws rather than answers               PastCheckWorkBudget

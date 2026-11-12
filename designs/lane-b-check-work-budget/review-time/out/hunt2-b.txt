@@ -1,0 +1,14 @@
+node v24.22.0
+prose, 50 claims             265130 ch   414.1 Mu  cpu   1284 ms (thread 1116, redact 663)  ref   1428 ms    3.45 ns/u@ref  out 265130 sent  [cal 152/129]
+prose, 100 claims            239223 ch   414.4 Mu  cpu   1316 ms (thread 1133, redact 697)  ref   1499 ms    3.62 ns/u@ref  out 239223 sent  [cal 126/129]
+prose, 400 claims            150423 ch   414.5 Mu  cpu   1473 ms (thread 1402, redact 694)  ref   1613 ms    3.89 ns/u@ref  out 150423 sent  [cal 132/132]
+prose, 700 claims            109471 ch   413.9 Mu  cpu   1646 ms (thread 1566, redact 735)  ref   1852 ms    4.48 ns/u@ref  out 109471 sent  [cal 132/128]
+prose, 100 claims x 3 numbers   171742 ch   414.6 Mu  cpu   1519 ms (thread 1376, redact 675)  ref   1719 ms    4.15 ns/u@ref  out 171742 sent  [cal 128/127]
+U+33FE comma, 30 claims      118527 ch   413.7 Mu  cpu   1863 ms (thread 1644, redact 612)  ref   2166 ms    5.23 ns/u@ref  out 237055 sent  [cal 124/124]
+U+33FE comma, 100 claims     118501 ch   413.8 Mu  cpu   2015 ms (thread 1806, redact 635)  ref   2350 ms    5.68 ns/u@ref  out 237003 sent  [cal 123/124]
+U+33FE comma, 200 claims     118463 ch   413.8 Mu  cpu   2258 ms (thread 1959, redact 700)  ref   2622 ms    6.34 ns/u@ref  out 236927 sent  [cal 124/128]
+U+33FE comma, 400 claims     118388 ch   413.9 Mu  cpu   2556 ms (thread 2282, redact 840)  ref   2988 ms    7.22 ns/u@ref  out 236776 sent  [cal 123/132]
+a; after name, 200 claims    171075 ch   414.5 Mu  cpu   2486 ms (thread 2134, redact 1342)  ref   2888 ms    6.97 ns/u@ref  out 171088 sent  [cal 128/124]
+prose, 40 names              275316 ch   414.5 Mu  cpu   1350 ms (thread 1172, redact 685)  ref   1569 ms    3.78 ns/u@ref  out 275316 sent  [cal 124/124]
+prose, 200 member ids        200003 ch   414.6 Mu  cpu   1361 ms (thread 1251, redact 669)  ref   1601 ms    3.86 ns/u@ref  out 200003 sent  [cal 122/125]
+done
