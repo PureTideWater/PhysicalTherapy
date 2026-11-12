@@ -848,6 +848,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // The Social Security, phone and own-identifier forms the range fix exposed, closed (the orchestrator's rulings A, A' and B of 2026-11-07; docs/adr/0054, amendment of 2026-11-11).
   'MOD-21': none(10, 'Letters are written in memory by the tests, a property among them, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   'MOD-22': none(10, 'Letters are written in memory by the tests, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/redact/src/confusables.test.ts']),
+  // A name written apart, a number as the records hold it, and a CR LF read as one line ending (docs/adr/0054, amendments of 2026-11-11 and 2026-11-12).
+  'MOD-23': none(10, 'Letters are written in memory by the tests, two properties among them; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   // The letter check's work budget (docs/adr/0054, amendment of 2026-11-12).
   'MOD-24': none(10, 'Letters are written in memory by the tests; no file.', ['packages/model-gateway/src/functions/denial-letter.test.ts']),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).

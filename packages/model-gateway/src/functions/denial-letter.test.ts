@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import type { FlagRow } from '../flags';
-import { BARRIER, CHECK_WORK_BUDGET, type LetterClaim, type PatientIdentifiers, checkWorkOf, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '@tp/redact';
+import { BARRIER, CHECK_WORK_BUDGET, type LetterClaim, type PatientIdentifiers, checkWorkOf, dateForms, datesIn, fold, holdsIdentifier, holdsNameOrNumber, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '@tp/redact';
 import { SYNTHETIC_IDS, SYNTHETIC_LETTER, localGateway, registerOutput, syntheticLetterInput, syntheticLetterOutput, syntheticRecords } from '../testing';
 import { type DenialLetterInput, type DenialLetterOutput, denialLetterSpec, verifyDenialLetter } from './denial-letter';
 import { mentionsIdentifier } from './narrative';
@@ -219,12 +219,16 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(redact(['JANE VANTREE'], 'Dear\u3164Jane and Dear\uFFA0Jane')).toBe('Dear\u1160[PATIENT_NAME] and Dear\u1160[PATIENT_NAME]');
   });
 
-  it('never makes a name of common words: a space inside a part needs capitalized pieces of two letters or more', () => {
-    expect(redact(['INA VANTREE'], 'records in a timely manner')).toBe('records in a timely manner');
-    expect(redact(['ISA VANTREE'], 'This is a request')).toBe('This is a request');
-    expect(redact(['ASA VANTREE'], 'resubmitted as a new claim')).toBe('resubmitted as a new claim');
-    expect(redact(['TOBE VANTREE'], 'sent to be reviewed')).toBe('sent to be reviewed');
-    expect(redact(['IDA VANTREE'], "I'd a question")).toBe("I'd a question");
+  it('reads a part with a space anywhere inside it, so words whose letters are a part of the name are replaced (MOD-23: the recorded cost)', () => {
+    expect(redact(['INA VANTREE'], 'records in a timely manner')).toBe('records [PATIENT_NAME] timely manner');
+    expect(redact(['ISA VANTREE'], 'This is a request')).toBe('This [PATIENT_NAME] request');
+    expect(redact(['ASA VANTREE'], 'resubmitted as a new claim')).toBe('resubmitted [PATIENT_NAME] new claim');
+    // The narrative's reading keeps the pieces rule: there such a name would fail every narrative.
+    expect(holdsNameOrNumber('records in a timely manner', { names: ['INA VANTREE'], numbers: [] })).toBe(false);
+    expect(redact(['TOBE VANTREE'], 'sent to be reviewed')).toBe('sent [PATIENT_NAME] reviewed');
+    // An apostrophe joins a name's part as it always did ("O'Brien"); with the space beside it, "I'd a" is IDA.
+    expect(redact(['IDA VANTREE'], "I'd a question")).toBe('[PATIENT_NAME] question');
+    expect(redact(['IDA VANTREE'], "I'd agreed")).toBe("I'd agreed");
     // The whole name still matches across its own parts, whatever its case.
     expect(redact(['INA VANTREE'], 'ina vantree, Ina')).toBe('[PATIENT_NAME], [PATIENT_NAME]');
   });
@@ -264,8 +268,9 @@ describe('one pass over one folded view: every placeholder survives and no ident
 
   it('folds astral letters with case and leaves an emoji next to a name', () => {
     expect(redact(['𐐔𐐯𐑅𐐨𐑉𐐯𐐻 VANTREE'], 'Dear 𐐼𐐯𐑅𐐨𐑉𐐯𐐻 Vantree 😀Vantree😀')).toBe('Dear [PATIENT_NAME] 😀[PATIENT_NAME]😀');
-    // A spaced astral name the spacing rule turns down moves the search past the whole code point (it once looped there).
-    expect(redact(['𐐔𐐯𐑅𐐨𐑉𐐯𐐻 VANTREE'], 'Dear 𐐼𐐯 𐑅𐐨𐑉𐐯𐐻, 𐐔𐐯 𐐝𐐨𐑉𐐯𐐻')).toBe('Dear 𐐼𐐯 𐑅𐐨𐑉𐐯𐐻, [PATIENT_NAME]');
+    // A spaced astral name the first reading's spacing rule turns down moves its search past the whole code point (it once
+    // looped there); the wider reading takes it whatever the pieces' case (MOD-23).
+    expect(redact(['𐐔𐐯𐑅𐐨𐑉𐐯𐐻 VANTREE'], 'Dear 𐐼𐐯 𐑅𐐨𐑉𐐯𐐻, 𐐔𐐯 𐐝𐐨𐑉𐐯𐐻')).toBe('Dear [PATIENT_NAME], [PATIENT_NAME]');
   });
 
   it('masks a placeholder with a barrier the fold keeps, so no match reaches across it', () => {
@@ -319,6 +324,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
   /** No budget: only how long a row may hang. A loaded runner's wall clock is no part of the reader's cost (vitest's default is 5 s). */
   const HANG_GUARD_MS = 60_000;
   const fill = (unit: string) => unit.repeat(Math.floor(N / unit.length));
+  /** As fill, to a length of the caller's. */
+  const fillTo = (unit: string, length: number) => unit.repeat(Math.floor(length / unit.length));
   const half = (unit: string) => unit.repeat(Math.floor(N / 2 / unit.length));
   /** MOD-16's CI counterexample: a letter whose chain only the range fix's barriers hold (cc3dd7f6 refused it for the range's digits). */
   const HELD = 'Paid $0,000.00. Service 01/01/2020-01/02/2020Paid $0,000.00. ';
@@ -327,6 +334,27 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['a gap after a name as long as the letter (4.6 s before)', ['JANE Q VANTREE'], `Vantree${' '.repeat(N - 20)}x J`, ['SYN555001']],
     ['dates written with slashes, one after another (2.6 s before)', ['JANE Q VANTREE'], fill('1/1/11 '), ['SYN555001']],
     ['dates written with spaces alone (4.7 s before)', ['JANE Q VANTREE'], fill('1 1 11 '), ['SYN555001']],
+    // MOD-23: a letter that holds a name written apart is read by both readings, the first and the wider one, and one
+    // that writes it thousands of times. The wider reading and the check the redaction asks before it applies a wider
+    // match count their work on the letter's one counter (CHECK_WORK_BUDGET), so each of these is at a length still
+    // read; the same letters at N characters are past the budget and refused below.
+    ['dates written with slashes, then the name with a part written apart', ['JANE Q VANTREE'], `${fillTo('1/1/11 ', N / 2 - 8)}Vant ree`, ['SYN555001']],
+    ['dates written with spaces alone, then the name over a full stop', ['JANE Q VANTREE'], `${fillTo('1 1 11 ', 40_000 - 9)}Vant. ree`, ['SYN555001']],
+    ['the name letter by letter, repeated', ['JANE Q VANTREE'], fill('V a n t r e e '), ['SYN555001']],
+    ['the name written apart, then initials to the end of the letter', ['JANE Q VANTREE'], `Vant ree${' J'.repeat((N / 2 - 8) / 2)}`, ['SYN555001']],
+    ['all of the name but its last letter, spaced, repeated', ['JANE Q VANTREE'], fill('V a n t r e '), ['SYN555001']],
+    // The dearest letters of MOD-23 that are still read. A CR LF letter with nothing for the wider reading to apply is
+    // checked in both writings (K-1): the first reading's check twice. One that holds a name written apart is checked
+    // four times (both writings before the wider match is applied, both after). Each check is charged in full, so
+    // these are read to about a third to a half of the length the first reading alone is.
+    ['dates written with spaces alone, and a CR LF, to 50,000 characters', ['JANE Q VANTREE'], `${fillTo('1 1 11 ', N / 2)}\r\n`, ['SYN555001']],
+    ['dates written with spaces alone and a CR LF, then the name with a part written apart, to 25,000 characters', ['JANE Q VANTREE'], `${fillTo('1 1 11 ', N / 4 - 10)}\r\nVant ree`, ['SYN555001']],
+    ['a digit and a CR LF, repeated, then the name with a part written apart, to 30,000 characters', ['JANE Q VANTREE'], `${fillTo('5\r\n', 30_000 - 8)}Vant ree`, ['SYN555001']],
+    ['a digit and a bare line break, repeated, then the name with a part written apart, to 30,000 characters', ['JANE Q VANTREE'], `${fillTo('5\n', 30_000 - 9)} Vant ree`, ['SYN555001']],
+    ['a digit and a bare line break, repeated, then one CR LF, to 30,000 characters', ['JANE Q VANTREE'], `${fillTo('5\n', 30_000 - 2)}\r\n`, ['SYN555001']],
+    // The dearest letter found that MOD-23 leaves read (review D, D-TIME-1): a date glued to a letter (NFKC writes U+33FE
+    // as a day and its sign) and a semicolon, repeated, with one CR LF, so the check reads it twice.
+    ['a day’s sign and a semicolon, repeated, then one CR LF, to 57,972 characters', ['JANE Q VANTREE'], `${'\u33FE;'.repeat(28_985)}\r\n`, ['SYN555001']],
     ['dates with a claim’s digits between them (5.0 s before)', ['JANE VANTREE'], fill('1-1-11 555001 '), ['555001']],
     // Social Security and phone numbers by pattern (docs/adr/0054, amendment of 2026-11-04; twins NPA-555-01xx, 9xx).
     ['phones back to back', ['JANE Q VANTREE'], fill('(202) 555-0123 '), ['SYN555001']],
@@ -513,6 +541,35 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(redactLetter(text, patient(['JANE Q VANTREE']), claim('SYN555001'))).toMatchObject({ text, replaced: 0 });
   });
 
+  // MOD-23 on the check's work budget (docs/adr/0054, amendment of 2026-11-12, "item 26's readings on the counter"). The
+  // wider reading, the check the redaction asks before it applies a wider match, and the check's second reading of a
+  // CR LF letter each count their work on the letter's one counter, so a letter they take past the budget is refused
+  // by the count: the letters above at the full N characters, CT-1's letters of review C (one digit to a line with a
+  // name written apart, or with one CR LF: 3.0 to 3.8 s of the 3 s before), and the same with another script's digit
+  // and another line break.
+  it.each([
+    ['dates written with slashes, then the name with a part written apart', `${fill('1/1/11 ')}Vant ree`],
+    ['dates written with spaces alone, then the name over a full stop', `${fill('1 1 11 ')}Vant. ree`],
+    ['the name written apart, then initials to the end of the letter', `Vant ree${' J'.repeat(N / 2)}`],
+    ['dates written with spaces alone, and a CR LF', `${fill('1 1 11 ')}\r\n`],
+    ['dates written with spaces alone and a CR LF, then the name with a part written apart', `${fill('1 1 11 ')}\r\nVant ree`],
+    ['the same at half the length', `${fillTo('1 1 11 ', N / 2 - 10)}\r\nVant ree`],
+    ['a digit and a CR LF, repeated, then the name with a part written apart', `${fill('5\r\n')}Vant ree`],
+    ['a digit and a bare line break, repeated, then the name with a part written apart (CT-1)', `${fillTo('5\n', N - 10)} Vant ree`],
+    ['a digit and a bare line break, repeated, then one CR LF (CT-1)', `${fillTo('5\n', N - 2)}\r\n`],
+    ['the same to 40,000 characters', `${fillTo('5\n', 40_000 - 2)}\r\n`],
+    ['another script’s digit and a line separator, repeated, then the name with a part written apart', `${fillTo('\u0665\u2028', N - 10)} Vant ree`],
+    ['another script’s digit and a next-line character, repeated, then one CR LF', `${fillTo('\u0665\u0085', N - 2)}\r\n`],
+    ['another script’s digit and a line separator to 50,000 characters, a CR LF, then the name with a part written apart', `${fillTo('\u0665\u2028', N / 2 - 25)}\r\nVant ree`],
+  ])('refuses a letter the wider reading or the second reading of a CR LF takes past the check’s work budget, by the count and within the 3 s: %s', { timeout: HANG_GUARD_MS }, (_case, text) => {
+    const run = timed(BUDGET_MS, () => checked(['JANE Q VANTREE'], text));
+    expect(run.value.held).toBe(true);
+    expect(run.value.text).not.toContain('Vant');
+    expect(run.ms, `refused ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
+    // The same letter has the same answer, and the same count, again.
+    expect(checked(['JANE Q VANTREE'], text)).toEqual(run.value);
+  });
+
   // Review round 3 (GATEWAY3-3): the check's own paths, a letter it refuses included, in time linear in its length.
   it.each([
     // The call's identifiers glued to text (ownIdentifierGlued): a run of letters a digit touches, read once per part.
@@ -616,8 +673,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
   it('joins a name hyphenated at a line break, whatever the case of its pieces', () => {
     expect(redact(['IVY VANTREE'], 'Ms. Van-\ntree, Vantr-\nee, Van–\r\n  tree')).toBe('Ms. [PATIENT_NAME], [PATIENT_NAME], [PATIENT_NAME]');
     expect(redact(['JOANN VANTREE'], 'Dear Jo-\nann,')).toBe('Dear [PATIENT_NAME],');
-    // The recorded residual: a part written in lower case with a space inside it ("jo ann") is not a name.
-    expect(redact(['JOANN VANTREE'], 'jo ann')).toBe('jo ann');
+    // Closed by MOD-23: a part written in lower case with a space inside it ("jo ann") is the name.
+    expect(redact(['JOANN VANTREE'], 'jo ann')).toBe('[PATIENT_NAME]');
   });
 
   it('joins a number with a slash or a colon next to a letter, and between digits only after an identifier label', () => {
@@ -1758,7 +1815,7 @@ describe('Social Security and phone numbers by pattern (MOD-15, MOD-16; docs/adr
     ['PHI5-2', ['ZEPHYRA VANTREE'], 'Patient: Z VPaid $10.00.', 'Patient: Z VPaid $10.00.', VANTREE],
     ['PHI5-2', ['ZEPHYRA VANTREE'], `${HELD}Claim reviewed; no balance is owed.`, `${HELD}Claim reviewed; no balance is owed.`, VANTREE],
     ['PHI5-1', ['JANE Q ZEPHYRA'], `${HELD}A jazz quiz was held.`, `${HELD}A jazz quiz was held.`, {}],
-    ['PHIJ4-2', ['BOB XU'], 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', {}],
+    ['PHIJ4-2', ['BOB XU'], 'Paid $0,000.00. Service 01/01/2020 Bo b $0,000.00', 'Paid $0,000.00. Service 01/01/2020 [PATIENT_NAME] $0,000.00', {}],
     // GATEWAYJ4-1: a number's own letters before the name are no head of a part: "am" or "pm" after a range of hours or
     // times, h.mm or hhmm, an ordinal's suffix after a range's first end, a unit's letters after a whole number, and a
     // procedure code's modifier.
