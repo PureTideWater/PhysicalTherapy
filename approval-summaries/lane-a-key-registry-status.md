@@ -144,7 +144,7 @@ handlers/job line (told to the orchestrator at the start).
   platform's other database tests: 8 files, 76 passed, 1 skipped. Infra: 29 files, 816 passed. The worker's, the mail
   words', the log fields' and the tools' unit tests: 1,132 passed in the last run of the worker and the two tools.
   `pnpm typecheck`, `pnpm lint`, `pnpm lint:logs`: 0 errors.
-- **`pnpm test:db`, whole, on e85c3b40: started by W43, not finished when this block was written; the result is added in a later commit of this file, and until it is, the whole suite counts as NOT run on the job half.**
+- **`pnpm test:db`, whole, on e85c3b40 (PostgreSQL 18): 175 files, 10,397 passed, 1 skipped, 0 failed** (28 minutes). That is W33's 173 files and 10,372 tests plus the two new files' 25; W32's 26, the catalog test and the cross-tenant test are in it.
 - Numbers used: **JOB-08** only (the worker's rows). JOB-06 and JOB-07 are the database's (W32's). None other taken.
 - **Said plainly:** `provider-sign-outs.ts` was written before its tests (a slip against "tests first"). Its tests
   were then seen failing only where the job was not yet registered (`handlers.provider_sign_outs is not a function`)
