@@ -1718,3 +1718,72 @@ and failed there;
 the engine's version moves the reader's cost more than the calibration's (12 to 21 % against 0 to 8 % between Node
 22 and 24), so the reference is stated for Node 24; and a first run in a cold process costs 14 to 16 % more than later
 runs, which the first-run rule counts whenever the first run is under the budget.
+
+## Amendment (`co-001/check-work-budget`, 2026-11-12): the letter check's work budget
+
+**What was wrong.** The reader's budget is 3 s for a letter of 100,000 characters on the reference machine. The merged
+reader (58fb29e5) broke it on crafted letters no budget row held (review C-TIME of Queues item 26, finding CT-2):
+
+- `matchesIn` asked, once per match, whether a list of matches already held it (`plain.some`, and `base.some` where a
+  name is written with a joiner). Initials beside a name, as many as fill the letter, and one look-alike character
+  anywhere make that 1.25 thousand million comparisons, 2.5 thousand million with a joiner: 3.0 to 4.3 s and 5.6 to
+  8.3 s at the reference speed (2.8 to 3.2 s and 4.7 to 6.7 s measured again here, Node 24, a machine whose calibration
+  reads 122 ms against the reference's 144).
+- Its dearest linear letters, one digit to a line, took 1.9 to 2.6 s of the 3 s, which left no room for a second
+  reading (item 26).
+
+No realistic letter is near either: the letters in question are 100,000 characters of initials or of single digits.
+
+**The decision: one deterministic work budget for the whole check, failing closed** (the orchestrator's ruling). How
+matching decides is not changed by one comparison. The check counts its own work where the work is done, in one counter
+for the whole letter, and past a fixed budget the letter is refused by the check's own refusal (`identifier_left`; it
+goes to a person), never sent on a partial reading.
+
+- **The counter** is `checkWorkSpent` in `packages/redact/src/redact.ts`, counted by `work(units)`; the budget is
+  `CHECK_WORK_BUDGET` = 420,000,000 units. One unit is one comparison of two matches.
+- **What is counted** (`WORK`): every comparison of the five searches of a list of matches in `matchesIn` and
+  `redactLetterForScreen` (`someOf`, which answers as `Array.prototype.some` answers), one for one; and the readings the
+  measurement showed as drivers of some letter's time, each at a fixed weight: a view built (per character), a label's
+  window, a label scanned, a date's readings, a search of a sorted list, a digit read across a line break, a join of two
+  tokens, a look-alike fold and a digit-for-letter reading; and each of the two entries charges every character of its
+  text once, for the passes no site counts, so a letter's length alone is bounded (about 600,000 characters).
+- **One budget for both halves.** `redactLetterForScreen` counts from nothing and keeps what it spent beside the letter
+  it returns (`checkWorkOf`, a count and no text); `holdsIdentifier` takes that count as its fourth argument and counts
+  on from it. `prepare` hands it on. A count that is no number, is negative or is past the budget refuses the letter
+  before anything is read.
+- **Past the budget.** The reading stops where it stands (`PastCheckWorkBudget`, caught only by the two entries).
+  `redactLetterForScreen` then returns not one character of the letter: its text is one of the checks' own marks
+  (U+0001), which `holdsIdentifier` refuses at its first line with any count, and no candidates. `holdsIdentifier`
+  answers true. There is no partly redacted text for a caller to send.
+- **Why a count and not a clock.** A letter has the same answer on every machine and in every run; a clock would send
+  on a fast machine what it refuses on a loaded one, and no test could pin which.
+- **Who runs no counter.** `redactLetter`, `redactionSpans` and the narrative's and the packet verifier's readings
+  (`holdsNameOrNumber`, `nameOrNumberMatches`) have no refusal to give and read as before, whatever the letter.
+
+**The only answer this changes is from sent to refused.** The count reads nothing and decides nothing; where the counter
+is not past the budget every function returns what it returned on 58fb29e5.
+
+**The budget, measured** (Node 24; this machine's calibration 122 ms, the reference's 144, so times at the reference
+speed are 1.18 times these). The weights were fitted to the processor time of 52 crafted letters (the budget rows of
+`denial-letter.test.ts`, CT-2's letters and the digit-to-a-line letters): the time per unit is 1.1 to 2.9 ns across
+them. Each of 51 families was then sized to sit just under the budget (49,000 to 380,000 characters): the dearest
+letter still read took 1.14 s here, 1.35 s at the reference speed (the cheapest 0.54 s). Half the reader's 3 s is left
+for item 26's second reading, which is to count in the same counter.
+
+**What it refuses.** At 100,000 characters: CT-2's letters (in the redaction), 50,000 initials beside a name with no
+look-alike, and the letters of one digit to a line (bare line feed, CR LF, a dash before the line feed, another
+script's digit with U+2028 or U+0085), the last six in the check. The three budget rows of that kind are read at 50,000
+characters and refused at 100,000 (`denial-letter.test.ts`, "refuses a letter past the check's work budget"). A letter
+of ordinary prose is read to about 220,000 characters; the repository's letters and narratives are at most 9,933
+characters, about a twentieth of the budget.
+
+**Left, each recorded.**
+
+- The quadratic comparison itself is not cured: a letter under the budget still pays it (29,000 characters of CT-2's
+  shape with a joiner take 0.57 s). Curing it (an index of the matches by position) changes the first reading's code
+  and needs the redaction's reviews again: an optional follow-up.
+- `holdsIdentifier` called without the redaction's count starts from nothing, so a caller that drops the fourth
+  argument holds each half to the budget and not the two together: a time cost of at most twice the budget, never a
+  partial reading. `prepare` is the one production caller and hands it on (pinned).
+- The weights are a fit, not a proof: a family of letters no row holds could cost more per unit than 2.9 ns. The budget
+  rows hold the plain 3 s on every family the reviews have found; a new family is a new row.
