@@ -1,0 +1,20 @@
+RUN S3-D2-header mode=auto tag=month run=1
+Time: 568.045 ms
+RUN S3-D2-header mode=auto tag=month run=2
+Time: 507.764 ms
+RUN S3-D2-header mode=auto tag=month run=3
+Time: 562.145 ms
+RUN S3-D2-header mode=auto tag=month run=4
+Time: 523.758 ms
+RUN S3-D2-header mode=auto tag=month run=5
+Time: 548.046 ms
+RUN S3-D2-header mode=auto tag=month run=6
+Time: 578.389 ms
+RUN S3-D2-header mode=auto tag=month run=7
+Time: 496.706 ms
+RUN S3-D2-header mode=auto tag=month run=8
+Time: 552.078 ms
+RUN S3-D2-header mode=auto tag=month4 run=1
+Time: 7.515 ms
+RUN S3-D2-header mode=auto tag=month4 run=2
+Time: 6.475 ms

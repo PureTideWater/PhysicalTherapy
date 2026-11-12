@@ -1,0 +1,6 @@
+RUN S4-D2-header mode=force_generic_plan tag=month run=1
+Time: 520.504 ms
+RUN S4-D2-header mode=force_generic_plan tag=month run=2
+Time: 462.907 ms
+RUN S4-D2-header mode=force_generic_plan tag=month run=3
+Time: 546.404 ms

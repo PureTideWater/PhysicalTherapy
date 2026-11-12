@@ -1,0 +1,27 @@
+01 the month: 30,795 lines, 1,200 cases, the right figure|P0999 ACCEPTED
+02 the month, one cent over|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+03 the month, one line listed twice|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+04 the month plus another practice's line, its cents added|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+05 four keys, the month's figure|P0999 ACCEPTED
+06 five keys, an empty line list, figure 0, cases listed|P0999 ACCEPTED
+07 an empty line list, figure 5|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+08 three lines of three cases, the right figure|P0999 ACCEPTED
+09 three lines, one twice|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+10 three lines, one cent under|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+11 three lines, one of their cases not listed|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+12 the key actionable_open missing, three lines|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+13 the key actionable_open missing, an empty line list|23514 new row for relation "roi_statement" violates check constraint "roi_statement_links"
+14 another practice's line alone, its figure, its case listed|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+15 a superseded priced line of a listed case, figure 0|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+16 a line that is no row, figure 0|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+17 a statement of another practice, out of scope|42501 new row violates row-level security policy for table "roi_statement"
+18 a JSON null in the line list, figure 0|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+19 a malformed ID in the line list|22P02 invalid input syntax for type uuid: "zz"
+20 an upper-case ID of a real line, the right figure|23514 new row for relation "roi_statement" violates check constraint "roi_statement_links"
+21 the line list is a string, not a list|22023 cannot extract elements from a scalar
+22 one line with a figure, figure 0 stated|23514 an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links
+23 three lines, their cases each listed twice|P0999 ACCEPTED
+24 three lines, a JSON null among the cases|23514 new row for relation "roi_statement" violates check constraint "roi_statement_links"
+25 a malformed ID among the cases, three lines|22P02 invalid input syntax for type uuid: "zz"
+26 the cases are an object, not a list|22023 cannot extract elements from an object
+27 a sixth key|23514 new row for relation "roi_statement" violates check constraint "roi_statement_links"

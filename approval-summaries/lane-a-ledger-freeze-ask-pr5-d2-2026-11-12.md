@@ -1,6 +1,7 @@
 # Ledger freeze exception, schema PR 5: a corrected text for the statement check (Appendix D2 in place of Appendix D; for the founder; text for the orchestrator to relay)
 
-From Lane A (W34), 2026-11-12, for schema PR 5 (the ledger-freeze batch). Follows the ask of 2026-11-07
+From Lane A (W34; the measurements of 2026-11-12 marked "second machine" are W35's), 2026-11-12, for schema PR 5
+(the ledger-freeze batch). Follows the ask of 2026-11-07
 (`approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md`). Synthetic data only; IDs and counts, no statement
 content. Nothing is built on what is asked here.
 
@@ -32,9 +33,11 @@ role). One statement listing 30,795 priced lines on 1,200 cases:
 
 - **The text:** the appendix below, exact. Body SHA-256 `ad925199131cb4117e43a97216f65c59ea09769f3bb0ee4f40f5b3bef748eca5`
   (first 16: `ad925199131cb411`), computed as the first ask computed D's: the SHA-256 of the text between the two
-  `$function$` marks, which is what `domain-model.md` prints. Here it is taken from the draft file
-  (`lane-a-wip/schema-pr5/d2/D2-draft.sql`), not yet printed by a database; the same steps on D's file give the
-  granted `ba8293836b9cd5aa`. The whole file's SHA-256 is `8053d62454b821e2c453ab706b2a6ee99d96439fdc32dfe273d26a54b7890b07`.
+  `$function$` marks, which is what `domain-model.md` prints. It is computed from the function as PostgreSQL 18.4
+  stores and prints it (`pg_get_functiondef`, after applying `lane-a-wip/schema-pr5/d2/D2-draft.sql` as the owner
+  role; `lane-a-wip/schema-pr5/w35/out/functiondef_D2.txt`), and the draft file gives the same value; the same steps
+  on D give the granted `ba8293836b9cd5aa`. The print is the draft file line for line but for the file's closing
+  semicolon. The whole file's SHA-256 is `8053d62454b821e2c453ab706b2a6ee99d96439fdc32dfe273d26a54b7890b07`.
 - **What differs:** one statement, the one that counts and sums the listed lines. Every other line, every message,
   every error code and the header are D's. The whole difference:
 
@@ -67,7 +70,9 @@ role). One statement listing 30,795 priced lines on 1,200 cases:
   does not exist; empty lists; malformed IDs; and others) and 400 random statements through the two blocks alone (314
   with a repeated line). The outcomes, written to files, are byte for byte the same for D and D2: fixed,
   SHA-256 `ea6e3f348ce81e6651827ceb6f8791cd07ebc29d4f706b568681a39dc143361b` for both; random,
-  `975cafdbbaba02c11e6527a5a96b601013543f22617105330599a2dd4089b04d` for both.
+  `975cafdbbaba02c11e6527a5a96b601013543f22617105330599a2dd4089b04d` for both. Run again on a second machine and a
+  new database, the 27 fixed statements give that same file (`ea6e3f34...`) for D, for D2 and for D2 with Question
+  2's line, and the 400 random statements again agree between D and D2.
 - **The times** (the whole insert of the 30,795-line statement, 8 to 11 runs a state; D took 190 to 580 s):
 
   | State of the database's statistics | D2 |
@@ -79,13 +84,17 @@ role). One statement listing 30,795 priced lines on 1,200 cases:
   | analyzed at a month, then grown to 1,000,000, not analyzed again | 0.76 to 0.94 s |
   | analyzed, 1,000,000 lines | 0.78 to 0.86 s |
   | one practice alone in the database, analyzed | 0.46 to 0.67 s |
-  | **analyzed when the practice had 10 lines, then its month loaded, not analyzed again** | **1.55 to 1.81 s** |
+  | analyzed when the practice had 10 lines, then its month loaded, not analyzed again (second machine, three clean builds) | 0.42 to 0.66 s |
 
   A statement listing all 1,000,000 lines takes 34 to 37 s: the time now grows in step with the list, not with its
-  square. The last row is past the 1-second bound, and a yes accepts it: still in step with the list, and it ends at
-  the database's next routine ANALYZE. That row was measured once, on a run where a full disk had left the other
-  practices' rows out; its clean repeat was cut off when the measuring session ended and its output is not in the
-  records, and this session had no PostgreSQL 18 to repeat it. It was not measured with Question 2's setting.
+  square. Every state measured is within the 1-second bound.
+  The last row was first measured once at 1.55 to 1.81 s, on a run where a full disk had left the other practices'
+  rows out. That figure did not repeat. Measured again on a second machine (PostgreSQL 18.4, the same scripts and
+  settings, nothing tuned): three databases built from scratch gave 0.42 to 0.66 s over 33 runs, and the state the
+  faulty run was closest to (no other practice's rows at all, statistics from 20 priced lines) gave 0.32 to 0.53 s
+  over 11 runs; every plan looks each line up by its key. The second machine is somewhat faster than the first: the
+  "analyzed, a month of lines" row took 0.44 to 0.74 s there against 0.75 to 0.87 s above, so the last row compares
+  with that row, not with the first machine's figures.
 - **What the independent review found** (`reviews/lane-a-ledger-freeze-d2-equality.md`; its own 25 cases on copies of
   the tables, not the 427 above): equal on every statement the CHECK lets through; no statement that one accepts
   and the other refuses. Three things to know. (1) One reachable slow case: Question 2. (2) D2 relies on the
@@ -108,17 +117,25 @@ a yes to Question 1.
 ```
 
   The whole statement with that line has SHA-256 `a27928876344ffa2f5c591d5254e0c66bc30d317ac01ca79442ddb9a4be7b523`.
-  The line is written as PostgreSQL prints such settings; if the database prints it otherwise, the builder stops
-  and reports.
+  PostgreSQL 18.4 stores and prints the line exactly so (`pg_get_functiondef`;
+  `lane-a-wip/schema-pr5/w35/out/functiondef_D2h.txt`), and the body's hash computed from that print is the same
+  `ad925199131cb411`; if the built database prints it otherwise, the builder stops and reports.
 - **Why:** the review found one way D2 can still take minutes. A database session that has written six or more
   statements while both tables were analyzed and tiny (under about 100 priced lines and 200 case lines in all
   practices together) keeps a plan made for tiny tables. If the tables then grow to tens of thousands of rows with
   no ANALYZE, autovacuum or schema change in between, that session's next large statement is slow again: stopped at
-  30 s and at 70 s in the review's test. With the setting the same sequence took 0.43 s. Where it can happen: launch
+  30 s and at 70 s in the review's test. Measured through the real trigger (second machine; seven statements while
+  the tables held 20 priced lines and 10 case lines, then the month loaded from another connection, then the
+  30,795-line statement in the same session): D2 as in Question 1 took 237 s and 251 s (two runs); D2 with the
+  setting took 0.34 to 0.42 s (six runs). Where it can happen: launch
   week inside a one-minute window, an environment with autovacuum off, or a seed or test run that loads and writes
   at once. D is no better there.
 - **What it costs:** the database plans each statement of this function, and of the functions it calls while it
-  runs, on every call: 4 to 18 ms for the check; a four-key statement takes 7 to 8 ms in all today.
+  runs, on every call: 4 to 18 ms for the check; a four-key statement takes 7 to 8 ms in all today. With the
+  setting, through the real trigger on the second machine: the 30,795-line statement took 0.46 to 0.65 s in the
+  last row's state (0.42 to 0.66 s without it) and 0.50 to 0.58 s analyzed at a month (0.44 to 0.74 s without it);
+  a four-key statement 5 to 8 ms either way. The setting changes no answer: the 27 fixed statements give the same
+  file as D's (Question 1's proof).
 - **On no:** D2 is built with D's header, and the case above stays as a stated residual with exactly that trigger
   condition, recorded in the migration's notes and ended by any ANALYZE.
 

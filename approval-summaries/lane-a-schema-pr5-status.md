@@ -1,6 +1,59 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
-## RESUME-BLOCK (W34, session_019i9ifCEAcrGwW4JmYcRswT; 2026-11-12; W34's brief is done)
+## RESUME-BLOCK (W35, session_019i9ifAqmhWzhrv9YbKKE4R; 2026-11-12 about 07:50 UTC; W35's brief is done but for one sentence the orchestrator rules on)
+- **Where it stands:** the founder's ask for D2 (`approval-summaries/lane-a-ledger-freeze-ask-pr5-d2-2026-11-12.md`)
+  now carries measured figures for W34's gaps 1 and 2. Not sent, not answered. Nothing is built. Everything in W34's
+  block below still holds except its "Closed by W34" bullet and step (5)'s "none of which is measured yet".
+- **Open, the orchestrator's to rule (gap 3):** the ask's "On no" under Question 1 ("schema PR 5 is not built") is
+  unchanged. The first ask's rule, its exact words (`lane-a-ledger-freeze-ask-pr5-2026-11-07.md`, "The questions"):
+  "If the build's proof shows an appendix text itself wrong, the question whose change is at fault is treated as your
+  no (in A, the five-key list is Q1's and the `coalesce` Q3's; a fault in lines an appendix keeps from today's body
+  belongs to no question and stops the migration), and only the text the table names for the remaining answers is
+  built (D only with A or B)." So: a fault in Appendix D is treated as a no to Q2 (D is Q2's text), and what is built
+  is the table's text for Q1 and Q3 as answered, which is Appendix A, without D; a fault in Appendix A is a no to Q1
+  (the five-key list) or to Q3 (the `coalesce`), and what is built is the table's row for the answers left
+  (Q1 no, Q3 yes: Appendix C; Q1 yes, Q3 no: Appendix B; both no: unchanged), D never without A or B; a fault in a
+  line kept from today's body belongs to no question and stops the migration. The two readings, not decided here:
+  1. *The first ask's rule governs:* D's fault is the founder's no to Q2, so on Question 1 no PR 5 is still built,
+     with Appendix A alone and no check of the actionable figure in the database.
+  2. *The new ask governs:* Question 1 no means PR 5 is not built at all, and the schema queue goes on without it.
+  3. *What it turns on:* whether "the build's proof shows an appendix text itself wrong" covers a text that answers
+     correctly and fails only its time bound, and whether a new ask may narrow what the first one said is built.
+- **Gap 1, S4 clean (statistics from when the practice had 10 lines, the other 200 practices' 1,000,000 lines
+  present, then its month loaded, no ANALYZE): within the bound.** Three databases built from scratch, D2 as drafted,
+  the whole insert of the 30,795-line statement: 0.42 to 0.66 s over 24 runs (`plan_cache_mode` auto) and 0.44 to
+  0.60 s over 9 runs (session forced generic). Every plan: `priced_line_pkey` and `case_line_once` index scans, one
+  per listed line; no bitmap scan. W30's 1.55 to 1.81 s (the run degraded by a full disk) did not repeat, and nor did
+  it in the state that run was closest to (no other practice's rows; both tables analyzed at 20 and 10 rows, then
+  the month loaded, a new session): 0.32 to 0.53 s over 11 runs. This machine is faster than W30's: its control,
+  analyzed at the month, ran 0.44 to 0.74 s (W30: 0.75 to 0.87 s). Nothing was tuned.
+- **Gap 2, Question 2's header line through the real trigger:** S4, three builds: 0.47 to 0.65 s (24 runs), 0.46 to
+  0.57 s with the session forced generic (the header overrides it). Control, analyzed at the month: 0.50 to 0.58 s.
+  The four-key statement: 5 to 8 ms with or without. **The review's finding 1 reproduces through the real trigger:**
+  seven statements in one session while the tables held 20 priced lines and 10 case lines (analyzed), the month
+  loaded from another connection, no ANALYZE, then the 30,795-line statement in that session: D2 without the header
+  251 s (primed with the empty statement) and 237 s (primed with the practice's own 10-line statement), neither
+  cancelled (limit 600 s); D2 with the header 0.34 to 0.42 s (six runs). No plan was captured for the slow runs.
+- **Equality with the header:** the 27 fixed statements through the real trigger and CHECK as the application role,
+  on a new database (the month, 200 other practices, analyzed): D, D2 and D2 with the header give one file,
+  SHA-256 `ea6e3f348ce81e6651827ceb6f8791cd07ebc29d4f706b568681a39dc143361b`, which is also W30's `d2/eq/cases_D.txt`.
+  The 400 random statements through the two blocks agree too (`c64f8dda9922c7e6...` on this database's rows).
+- **The function as the database stores it** (`pg_get_functiondef`, PostgreSQL 18.4; `w35/out/functiondef_*.txt`):
+  the body between the `$function$` marks hashes to
+  `ad925199131cb4117e43a97216f65c59ea09769f3bb0ee4f40f5b3bef748eca5` for D2 with and without the header, and to
+  `ba8293836b9cd5aafd67dddf29d891f9f958059109c043f59f5223605ab42360` for D; `sha256(prosrc)` in the database agrees.
+  The header prints as ` SET plan_cache_mode TO 'force_custom_plan'`, after the `SET search_path` line, exactly as
+  the ask writes it; `proconfig` holds `plan_cache_mode=force_custom_plan`. The print is the draft file line for
+  line but for the file's closing semicolon.
+- **Records:** `lane-a-wip/schema-pr5/w35/` at the ops root: `jobW35.sh`, `jobW35b.sh` (they reuse `d2/gen_sess.sh`,
+  `d2/setup_d2.sql`, `measurements/load_lines.sql`, `d2/eq/*.sql` unchanged), `A.sql` (cut from the first ask),
+  `D.sql`, `D2.sql` (copies of `d2/D-as-granted.sql`, `D2-draft.sql`), `D2h.sql` (D2 with the one header line; file
+  SHA-256 `a27928876344ffa2...`, the ask's), and `out/` (each run's timings, the logs, the dumps, the prints; of each
+  32 MB plan output only the line statement's first and last plan is kept, as `*.plan.txt`). Base database migrated
+  by `pnpm db:migrate` at 93e137f9; its two bodies hash to today's `49416713dd4d13dd` and `5a8bc6319828acb2`.
+- **Holds:** none. The scratch cluster (`/var/lib/pr5w35`, port 5433) is stopped and removed with this session.
+
+## RESUME-BLOCK, superseded in part by W35's above (W34, session_019i9ifCEAcrGwW4JmYcRswT; 2026-11-12; W34's brief is done)
 - **Where it stands:** the founder's ask for D2 is written, not sent and not answered:
   `approval-summaries/lane-a-ledger-freeze-ask-pr5-d2-2026-11-12.md`. The orchestrator relays it. Question 1: Appendix
   D2 in place of Appendix D (body `ad925199131cb411`, the SHA-256 of the text between the `$function$` marks of
@@ -28,7 +81,7 @@
   3. raise nothing: keep the scan as it is (ACCESS SHARE only; milliseconds on the empty table at launch).
 - **Holds:** none.
 
-## RESUME-BLOCK, superseded by W34's above (W30, session_019i9ifDPVj1VzzJE78QWvC3; updated 2026-11-12 about 07:10 UTC; hands over at the context line, mid design step)
+## RESUME-BLOCK, superseded by W34's and W35's above (W30, session_019i9ifDPVj1VzzJE78QWvC3; updated 2026-11-12 about 07:10 UTC; hands over at the context line, mid design step)
 - **Where it stands:** PR 5 is not built (the orchestrator's ruling, 06:00 UTC: right to stop; the item became a bounded
   design step: a corrected text "Appendix D2", proved equal, reviewed, and a new ask for the founder). Steps 1 to 4 of
   that ruling are done but for one fix-round decision; **step 5 (the ask) is NOT drafted**: the next session writes

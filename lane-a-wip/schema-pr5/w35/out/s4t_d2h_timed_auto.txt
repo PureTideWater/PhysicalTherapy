@@ -1,0 +1,20 @@
+RUN S4-tiny-database-D2-header mode=auto tag=month run=1
+Time: 543.200 ms
+RUN S4-tiny-database-D2-header mode=auto tag=month run=2
+Time: 397.083 ms
+RUN S4-tiny-database-D2-header mode=auto tag=month run=3
+Time: 381.262 ms
+RUN S4-tiny-database-D2-header mode=auto tag=month run=4
+Time: 437.041 ms
+RUN S4-tiny-database-D2-header mode=auto tag=month run=5
+Time: 401.116 ms
+RUN S4-tiny-database-D2-header mode=auto tag=month run=6
+Time: 389.449 ms
+RUN S4-tiny-database-D2-header mode=auto tag=month run=7
+Time: 374.016 ms
+RUN S4-tiny-database-D2-header mode=auto tag=month run=8
+Time: 415.109 ms
+RUN S4-tiny-database-D2-header mode=auto tag=month4 run=1
+Time: 6.970 ms
+RUN S4-tiny-database-D2-header mode=auto tag=month4 run=2
+Time: 6.828 ms

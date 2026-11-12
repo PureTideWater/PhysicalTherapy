@@ -1,0 +1,90 @@
+--- plan of the line statement, execution 1 of 7 in s4_1_d2h_explain_auto.txt (the rest of the 32 MB auto_explain output is not kept)
+psql:out/s4_1_d2h_explain_auto.sql:17: LOG:  duration: 359.990 ms  plan:
+Query Text: SELECT (SELECT count(*) FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines')) AS linked,
+           count(*) FILTER (WHERE m.case_id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'actionable_open') x)) AS found,
+           coalesce(sum(m.variance_cents), 0) AS cents
+      FROM (SELECT DISTINCT x::uuid AS id FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines') x) i
+     CROSS JOIN LATERAL (
+           SELECT p.variance_cents,
+                  (SELECT l.case_id FROM case_line l
+                    WHERE l.service_line_id = p.service_line_id AND l.priced_line_id = p.id AND l.practice_id = NEW.practice_id) AS case_id
+             FROM priced_line p
+            WHERE p.id = i.id AND p.practice_id = NEW.practice_id
+           OFFSET 0) m
+Aggregate  (cost=1702.52..1702.53 rows=1 width=48) (actual rows=1.00 loops=1)
+  Output: (InitPlan 1).col1, count(*) FILTER (WHERE (ANY (((SubPlan 3)) = (hashed SubPlan 2).col1))), COALESCE(sum(p.variance_cents), '0'::numeric)
+  InitPlan 1
+    ->  Aggregate  (cost=1.25..1.26 rows=1 width=8) (actual rows=1.00 loops=1)
+          Output: count(*)
+          ->  Function Scan on pg_catalog.jsonb_array_elements_text  (cost=0.00..1.00 rows=100 width=0) (actual rows=30795.00 loops=1)
+                Output: jsonb_array_elements_text.value
+                Function Call: jsonb_array_elements_text('["00007444-661c-4bb9-a92a-1b971be3d8b4", "00008ad3-49b3-4836-8940-92e31e838dbd", "00021a38-55cd-4bad-a14d-42230c81eb77", "0004ac42-549e-4986-b6d1-8b2f48411c61", "00053d01-b166-4996-b4e1-2a150bd3a289", "0007540b-1a28-4b53-a7ad-0a7d23d6d846", "00081a70-8682-4b93-951e-8ce4ad85571a", "000845a2-4c37-49e9-9c63-1782bb22232b", "000aceb2-46d8-4cd1-b ...[cut]
+  ->  Nested Loop  (cost=2.18..1698.75 rows=100 width=24) (actual rows=30795.00 loops=1)
+        Output: ((SubPlan 3)), p.variance_cents
+        ->  HashAggregate  (cost=1.75..3.25 rows=100 width=16) (actual rows=30795.00 loops=1)
+              Output: ((x.value)::uuid)
+              Group Key: (x.value)::uuid
+              Batches: 1  Memory Usage: 2097kB
+              ->  Function Scan on pg_catalog.jsonb_array_elements_text x  (cost=0.00..1.50 rows=100 width=16) (actual rows=30795.00 loops=1)
+                    Output: (x.value)::uuid
+                    Function Call: jsonb_array_elements_text('["00007444-661c-4bb9-a92a-1b971be3d8b4", "00008ad3-49b3-4836-8940-92e31e838dbd", "00021a38-55cd-4bad-a14d-42230c81eb77", "0004ac42-549e-4986-b6d1-8b2f48411c61", "00053d01-b166-4996-b4e1-2a150bd3a289", "0007540b-1a28-4b53-a7ad-0a7d23d6d846", "00081a70-8682-4b93-951e-8ce4ad85571a", "000845a2-4c37-49e9-9c63-1782bb22232b", "000aceb2-46d8-4c ...[cut]
+        ->  Index Scan using priced_line_pkey on public.priced_line p  (cost=0.43..16.94 rows=1 width=24) (actual rows=1.00 loops=30795)
+              Output: p.variance_cents, (SubPlan 3)
+              Index Cond: (p.id = ((x.value)::uuid))
+              Filter: ((p.practice_id = '00000000-0000-4000-8000-00000000000a'::uuid) AND (p.practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])))
+              Index Searches: 30795
+              SubPlan 3
+                ->  Index Scan using case_line_once on public.case_line l  (cost=0.42..8.47 rows=1 width=16) (actual rows=1.00 loops=30795)
+                      Output: l.case_id
+                      Index Cond: (l.service_line_id = p.service_line_id)
+                      Filter: ((l.priced_line_id = p.id) AND (l.practice_id = '00000000-0000-4000-8000-00000000000a'::uuid) AND (l.practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])))
+                      Index Searches: 30795
+  SubPlan 2
+    ->  Function Scan on pg_catalog.jsonb_array_elements_text x_1  (cost=0.00..1.50 rows=100 width=16) (actual rows=1200.00 loops=1)
+          Output: (x_1.value)::uuid
+          Function Call: jsonb_array_elements_text('["00000000-0000-4000-9000-000000000000", "00000000-0000-4000-9000-000000000001", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000003", "00000000-0000-4000-9000-000000000004", "00000000-0000-4000-9000-000000000005", "00000000-0000-4000-9000-000000000006", "00000000-0000-4000-9000-000000000007", "00000000-0000-4000-9000-00 ...[cut]
+--- plan of the line statement, execution 7 of 7 in s4_1_d2h_explain_auto.txt (the rest of the 32 MB auto_explain output is not kept)
+psql:out/s4_1_d2h_explain_auto.sql:71: LOG:  duration: 359.985 ms  plan:
+Query Text: SELECT (SELECT count(*) FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines')) AS linked,
+           count(*) FILTER (WHERE m.case_id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'actionable_open') x)) AS found,
+           coalesce(sum(m.variance_cents), 0) AS cents
+      FROM (SELECT DISTINCT x::uuid AS id FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines') x) i
+     CROSS JOIN LATERAL (
+           SELECT p.variance_cents,
+                  (SELECT l.case_id FROM case_line l
+                    WHERE l.service_line_id = p.service_line_id AND l.priced_line_id = p.id AND l.practice_id = NEW.practice_id) AS case_id
+             FROM priced_line p
+            WHERE p.id = i.id AND p.practice_id = NEW.practice_id
+           OFFSET 0) m
+Aggregate  (cost=1702.52..1702.53 rows=1 width=48) (actual rows=1.00 loops=1)
+  Output: (InitPlan 1).col1, count(*) FILTER (WHERE (ANY (((SubPlan 3)) = (hashed SubPlan 2).col1))), COALESCE(sum(p.variance_cents), '0'::numeric)
+  InitPlan 1
+    ->  Aggregate  (cost=1.25..1.26 rows=1 width=8) (actual rows=1.00 loops=1)
+          Output: count(*)
+          ->  Function Scan on pg_catalog.jsonb_array_elements_text  (cost=0.00..1.00 rows=100 width=0) (actual rows=30795.00 loops=1)
+                Output: jsonb_array_elements_text.value
+                Function Call: jsonb_array_elements_text('["00007444-661c-4bb9-a92a-1b971be3d8b4", "00008ad3-49b3-4836-8940-92e31e838dbd", "00021a38-55cd-4bad-a14d-42230c81eb77", "0004ac42-549e-4986-b6d1-8b2f48411c61", "00053d01-b166-4996-b4e1-2a150bd3a289", "0007540b-1a28-4b53-a7ad-0a7d23d6d846", "00081a70-8682-4b93-951e-8ce4ad85571a", "000845a2-4c37-49e9-9c63-1782bb22232b", "000aceb2-46d8-4cd1-b ...[cut]
+  ->  Nested Loop  (cost=2.18..1698.75 rows=100 width=24) (actual rows=30795.00 loops=1)
+        Output: ((SubPlan 3)), p.variance_cents
+        ->  HashAggregate  (cost=1.75..3.25 rows=100 width=16) (actual rows=30795.00 loops=1)
+              Output: ((x.value)::uuid)
+              Group Key: (x.value)::uuid
+              Batches: 1  Memory Usage: 2097kB
+              ->  Function Scan on pg_catalog.jsonb_array_elements_text x  (cost=0.00..1.50 rows=100 width=16) (actual rows=30795.00 loops=1)
+                    Output: (x.value)::uuid
+                    Function Call: jsonb_array_elements_text('["00007444-661c-4bb9-a92a-1b971be3d8b4", "00008ad3-49b3-4836-8940-92e31e838dbd", "00021a38-55cd-4bad-a14d-42230c81eb77", "0004ac42-549e-4986-b6d1-8b2f48411c61", "00053d01-b166-4996-b4e1-2a150bd3a289", "0007540b-1a28-4b53-a7ad-0a7d23d6d846", "00081a70-8682-4b93-951e-8ce4ad85571a", "000845a2-4c37-49e9-9c63-1782bb22232b", "000aceb2-46d8-4c ...[cut]
+        ->  Index Scan using priced_line_pkey on public.priced_line p  (cost=0.43..16.94 rows=1 width=24) (actual rows=1.00 loops=30795)
+              Output: p.variance_cents, (SubPlan 3)
+              Index Cond: (p.id = ((x.value)::uuid))
+              Filter: ((p.practice_id = '00000000-0000-4000-8000-00000000000a'::uuid) AND (p.practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])))
+              Index Searches: 30795
+              SubPlan 3
+                ->  Index Scan using case_line_once on public.case_line l  (cost=0.42..8.47 rows=1 width=16) (actual rows=1.00 loops=30795)
+                      Output: l.case_id
+                      Index Cond: (l.service_line_id = p.service_line_id)
+                      Filter: ((l.priced_line_id = p.id) AND (l.practice_id = '00000000-0000-4000-8000-00000000000a'::uuid) AND (l.practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])))
+                      Index Searches: 30795
+  SubPlan 2
+    ->  Function Scan on pg_catalog.jsonb_array_elements_text x_1  (cost=0.00..1.50 rows=100 width=16) (actual rows=1200.00 loops=1)
+          Output: (x_1.value)::uuid
+          Function Call: jsonb_array_elements_text('["00000000-0000-4000-9000-000000000000", "00000000-0000-4000-9000-000000000001", "00000000-0000-4000-9000-000000000002", "00000000-0000-4000-9000-000000000003", "00000000-0000-4000-9000-000000000004", "00000000-0000-4000-9000-000000000005", "00000000-0000-4000-9000-000000000006", "00000000-0000-4000-9000-000000000007", "00000000-0000-4000-9000-00 ...[cut]

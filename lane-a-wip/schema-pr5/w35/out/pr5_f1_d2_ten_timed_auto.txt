@@ -1,0 +1,16 @@
+RUN F1-D2 mode=auto tag=prime-month run=1
+Time: 12.336 ms
+RUN F1-D2 mode=auto tag=prime-month run=2
+Time: 2.989 ms
+RUN F1-D2 mode=auto tag=prime-month run=3
+Time: 2.834 ms
+RUN F1-D2 mode=auto tag=prime-month run=4
+Time: 2.494 ms
+RUN F1-D2 mode=auto tag=prime-month run=5
+Time: 2.448 ms
+RUN F1-D2 mode=auto tag=prime-month run=6
+Time: 2.906 ms
+RUN F1-D2 mode=auto tag=prime-month run=7
+Time: 1.057 ms
+RUN F1-D2 mode=auto tag=month run=1
+Time: 237027.016 ms (03:57.027)

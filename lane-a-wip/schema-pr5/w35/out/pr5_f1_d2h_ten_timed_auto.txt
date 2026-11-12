@@ -1,0 +1,20 @@
+RUN F1-D2-header mode=auto tag=prime-month run=1
+Time: 20.136 ms
+RUN F1-D2-header mode=auto tag=prime-month run=2
+Time: 4.898 ms
+RUN F1-D2-header mode=auto tag=prime-month run=3
+Time: 4.374 ms
+RUN F1-D2-header mode=auto tag=prime-month run=4
+Time: 4.160 ms
+RUN F1-D2-header mode=auto tag=prime-month run=5
+Time: 3.792 ms
+RUN F1-D2-header mode=auto tag=prime-month run=6
+Time: 3.450 ms
+RUN F1-D2-header mode=auto tag=prime-month run=7
+Time: 2.234 ms
+RUN F1-D2-header mode=auto tag=month run=1
+Time: 417.985 ms
+RUN F1-D2-header mode=auto tag=month run=2
+Time: 398.005 ms
+RUN F1-D2-header mode=auto tag=month run=3
+Time: 406.595 ms

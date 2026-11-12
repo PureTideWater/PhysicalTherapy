@@ -1,0 +1,12 @@
+psql:../d2/eq/setup.sql:3: NOTICE:  table "t_cases" does not exist, skipping
+psql:../d2/eq/setup.sql:3: NOTICE:  table "t_rand" does not exist, skipping
+ setseed 
+---------
+ 
+(1 row)
+
+                    ?column?                    
+------------------------------------------------
+ cases 27, random 400, random with a repeat 314
+(1 row)
+

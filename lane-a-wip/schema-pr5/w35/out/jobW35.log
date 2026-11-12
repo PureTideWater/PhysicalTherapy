@@ -1,0 +1,119 @@
+07:15:22 S4 build 1
+NOTICE:  database "pr5_s4_1" does not exist, skipping
+  pr5_s4_1 setup exit 0
+  priced_line reltuples=1.00002e+06 pages=100002; case_line reltuples=1.00001e+06 pages=17242; analyzed priced_line=2026-11-12 07:16:15.775949+00/auto never case_line=2026-11-12 07:16:15.909476+00/auto never; rows 1061590 / 1030795
+07:16:19 S4 build 1, D2
+  pr5_s4_1 now D2.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp"}
+  s4_1_d2_timed_auto exit 0
+  s4_1_d2_explain_auto exit 0
+  s4_1_d2_timed_generic exit 0
+  s4_1_d2_explain_generic exit 0
+07:16:30 S4 build 1, D2 with the header
+  pr5_s4_1 now D2h.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp",plan_cache_mode=force_custom_plan}
+  s4_1_d2h_timed_auto exit 0
+  s4_1_d2h_explain_auto exit 0
+  s4_1_d2h_timed_generic exit 0
+  s4_1_d2h_explain_generic exit 0
+  after: priced_line reltuples=1.00002e+06 pages=100002; case_line reltuples=1.00001e+06 pages=17242; analyzed priced_line=2026-11-12 07:16:15.775949+00/auto never case_line=2026-11-12 07:16:15.909476+00/auto never; rows 1061590 / 1030795
+07:16:41 S4 build 2
+NOTICE:  database "pr5_s4_2" does not exist, skipping
+  pr5_s4_2 setup exit 0
+  priced_line reltuples=1.00002e+06 pages=100002; case_line reltuples=1.00001e+06 pages=17242; analyzed priced_line=2026-11-12 07:17:32.638944+00/auto never case_line=2026-11-12 07:17:32.785904+00/auto never; rows 1061590 / 1030795
+07:17:36 S4 build 2, D2
+  pr5_s4_2 now D2.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp"}
+  s4_2_d2_timed_auto exit 0
+  s4_2_d2_explain_auto exit 0
+  s4_2_d2_timed_generic exit 0
+  s4_2_d2_explain_generic exit 0
+07:17:46 S4 build 2, D2 with the header
+  pr5_s4_2 now D2h.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp",plan_cache_mode=force_custom_plan}
+  s4_2_d2h_timed_auto exit 0
+  s4_2_d2h_explain_auto exit 0
+  s4_2_d2h_timed_generic exit 0
+  s4_2_d2h_explain_generic exit 0
+  after: priced_line reltuples=1.00002e+06 pages=100002; case_line reltuples=1.00001e+06 pages=17242; analyzed priced_line=2026-11-12 07:17:32.638944+00/auto never case_line=2026-11-12 07:17:32.785904+00/auto never; rows 1061590 / 1030795
+07:17:58 S4 build 3
+NOTICE:  database "pr5_s4_3" does not exist, skipping
+  pr5_s4_3 setup exit 0
+  priced_line reltuples=1.00002e+06 pages=100002; case_line reltuples=1.00001e+06 pages=17242; analyzed priced_line=2026-11-12 07:18:48.583159+00/auto never case_line=2026-11-12 07:18:48.759021+00/auto never; rows 1061590 / 1030795
+07:18:52 S4 build 3, D2
+  pr5_s4_3 now D2.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp"}
+  s4_3_d2_timed_auto exit 0
+  s4_3_d2_explain_auto exit 0
+  s4_3_d2_timed_generic exit 0
+  s4_3_d2_explain_generic exit 0
+07:19:03 S4 build 3, D2 with the header
+  pr5_s4_3 now D2h.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp",plan_cache_mode=force_custom_plan}
+  s4_3_d2h_timed_auto exit 0
+  s4_3_d2h_explain_auto exit 0
+  s4_3_d2h_timed_generic exit 0
+  s4_3_d2h_explain_generic exit 0
+  after: priced_line reltuples=1.00002e+06 pages=100002; case_line reltuples=1.00001e+06 pages=17242; analyzed priced_line=2026-11-12 07:18:48.583159+00/auto never case_line=2026-11-12 07:18:48.759021+00/auto never; rows 1061590 / 1030795
+07:19:15 S3 build
+NOTICE:  database "pr5_s3" does not exist, skipping
+  pr5_s3 setup exit 0
+  priced_line reltuples=1.06159e+06 pages=106159; case_line reltuples=1.030795e+06 pages=17773; analyzed priced_line=2026-11-12 07:20:08.694037+00/auto never case_line=2026-11-12 07:20:08.830424+00/auto never; rows 1061590 / 1030795
+07:20:09 S3, D2
+  pr5_s3 now D2.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp"}
+  s3_d2_timed_auto exit 0
+  s3_d2_explain_auto exit 0
+  s3_d2_timed_generic exit 0
+  s3_d2_explain_generic exit 0
+07:20:20 S3, D2 with the header
+  pr5_s3 now D2h.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp",plan_cache_mode=force_custom_plan}
+  s3_d2h_timed_auto exit 0
+  s3_d2h_explain_auto exit 0
+  s3_d2h_timed_generic exit 0
+  s3_d2h_explain_generic exit 0
+07:20:31 F1 D2, primed empty
+NOTICE:  database "pr5_f1_d2_empty" does not exist, skipping
+  pr5_f1_d2_empty setup exit 0
+  tiny: priced_line reltuples=20 pages=2; case_line reltuples=10 pages=1; analyzed priced_line=2026-11-12 07:20:31.997852+00/auto never case_line=2026-11-12 07:20:32.000206+00/auto never; rows 20 / 10
+  pr5_f1_d2_empty now D2.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp"}
+  pr5_f1_d2_empty exit 0
+  grown: priced_line reltuples=20 pages=2; case_line reltuples=10 pages=1; analyzed priced_line=2026-11-12 07:20:31.997852+00/auto never case_line=2026-11-12 07:20:32.000206+00/auto never; rows 61590 / 30795
+07:24:45 F1 D2 header, primed empty
+NOTICE:  database "pr5_f1_d2h_empty" does not exist, skipping
+  pr5_f1_d2h_empty setup exit 0
+  tiny: priced_line reltuples=20 pages=2; case_line reltuples=10 pages=1; analyzed priced_line=2026-11-12 07:24:45.719746+00/auto never case_line=2026-11-12 07:24:45.721174+00/auto never; rows 20 / 10
+  pr5_f1_d2h_empty now D2h.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp",plan_cache_mode=force_custom_plan}
+  pr5_f1_d2h_empty exit 0
+  grown: priced_line reltuples=20 pages=2; case_line reltuples=10 pages=1; analyzed priced_line=2026-11-12 07:24:45.719746+00/auto never case_line=2026-11-12 07:24:45.721174+00/auto never; rows 61590 / 30795
+07:24:48 F1 D2, primed 10 lines
+NOTICE:  database "pr5_f1_d2_ten" does not exist, skipping
+  pr5_f1_d2_ten setup exit 0
+  tiny: priced_line reltuples=20 pages=2; case_line reltuples=10 pages=1; analyzed priced_line=2026-11-12 07:24:49.066411+00/auto never case_line=2026-11-12 07:24:49.067946+00/auto never; rows 20 / 10
+  pr5_f1_d2_ten now D2.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp"}
+  pr5_f1_d2_ten exit 0
+  grown: priced_line reltuples=20 pages=2; case_line reltuples=10 pages=1; analyzed priced_line=2026-11-12 07:24:49.066411+00/auto never case_line=2026-11-12 07:24:49.067946+00/auto never; rows 61590 / 30795
+07:28:48 F1 D2 header, primed 10 lines
+NOTICE:  database "pr5_f1_d2h_ten" does not exist, skipping
+  pr5_f1_d2h_ten setup exit 0
+  tiny: priced_line reltuples=20 pages=2; case_line reltuples=10 pages=1; analyzed priced_line=2026-11-12 07:28:48.303023+00/auto never case_line=2026-11-12 07:28:48.304478+00/auto never; rows 20 / 10
+  pr5_f1_d2h_ten now D2h.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp",plan_cache_mode=force_custom_plan}
+  pr5_f1_d2h_ten exit 0
+  grown: priced_line reltuples=20 pages=2; case_line reltuples=10 pages=1; analyzed priced_line=2026-11-12 07:28:48.303023+00/auto never case_line=2026-11-12 07:28:48.304478+00/auto never; rows 61590 / 30795
+07:28:51 prints
+  pr5_s3 now D2.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp"}
+  pr5_s3 now D2h.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp",plan_cache_mode=force_custom_plan}
+  pr5_s3 now D.sql: ba8293836b9cd5aa config {"search_path=pg_catalog, public, pg_temp"}
+07:28:52 eq setup
+  exit 0
+07:28:52 eq D2
+  pr5_s3 now D2.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp"}
+  exit 0
+07:28:54 eq D2h
+  pr5_s3 now D2h.sql: ad925199131cb411 config {"search_path=pg_catalog, public, pg_temp",plan_cache_mode=force_custom_plan}
+  exit 0
+07:28:56 eq D
+  pr5_s3 now D.sql: ba8293836b9cd5aa config {"search_path=pg_catalog, public, pg_temp"}
+  exit 0
+ea6e3f348ce81e6651827ceb6f8791cd07ebc29d4f706b568681a39dc143361b  out/eq_cases_D.txt
+ea6e3f348ce81e6651827ceb6f8791cd07ebc29d4f706b568681a39dc143361b  out/eq_cases_D2.txt
+ea6e3f348ce81e6651827ceb6f8791cd07ebc29d4f706b568681a39dc143361b  out/eq_cases_D2h.txt
+c64f8dda9922c7e6383092b432d675c634639c34386528321c5401ac71830c5d  out/eq_rand_D.txt
+c64f8dda9922c7e6383092b432d675c634639c34386528321c5401ac71830c5d  out/eq_rand_D2.txt
+c64f8dda9922c7e6383092b432d675c634639c34386528321c5401ac71830c5d  out/eq_rand_D2h.txt
+ea6e3f348ce81e6651827ceb6f8791cd07ebc29d4f706b568681a39dc143361b  ../d2/eq/cases_D.txt
+ea6e3f348ce81e6651827ceb6f8791cd07ebc29d4f706b568681a39dc143361b  ../d2/eq/cases_D2.txt
+07:41:47 done

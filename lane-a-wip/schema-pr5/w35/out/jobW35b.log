@@ -1,0 +1,11 @@
+07:42:28 S4t D2
+  s4t_d2_timed_auto exit 0
+  s4t_d2_explain_auto exit 0
+  s4t_d2_timed_generic exit 0
+  s4t_d2_explain_generic exit 0
+07:42:36 S4t D2 with the header
+  s4t_d2h_timed_auto exit 0
+  s4t_d2h_explain_auto exit 0
+  s4t_d2h_timed_generic exit 0
+  s4t_d2h_explain_generic exit 0
+07:42:45 done

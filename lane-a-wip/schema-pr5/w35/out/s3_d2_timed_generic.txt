@@ -1,0 +1,6 @@
+RUN S3-D2 mode=force_generic_plan tag=month run=1
+Time: 702.530 ms
+RUN S3-D2 mode=force_generic_plan tag=month run=2
+Time: 535.628 ms
+RUN S3-D2 mode=force_generic_plan tag=month run=3
+Time: 490.230 ms
