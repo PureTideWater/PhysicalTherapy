@@ -4,10 +4,10 @@ W31 (Lane A), 2026-11-12. `LANES.md` Queues item 37, **required before launch**;
 Base read: `claude/build-platform` 93e137f9. Sources: W22's design (`designs/lane-b-operator-removes-keys.md`, Part A
 and section 2b), ADR 0091, 0093 and 0094, migrations 20261111090000 and 20261112090000, `apps/web/src/lib/auth`,
 `apps/web/src/lib/routes/console.ts` and `settings.ts`, `apps/worker/src/platform/password-notices.ts`.
-**Status: v1, before its two reviews.** Nothing is built. A fresh session builds from this file alone.
+**Status: v2, after its two reviews and one fix round (section 15).** Nothing is built. A fresh session builds from this file alone.
 
-Numbers still to be allocated by the orchestrator (asked 2026-11-12): the ADR (written here as **ADR-N**) and the
-test-matrix rows (written here as **SGN-a to SGN-h**, **SEC-a to SEC-c**, **JOB-a to JOB-c**).
+Numbers allocated by the orchestrator on 2026-11-12 (on `LANES.md`'s counters line): **ADR 0095**; test-matrix
+**SGN-20 to SGN-27**, **SEC-25 to SEC-27**, **JOB-06 to JOB-08**.
 
 ## 0. The rules already ruled (not reopened here)
 
@@ -52,9 +52,16 @@ sign-out's retry is option Y: an outbox row written by `membership_ended`'s trig
   removed; the mark moved; every session ended; ADR 0093 D6's hold cleared where one stands; one notice row and one
   provider sign-out row queued; one audit row.
 - **The provider is cleaned by the member's own grant at first use.** A removed or unknown key that signs in is
-  refused and that sign-in's grant deletes every credential at the provider that has no live row. An account that
-  must hold a key and has no live row has the provider's leftovers deleted the same way at its next
-  password-and-code sign-in, then registers a new key.
+  refused, and that sign-in's grant deletes at the provider every credential the registry knows as removed, and every
+  credential it does not know that the provider created more than 15 minutes ago (a registration step lives 15
+  minutes, so a key someone is registering right now is never deleted under them). An account that must hold a key
+  and has no live row has the provider's leftovers deleted the same way at its next password-and-code sign-in, then
+  registers a new key.
+- **After a removal the account rests on its password and code until a key is registered again**, and whoever signs
+  in first with those two registers it. That window cannot be closed by the registry. It is narrowed three ways: the
+  administrators confirm with the member by a channel they already hold before they request (the runbook); the first
+  key registered after a removal sends the member a second notice and writes a security event; and it is founder
+  question Q3 whether registration after a removal should also need an administrator's word.
 - **`provider_sign_out`**: the outbox. One row for each `membership_ended`, each recorded reset and each confirmed
   removal, written in that event's own transaction; a platform job asks the provider and retries for 24 hours. The
   web stops calling the provider for these.
@@ -95,7 +102,8 @@ All four are **platform-scoped: no `practice_id`**. Why that is right and safe, 
 | `removed_at` | timestamptz | null while live |
 | `removal_id` | uuid | `REFERENCES hardware_key_removal (id)`; `CHECK ((removed_at IS NULL) = (removal_id IS NULL))` |
 
-Index `hardware_key_live ON (user_id) WHERE removed_at IS NULL`. Trigger `hardware_key_removal_is_final` (BEFORE
+Indexes `hardware_key_live ON (user_id) WHERE removed_at IS NULL` and `hardware_key_by_user ON (user_id)` (the
+no-digest branch of the session trigger asks "any row at all" under the account's lock). Trigger `hardware_key_removal_is_final` (BEFORE
 UPDATE OR DELETE): refuses a delete, a change of any column but `removed_at` and `removal_id`, and any change of
 those once set (the pattern of `user_session_end_is_final`). At most 10 live keys an account (checked in
 `hardware_key_record` under the account's lock).
@@ -125,12 +133,14 @@ Constraints, each named so a refusal can be mapped to words:
 - `hardware_key_removal_in_time`: `state <> 'confirmed' OR decided_at < expires_at`.
 - `hardware_key_removal_decided`: `(state = 'requested') = (decided_at IS NULL)`; `expired` has no `decided_by` and
   `decided_at >= expires_at`; `cancelled` and `confirmed` have one.
-- `hardware_key_removal_open_once`: unique index `ON (user_id) WHERE state = 'requested'`.
+- `hardware_key_removal_open_once`: unique index `ON (user_id) WHERE state = 'requested'`; and a plain index
+  `hardware_key_removal_by_user ON (user_id, state)`.
 - Trigger `hardware_key_removal_is_final`: no delete; only `requested` changes, once.
 
 ### 3.3 `hardware_key_notice` (the member's email, ADR 0091's shape)
 
-`id`; `user_id`; `removal_id uuid NOT NULL UNIQUE` (`hardware_key_notice_once`); `removed_at`; `state` (`pending`,
+`id`; `user_id`; `kind` (`removed`, `registered_after_removal`); `removal_id uuid NOT NULL`, unique with `kind`
+(`hardware_key_notice_once`); `removed_at`; `state` (`pending`,
 `sent`, `delivered`, `undelivered`, `failed`); `attempts smallint` 0 to 5; `next_attempt_at`; `ses_message_id` (unique,
 pattern); `error_code` (pattern `^[A-Za-z]{1,64}$`); `sent_at`; `undelivered_reported_at`; `expires_at` (`removed_at`
 plus 90 days, a range check); `updated_at`. The same four consistency checks as `password_notice`, renamed. Index on
@@ -146,10 +156,12 @@ plus 90 days, a range check); `updated_at`. The same four consistency checks as 
 | `source_event_id` | uuid not null | the audit row that caused it; **`UNIQUE`** (`provider_sign_out_once`) |
 | `request_id` | text | the causing request's ID, for the operator's trace |
 | `queued_at` | timestamptz not null | the event's `at` |
-| `attempts` | smallint not null default 0 | 0 to 30 |
-| `next_attempt_at` | timestamptz not null | default `queued_at` |
+| `attempts` | smallint not null default 0 | 0 to 30; counted at the claim, which never claims a row at 30 (section 7) |
+| `next_attempt_at` | timestamptz not null | written as `queued_at` by whoever inserts the row (a default cannot name a column) |
 | `leased_until` | timestamptz | a claim's lease |
-| `done_at`, `gave_up_at`, `late_reported_at` | timestamptz | `CHECK (done_at IS NULL OR gave_up_at IS NULL)` |
+| `done_at` | timestamptz | the provider answered; may be set on a row already given up (a late success is still recorded) |
+| `late_at`, `gave_up_at` | timestamptz | when the row became late, and was given up |
+| `late_reported_at`, `gave_up_reported_at` | timestamptz | set only after the job has written the paging line (section 7) |
 | `last_error_code` | text | `^[A-Za-z][A-Za-z0-9]{0,63}$` (ADR 0094 D8's rule, in the database) |
 
 Index `provider_sign_out_due ON (next_attempt_at) WHERE done_at IS NULL AND gave_up_at IS NULL`. No subject and no
@@ -177,19 +189,42 @@ or `app.actor_id`; none is `LEAKPROOF`. All but the two readers are VOLATILE. Ea
 it **first**, `FOR NO KEY UPDATE`, before any key, removal, session or outbox row (ADR 0093 D2's order). Each that
 judges time refuses outside READ COMMITTED, as ADR 0093's functions do, and reads `clock_timestamp()`.
 
-"Platform administrator" below is one helper, `app_actor_removes_keys()` (STABLE, definer, no grant: called only by
-the functions here): `app_actor_id() IS NOT NULL AND app_actor_is_platform_admin() AND
-app_actor_platform_permitted('organization.manage')`, plus the age rule of founder question Q1 if he says yes. A
-second helper, `user_removes_keys(uuid)`, answers the same for a named account from `membership` and `organization`
-directly (live `platform_admin` membership in an `internal` organization), for checking the requester at confirmation.
+**Names (the database review's D4).** Under `#variable_conflict use_variable` a bare column whose name a parameter or
+a RETURNS TABLE column shares silently reads the variable. So: every column in every statement is written with its
+table's alias (as the base's functions do), and no parameter shares a column's name (`hardware_key_record`'s are
+`new_credential`, `new_public_key`). SEC-25 runs each function once against rows that would give a different answer
+if a column were read as the variable.
+
+**Clocks.** A function that may wait for a lock before it judges time reads `clock_timestamp()` once, after the wait,
+into a variable, and uses that one value for the judgement and for what it writes (so a CHECK never sees a second,
+later reading). The outbox's short functions, which wait for nothing, use `now()`.
+
+"Platform administrator" below is **one predicate in one helper**, `account_removes_keys(target uuid)` (STABLE,
+definer, granted to no role: only the definer functions here call it, as their owner), used for the actor
+(`account_removes_keys(app_actor_id())`) and for the requester at confirmation alike:
+
+- the account is `active` and `mfa_enrolled` (what `app_actor_memberships()` requires of an actor);
+- it holds a live `platform_admin` membership in an `internal` organization, and that role permits
+  `organization.manage` (`roles_permit`);
+- if the founder says yes to Q1: that membership's `created_at` is more than seven days old **and** no
+  `role_escalation` security event for that membership is younger than seven days. The second half is needed
+  because a role is changed in place (`settings.ts`, `UPDATE membership SET role`; the application role holds UPDATE on
+  `role`), so `created_at` alone does not measure time in the role; `membership_security_events` writes that event on
+  every insert of, or change to, an administrator's role.
+
+The actor must also have **signed in with a hardware key in the last 15 minutes** (`actor_signed_in_with_key_lately()`:
+a live `user_session` of the actor with `mfa_method = 'webauthn'` and `started_at` within 15 minutes), for a request
+and for a confirmation. A session cookie up to 12 hours old is then not enough to take part in a removal; the screen
+asks the administrator to sign in again first. The function cannot know which session is calling, only that the
+account holds a fresh one; that is the part Postgres can hold.
 
 ### 4.1 For the web (`GRANT EXECUTE ... TO tp_app`)
 
 | Function | What it does and refuses |
 | --- | --- |
-| `hardware_key_record(credential_sha256 bytea, public_key bytea, began timestamptz, request text) RETURNS uuid` | The acting account records its own new key (it takes no account argument). Locks the account. Refuses a start at or before the mark or ahead of the clock (constraint name `hardware_key_sign_in_not_before`), an eleventh live key, a digest already known (`hardware_key_credential_once`). Inserts the row and the audit row `hardware_key_registered` (actor the account). The row and its audit row exist together or not at all. |
-| `sign_in_hardware_keys(target_user uuid) RETURNS TABLE (credential_sha256 bytea, public_key bytea)` | STABLE. The account's live keys. Read once in a key sign-in and once in a password-and-code sign-in of an account that must hold a key. Like `sign_in_account`, it is open to the app role before a session exists; it returns nothing secret. |
-| `sign_in_key_refused(target_user uuid, why text, request text) RETURNS void` | Records one `security_event` for the account with purpose `key_refused_<why>`; `why` is a closed list (`not_registered`, `removed`, `assertion`, `malformed`). It counts no failed sign-in: a count would let the holder of a removed key lock the account. Once for an account, a reason and a request. |
+| `hardware_key_record(new_credential bytea, new_public_key bytea, began timestamptz, request text) RETURNS TABLE (key_id uuid, first_after_removal boolean)` | The acting account records its own new key (it takes no account argument). Locks the account. Refuses a start at or before the mark or ahead of the clock (constraint name `hardware_key_sign_in_not_before`), an eleventh live key, a digest already known (`hardware_key_credential_once`). `began` is the caller's, as a session's start is: it is the value the flow read from `sign_in_step_began()` and sealed in the pending step, and a later one could only come from the application role itself, which is already trusted to name the actor. Inserts the row and the audit row `hardware_key_registered` (actor the account). When the account has a confirmed removal and no key registered since, it also writes the security event `key_registered_after_removal` and one `hardware_key_notice` row of kind `registered_after_removal`, and answers `first_after_removal` so the flow logs one line at warn. The row and its audit row exist together or not at all. |
+| `sign_in_hardware_keys(target_user uuid) RETURNS TABLE (credential_sha256 bytea, public_key bytea, removed boolean)` | STABLE. Every key row of the account, live and removed (removed ones without their public key). Read once in a key sign-in and once in a password-and-code sign-in of an account that must hold a key. Like `sign_in_account`, it is open to the application role before a session exists; it returns nothing secret, and the flow calls it only after the provider has verified the person (the database cannot enforce that order; the application role is trusted for it, as for `sign_in_account`). |
+| `sign_in_key_refused(target_user uuid, why text, request text) RETURNS void` | Records one `security_event` for the account with purpose `key_refused_<why>`; `why` is a closed list (`not_registered`, `removed`, `assertion`, `malformed`). It counts no failed sign-in: a count would let the holder of a removed key lock the account. At most one row for an account and a reason in an hour (an `EXISTS` on the account's events since `now() - interval '1 hour'`), so a replayed refusal cannot flood the audit log. |
 | `hardware_key_removal_request(target_user uuid, request text) RETURNS uuid` | Section 6. |
 | `hardware_key_removal_confirm(removal uuid, request text) RETURNS TABLE (keys_removed integer, sessions_ended integer)` | Section 6. |
 | `hardware_key_removal_cancel(removal uuid, request text) RETURNS boolean` | Section 6. |
@@ -199,9 +234,11 @@ directly (live `platform_admin` membership in an `internal` organization), for c
 
 | Function | What it does |
 | --- | --- |
-| `operator_provider_sign_outs_claim(at_most integer) RETURNS TABLE (sign_out_id uuid, user_id uuid, cognito_sub text, attempts smallint)` | Section 7. The only reader of the subject. |
-| `operator_provider_sign_out_done(sign_out uuid, outcome text, request text) RETURNS boolean` | Marks done once and writes `provider_signed_out` (actor kind `system`, object the user, purpose the row's reason). |
-| `operator_provider_sign_out_failed(sign_out uuid, error_name text, request text) RETURNS text` | Records the try; answers `retry`, `late` (once a row, at the fourth failed try) or `gave_up` (writes `provider_sign_out_undelivered`). |
+| `operator_provider_sign_out_claim() RETURNS TABLE (sign_out_id uuid, account_id uuid, subject text, try smallint)` | Section 7. **One row a call.** The only reader of the subject. |
+| `operator_provider_sign_out_done(sign_out uuid, try smallint, outcome text, request text) RETURNS boolean` | Acts only when `try` is the row's `attempts` (it answers that claim and no older one) and the row is undone. `outcome` is `signed_out` or `no_such_user`, nothing else. Marks done and writes `provider_signed_out` once (actor kind `system`, object the user, purpose the row's reason). A row already given up is still marked done: the success is true and is recorded. |
+| `operator_provider_sign_out_failed(sign_out uuid, try smallint, error_name text, request text) RETURNS void` | Acts only when `try` is the row's `attempts` and the row is undone: stores the code, clears the lease, sets `next_attempt_at` by the step. It decides neither late nor given up; the sweep below does. |
+| `operator_provider_sign_outs_overdue(request text) RETURNS TABLE (sign_out_id uuid, account_id uuid, cause_request_id text, code text)` | The sweep, on rows whose lease is not running: sets `late_at` on an undone row with `attempts >= 4`; sets `gave_up_at` (and writes `provider_sign_out_undelivered` once) on an undone row with `attempts >= 30` or `queued_at` 24 hours old. Returns every row whose `LATE` or `GAVE_UP` line is **not yet acknowledged**, each run, until acknowledged. |
+| `operator_provider_sign_out_reported(sign_out uuid, code text) RETURNS void` | Sets `late_reported_at` or `gave_up_reported_at`. Called after the paging line is written. |
 | `operator_provider_sign_outs_expire(at_most integer) RETURNS integer` | Deletes rows done more than 90 days ago. Never an undone row. |
 | `operator_key_removals_expire(at_most integer, request text) RETURNS TABLE (removal_id uuid, user_id uuid)` | Marks requests past 24 hours `expired` and writes `hardware_key_removal_expired`. |
 | `operator_key_notices_due`, `_claim`, `_sent`, `_failed`, `_stale` | ADR 0091's five, for `hardware_key_notice`, the same bodies with the table and the kind changed. `_claim` is the only reader of the address. |
@@ -213,7 +250,7 @@ directly (live `platform_admin` membership in an `internal` organization), for c
 | --- | --- | --- |
 | `user_session_hardware_key` | `user_session` BEFORE INSERT `WHEN (NEW.mfa_method = 'webauthn')` | Locks the account's row. With a digest: refuses unless a live `hardware_key` of `NEW.user_id` has it (`check_violation`, constraint name `user_session_hardware_key_live`). **Without a digest** (the previous image's insert during a rolling deploy or a rollback): refuses if the account has any `hardware_key` row or any confirmed removal; otherwise lets it through, as today. So an account the registry has touched is never opened by an insert that skips it. It fires before `user_session_sign_in_not_before` (name order); both take the same lock. |
 | `membership_end_marks_account` | `membership` AFTER UPDATE OF `ends_at` `WHEN (NEW.ends_at IS NOT NULL AND NEW.ends_at <= now() AND (OLD.ends_at IS NULL OR OLD.ends_at > now()))` | Refuses outside READ COMMITTED. `UPDATE "user" SET sign_in_not_before = GREATEST(sign_in_not_before, clock_timestamp())` for the membership's user (this takes the account's row), then ends every open session of the account (`revoked`). The route's own `revoke_user_sessions` call then finds none; it stays, harmless. |
-| `audit_event_provider_sign_out` | `audit_event` AFTER INSERT `WHEN (NEW.action IN ('membership_ended', 'password_reset_completed', 'password_reset_outcome_unknown'))` | Writes one `provider_sign_out` row, `ON CONFLICT ON CONSTRAINT provider_sign_out_once DO NOTHING`. For a reset: under ADR 0091 D3's guard (the actor is a person recording their own account), user the actor. For `membership_ended`: the object must be a membership **this transaction ended** (`object_type = 'membership'` and a row with that ID whose `ends_at = now()`, the transaction's own timestamp, which both routes write); the user is that membership's. Otherwise it **raises** (`check_violation`, `membership_ended_is_recorded_by_the_end`): no one records `membership_ended` for a membership they did not just end, so the event cannot be forged to queue a sign-out for someone else, and a future route that ends a membership another way fails its first test instead of silently queuing nothing. |
+| `audit_event_provider_sign_out` | `audit_event` AFTER INSERT `WHEN (NEW.action = 'membership_ended' OR (NEW.action IN ('password_reset_completed', 'password_reset_outcome_unknown') AND NEW.actor_kind = 'user' AND NEW.object_type = 'user' AND NEW.object_id = NEW.actor_id))` | Writes one `provider_sign_out` row, `ON CONFLICT ON CONSTRAINT provider_sign_out_once DO NOTHING`. For a reset: ADR 0091 D3's guard is in the WHEN clause, so a reset row that fails it is skipped, never raised (as the notice's and the mark's triggers skip it); user the actor. For `membership_ended`: the object must be a membership **this transaction ended and did not create** (`object_type = 'membership'` and a row with that ID whose `ends_at = now()`, the transaction's own timestamp, which both routes write, and whose `created_at < now()`); the user is that membership's. Otherwise it **raises** (`check_violation`, `membership_ended_is_recorded_by_the_end`). So the event cannot be recorded for a membership the actor did not just end (ending it needs the membership policies' leave), nor for one inserted already ended in the same transaction (the application role holds INSERT on `ends_at`; that row moved no mark), and a future route that ends a membership another way fails its first test instead of silently queuing nothing. Only the two routes write this action today (checked by the database review). |
 
 Why the mark moves on `membership` and the outbox row on `audit_event`: the mark and the sweep must hold whoever ends
 a membership, and must take the account's row before any session row (the route sweeps sessions before it writes its
@@ -254,7 +291,7 @@ Each carries the request's or the job's ID. None carries a name, an address, a c
 **Per request: zero added statements, zero added reads.** `resolve_session` is not replaced. A session never needs
 its key looked up again, because the confirmation ends every session of the account in the transaction that removes
 the keys, under the same account lock a session's insert takes: there is no moment at which a live session rests on a
-removed key. A database test states that invariant over the interleavings (section 10, SGN-c). So Queues item 36
+removed key. A database test states that invariant over the interleavings (section 10, SGN-22). So Queues item 36
 folds the path's three round trips with nothing of this item in its way.
 
 **At a key sign-in (once a session, at most every 12 hours): one added read**, `sign_in_hardware_keys`, a lookup by
@@ -267,17 +304,33 @@ The key sign-in, in order (`authenticated`, after the provider verified the asse
 
 1. The response must be well formed: `id` equals `rawId`, canonical base64url, 16 to 1,023 bytes. Otherwise refused
    (`malformed`).
-2. `sign_in_hardware_keys(account)`. The digest of the credential ID must be among them. Otherwise: refused with the
-   words of a wrong credential, `sign_in_key_refused` (`not_registered`), and the grant deletes at the provider every
-   credential whose digest is not live (list with the grant, delete each; best effort; logged by IDs), then is given
-   back.
+2. `sign_in_hardware_keys(account)`. The digest of the credential ID must be a **live** row. Otherwise: refused with
+   the words of a wrong credential; `sign_in_key_refused` with `removed` when the digest is a removed row, else
+   `not_registered`; a **removed** key being tried is also one line at error, `security event: removed hardware key
+   used` (`user_id`, `request_id`), which pages (a new alarm row beside the others), since it means someone still
+   holds a key that two administrators took away. Then the cleaning, with the grant, best effort: list the
+   provider's credentials; delete each whose digest is a removed row, and each whose digest is unknown **and** whose
+   creation time at the provider is more than 15 minutes old; never one with a live row; never an unknown young one
+   (it may be a key the member is registering in another tab, between the provider's answer and
+   `hardware_key_record`'s commit). The cleaning's line: `user_id`, `request_id`, a count, an `error_code`; no
+   credential ID and no digest. Then the grant is given back.
 3. **The app verifies the assertion itself** against the row's public key (`@simplewebauthn/server`, already a
-   dependency): the challenge is the one the provider's options carried, kept in the sealed pending step; the origin
-   and relying-party ID are the app's configuration; user verification required. A failure is refused (`assertion`)
-   and logged at error: the provider accepted something the registry's key did not sign. Why this step: the app
-   reads the credential ID from the browser's JSON, the provider matched a credential by its own reading, and this
-   machine cannot read the provider's documentation to prove the two always agree. With the check, a removed key
+   dependency). A failure is refused (`assertion`) and logged at error with the library's error **class name only**
+   (its messages carry values): the provider accepted something the registry's key did not sign. Why this step: the
+   app reads the credential ID from the browser's JSON, the provider matched a credential by its own reading, and
+   this machine cannot read the provider's documentation to prove the two always agree. With the check, a removed key
    that is still at the provider cannot open a session by naming a live key's ID, whatever the provider matched.
+   What the build must get right so the check never refuses an honest person (the auth review's A8):
+   - **New plumbing:** today neither the challenge nor the browser's response reaches `authenticated()`. The
+     challenge is taken from the options the provider returned at `beginKey` and sealed in the pending step; the
+     response is passed down from `completeKey`.
+   - **One relying-party ID.** The pool's (`infra/lib/platform-stack.ts`, `relyingPartyId`) and the app's
+     configuration are two sources. The web refuses to start when they differ (read from the options the provider
+     returns on the first key step, compared once, logged at error), and an infra test ties the two.
+   - **No counter.** The registry stores none (section 11), so the library is given a stored counter of zero and its
+     counter check is off.
+   - **User verification** is required here exactly when the pool requires it; one constant, tied by a test to the
+     pool's setting.
 4. `openSession` with the digest. The trigger refuses under the lock if a removal landed since step 2
    (`user_session_hardware_key_live`); the flow answers as for a stale session and records `removed`.
 
@@ -298,7 +351,7 @@ practice). The functions check everything again; the table's constraints hold wh
 
 **`hardware_key_removal_request(target_user, request)`**
 
-1. `app_actor_removes_keys()`, or `insufficient_privilege`.
+1. `account_removes_keys(app_actor_id())` and `actor_signed_in_with_key_lately()`, or `insufficient_privilege`.
 2. `target_user <> app_actor_id()`, or `check_violation` (`hardware_key_removal_not_own_account`).
 3. Lock the target's account row (not found: `no_data_found`, answered as not found).
 4. A request of this account already past 24 hours is marked `expired` here (with its audit row), so step 5 is exact.
@@ -307,14 +360,22 @@ practice). The functions check everything again; the table's constraints hold wh
 
 **`hardware_key_removal_confirm(removal, request)`**
 
-1. `app_actor_removes_keys()`.
+1. `account_removes_keys(app_actor_id())` and `actor_signed_in_with_key_lately()`.
 2. Read the removal's `user_id` (no lock), lock that **account's** row, then lock the removal row `FOR UPDATE` and
-   read it again. It must be `requested`.
+   read it again. It must be `requested`. Then read `clock_timestamp()` once into `at`; every time below is `at`.
 3. `app_actor_id() <> requested_by` (`hardware_key_removal_two_people`: "ask another platform administrator to
    confirm this removal") and `app_actor_id() <> user_id` (`hardware_key_removal_not_own_account`).
-4. `clock_timestamp() < expires_at` (`hardware_key_removal_in_time`: "this request has expired; ask again").
-5. The requester is **still** a platform administrator (`user_removes_keys(requested_by)`): a request made by an
-   account that has since lost the role is void (`hardware_key_removal_requester_left`).
+4. `at < expires_at` (`hardware_key_removal_in_time`: "this request has expired; ask again"). `decided_at` is `at`,
+   so the CHECK sees the value the function judged.
+5. The requester is **still** a platform administrator (`account_removes_keys(requested_by)`, the same predicate):
+   a request made by an account that has since lost the role, been disabled, or been re-added is void
+   (`hardware_key_removal_requester_left`). **One exception:** when the requester's membership was ended by the
+   account under removal (a `membership_ended` audit row for that membership whose actor is `user_id`, after
+   `requested_at`), the request stands. Otherwise a thief inside a platform administrator's account could void its
+   own removal by ending the requester's membership (the console's End membership refuses no one). The read of
+   `membership` here takes no lock: locking it would put a membership row after the account's, the reverse of End
+   membership's order; a membership ended in the same instant is caught by the next confirmation attempt or not
+   needed.
 6. Then, all in this transaction:
    - `UPDATE hardware_key SET removed_at = clock_timestamp(), removal_id = ...` for every live key of the account;
    - the mark: `sign_in_not_before = GREATEST(sign_in_not_before, clock_timestamp())`;
@@ -323,13 +384,15 @@ practice). The functions check everything again; the table's constraints hold wh
      the `key_across_reset_cleared` security event, so `unlock_user` then works; the account is **not** unlocked here;
    - the removal row: `confirmed`, `decided_by`, `decided_at`, the two counts;
    - the audit row `hardware_key_removal_confirmed`;
-   - one `hardware_key_notice` row and one `provider_sign_out` row (`hardware_keys_removed`, `source_event_id` the
+   - one `hardware_key_notice` row (kind `removed`) and one `provider_sign_out` row (`hardware_keys_removed`, `source_event_id` the
      audit row's ID).
    An account with no live key is still confirmed: the mark, the sessions, the hold and the provider's leftovers are
    the point for an account whose keys predate the registry.
 
 **`hardware_key_removal_cancel(removal, request)`**: a platform administrator who is not the account (the requester
-may cancel their own). `requested` to `cancelled`, audit row. The account itself cannot cancel: a thief in the account
+may cancel their own), under the same two actor checks. `requested` to `cancelled`, audit row. Any one administrator can therefore stop a
+removal, each time on the audit log with their ID; the runbook says a cancelled removal of an account thought stolen
+is itself an incident. The account itself cannot cancel: a thief in the account
 must not be able to stop its removal.
 
 **What Postgres holds, restated:** who (the helper, on the live memberships, at both steps, the requester re-checked);
@@ -337,8 +400,9 @@ must not be able to stop its removal.
 three acts (function and two CHECKs); the drafter never confirming (function and `hardware_key_removal_two_people`);
 all keys, never one (the only statement that removes a key names the account, not a key).
 
-**What two accounts cannot prove:** that they are two people. Founder question Q1 (section 12) closes the cheapest way
-around it: one administrator creating a second administrator account and confirming with it.
+**What two accounts cannot prove:** that they are two people. Founder question Q1 (section 12) closes the cheapest ways
+around it: one administrator creating a second administrator account, or promoting an old account in place, and
+confirming with it.
 
 **The web:** three routes on the console's organization page (`console.request_key_removal`,
 `console.confirm_key_removal`, `console.cancel_key_removal`), each `phi: false`, `organization.manage`, input the
@@ -356,38 +420,57 @@ transaction: a row exists if and only if the cause committed. One row for each a
 
 **The job:** platform job `provider_sign_outs`, schedule `* * * * *`, payload `z.strictObject({})`, as `tp_operator`
 with no practice in scope. Its singleton is the schedule's own (one queued run for each minute's slot, as every
-platform job); two runs that overlap are safe by the claim. In one run, in order: `operator_key_removals_expire`;
-`operator_provider_sign_outs_expire`; then claims and calls for at most 8 seconds of provider time (the notices'
-budget), the rest left due.
+platform job); two runs that overlap are safe by the claim. In one run, in order: the steps below.
 
-**Claim** (`operator_provider_sign_outs_claim`, one short transaction): rows that are undone, not given up, due
-(`next_attempt_at <= now()`), with no lease or a lapsed one, ordered by `next_attempt_at, id`, `FOR UPDATE SKIP
-LOCKED`, at most `at_most`; each gets `attempts = attempts + 1` and `leased_until = now() + interval '2 minutes'`, and
-is returned with the account's `cognito_sub`. The try is counted **at the claim**, so a row that kills the worker
-still runs out of tries. No transaction is open while the provider is called.
+**One run, in order** (each numbered step in its own `try`, so a failure of one does not stop the next; the job
+fails at the end if any step failed):
 
-**Call:** the worker's own adapter, `AdminUserGlobalSignOut` with a 10 second abort (ADR 0094 D7). The subject lives
-in memory for the call and appears in no log, payload or error.
+1. **The sign-outs first.** Loop while the run has spent under 8 seconds calling the provider: claim one row; call;
+   record. A row is claimed only when it will be called at once, so no try is spent on a row the run never reaches.
+2. **The overdue sweep and its lines:** `operator_provider_sign_outs_overdue`; for each row returned, write the
+   paging line, then `operator_provider_sign_out_reported`.
+3. `operator_key_removals_expire`. 4. `operator_provider_sign_outs_expire`.
 
-**Outcome** (one short transaction each):
+**Claim** (`operator_provider_sign_out_claim`, one short transaction): a CTE marked `MATERIALIZED` selects **one** row
+that is undone, not given up, due (`next_attempt_at <= now()`), with no lease or a lapsed one, and with `attempts <
+30`, ordered by `next_attempt_at, id`, `FOR UPDATE SKIP LOCKED LIMIT 1`; the UPDATE joins that CTE (so the locking
+read runs exactly once and exactly one row changes), sets `attempts = attempts + 1` and `leased_until = now() +
+interval '2 minutes'`, and returns the row with the account's `cognito_sub` and the new `attempts` as `try`. The try
+is counted **at the claim**, so a row that kills the worker still runs out of tries; and because the claim itself
+never touches a row at 30, the counter can never pass its CHECK. No transaction is open while the provider is called.
 
-- Success, or the provider's "no such user": `operator_provider_sign_out_done` (`done_at`, `leased_until` cleared,
-  audit `provider_signed_out` once, guarded by `done_at IS NULL`).
+**Call:** the worker's own adapter, `AdminUserGlobalSignOut` with a 10 second abort (ADR 0094 D7), well inside the
+2 minute lease. The subject lives in memory for the call and appears in no log, payload or error.
+
+**Outcome** (one short transaction each, each naming the `try` it answers):
+
+- Success, or the provider's "no such user": `operator_provider_sign_out_done`.
 - Failure: `operator_provider_sign_out_failed`: the error's name if it matches the pattern, else `unknown`;
-  `next_attempt_at` after 1, 5, 15 and 60 minutes, then every 60. Answers `late` once, at the fourth failed try
-  (about 21 minutes in), and `gave_up` when `queued_at` is 24 hours old or `attempts` reaches 30 (`gave_up_at`, audit
-  `provider_sign_out_undelivered`).
+  `next_attempt_at = now() +` 1, 5, 15 or 60 minutes by `attempts`, and 60 for every try past the fourth
+  (`(ARRAY[1, 5, 15, 60])[least(attempts, 4)]`).
+- A worker whose call outlived its lease, while another worker claimed the row again: its `try` is no longer the
+  row's `attempts`, so its `failed` changes nothing, and its `done` changes nothing either. The provider was signed
+  out by that slow call all the same; the second worker's own call (harmless) is the one that records it. Nothing a
+  stale worker says can move the schedule or give a row up.
+
+**Late and given up are decided by the sweep, not by a worker's answer** (the database review's D1): a row whose
+worker dies on every try never reaches `failed`, so `failed` cannot be what gives it up. The sweep looks only at the
+row: `attempts >= 4` is late; `attempts >= 30` or 24 hours since `queued_at` is given up. A row dying on every try is
+late after about 8 minutes of leases and given up after 30 of them (about an hour); a row failing normally is late at
+about 21 minutes and given up at 24 hours.
 
 **Logs and paging.** Each failed try: one line at warn, `provider sign-out attempt failed` (`sign_out_id`, `user_id`,
-`request_id` of the cause, `error_code`). `late` and `gave_up`: one line at **error**, `security event: provider
+`request_id` of the cause, `error_code`). Late and given up: one line at **error**, `security event: provider
 sign-out not delivered` with `error_code` `LATE` or `GAVE_UP`; the alarm `ProviderSignOutNotDelivered` counts those
-words (at least 1 in 300 s, the operator topic). It replaces `MembershipEndProviderSignOutFailed` and
-`PasswordResetProviderSignOutFailed`, whose lines the web no longer writes. If the job itself does not run, nothing
-logs: the build confirms that the platform schedule's missed-run alarm covers this job, and adds it to that alarm's
-list if the list is by name.
+words (at least 1 in 300 s, the operator topic). **The line is at least once, never lost:** the sweep returns a row on
+every run until `operator_provider_sign_out_reported` has acknowledged it, and the job acknowledges only after the
+line is written; a crash in between writes the line again next minute (the database review's D3). It replaces
+`MembershipEndProviderSignOutFailed` and `PasswordResetProviderSignOutFailed`, whose lines the web no longer writes.
+If the job itself does not run, nothing logs: the build confirms that the platform schedule's missed-run alarm
+covers this job, and adds it to that alarm's list if the list is by name.
 
 **What is idempotent.** The provider's global sign-out (a second one ends tokens already ended; the app's own sessions
-are not the provider's). `done` and `failed` act only on an undone row. The trigger's insert (`ON CONFLICT DO
+are not the provider's). `done` and `failed` act only on an undone row and only for the latest claim; the sweep sets each mark once. The trigger's insert (`ON CONFLICT DO
 NOTHING`). So the effect, "the provider was asked at least once after the cause committed, and the record says so
 once", holds under any repetition; the call itself is at-least-once by design.
 
@@ -398,7 +481,8 @@ once", holds under any repetition; the call itself is at-least-once by design.
 | The web, before the cause commits | no row, no cause | nothing to do |
 | The web, after the commit (ADR 0094's open case) | the row | the next run asks; closed |
 | The job, before the claim commits | rows unchanged | the next run claims |
-| After the claim, before the call | a try counted, a lease | the lease lapses in 2 minutes; claimed again |
+| After the claim, before the call | a try counted, a lease | the lease lapses in 2 minutes; claimed again; if it dies every time, the sweep pages `LATE` at the fourth try and `GAVE_UP` at the thirtieth |
+| After the sweep marked a row, before its line | the mark, no acknowledgement | the next run returns the row again and writes the line |
 | After the provider answered, before `done` | the same | asked again (harmless), then `done` |
 | During `done` or `failed` | rolled back; as the row above | the same |
 | The provider down for a day | `late` paged at about 21 minutes, `gave_up` at 24 hours | the runbook: the app's state has held since the commit; the operator confirms by the IDs |
@@ -413,9 +497,13 @@ Consequences) need no special handling. The worker gains the adapter (the shared
 the local twin does nothing), the pool's ID in its environment, and the role test's scan.
 
 **The notice job** (`hardware_key_notices`, every minute): `password-notices.ts` with the table, the kind and the
-template changed. The words: the hardware keys on this account were removed by PaidWhole at a time; the next sign-in
-asks for the password and the code and then registers a new key; write to support if this was not expected. No name,
-practice or PHI.
+template changed. Two kinds, one table (`kind`: `removed`, `registered_after_removal`; `hardware_key_notice_once` is on `(removal_id,
+kind)`). The address is read by the claim at send time; the application role can update `"user".email` at the
+database (no route does today), so the claim sends only when the address has not changed since the removal was
+requested (`"user".updated_at`, or the build adds the comparison it finds exact) and otherwise fails the notice as
+`AddressChanged`, which is reported to the operator like any undelivered notice. The words for `removed`: the hardware keys on this account were removed by PaidWhole at a time; the next sign-in
+asks for the password and the code and then registers a new key; write to support if this was not expected. For `registered_after_removal`: a new hardware key was
+registered on this account at a time; write to support at once if this was not you. No name, practice or PHI.
 
 ## 8. The in-flight cases
 
@@ -436,9 +524,15 @@ SGN-19's two pinned tests change from "still opens" to the refusal SGN-17 states
 | 11 | A removed key signs in after the member registered a new one | refused at step 2 or 3 of section 5; the provider's leftover deleted by that grant | the registry and the app's own verification |
 | 12 | The previous image opens a key session for an account with registry rows or a confirmed removal | refused | `user_session_hardware_key`, the no-digest branch |
 
+Three things the auth review found that the PR and ADR 0095 say plainly: a person in two organizations who is
+removed from one has one half-finished sign-in refused (they start again); the paging line for a refused step reads
+"after a password reset" when the cause was a membership's end or a removal (the runbook says so, with the query that
+shows the cause); and a membership ended while its person is registering a key can, rarely, reach ADR 0093 D6's lock
+and hold, which a confirmed removal now clears.
+
 The records for cases 1, 2 and 5 keep their names (`step_before_reset_*`) although the cause may be a membership's end
 or a removal: renaming them would change ADR 0093's reserved purposes and the runbook's queries for no gain; the
-audit trail beside each shows the cause at the mark's time. Said in ADR-N.
+audit trail beside each shows the cause at the mark's time. Said in ADR 0095.
 
 ## 9. The migration plan (by /new-migration; none written here)
 
@@ -481,9 +575,18 @@ another schema change). Separate so that file 1's exclusive locks are released b
   row is written, and its own after-commit call makes a second, harmless sign-out.
 - Its registration audits `hardware_key_registered` itself and records no row: that key is refused and cleaned by the
   new image, and the person registers again. Said in the deploy runbook; before launch it is staff only.
-- **Rollback floor:** none for the schema. A rollback of the image after a removal was confirmed keeps that removal
-  (the database refuses the key); it loses only the app's own assertion check and the cleaning at the provider until
-  the image returns.
+- **Rollback, said plainly (the auth review's A7):** the schema needs no rollback, but **under the previous image no
+  account that has a registry row can sign in**: that image's key sign-in sends no digest and is refused, and its
+  password-and-code path sees the provider's key and answers that a key is required. That is every staff account
+  that registered under the new image. Customers who sign in with a code are not affected. It fails closed, which is
+  the right side, and it means a rollback of this release is a decision to go without staff sign-in until the image
+  rolls forward again; the deploy runbook says so, and names roll-forward as the way out.
+- **The deploy itself (A6):** from the deploy until each staff account registers again, that account rests on its
+  password and code, with no second person involved. Before launch that is staff and test accounts only. The runbook
+  bounds it: staff register again in the deploy's own session, the operator compares the registry's count of live
+  keys with the list of staff accounts before the deploy is called done, and the first key sign-in of each is the
+  check. A key registered through the previous image during the minutes of a rolling deploy has no row and is
+  registered again the same way.
 
 ### 9.4 The contract migration (a later schema PR, once this release is the rollback floor)
 
@@ -508,29 +611,29 @@ Written before the code they hold, each seen to fail for the right reason. Datab
 
 **Catalog and cross-tenant (required on every PR):**
 
-- **SEC-a, the catalog test.** The four tables: RLS enabled and forced, exactly one policy each, for `tp_owner`; no
+- **SEC-25, the catalog test.** The four tables: RLS enabled and forced, exactly one policy each, for `tp_owner`; no
   privilege for `tp_app`, `tp_operator` or PUBLIC; listed as global tables with the reason. Every function of section
   4: definer or not as stated, the search path, the owner, exactly its grantees (the table in `mail.db.test.ts`'s
   form). The triggers by `pg_get_triggerdef`. `migrate.db.test.ts`'s table list.
-- **SEC-b, the cross-tenant test.** With rows for accounts of practice A and practice B: an actor of A, an actor of
+- **SEC-26, the cross-tenant test.** With rows for accounts of practice A and practice B: an actor of A, an actor of
   B, a platform administrator and the operator role each `SELECT` zero rows from all four tables and are refused every
   INSERT, UPDATE and DELETE; `sign_in_hardware_keys` returns only the named account's live keys;
   `hardware_key_removals()` returns nothing to anyone but a platform administrator; `hardware_key_record` can name no
   account but the actor's.
-- **SEC-c, the reserved actions.** The application role cannot insert any action of section 4.4;
+- **SEC-27, the reserved actions.** The application role cannot insert any action of section 4.4;
   `membership_ended` for a membership the transaction did not end is refused, and for one it ended is accepted
   (`hardening.db.test.ts`'s list).
 
 **The registry at session open:**
 
-- **SGN-a.** A key sign-in with a live key opens a session; with no row, a removed row, another account's digest, or
+- **SGN-20.** A key sign-in with a live key opens a session; with no row, a removed row, another account's digest, or
   a digest that is not 32 bytes, the INSERT is refused by name. The no-digest branch: allowed for an untouched
   account, refused once the account has any key row or a confirmed removal.
-- **SGN-b.** The flow: an unknown or removed key is refused with the words of a wrong credential, records
+- **SGN-21.** The flow: an unknown or removed key is refused with the words of a wrong credential, records
   `key_refused_*`, counts no failure, and the provider twin's leftover credentials are deleted by that grant. An
   assertion that the provider twin accepts but the row's public key did not sign is refused. `id` not equal to
   `rawId` is refused.
-- **SGN-c, the invariant.** Over interleavings of sign-in, confirmation, End membership and reset on one account (two
+- **SGN-22, the invariant.** Over interleavings of sign-in, confirmation, End membership and reset on one account (two
   connections, each order of the account lock): never a live session whose digest is not a live key, and never a
   live session begun at or before the mark. With a statement count: `resolveSession` issues the same statements as on
   the base.
@@ -538,33 +641,45 @@ Written before the code they hold, each seen to fail for the right reason. Datab
 **The two-person rule (each refusal by its constraint name, each tried through the function and by direct owner
 UPDATE against the CHECK):**
 
-- **SGN-d.** Request: refused for a practice administrator, a support engineer, an internal non-administrator, the
+- **SGN-23.** Request: refused for a practice administrator, a support engineer, an internal non-administrator, the
   account itself, and no actor; a second open request refused; the audit row.
-- **SGN-e.** Confirm: refused for the requester, the account, a non-administrator, at 24 hours exactly and after, a
+- **SGN-24.** Confirm: refused for the requester, the account, a non-administrator, at 24 hours exactly and after, a
   requester who lost the role, a removal already decided. On success, in one transaction: every key removed, the mark
   moved, sessions ended, the hold cleared when one stood (and `unlock_user` then works, and did not before), one
   notice row, one outbox row, one audit row; a failure of any part leaves none.
-- **SGN-f.** Cancel and expiry: who may; the account may not; an expired request confirms nothing and gets its event
+- **SGN-25.** Cancel and expiry: who may; the account may not; an expired request confirms nothing and gets its event
   once.
 
 **The in-flight cases:**
 
 - **SGN-19, changed.** Its two tests assert the refusals (section 8, cases 1 and 2), the mark moved by End membership
   in both routes, and the `step_before_reset_*` record.
-- **SGN-g.** Cases 3 to 8 and 10 to 12, each with two connections where order matters.
-- **SGN-h.** Registration: the row and `hardware_key_registered` together; a start at or before the mark refused; the
+- **SGN-26.** Cases 3 to 8 and 10 to 12, each with two connections where order matters.
+- **SGN-27.** Registration: the row and `hardware_key_registered` together; a start at or before the mark refused; the
   eleventh key; a known digest; the app's own verification failing removes the key at the provider twin.
 
 **The outbox:**
 
-- **JOB-a.** The trigger writes one row for each of the three actions and none for a rolled-back cause; the reset's
+- **JOB-06.** The trigger writes one row for each of the three actions and none for a rolled-back cause; the reset's
   guard; a forged `membership_ended` raises. The claim: due only, the lease, skip-locked across two connections, the
   try counted at the claim, the subject returned only there.
-- **JOB-b.** The steps (1, 5, 15, 60, then 60), `late` once at the fourth failed try, `gave_up` at 24 hours and at 30
+- **JOB-07.** The steps (1, 5, 15, 60, then 60), `late` once at the fourth failed try, `gave_up` at 24 hours and at 30
   tries with its event, "no such user" done, an error name that is not a class name stored as `unknown`.
-- **JOB-c.** Each crash point of section 7's table, by stopping the job between its transactions. The log lines carry
+- **JOB-08.** Each crash point of section 7's table, by stopping the job between its transactions. The log lines carry
   IDs and codes only (the subject and the address never appear, asserted against captured lines). The alarm's filter
   and words (`infra/test/monitoring.test.ts`). `pnpm lint:logs`.
+
+**From the reviews:** SGN-21 also: the cleaning never deletes a live key or an unknown credential younger than 15
+minutes, and does delete a removed one and an old unknown one; a removed key tried writes the paging line; the
+library's error text reaches no log. SGN-23 and SGN-24 also: an actor with no key session in the last 15 minutes is
+refused; a membership promoted to platform administrator in place within seven days is refused although its
+`created_at` is old (if Q1 is yes); a disabled requester voids; a requester whose membership the target ended does
+not. SGN-27 also: the first key after a removal writes the event and the second notice, the second key does not.
+SEC-27 also: `membership_ended` for a membership inserted already ended in the same transaction is refused. JOB-06
+also: one row a claim; `attempts` never passes 30; a claim that would is not made. JOB-07 also: a stale worker's
+`done` and `failed` change nothing; `done` on a given-up row records the success; a row whose worker dies on every
+try is paged `LATE` and `GAVE_UP` by the sweep alone. JOB-08 also: a crash between the sweep and its line writes the
+line on the next run; a failing expiry step does not stop the sign-outs.
 
 **Also:** the notice's five functions and its job (the password notice's tests, re-pointed); the worker's role test
 scanning the new adapter; the three console routes (role refusals, one audit event each, no PHI in any redirect or
@@ -574,7 +689,7 @@ re-registration.
 
 ## 11. The ADR and the runbooks
 
-**ADR-N**, "Remove a member's hardware keys in the app's own registry, by two platform administrators; queue every
+**ADR 0095**, "Remove a member's hardware keys in the app's own registry, by two platform administrators; queue every
 provider sign-out in the database; move the mark when a membership ends". Decisions to record: the registry and why
 the provider cannot be the source; the two checks at session open and why the app verifies the assertion itself; the
 two-person rule and what it cannot prove; all keys, never one; the cleaning by the member's own grant; the outbox,
@@ -591,7 +706,14 @@ beside the outbox (two senders, a paging line for a failure the job already retr
 
 - `incident-response.md`, the hardware-key section: key removal **leaves the founder's break-glass**. The steps
   become: one platform administrator requests in the console, a second confirms within 24 hours after checking with
-  the requester by voice, then Unlock if the account was held. Break-glass steps 3.1 and 3.2 go. Break-glass stays
+  the requester by voice, then Unlock if the account was held. **Before the request, the member is reached by a
+  channel PaidWhole already holds for them (never one given in the message that asks for the removal), and asked
+  whether they want their keys removed:** a "lost my key" message is exactly what someone holding a stolen password
+  and code would send. Where the account is thought to be in another's hands, **End membership comes first** (it
+  ends the sessions and moves the mark at once, and an account with no membership can no longer act in the console),
+  then the removal. Both administrators sign in again with their keys just before they act. A cancelled removal of
+  such an account, a `removed hardware key used` page, and a `key_registered_after_removal` event the member does not
+  recognise are each an incident. Break-glass steps 3.1 and 3.2 go. Break-glass stays
   only for the case with fewer than two eligible administrators who are not the account. "An ended membership whose
   provider sign-out failed" becomes "A provider sign-out not delivered" (`LATE`, `GAVE_UP`): what holds meanwhile,
   the query by `sign_out_id`, and that the one manual resend left is the founder's.
@@ -616,7 +738,13 @@ beside the outbox (two senders, a paging line for a failure the job already retr
    known to the registry.
 6. The four new tables carry no patient data and no practice: account IDs, key fingerprints, times and codes. Neither
    runtime role can read or write them directly.
-7. A second, small schema PR follows later to close two doors this one must leave open while the old version can
+7. After a removal the account is only as strong as its password and code until the person registers a new key,
+   and whoever signs in first with those two registers it. The design narrows that (the member is asked first, a
+   second email when a key is registered, a page if a removed key is tried) but cannot close it; Q3 asks whether to
+   go further.
+8. If this release is ever rolled back, staff cannot sign in until it is rolled forward again (customers can). The
+   safe failure, but worth knowing before a deploy.
+9. A second, small schema PR follows later to close two doors this one must leave open while the old version can
    still be running (9.4).
 
 **His to decide:**
@@ -630,6 +758,17 @@ beside the outbox (two senders, a paging line for a failure the job already retr
 - **Q2. Who holds platform administrator at launch?** With two, the keys of either can be removed only by break-glass,
   because the account itself is excluded and two others are needed. **Recommendation: at least three people, each a
   distinct person with their own key, named before launch** (it joins runbook 3i's list).
+
+- **Q3. After a removal, should registering the next key need an administrator's word?** As designed, the member
+  signs in with password and code and registers a new key on their own; so could someone who holds those two. The
+  stricter option: registration stays closed after a removal until a platform administrator opens it for that
+  account for one hour, having spoken to the member. It costs the member a second contact with PaidWhole, and adds
+  one column and one function to this PR. **Recommendation: yes, the stricter option.** The accounts this protects
+  are staff and flagged accounts, removals will be rare, and it is the only thing that closes the window instead of
+  narrowing it. If he says no, the design stands as written (the member asked first, the second notice, the page).
+  The note is written for "no"; "yes" adds `"user".key_registration_open_until`, a function
+  `hardware_key_registration_open(target_user, request)` under the same actor checks as a removal's request, and one
+  refusal in `hardware_key_record`.
 
 ## 13. Decisions taken here, the safer option each time, and why
 
@@ -652,3 +791,41 @@ beside the outbox (two senders, a paging line for a failure the job already retr
 The contract migration (9.4). Dropping ADR 0093 D6's account lock now that an unrecorded key opens nothing. A
 membership that lapses by a future `ends_at`. A sign counter. Refusing in Postgres a password-and-code session for an
 account that must hold a key (today the flow's rule only). ADR 0094's other recorded items stand as they are.
+
+## 15. The two reviews and the fix round (2026-11-12)
+
+Reports: `reviews/lane-a-key-registry-review-auth.md` and `reviews/lane-a-key-registry-review-db.md`. Each finding was
+checked before the note changed: against the base where it rests on code, by the note's own text where it rests on
+the design. The database review could run nothing (no server on its machine); its lock and row-level-security
+conclusions rest on the code and on PostgreSQL's documented behaviour, and SGN-22 and SGN-26 are where the build
+proves them.
+
+| Finding | Checked | What changed |
+| --- | --- | --- |
+| **A1, blocking:** after a removal, whoever signs in first with password and code registers the next key | True of the design and of the flow on the base (`sign-in.ts`, the `register_key` step) | Section 2's new bullet; the member is asked first (runbook); the second notice and `key_registered_after_removal`; founder question Q3, recommending the stricter option |
+| A2: seven days is not `created_at` (a role changes in place) | Confirmed: `settings.ts` updates `role`; the application role holds UPDATE on it | The predicate in section 4 reads the membership's latest `role_escalation` too |
+| A3: the requester's re-check lacked active and enrolled | Confirmed against `app_actor_memberships()` | One predicate, `account_removes_keys`, for both |
+| A4: the target can void its own removal by ending the requester's membership | Confirmed: the console's End membership refuses no one | Section 6 step 5's exception; End membership first, in the runbook; cancel's note |
+| A5: the cleaning could delete a key being registered | True of v1's rule | Removed rows, and unknown credentials older than 15 minutes, only |
+| A6: at deploy every key account rests on password and code | True | Stated and bounded in 9.3 and the runbook |
+| A7: a rollback refuses every account with a registry row | True of 4.3's no-digest branch | 9.3 says so; founder's item 8 |
+| A8: three ways the app's own check could refuse an honest person; new plumbing | The challenge and the response do not reach `authenticated()` on the base | Section 5 step 3's four build rules |
+| A9: a removed key tried paged nobody | True of v1 | `removed` is told apart and pages |
+| A10: flooding by `sign_in_key_refused` | Design | Once an account, a reason and an hour; the trust stated |
+| A11: three side effects of the mark at End membership | Only the two routes write `ends_at` (both reviews) | Section 8's paragraph |
+| A12: a 12-hour session cookie is enough to confirm | True of v1 | A key sign-in within 15 minutes, in the functions |
+| A13: three places more than IDs could slip in | Design; the application role holds UPDATE on `email` | Class names only; the cleaning line's fields; the notice's address check |
+| **D1, blocking:** only `failed` gave a row up, tries counted at the claim | True of v1 | One row a claim, never at 30; the sweep decides late and given up |
+| D2: `done` and `failed` did not name their claim | True of v1 | The `try` guard; `done` after given up defined |
+| D3: a page could be lost between the state and the line | True of v1 | Report, then acknowledge |
+| D4: `use_variable` with shared names | The base's functions qualify every column | The naming rule and SEC-25's case |
+| D5: `ends_at = now()` passed by a row inserted already ended | Confirmed: INSERT on `ends_at` is granted | `created_at < now()`; SEC-27's case |
+| D6: the claim could update more than its limit | PostgreSQL's documented caveat | A MATERIALIZED CTE, one row |
+| D7: an invalid default; two clock reads; mixed clocks | True of v1 | 3.4; section 4's clock rule; section 6 step 2 |
+| D8: scans under the account's lock | True of v1 | Two plain indexes |
+| D9: seven one-line points | Design | The unlocked read stated; one predicate; reset rows skipped by the WHEN clause; steps isolated and sign-outs first; the hourly guard; the closed outcome list. A multi-row membership UPDATE takes account rows in scan order: no route does one; recorded |
+
+Not taken, with the reason: none of the findings was refused. Two of the database review's own open points go to the
+build as checks: whether `assert_organization_keeps_administrator` takes a lock at commit, and whether the runner's
+statement timeout is longer than file 2's scan of `mail_send`.
+
