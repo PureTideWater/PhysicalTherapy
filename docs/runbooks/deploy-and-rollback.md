@@ -531,7 +531,11 @@ one nullable column with its foreign key (no scan: every row is NULL), builds tw
 replaces five functions. No table is rewritten and no ledger table is locked. The index on `source_document` is the
 whole of the hold: the column and its key took milliseconds on two million synthetic rows and the index about a
 second per million documents on a development machine, so once an environment holds more than about two million
-documents, expect signed-in requests that touch a document to be refused as busy for those seconds. While the loop
+documents, expect signed-in requests that touch a document to be refused as busy for those seconds. The preflight's read is quick while
+practices are few; it reads every practice's responses and versions under the tenant policies, and on synthetic rows
+for 2,000 practices, 100,000 responses and 20,000 versions it took over a minute and a half. This migration applies
+once to each environment, before launch, when those tables are small; an environment restored from a later copy
+already has it. While the loop
 waits (up to five minutes) the migration's session holds a snapshot, which holds back vacuum's cleanup for that long
 and nothing else. Until its commit every request and job
 that touches a document waits or, for a signed-in request, is refused as busy after its three-second lock timeout

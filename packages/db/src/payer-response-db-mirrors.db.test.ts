@@ -407,6 +407,12 @@ describe('source_document.filed_for_submission_id (item 5)', () => {
     expect(await move(letter, filed)).toEqual({ code: '23514', message: ZIP_NEVER_CHANGES });
     const { rows } = await owner.query('SELECT count(*)::int AS moved FROM source_document WHERE id = ANY ($1::uuid[]) AND parent_document_id IS NOT NULL', [[filed, unfiled, letter]]);
     expect(rows).toEqual([{ moved: 0 }]);
+    // An entry is not taken out of its zip, nor moved to another; an update that names the same zip is no move.
+    const entry = randomUUID();
+    await asOwner(owner, [north.practiceId], () => owner.query(DOC_INSERT, [entry, north.practiceId, 'payer_letter', manager, filed, null]), manager);
+    expect(await move(entry, null)).toEqual({ code: '23514', message: ZIP_NEVER_CHANGES });
+    expect(await move(entry, unfiled)).toEqual({ code: '23514', message: ZIP_NEVER_CHANGES });
+    expect(await move(entry, filed)).toBe('accepted');
   });
 
   it('leaves other updates of a linked document alone (the scan verdict by a job)', async () => {

@@ -141,6 +141,6 @@ describe('the payer-response document rules migration (20261114090000) on the pr
     const text = readFileSync(path.join(MIGRATIONS_DIR, MIGRATION), 'utf8');
     const preflight = text.slice(text.indexOf('-- 2. Preflight'), text.indexOf('-- 3. source_document'));
     expect(preflight).toContain('FROM payer_response r');
-    expect(preflight).not.toMatch(/FROM\s+source_document/);
+    expect(preflight).not.toMatch(/(FROM|JOIN)\s+source_document/i);
   });
 });
