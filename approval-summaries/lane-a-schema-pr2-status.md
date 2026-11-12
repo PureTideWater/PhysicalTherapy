@@ -4,25 +4,25 @@ Lane A, W11 (https://claude.ai/code/session_019i9ifBgvfeZAe47vuU7EUC), from 2026
 `approval-summaries/lane-a-schema-queue-plan-2026-11-07.md` section 2. Grant: `approval-summaries/founder-asks-2026-10-27.md`,
 "Decided 2026-11-06"; the granted text: `approval-summaries/lane-b-suite-cap-3-freeze-exception-ask.md` at 38123394.
 
-## RESUME-BLOCK (W27, https://claude.ai/code/session_019i9ifBp9zpTBLKudEaqjLq; 2026-11-12, after the proof, BEFORE the push)
-- **State:** the base fd14d89f merged into #143's branch on W27's machine only: a26f1b60 (parents a3a32024 and
-  fd14d89f; clean, no conflict). NOT pushed yet; a successor makes the merge again (it is mechanical) and need not
-  repeat the proof if the base is still fd14d89f.
+## RESUME-BLOCK (W27, https://claude.ai/code/session_019i9ifBp9zpTBLKudEaqjLq; 2026-11-12, AFTER the push)
+- **State:** #143's head is **a26f1b600db47c76287110132857ea3102c7ae1a** (the base fd14d89f merged into a3a32024;
+  pushed through the hook). W27 is subscribed; W15 was told to unsubscribe. CI runs on a26f1b60; expected green but
+  `domain model` and `all green`, which wait for the founder's line.
+- **The suggestion** (discussion_r4541570803) is NOT outdated after the push (line 7551); the approval line is
+  untouched (still blank; hash 47fae5d1 holds).
 - **The proof on the merged tree (seeds from fd14d89f without the migration; `lane-a-wip/schema-pr2/run-of-record-3-compare.txt`):**
   spread R 2,000 lines 41.8 s to 18.9 s, IDENTICAL row for row (20,635 rows); F 10,000 lines 183.2 s to 75.5 s,
-  IDENTICAL (102,907 rows); body hashes per run abbcba68/f151e27e before, 834cdefc/5d0a94c0 after, as on the
-  previous bases. The kit as assembled: the five scripts of `lane-a-wip/schema-pr2/probe/` plus `seed.mts`,
-  `common.mts`, `pass.mts` (`lane-b-suite-cap-3-wip/probe/`) and `seedF.mts` (`lane-b-suite-cap-3-wip/probe-rev/`)
-  in one directory `$S/pr2-probe`; queue3.sh's steps `base`, `seedR 2000`, `seedF 10000`, `run <seed> none|pr2 <tag>`, `cmp`.
-- **Checks on a26f1b60:** typecheck, lint, lint:copy, lint:logs, check:fixtures, synth --all (no diff) pass;
-  `db:domain-model --check` and `--check --strict` on a fresh PostgreSQL 18 database pass, the document unchanged
-  (hash 47fae5d1 holds); both `ledger-lookups.db.test.ts` files pass (14 tests); `pnpm test:db` shards 1 to 3 of 4
-  pass (9,188 tests), shard 4 running (it was cut by a time limit once, not by a failure).
-- **Next:** shard 4 green, then push through the hook, subscribe to #143, tell W15; on GitHub confirm the suggestion
-  (discussion_r4541570803) is not outdated and the approval line untouched; "green at <sha>" to the orchestrator; then
-  the merge step below (W11's) after the founder's commit, only if the base has not moved.
-- The private cluster (5494) and the base worktree are removed. The shared 5433 cluster was down at start: started
-  with `runuser -u postgres -- /opt/pg18/bin/pg_ctl -D /root/pgdata18 -l /tmp/pg18.log -w start`.
+  IDENTICAL (102,907 rows); body hashes per run abbcba68/f151e27e before, 834cdefc/5d0a94c0 after. The kit as
+  assembled: the five scripts of `lane-a-wip/schema-pr2/probe/` plus `seed.mts`, `common.mts`, `pass.mts`
+  (`lane-b-suite-cap-3-wip/probe/`) and `seedF.mts` (`lane-b-suite-cap-3-wip/probe-rev/`) in one directory `$S/pr2-probe`.
+- **Checks on a26f1b60 (local):** typecheck, lint, lint:copy, lint:logs, check:fixtures, synth --all (no diff);
+  `db:domain-model --check` and `--check --strict` on a fresh PostgreSQL 18 database, the document unchanged; both
+  `ledger-lookups.db.test.ts` files (14 tests); `pnpm test:db` in 4 shards, all green (10,287 passed, 1 skipped).
+- **Next:** "green at a26f1b60" (or the first failure) to the orchestrator when CI ends. Then wait for the founder's
+  "Commit suggestion". When it arrives: W11's merge step below, items 1, 2 and 4, ONLY if the base is still
+  fd14d89f; if the base moved, tell the orchestrator the file list and wait for the ruling. After the merge: verify
+  with git ls-remote, tell the orchestrator and W16 (session_019i9ifEMVhfmHMsi6UzykXB), write the final state here, unsubscribe.
+- Nothing is running on W27's machine; the private cluster and the base worktree are removed.
 
 ## RESUME-BLOCK for the base merge (W15, 2026-11-12 01:50 UTC; W15 pushed NOTHING to #143 and hands this step on)
 **The orchestrator's ruling (2026-11-12 01:25 UTC, session_019i9ifCaMokBYHaARonYamS): merge the base into #143 NOW,
