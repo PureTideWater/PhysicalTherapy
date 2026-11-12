@@ -1,5 +1,63 @@
 # Lane B: the letter check's work budget (CT-2 on the merged base) — status
 
+## RESUME-BLOCK, current (W25, session_019i9ifCzDkV481emXJMM26J, 2026-11-12 about 04:00 UTC; HANDED ON AT THE TOKEN LIMIT; no PR; the full suite found two failures CI would show too)
+
+- **Where it stands.** WIP `co-001/wip-check-work-budget` = **493be1b2**: W24's 33380cd5, 70b1eb0f (MOD-24 row),
+  c5fc89a8 (fix round 1), 7a5a26bb, 0289304f (fix round 2, the last), b00e7cfc and a4749c87 (ADR 0054: the two
+  rulings), 493be1b2 (the base fd14d89f merged). Local branch name `co-001/check-work-budget`.
+  **CAUTION: `tools/setup-container.sh` checks the main checkout out onto claude/build-platform; check the branch out
+  again after it, and run the database tests with `DATABASE_URL=postgres://postgres:test@localhost:5433/postgres`
+  (PostgreSQL 18; the default port 5432 is 16 and fails a migration).** `designs/lane-b-check-work-budget/suite/suite.sh`
+  is the suite as run.
+- **The orchestrator's rulings (session_019i9ifCaMokBYHaARonYamS), both recorded in ADR 0054:** (A) the weight of an
+  identifier's character is for a WARM process; the cold first check (4.1 s at 1,000 nine-character numbers, 15.7 to
+  17.4 s near the ceiling) is an open residual, not within the 3 s. And: NO THIRD FIX ROUND; G-1 (thousands of short
+  identifiers: 3.1, 6.9, 11.1, 18.4 s warm) is a second open residual; both under **Queues item 39**, which must merge
+  before the first caller of the check is wired (no caller in apps/ today: v1.5 behind `model.read_denial_letter`).
+  The PR description must say both, with the figures, in plain words. **For item 39's design, the interim option not
+  built:** a charge per identifier at each entry beside the charge per character (about 50,000 units, a ceiling of
+  about 4,000 identifiers; 3,000 of 9 characters measured 1.4 to 1.8 s): `reviews/lane-b-check-work-budget-review-fix2-delta.md`.
+- **The full local suite on 493be1b2, Node 24** (`suite/suite.done`): typecheck, lint, lint:copy, lint:logs,
+  check:fixtures, verify-content, test:db (10,273 pass), test:golden (381), test:e2e (87) pass. **`pnpm test` FAILS, 3
+  of 14,248:**
+  1. `packages/synth/src/fixtures.test.ts` "the case registry holds every row of docs/product/test-matrix.md": the
+     MOD-24 row needs its entries in `packages/synth/src/cases/matrix.ts` (word for word, as MOD-22 at line 655) and
+     `registry.ts` (as MOD-22 at line 844: `none(...)`, letters written in memory by the tests). Mechanical.
+  2. and 3. `denial-letter.test.ts` "refuses a letter past the check's work budget ... within the 3 s", the two CT-2
+     rows refused in the REDACTION: **5.4 to 5.6 s and 4.0 to 4.1 s of processor time against 3.9 s allowed, WITH
+     COVERAGE ON** (`pnpm test` runs `--coverage`, and so does CI; alone without coverage they take about 1.2 s and
+     pass, which is how W24 and I ran the file). Reproduce: `pnpm exec vitest run --project unit --coverage
+     packages/model-gateway/src/functions/denial-letter.test.ts -t "refuses a letter past the check"`. Cause: under
+     coverage one comparison in `someOf` (a closure called per item) costs about 13 ns, not 3, and the letter makes 420
+     million before it is refused. This is W24's build, not a fix round's. **Not fixed: it needs the orchestrator's
+     word, since two fix rounds are spent.** The fix I would make, fail closed and one constant: `WORK.comparison` from
+     1 to 4 (the letter is refused after 105 million comparisons: about 1.4 s under coverage, 0.3 s without; only
+     letters of CT-2's shape are refused sooner, at about half the length; nothing in the gate's letters comes near),
+     then the ADR's "one unit is one comparison" and the table re-stated, its delta reviewed, the gate again. Never the
+     test's 3 s.
+- **Reviews** (`reviews/lane-b-check-work-budget-review-{phi,time,fix1-delta,fix2-delta}.md`; scripts under
+  `designs/lane-b-check-work-budget/review-*`): no PHI finding in any (nothing the base refuses is sent, no text
+  differs). Fixed: T-1, P-1/T-3, F-1 (warm), F-2, F-3, F-4, F-5. Recorded in ADR 0054: T-2 (the dearest read letter
+  with one claim is 2.1 to 2.4 s, not W24's 1.35 s), T-4, T-5, P-2, P-3, P-4, G-1 to G-7.
+- **Gate** (`/home/user/gate` = the kept gate with `checkWorkOf` handed on, see `git diff` against
+  `designs/lane-b-redact-ssn-phone/gate`: one sed on `holdsIdentifier(r.text, ...)` in gate.mts, worker.mts,
+  prepare-check.mts; trees given as directories holding redact.ts). 33380cd5, c5fc89a8 and 0289304f (= 493be1b2's
+  reader): 975,489 letters, same 975,489, differ 0, 462,984 refused by both (`gate/run*-report.md`). Fixtures
+  (`gate/repo.mts`, on 33380cd5): no text differs; newly refused only the 729,000-character ZIP table; NOT re-run on
+  the round-2 reader (`/home/user/headsrc-x` wants the reader copied with the `__last` export, see the script's head).
+- **Battery** (`battery/`): 33380cd5 63 scripts, 567,753 redactions, 0 differences; c5fc89a8 14 scripts, 211,711, 0;
+  0289304f 46 scripts of the recorded pass, 0 differences (`shim-0289304f-recorded-partial.jsonl`), stopped for the
+  suite. **To do on the final reader: `recorded.sh` whole, then `fresh.sh`, then total `shim.jsonl` and put the counts
+  in the ADR's battery line (it says "the counts are in the pull request") and the PR.**
+- **Next, in order:** the orchestrator's word on 2 and 3; the registry entries (1); if the weight changes: its delta
+  review, the gate, the unit suite with coverage; the battery and the fixtures on the final reader; merge the base
+  again if it moved; the draft PR from `.github/pull_request_template.md` (newly refused, in plain words: crafted
+  letters past the budget; long letters on a call with hundreds of claim numbers; every letter of a call with more
+  than about 60,000 characters of identifiers; the two residuals and item 39; MOD-15's known seed 1596478644 on the
+  base, Queues item 38, re-run once if the unit job is red on that alone); subscribe; merge on green; one line to the
+  orchestrator (merge commit; hook: `checkWorkSpent` / `work()`, item 26's readings inside the two entries,
+  `checkWorkOf(redacted)` handed to `holdsIdentifier`).
+
 ## STOPPED 2026-11-12 (W25): a blocking finding after the second fix round; the orchestrator told, no third round without its word
 
 - WIP `co-001/wip-check-work-budget` = **b00e7cfc** (0289304f fix round 2, then the ADR's record of the ruling (A)).
@@ -18,7 +76,7 @@
 - Running when stopped, on 0289304f's code: gate run3, battery `recorded.sh` then `fresh.sh`, lint. Valid for the PR
   only if no code changes after them.
 
-## RESUME-BLOCK, current (W25, session_019i9ifCzDkV481emXJMM26J, 2026-11-12 about 02:40 UTC; fix round 2 pushed, its delta review running, a ruling asked; no PR yet)
+## RESUME-BLOCK of W25 before the stop (superseded: W25, session_019i9ifCzDkV481emXJMM26J, 2026-11-12 about 02:40 UTC; fix round 2 pushed, its delta review running, a ruling asked; no PR yet)
 
 - **Where it stands.** WIP `co-001/wip-check-work-budget` = **0289304f** on base 58fb29e5 (the base is now fd14d89f,
   #150: merge it right before the last push). Local branch `co-001/check-work-budget`. Commits on W24's 33380cd5:

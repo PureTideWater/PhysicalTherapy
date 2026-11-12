@@ -1,0 +1,15 @@
+branch co-001/check-work-budget
+493be1b2fbbd9ad2f4d76f592c44c018fc291a16
+v24.22.0
+install 0
+typecheck 0
+lint 0
+lint:copy 0
+lint:logs 0
+check:fixtures 0
+verify-content 0
+test 1
+test:db 0
+test:golden 0
+test:e2e 0
+SUITE-DONE
