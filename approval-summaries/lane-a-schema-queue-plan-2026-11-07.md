@@ -1,4 +1,73 @@
 # Acting Lane A (S2): the schema queue after #126, batched (2026-11-07)
+
+## Revision 2026-11-12 (W29, Lane A): the order of the remaining schema PRs, Queues items 32, 35, 36 and 37 placed, and what #143 left owed
+
+Written on base 93e137f9 (#143, schema PR 2, merged 2026-11-12 04:50 UTC), with schema PR 4 opening (W16). PR 1 merged as #140 and PR 2 as #143. The sections below this one are unchanged and still describe each numbered PR; where this section and a section below disagree on order or on what rides where, this section rules. Numbers (ADR, test-matrix, synth) are asked of the orchestrator at each claim; none is taken here.
+
+### The order
+
+The chain's rule stands: one schema PR open at a time; the next one is in build while the current one waits for the founder; a PR whose gate is not in when its turn comes is skipped, never waited for.
+
+| Turn | Schema PR | Launch | State and gate beyond CO-02 and ADR 0063 |
+| --- | --- | --- | --- |
+| now | **PR 4** (#85's rules; ADR 0093's status line rides it) | - | opening (W16) |
+| 1 | **PR 5** (the ledger-freeze batch: `roi_links_valid` and `roi_statement_rules`, Appendices A and D) | its follow-up is launch-bound | granted 2026-11-07 19:26 UTC; designed (`designs/lane-a-ledger-freeze-batch.md`) |
+| 2 | **Item 37** (the key registry, the provider sign-out's retry outbox, `sign_in_not_before` at End membership) | **required** | designed by W22; no gate of its own |
+| 3 | **Item 35** (a screening practice's key not claimable by name and ZIP) | **required** | needs a design; no gate of its own |
+| 4 | **Item 32** (the queue outbox) | - | needs a design; no gate of its own |
+| 5 | **Item 36** (session resolution back to one round trip) | before launch-scale traffic | needs a design; after item 37 |
+| 6 to 10 | **PR 6 to PR 10**, as sections 6 to 10 below | - | each as its section says |
+| floating | **PR 3** (the approval and export binding) | - | takes the first free turn after slice 4's export render is built, but never ahead of item 37 or item 35 |
+| floating | **PR 5b** (ledger follow-ups, only what the founder grants of `approval-summaries/lane-a-ledger-freeze-ask-2-2026-11-12.md`, and the "remove" step PR 5's ask promised) | the "remove" step is launch-bound | each part takes the first free turn after its own grant; nothing waits for it |
+
+**Where this differs from the orchestrator's standing order** (PR 5, PR 3 when slice 4's export render is built, item 37, item 35, item 32, item 36, PR 6 to 10), and why:
+1. **PR 3 yields to items 37 and 35.** The standing order puts PR 3 second "when the render is built". Slice 4 is Lane B's, Lane B is capped until 2026-11-13 19:00 UTC, and nobody has dated the render, so PR 3's turn depends on a build with no date. Read as a fixed second place it would put two launch-required items behind an unbounded wait; read as a floating place it could still arrive and take the slot just as item 37 is ready. So PR 3 floats and never goes ahead of a launch-required item: if the render is built while item 37 or 35 is next, PR 3 is built beside them and opens after them.
+2. **Nothing sits behind a founder's grant.** The second ledger ask and the "remove" step each need a new freeze exception, a wait on a person with no bound. They get floating turns (PR 5b) that exist only once granted, and no item is ordered after them.
+3. **Item 36 is fixed after item 37**, not only by its place in the list: both change what the session-open check reads (below).
+Everything else is the standing order.
+
+**No launch-required item sits behind an unbounded wait in this order:** ahead of item 37 is only PR 5 (its exception is granted, its design done, its build small; it waits only for the founder's line, as every schema PR does), and ahead of item 35 only PR 5 and item 37. If PR 5's approval of record is slow, the chain's rule already has item 37 in build behind it; if a founder's line is ever outstanding longer than a day while a launch-required item is green behind it, the orchestrator brings both to the co-founder as one founder item.
+
+### Item 37 (turn 2): the key registry, the provider sign-out's retry outbox, `sign_in_not_before` at End membership
+
+- **What rides together, and why:** the three parts of Queues item 37 as W22 designed them (`designs/lane-b-operator-removes-keys.md`): the registry the session-open check reads, the definer function for the provider sign-out's audit with its retry outbox, and `membership_ended` moving `sign_in_not_before` if W22's tests show the need. They are one rule seen from three sides (a removed key or an ended membership must stop the next session, whether or not the provider's call succeeded), they share the session-open check and `sign_in_not_before` (migration 20261112090000), and one of them alone leaves Queues item 29 open. Nothing else rides: a launch-required auth PR is kept to its own subject, so a finding elsewhere cannot hold it.
+- **Not riding, decided here:** item 32's queue outbox. Both are outboxes, so the design session reads item 32's proposal (the "for Lane A" part of `approval-summaries/lane-b-web-transaction-scope-status.md`) before it builds the retry outbox and records in one line whether the provider retry is a kind of that table. The default is apart: item 37 is required for launch and designed; item 32 is neither. If they are one table, the table is created in item 37's PR in the shape item 32 needs and item 32 becomes mostly code.
+- **Founder gate:** CO-02 and ADR 0063's approval; no freeze exception (nothing ledger-frozen). The rules are W22's as queued (platform administrators only; two people, within 24 hours, neither the account; every key, never one). A change to any of them is the founder's.
+- **Reviews:** two adversarial, auth and database (session-open ordering, the definer function's `search_path` and grants, the outbox under forced row-level security, what a failed provider call leaves). The notice's words: the UX and brand review, once.
+- **What must merge first:** PR 4 and PR 5 only because the slot is theirs (no content dependency: verify at the build that neither touches `resolve_session()` or `sign_in_not_before`). Until it merges, the runbooks keep key removal on the founder's break-glass and Queues item 29 stays open.
+
+### Item 35 (turn 3): a screening practice's key cannot be claimed by typing its name and ZIP
+
+- **What rides together, and why:** the schema part of W14's "for Lane A" proposal in `approval-summaries/lane-b-item-25-bcd-status.md`, alone. Its three queue proposals and the infra proposal there (the migration custom resource not stopping its task at 50 minutes) are not schema and stay with the orchestrator's queue. It does not ride item 37: both are launch-required, their subjects differ (the screening consumer of migration 20261106090000 against the member session), and joined, one's review findings would hold the other.
+- **Rider, if granted:** none by default. The `service_line.practice_id` guard is placed in PR 5b (below), not here.
+- **Founder gate:** CO-02 and ADR 0063's approval. If the design finds that closing the claim changes what a screening practice must do to get its key (a second factor, a mailed code, an operator's step), that is a product rule and goes to the founder as one question with the design's recommendation, sent while item 37 is in build so the answer is in before this turn; without an answer the design builds the strictest option that needs no new step from an honest practice, and says so.
+- **Reviews:** two adversarial, security and database (enumeration by name and ZIP, timing and wording differences between "no such practice" and "not yours", rate limits, the claim's audit).
+- **What must merge first:** nothing by content; PR 5 and item 37 by turn. Its design starts when item 37's build starts.
+
+### Item 32 (turn 4): the queue outbox
+
+- **What rides together, and why:** one table and its dispatcher: a job the web writes in the request's own transaction and the worker hands to pg-boss, so a web process that dies between the request's commit and the queue's loses nothing (from #144, which moved the sends after the commit). With it only what the table needs: its tenant policy, its PHI-table registry row, the singleton key kept as the idempotency key, and the cross-tenant and catalog tests. The payload rule is CLAUDE.md's: IDs only, never PHI. The four follow-up proposals in `approval-summaries/lane-b-web-transaction-scope-status.md` ride only if they need this table; the rest stay in Lane B's queue.
+- **Founder gate:** CO-02 and ADR 0063's approval. None beyond.
+- **Reviews:** two adversarial, database (the dispatcher's locking and `SKIP LOCKED` order, exactly-once against the singleton key, forced row-level security for a row the worker reads across practices, what a crash leaves at each step) and reliability (the same lens on the failure cases; the test matrix's fault-injection rows).
+- **What must merge first:** #144 is merged. Item 37 first, because its design settles whether the provider retry is a kind of this table.
+
+### Item 36 (turn 5): session resolution back to one round trip
+
+- **What rides together, and why:** `resolve_session()` writing its own event (W19's proposal in `approval-summaries/lane-b-item-25-bcd-status.md`), alone, with W19's other proposals there only where they change the same function.
+- **Why after item 37, fixed:** item 37 adds a registry read to the session-open check and may move `sign_in_not_before` at End membership. Folding three round trips into one before that would be done twice, and the second time inside a launch-required PR. Item 37's design is asked to put its registry read inside the same database call where it can, so it adds no round trip of its own; item 36 then folds what remains.
+- **Founder gate:** CO-02 and ADR 0063's approval. None beyond: no rule of who may open a session changes, and the reviews hold that.
+- **Reviews:** two adversarial, database and auth (every refusal of today's three calls still refused, in the same order and with the same event; the event written when the session is refused; a definer function's grants).
+- **What must merge first:** item 37. It is wanted before launch-scale traffic, not for launch, so it also stays behind item 35 and item 32 (a lost job is a wrong outcome; a slower session is a cost).
+
+### What #143 left owed (the list "Owed after the merge" in `approval-summaries/lane-a-schema-pr2-status.md`)
+
+1. **Step 7b back to practice A's month** (D14's acceptance; no migration): its own non-schema PR, measured on the tree **after PR 5 merges** and before item 37 opens, in the gap the hold rule of 2026-11-12 04:20 UTC leaves between two schema PRs. Why then: PR 5 adds work to the same pass (Appendix D's check, about 0.2 s a statement at A's size as the ask measured it, and the fifth key's 0.1 s), A's margin is small (333.2 s and 317.1 s against 360 s), and the acceptance should be measured once, with that in. It does not wait for the every-state `ledger_line_net` body (a founder's grant, unbounded): it measures the ledger as A's pass finds it, records which planner state that is, and if a later PR 5b changes `ledger_line_net` again, that PR re-measures as its own acceptance step, as #143 did.
+2. **The PR 5 freeze-ask candidates** (the every-state `ledger_line_net` body, beside `ledger_entry_within_evidence`): not in PR 5. The founder's grant of 2026-11-07 is for exactly Appendices A and D, and the ask itself lists `ledger_entry_within_evidence` under "Not asked now". They are in the second ask (`approval-summaries/lane-a-ledger-freeze-ask-2-2026-11-12.md`) and, if granted, in PR 5b. Not launch-required as read here: the slow state (160 to 80,000 entries never analyzed when a pass plans) is a first-passes state the weekly run reproduces; the orchestrator may rule otherwise, and then PR 5b's turn for it comes right after its grant.
+3. **The `service_line.practice_id` guard:** its own schema item, placed in PR 5b beside the ledger follow-ups, because the body #143 merged rests on it ("a service line never changes practice") and the same two lenses (money and the database) read both. `service_line` is not on the ledger freeze's list, so it needs CO-02 and ADR 0063 only; it is in the second ask so the founder reads the assumption and its guard together, and a "no" there leaves it to ride item 35's PR on CO-02 alone.
+4. **ADR 0093's status line:** rides PR 4 (confirmed in `lanes/STATE.md`, "Schema PR 4": "ADR 0093's Status line rides it"), not PR 3 as the owed list first said. Nothing to do here; W16 holds it.
+5. **Queues item 32:** placed above, turn 4.
+
+**Also placed, from PR 5's own ask:** the "remove" step (`roi_statement_rules` refusing a new statement without the fifth key), which Lane A said it would ask for "once PR 5 merges" to land before the launch tag. It is launch-bound and behind a grant: the ask is drafted the day PR 5 merges and rides PR 5b.
 Read-only planning workflow wf_255f9403-721 (`workflow-scripts/lane-a-schema-queue-batching-plan-wf_255f9403-721.js`): seven scouts (one per queue item), two independent groupings (fewest founder cycles; lowest risk per PR), a judged synthesis, then three rounds of a completeness critic and a risk skeptic with a revision after each (issues per round 14, 12, 9, folded in; the loop stopped at its 3-round cap with the last round's issues all about PR 1's build detail, not the grouping, which held across all three revisions). The standing rule (orchestrator, 2026-11-06 22:45 UTC): batch related tables and functions where review risk allows; never more than one schema PR open; record the grouping and why. Full output: `lane-a-schema-queue-plan-2026-11-07.json`. Items marked "S2's decision" are recommended options taken under the co-founder's standing instruction and recorded for the orchestrator to note or override.
 **Summary:** 10 schema PRs for about 22 queued items (about 18 founder approval cycles if each shipped alone).
 
