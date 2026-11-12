@@ -1034,6 +1034,9 @@ function bareSpecifiers(source: string): string[] {
   return [...found];
 }
 
+/** The one text in typescript's code that reads as an import and is none: diagnostic 6139's message. */
+const TYPESCRIPT_TSLIB_TEXT = "Import emit helpers from 'tslib'";
+
 describe('the test tooling’s own undeclared imports, as installed (docs/adr/0066, Part 7, N51)', () => {
   it('reads a bare specifier after a comment closed on its line and in a backtick literal, and none inside a comment', () => {
     expect(bareSpecifiers("/*! license */ const b = require('pg');")).toEqual(['pg']);
@@ -1042,6 +1045,11 @@ describe('the test tooling’s own undeclared imports, as installed (docs/adr/00
     expect(bareSpecifiers('const a = require(`pg`); const b = import(`${name}`);')).toEqual(['pg']);
     expect(bareSpecifiers("// require('pg')\n/* import('zod') */\n * from 'react'\n/** see require('yaml')")).toEqual([]);
     expect(bareSpecifiers("import fs from 'node:fs'; import './local.js'; require('path');")).toEqual([]);
+    // The scan reads a message's text as an import, which is why typescript's one such text is taken out by its exact
+    // words: an import of tslib beside it is still read.
+    expect(bareSpecifiers(`g(6139, "${TYPESCRIPT_TSLIB_TEXT}.");`)).toEqual(['tslib']);
+    expect(bareSpecifiers(`g(6139, "${TYPESCRIPT_TSLIB_TEXT}."); var t = require("tslib");`.replaceAll(TYPESCRIPT_TSLIB_TEXT, ''))).toEqual(['tslib']);
+    expect(bareSpecifiers(`g(6139, "${TYPESCRIPT_TSLIB_TEXT}.");`.replaceAll(TYPESCRIPT_TSLIB_TEXT, ''))).toEqual([]);
   });
 
   it('finds no bare import in the installed tooling’s code that its package does not declare, that resolves, and that neither TEST_TOOLING nor the tooling’s lockfile closure holds', () => {
@@ -1075,7 +1083,12 @@ describe('the test tooling’s own undeclared imports, as installed (docs/adr/00
     for (const [directory, manifest] of installed) {
       const declared = new Set([manifest.name, ...Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies, ...manifest.optionalDependencies })]);
       for (const file of codeFiles(directory)) {
-        for (const name of bareSpecifiers(readFileSync(file, 'utf8'))) {
+        const source = readFileSync(file, 'utf8');
+        // typescript names tslib in a diagnostic's text, never in an import: with that exact text taken out, a tslib
+        // specifier left in its code is still found. Stryker's own packages hold tslib at 2.8.x, so once the rest of the
+        // lockfile moves to a newer tslib the hoisted copy this text resolves to is outside the tooling's closure.
+        const code = manifest.name === 'typescript' ? source.replaceAll(TYPESCRIPT_TSLIB_TEXT, '') : source;
+        for (const name of bareSpecifiers(code)) {
           if (declared.has(name) || tooling.some((pattern) => pattern.test(name))) continue;
           const target = installedFrom(path.dirname(file), name);
           if (target === undefined) continue;
