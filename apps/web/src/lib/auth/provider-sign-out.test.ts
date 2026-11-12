@@ -10,7 +10,14 @@ function arrange(globalSignOut: (sub: string) => Promise<void>) {
   const committed: (() => Promise<unknown>)[] = [];
   const provider = { globalSignOut: vi.fn(globalSignOut) };
   const deps = { provider, logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }) };
-  return { lines, committed, provider, deps, afterCommit: (work: () => Promise<unknown>) => void committed.push(work) };
+  const unknown: (() => Promise<unknown>)[] = [];
+  const afterCommit = (work: () => Promise<unknown>, options?: { readonly whenCommitUnknown?: () => Promise<unknown> }) => {
+    committed.push(work);
+    if (options?.whenCommitUnknown !== undefined) {
+      unknown.push(options.whenCommitUnknown);
+    }
+  };
+  return { lines, committed, unknown, provider, deps, afterCommit };
 }
 const ids = { userId: '0b0e7a52-5f0b-4f0e-9d7e-1a2b3c4d5e6f', requestId: 'test-request' };
 
@@ -40,5 +47,35 @@ describe('the provider sign-out after an ended membership (docs/adr/0094; SGN-19
     await committed[0]?.();
     expect(provider.globalSignOut).not.toHaveBeenCalled();
     expect(lines).toMatchObject([{ level: 'error', msg: MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE, user_id: ids.userId, request_id: ids.requestId, error_code: 'NO_PROVIDER_SUBJECT' }]);
+  });
+
+  it.each([
+    ['an address', 'person@synthetic.test'],
+    ['words', 'no sign-out for synthetic-subject'],
+    ['a name too long', 'A'.repeat(65)],
+    ['nothing', ''],
+  ])('logs `unknown` for an error whose name is %s: only a class-like name is a code', async (_what, name) => {
+    const { lines, committed, deps, afterCommit } = arrange(() => Promise.reject(Object.assign(new Error('synthetic'), { name })));
+    signOutAtProviderAfterCommit(afterCommit, deps, ids, 'synthetic-subject');
+    await committed[0]?.();
+    expect(lines).toMatchObject([{ level: 'error', msg: MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE, error_code: 'unknown' }]);
+    expect(JSON.stringify(lines)).not.toMatch(/synthetic-subject|@|AAAA/);
+  });
+
+  it('when the commit’s answer is lost, still asks the provider once and always logs the line, so the operator is paged to confirm what ended', async () => {
+    const { lines, unknown, provider, deps, afterCommit } = arrange(() => Promise.resolve());
+    signOutAtProviderAfterCommit(afterCommit, deps, ids, 'synthetic-subject');
+    expect(unknown).toHaveLength(1);
+    await expect(unknown[0]?.()).resolves.toBeUndefined();
+    expect(provider.globalSignOut).toHaveBeenCalledExactlyOnceWith('synthetic-subject');
+    expect(lines).toMatchObject([{ level: 'error', msg: MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE, user_id: ids.userId, request_id: ids.requestId, error_code: 'COMMIT_OUTCOME_UNKNOWN' }]);
+  });
+
+  it('when the commit’s answer is lost and the provider fails too, logs both lines by IDs', async () => {
+    const { lines, unknown, deps, afterCommit } = arrange(() => Promise.reject(Object.assign(new Error('synthetic'), { name: 'TimeoutError' })));
+    signOutAtProviderAfterCommit(afterCommit, deps, ids, 'synthetic-subject');
+    await expect(unknown[0]?.()).resolves.toBeUndefined();
+    expect(lines.map((line) => line['error_code'])).toEqual(['TimeoutError', 'COMMIT_OUTCOME_UNKNOWN']);
+    expect(JSON.stringify(lines)).not.toMatch(/synthetic-subject|@/);
   });
 });

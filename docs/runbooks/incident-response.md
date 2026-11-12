@@ -297,8 +297,11 @@ break-glass (step 4).
    | filter msg = "security event: membership end provider sign-out failed"
    ```
 
-   Keep the user ID, the request ID, the time and the `error_code`: the provider's error name, or
-   `NO_PROVIDER_SUBJECT` (the account's provider subject could not be read, so the provider was not asked).
+   Keep the user ID, the request ID, the time and the `error_code`: the provider's error name (`AbortError` when the
+   provider did not answer within ten seconds, `unknown` for an error with no usable name), `NO_PROVIDER_SUBJECT`
+   (the account's provider subject could not be read, so the provider was not asked), or `COMMIT_OUTCOME_UNKNOWN`
+   (the database did not say whether End membership saved; the provider was asked all the same, and a second line
+   beside this one means it failed too).
 2. **Confirm what ended**, in a session as the operator role, by the line's request ID:
 
    ```sql
@@ -306,8 +309,10 @@ break-glass (step 4).
     WHERE request_id = '<request_id>' AND action = 'membership_ended';
    ```
 
-   One `membership_ended` row. With none, the request did not commit and this line is not its own: stop and open the
-   record (section 1).
+   One `membership_ended` row. With none and `COMMIT_OUTCOME_UNKNOWN`, End membership did not save: the person who
+   pressed it saw an error, so tell them, through the organization's administrator or the platform administrator
+   who pressed, to press it again, and close the page. With none and any other code, the request did not commit and
+   this line is not its own: stop and open the record (section 1).
 3. **Look for a key registered since**, for 15 minutes after the line's time:
 
    ```sql

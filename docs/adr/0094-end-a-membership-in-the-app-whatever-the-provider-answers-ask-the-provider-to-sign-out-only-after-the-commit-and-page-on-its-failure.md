@@ -62,6 +62,21 @@ another's hands.
   runbooks say so. Meanwhile the app's own state is what holds: no role in that organization and no session that was
   open.
 
+- **D6. A commit whose answer is lost still asks and always pages** (the auth review's F1). When COMMIT ends without
+  an answer the membership may have ended, and ordinary after-commit work does not run. Before this record the
+  provider was asked inside the transaction, so it was asked in that case too. `afterCommit` takes work for exactly
+  this case (`whenCommitUnknown`): the provider is asked all the same (a sign-out costs the person one sign-in if the
+  request did not save), and the line is written whatever it answers, with `COMMIT_OUTCOME_UNKNOWN`, so the operator
+  confirms by the request's ID what ended. The person pressing is told neither that it saved nor that it did not, as
+  for any such commit (ADR 0092's second amendment).
+- **D7. The sign-out waits ten seconds at most** (the failure review's F1). The SDK's client sets no request timeout,
+  and the request waits for after-commit work before it answers: a provider that never answered held the page until
+  the load balancer gave up at 180 seconds, with no line. `globalSignOut` aborts its request at `SIGN_OUT_TIMEOUT_MS`
+  and the failure is logged as any other (`AbortError`). The bound is on this one call, which a reset's sign-out
+  shares; a bound for every call to the provider is recorded for the queue.
+- **D8. Only a class-like error name is a code** (the failure review's F2): a name that is not letters and digits, 64
+  at most, is logged as `unknown`, so no thrower can put text in `error_code`.
+
 ## What a failed or missing sign-out leaves open (stated by tests, SGN-19)
 
 End membership never disabled an account, and sign-in reads no membership: an account with no live membership can
@@ -94,12 +109,34 @@ Queues item 37.
 
 - End membership works during a provider outage, and the person pressing it is told the truth about the app's state.
 - A provider that fails is no longer visible on the page; it is visible to the operator, within five minutes, by IDs.
-- The request still waits for the provider's answer before it answers (after-commit work is awaited), though no
-  transaction and no row is held while it does.
+- The request still waits for the provider's answer before it answers (after-commit work is awaited), ten seconds at
+  most (D7), though no transaction and no row is held while it does.
 - A web task stopped between the commit and the call writes no line and asks the provider nothing: the membership and
   sessions are ended, the sign-out is not sent, and nothing pages. Option Y closes this, since the outbox row is
   written in the transaction itself.
 - Key removal stays on the founder's break-glass (the incident runbook's hardware-key section, unchanged).
+
+## What the two reviews found (2026-11-12; none blocking)
+
+Reports: `reviews/lane-b-operator-removes-keys-review-auth.md` and `...-review-failure.md` on `claude/build-ops`.
+Fixed here: D6, D7 and D8. Sound: the Settings route's read names no one its update would not end, and the provider
+is asked only for a confirmed commit or D6's case; no role without `user.invite` or `organization.manage` reaches
+either handler; after the end, every scope helper and the organization's policies require a live membership, so the
+person sees nothing of that organization (their own ended membership and invitation rows excepted) and keeps what
+they hold in any other.
+
+Recorded, not fixed here:
+
+1. **For Queues item 37 (a migration):** a sign-in whose transaction commits while End membership's runs keeps its
+   session: `revoke_user_sessions` cannot see the uncommitted row and End membership takes no lock on the account's
+   row, as a reset does (ADR 0093, D2). The session carries no role. The mark's move, under the account's lock,
+   closes it with the two cases above.
+2. **For the queue (so before this record):** the console's End membership does not refuse the actor's own membership,
+   and nothing keeps a last platform administrator; only a platform administrator can do either. Ending a membership
+   ends the person's sessions in every organization and signs the account out everywhere, by design (PRD 3). A second
+   press after a success answers not found, which is true and reads oddly. The wrapper's warn line for failed
+   after-commit work says a job's schedule takes it up, which is not so for this work; it is reached only if the
+   logger itself throws. The provider's client has no timeout for its other calls.
 
 ## Alternatives considered
 
