@@ -20,6 +20,7 @@ import {
   uploadAgreementAction,
 } from '../../actions';
 import { FormKeys } from '../../../../components/form-keys';
+import { KeyRemovalActions, KeyRemovalState } from '../../../../components/console/key-removal';
 import { SuspensionCard, SuspensionHistory } from '../../../../components/console/suspension-card';
 import { grantState } from '../../../../components/console/suspension-text';
 
@@ -111,7 +112,9 @@ export default async function OrganizationPage(props: { readonly params: Promise
       <Card>
         <CardHeader>
           <CardTitle>Members</CardTitle>
-          <CardDescription>One role per membership. Ending a membership revokes the user’s sessions at once.</CardDescription>
+          <CardDescription>
+            One role per membership. Ending a membership revokes the user’s sessions at once. Removing an account’s hardware keys takes two platform administrators, neither of them the account: one requests, another confirms within 24 hours.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {members.length === 0 ? (
@@ -141,6 +144,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
                           {member.mfaEnrolled ? null : <Badge variant="outline">no MFA yet</Badge>}
                           {member.locked ? <Badge variant="destructive">locked</Badge> : null}
                           {member.current ? null : <Badge variant="secondary">ended {utcDate(member.endsAt ?? new Date())}</Badge>}
+                          <KeyRemovalState member={member} now={now} />
                         </div>
                       </td>
                       <td className="py-1">
@@ -158,6 +162,7 @@ export default async function OrganizationPage(props: { readonly params: Promise
                               <input type="hidden" name="membershipId" value={member.membershipId} />
                             </ActionForm>
                           ) : null}
+                          <KeyRemovalActions member={member} organizationId={organization.id} now={now} />
                         </div>
                       </td>
                     </tr>

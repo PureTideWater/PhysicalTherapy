@@ -232,13 +232,28 @@ function formUpload(form: FormData, field: string | undefined): UploadBody | und
  * form's state. A practice action names its practice and records in `params` (opaque IDs the form
  * carries), which its route checks like a page's.
  */
-export async function runAction(route: Route<MutationResult>, form: FormData, params: Record<string, unknown> = {}, options: { readonly fileField?: string } = {}): Promise<ActionState> {
+export async function runAction<R extends MutationResult, S extends ActionState = ActionState>(
+  route: Route<R>,
+  form: FormData,
+  params: Record<string, unknown> = {},
+  options: {
+    readonly fileField?: string;
+    /**
+     * For the one kind of action whose answer is shown once and can live nowhere else (a one-time code, docs/adr/0095):
+     * success returns this state to the form that asked, and nothing redirects, so the answer is in no URL.
+     */
+    readonly answer?: (data: R) => S;
+  } = {},
+): Promise<ActionState | S> {
   const outcome = await route.invoke(await nextRequest(params, formInput(form), formUpload(form, options.fileField)), services());
   const signIn = signInFor(outcome);
   if (signIn !== undefined) {
     redirect(signIn);
   }
   if (outcome.status === 'ok') {
+    if (options.answer !== undefined) {
+      return options.answer(outcome.data);
+    }
     redirect(outcome.data.redirect ?? '/');
   }
   const refusal = refusedInput(outcome);

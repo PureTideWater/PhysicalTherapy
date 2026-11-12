@@ -16,6 +16,7 @@ import {
   readDatabaseUrl,
   rolesPermit,
   tenantTables,
+  withActor,
 } from '@tp/db';
 import { DocumentStore, LocalSealedBytes } from '@tp/worker/documents';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
@@ -26,6 +27,7 @@ import { DevAuthProvider } from '../../auth/dev-provider';
 import { MemoryDevStore } from '../../auth/dev-store';
 import { Sealer } from '../../auth/seal';
 import { SESSION_COOKIE } from '../../auth/sessions';
+import { keySession, recordKey, seedPlatformAdmin } from '../test-support/key-holders';
 import { openSessionNow } from '../test-support/open-session';
 import { csrfTokenFor } from '../../http/csrf';
 import { forgetMaintenanceFlag } from '../../http/invoke';
@@ -403,7 +405,11 @@ export class RouteWorlds {
       const internal = persona.kind === 'internal';
       const userId = persona.kind === 'group' && persona.role === 'practice_admin' ? tenant.adminUserId : await createUser(owner, { hardwareKeyRequired: internal });
       if (userId !== tenant.adminUserId) {
-        const membership = await addMembership(owner, persona.kind === 'group' ? tenant.organizationId : persona.kind === 'firm' ? firmId : internalId, userId, persona.role);
+        // The platform administrator is eight days in the role, as the hardware-key registry asks of whoever removes a key (docs/adr/0095).
+        const membership =
+          persona.kind === 'internal' && persona.role === 'platform_admin'
+            ? await seedPlatformAdmin(owner, internalId, userId)
+            : await addMembership(owner, persona.kind === 'group' ? tenant.organizationId : persona.kind === 'firm' ? firmId : internalId, userId, persona.role);
         if (persona.kind === 'group' && persona.role === 'viewer') {
           memberUserId = userId;
           membershipId = membership;
@@ -562,6 +568,7 @@ export class RouteWorlds {
     const billing = await seedBilling({ owner, pool: billingPool, provider: services.billing, organizationId: tenant.organizationId });
     const locked = await this.lockedUser(tenant.organizationId);
     const platformAdminId = actors.find((actor) => actor.persona.kind === 'internal' && actor.persona.role === 'platform_admin')?.userId ?? '';
+    const keyRefs = await this.keyRemovals(tenant.organizationId, internalId, platformAdminId);
     const onboarding = await seedOnboarding({ owner, organizationId: tenant.organizationId, practiceId: tenant.practiceId, adminUserId: tenant.adminUserId, platformAdminId });
     await acceptCurrentTerms(
       owner,
@@ -576,6 +583,7 @@ export class RouteWorlds {
       memberUserId,
       membershipId,
       lockedUserId: locked,
+      ...keyRefs,
       firmId,
       grantId,
       supportGrantId,
@@ -603,7 +611,39 @@ export class RouteWorlds {
     return { tenant, refs, actors, ids: [...new Set([...tenantRefs, agreementId, ...actors.map((actor) => actor.userId)])] };
   }
 
-  /** A session the way sign-in opens one: a hardware key for internal roles, TOTP otherwise. */
+  /** The registered key of each account that has one, by user: sign-in opens that account's sessions with it. */
+  private readonly credentials = new Map<string, Buffer>();
+
+  /**
+   * The hardware-key registry's records (docs/adr/0095): the platform administrator's registered key; a member with a
+   * key and no removal; and, requested by a second administrator, one removal to confirm, one to cancel and one
+   * confirmed, its account closed.
+   */
+  private async keyRemovals(organizationId: string, internalId: string, platformAdminId: string) {
+    const { owner, app } = this.opened;
+    this.credentials.set(platformAdminId, await recordKey(app, platformAdminId));
+    const holder = async () => {
+      const id = await createUser(owner, { hardwareKeyRequired: true });
+      await addMembership(owner, organizationId, id, 'analyst');
+      this.credentials.set(id, await recordKey(app, id));
+      return id;
+    };
+    const [requesterId, confirmerId] = [await createUser(owner, { hardwareKeyRequired: true }), await createUser(owner, { hardwareKeyRequired: true })];
+    const act = async (by: string, sql: string, id: string): Promise<string> => {
+      if (!this.credentials.has(by)) {
+        await seedPlatformAdmin(owner, internalId, by);
+        this.credentials.set(by, await recordKey(app, by));
+      }
+      const session = await keySession(app, by, this.credentials.get(by) as Buffer, 'route-test');
+      return withActor(app, by, async (scope) => (await scope.client.query<{ id: string }>(sql, [id, session.sessionId, `route-test-${randomUUID()}`])).rows[0]?.id ?? '');
+    };
+    const request = async () => act(requesterId, 'SELECT hardware_key_removal_request($1, $2, $3) AS id', await holder());
+    const keyRemovalClosedId = await request();
+    await act(confirmerId, 'SELECT $1::uuid AS id FROM hardware_key_removal_confirm($1, $2, $3)', keyRemovalClosedId);
+    return { keyHolderUserId: await holder(), keyRemovalToConfirmId: await request(), keyRemovalToCancelId: await request(), keyRemovalClosedId };
+  }
+
+  /** A session the way sign-in opens one: a hardware key for internal roles (the registered one, where the account has one), TOTP otherwise. */
   async signIn(actor: Actor): Promise<SignedIn> {
     const opened = await openSessionNow(this.opened.app, {
       userId: actor.userId,
@@ -611,6 +651,7 @@ export class RouteWorlds {
       deviceToken: undefined,
       userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/141.0',
       requestId: 'route-test',
+      keyCredentialSha256: this.credentials.get(actor.userId),
     });
     return { token: opened.sessionToken, deviceId: opened.deviceId, sessionId: opened.sessionId };
   }

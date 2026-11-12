@@ -163,6 +163,12 @@ export interface MutationResult {
 export interface AuditSpec {
   readonly action: string;
   readonly objectType: string;
+  /**
+   * 'database': the function the handler calls writes this event itself, under a reserved action the application role
+   * cannot insert (the hardware-key registry, docs/adr/0095), so the wrapper writes none. The route still names the
+   * action, and its tests hold that exactly one event exists for each act.
+   */
+  readonly writtenBy?: 'database';
 }
 
 /**
@@ -179,6 +185,12 @@ export interface SampleRefs {
   readonly membershipId: string;
   /** A locked user in the group. */
   readonly lockedUserId: string;
+  /** A member of the group with a registered hardware key and no key removal (docs/adr/0095). */
+  readonly keyHolderUserId: string;
+  /** Key removals another platform administrator requested, one to confirm and one to cancel, and a confirmed one whose account is closed. */
+  readonly keyRemovalToConfirmId: string;
+  readonly keyRemovalToCancelId: string;
+  readonly keyRemovalClosedId: string;
   readonly firmId: string;
   readonly grantId: string;
   readonly supportGrantId: string;

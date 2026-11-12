@@ -14,6 +14,7 @@ import {
   setPracticeSettings,
   unlockUser,
 } from '../../lib/routes/console';
+import { type RegistrationOpenedState, cancelKeyRemoval, confirmKeyRemoval, openKeyRegistration, requestKeyRemoval } from '../../lib/routes/console-keys';
 import { resendInvitationFromConsole, uploadAgreement } from '../../lib/routes/console-onboarding';
 
 /** Server actions for the internal console; each runs its registered route (src/lib/routes/console.ts). */
@@ -70,4 +71,22 @@ export async function resendInvitationAction(_state: ActionState, form: FormData
 /** Records a signed agreement uploaded as a PDF, hashed on the server (docs/adr/0053). */
 export async function uploadAgreementAction(_state: ActionState, form: FormData): Promise<ActionState> {
   return runAction(uploadAgreement, form, {}, { fileField: 'document' });
+}
+
+/** The hardware-key registry (docs/adr/0095): a removal is requested by one platform administrator and confirmed by a second. */
+export async function requestKeyRemovalAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(requestKeyRemoval, form);
+}
+
+export async function confirmKeyRemovalAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(confirmKeyRemoval, form);
+}
+
+export async function cancelKeyRemovalAction(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runAction(cancelKeyRemoval, form);
+}
+
+/** Opens registration and answers with the one-time code, once: it is returned to the form that asked and is in no redirect. */
+export async function openKeyRegistrationAction(_state: ActionState, form: FormData): Promise<RegistrationOpenedState> {
+  return runAction(openKeyRegistration, form, {}, { answer: (data): RegistrationOpenedState => ({ registrationCode: data.registrationCode, openUntil: data.openUntil.toISOString() }) });
 }

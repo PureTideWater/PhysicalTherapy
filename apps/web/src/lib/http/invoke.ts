@@ -300,7 +300,8 @@ async function run<R>(running: Running, handle: () => Promise<R>): Promise<Outco
     return { status: 'duplicate' };
   }
   const data = await handle();
-  if (route.audit !== undefined) {
+  // An event the database's own function wrote in handle() is not written a second time (AuditSpec.writtenBy).
+  if (route.audit !== undefined && route.audit.writtenBy !== 'database') {
     const objectId = (data as MutationResult | undefined)?.objectId;
     await recordAuditEvent(scope, {
       action: route.audit.action,

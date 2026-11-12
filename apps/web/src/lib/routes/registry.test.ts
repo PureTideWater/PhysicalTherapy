@@ -11,6 +11,7 @@ import * as billing from './billing';
 import * as compliance from './compliance';
 import * as consoleRoutes from './console';
 import * as consoleMail from './console-mail';
+import * as consoleKeys from './console-keys';
 import * as consoleModels from './console-models';
 import * as consoleOnboarding from './console-onboarding';
 import * as contracts from './contracts';
@@ -65,6 +66,7 @@ const EXPORTED = new Map<string, Route>(
     compliance,
     consoleRoutes,
     consoleMail,
+    consoleKeys,
     consoleModels,
     consoleOnboarding,
     contracts,

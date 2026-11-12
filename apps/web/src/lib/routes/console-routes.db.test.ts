@@ -11,8 +11,10 @@ import { z } from 'zod';
 
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
+import { isRegistrationCodeShaped, registrationCodeDigest } from '../auth/registration-code';
 import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, resolveSession } from '../auth/sessions';
+import { keySession, recordKey, seedPlatformAdmin } from './test-support/key-holders';
 import { openSessionNow } from './test-support/open-session';
 import { selfRoute } from '../http/invoke';
 import type { CookieJar, Route } from '../http/route';
@@ -35,6 +37,7 @@ import {
   supportPage,
   unlockUser,
 } from './console';
+import { KEY_REFUSALS, cancelKeyRemoval, confirmKeyRemoval, openKeyRegistration, requestKeyRemoval } from './console-keys';
 import { MODEL_VALUE_HINT, consoleModelsPage, setModelFlag } from './console-models';
 import { practiceHome, supportAccessPage } from './practice';
 import { ruleReleasesPage } from './rule-releases';
@@ -1056,5 +1059,217 @@ describe('Content due on the console’s Rule releases page (audit #59; docs/adr
 
   it('reads the MUE as ended on a day after it runs out', async () => {
     expect((await dueAt('2027-01-05T15:00:00Z')).items.find((item) => item.family === 'ncci_mue')).toMatchObject({ stage: 'ended', loadedThrough: '2026-12-31' });
+  });
+});
+
+/**
+ * The hardware-key registry's console (docs/adr/0095; Queues item 37; design section 6, 16.4, 16.5): two platform
+ * administrators, neither of them the account, each seven days in the role and each in a key session of the last 15
+ * minutes, remove an account's keys; one of them then opens registration with a code shown once. The functions decide
+ * and write the audit rows; these tests hold what the routes add: the handler's role check, the acting session, the
+ * refusals' words, exactly one audit event an act and none for a refusal, and a code that reaches no record or log.
+ */
+describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27)', () => {
+  interface KeyHolder {
+    readonly id: string;
+    readonly credential: Buffer;
+    /** A key session opened just now with the registered key. */
+    token(): Promise<string>;
+  }
+
+  async function holder(id: string): Promise<KeyHolder> {
+    const credential = await recordKey(app, id);
+    return { id, credential, token: async () => (await keySession(app, id, credential)).sessionToken };
+  }
+
+  /** A platform administrator `days` in the role, with a registered key. */
+  async function keyAdmin(days = 8): Promise<KeyHolder> {
+    const id = await createUser(owner, { hardwareKeyRequired: true });
+    await seedPlatformAdmin(owner, admin.internalId, id, days);
+    return holder(id);
+  }
+
+  /** A member of the customer organization with a registered key. */
+  async function keyMember(): Promise<KeyHolder> {
+    const id = await createUser(owner, { hardwareKeyRequired: true });
+    await addMembership(owner, world.organizationId, id, 'analyst');
+    return holder(id);
+  }
+
+  async function act<R>(route: Route<R>, token: string, input: Record<string, unknown>, to: Services = services) {
+    const requestId = `test-${randomUUID()}`;
+    const outcome = await route.invoke({ cookies: new Jar(token), params: {}, input: { csrfToken: csrfTokenFor(services.sealer, token), requestKey: randomUUID(), ...input }, requestId, userAgent: null }, to);
+    const events = (await owner.query<{ action: string }>('SELECT action FROM audit_event WHERE request_id = $1 ORDER BY at', [requestId])).rows.map((row) => row.action);
+    return { outcome, events, requestId };
+  }
+
+  /** The holder's key session, begun 16 minutes ago: live, theirs, and no longer the acting session the functions ask for. */
+  async function staleToken(of: KeyHolder): Promise<string> {
+    const session = await keySession(app, of.id, of.credential);
+    await owner.query("UPDATE user_session SET started_at = started_at - interval '16 minutes', expires_at = expires_at - interval '16 minutes' WHERE id = $1", [session.sessionId]);
+    return session.sessionToken;
+  }
+
+  const removalOf = async (userId: string) =>
+    (await owner.query<{ id: string; state: string; registration_code_sha256: Buffer | null }>('SELECT id, state, registration_code_sha256 FROM hardware_key_removal WHERE user_id = $1 ORDER BY requested_at DESC LIMIT 1', [userId])).rows[0];
+  const refusedWith = (message: string) => ({ status: 'invalid', issues: [{ field: 'input', message }] });
+  const organizationId = () => world.organizationId;
+
+  let first: KeyHolder;
+  let second: KeyHolder;
+
+  beforeAll(async () => {
+    first = await keyAdmin();
+    second = await keyAdmin();
+  });
+
+  it('requests a removal: the function’s one audit event, no second from the wrapper, and the organization’s page shows who asked', async () => {
+    const member = await keyMember();
+    const { outcome, events } = await act(requestKeyRemoval, await first.token(), { organizationId: organizationId(), userId: member.id });
+    expect(outcome).toMatchObject({ status: 'ok', data: { redirect: `/console/organizations/${organizationId()}` } });
+    expect(events).toEqual(['hardware_key_removal_requested']);
+    const removal = await removalOf(member.id);
+    expect(removal?.state).toBe('requested');
+    const page = await run(organizationPage, await second.token(), undefined, { organizationId: organizationId() });
+    expect(page).toMatchObject({ status: 'ok' });
+    const row = (page as { data: { members: { userId: string; keyRemoval: unknown }[] } }).data.members.find((each) => each.userId === member.id);
+    expect(row?.keyRemoval).toMatchObject({ removalId: removal?.id, state: 'requested', requestedById: first.id, mine: false, liveKeys: 1, registrationClosed: false, registrationOpenUntil: null });
+    expect((row?.keyRemoval as { requestedByEmail: string }).requestedByEmail).toContain('@');
+    // Nothing else changed: the member's key and session stand.
+    expect(await resolveSession(app, await member.token(), 'test')).toMatchObject({ state: 'active' });
+  });
+
+  it('refuses a request, each time writing nothing: the account itself, under seven days, a code session, a second open request, a practice administrator, no such account', async () => {
+    const member = await keyMember();
+    const input = { organizationId: organizationId(), userId: member.id };
+    const refusals = [
+      await act(requestKeyRemoval, await first.token(), { organizationId: organizationId(), userId: first.id }),
+      await act(requestKeyRemoval, await (await keyAdmin(3)).token(), input),
+      await act(requestKeyRemoval, await sessionFor(first.id, 'totp'), input),
+      await act(requestKeyRemoval, await staleToken(first), input),
+      await act(requestKeyRemoval, admin.token, input),
+      await act(requestKeyRemoval, await sessionFor(world.adminUserId, 'totp'), input),
+      await act(requestKeyRemoval, await first.token(), { organizationId: organizationId(), userId: randomUUID() }),
+    ];
+    expect(refusals.map((each) => each.outcome)).toEqual([
+      refusedWith(KEY_REFUSALS.hardware_key_removal_not_own_account),
+      refusedWith(KEY_REFUSALS.not_permitted),
+      // A code session of an internal role is turned away by the wrapper before the handler; a key session older than 15 minutes by Postgres.
+      { status: 'hardware_key_required' },
+      refusedWith(KEY_REFUSALS.not_permitted),
+      // The console's own administrator: in the role today, with no registered key.
+      refusedWith(KEY_REFUSALS.not_permitted),
+      expect.objectContaining({ status: 'forbidden', permission: 'organization.manage' }),
+      { status: 'not_found' },
+    ]);
+    expect(refusals.flatMap((each) => each.events)).toEqual([]);
+    expect(await removalOf(member.id)).toBeUndefined();
+    expect((await act(requestKeyRemoval, await first.token(), input)).outcome).toMatchObject({ status: 'ok' });
+    const again = await act(requestKeyRemoval, await second.token(), input);
+    expect(again.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_open_once));
+    expect(again.events).toEqual([]);
+  });
+
+  it('confirms only with a second person: the requester, the account itself, an administrator under seven days and a session other than the acting key session are refused; then the keys, the sessions and the provider’s outbox', async () => {
+    const target = await keyAdmin();
+    const targetToken = await target.token();
+    await act(requestKeyRemoval, await first.token(), { organizationId: admin.internalId, userId: target.id });
+    const removal = await removalOf(target.id);
+    const input = { organizationId: admin.internalId, removalId: removal?.id };
+    const refusals = [
+      await act(confirmKeyRemoval, await first.token(), input),
+      await act(confirmKeyRemoval, targetToken, input),
+      await act(confirmKeyRemoval, await (await keyAdmin(6)).token(), input),
+      // The second administrator holds a fresh key session elsewhere; the request comes on their key session of 16 minutes ago, then on a code session.
+      await second.token().then(() => staleToken(second)).then((token) => act(confirmKeyRemoval, token, input)),
+      await act(confirmKeyRemoval, await sessionFor(second.id, 'totp'), input),
+      await act(confirmKeyRemoval, await second.token(), { organizationId: admin.internalId, removalId: randomUUID() }),
+    ];
+    expect(refusals.map((each) => each.outcome)).toEqual([
+      refusedWith(KEY_REFUSALS.hardware_key_removal_two_people),
+      refusedWith(KEY_REFUSALS.hardware_key_removal_not_own_account),
+      refusedWith(KEY_REFUSALS.not_permitted),
+      refusedWith(KEY_REFUSALS.not_permitted),
+      { status: 'hardware_key_required' },
+      { status: 'not_found' },
+    ]);
+    expect(refusals.flatMap((each) => each.events)).toEqual([]);
+    expect((await removalOf(target.id))?.state).toBe('requested');
+
+    const signOut = vi.spyOn(provider, 'globalSignOut');
+    const confirmed = await act(confirmKeyRemoval, await second.token(), input);
+    expect(confirmed.outcome).toMatchObject({ status: 'ok', data: { redirect: `/console/organizations/${admin.internalId}` } });
+    expect(confirmed.events).toEqual(['hardware_key_removal_confirmed']);
+    expect((await owner.query('SELECT 1 FROM hardware_key WHERE user_id = $1 AND removed_at IS NULL', [target.id])).rowCount).toBe(0);
+    // The provider is the outbox job's to ask (docs/adr/0095): the web writes the row's cause and calls nothing.
+    expect(signOut).not.toHaveBeenCalled();
+    signOut.mockRestore();
+    expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE user_id = $1', [target.id])).rowCount).toBe(1);
+
+    // The session of the closed account: ended, so the wrapper turns it away and nothing is written for it.
+    expect(await resolveSession(app, targetToken, 'test')).toMatchObject({ state: 'ended' });
+    const closed = await act(cancelKeyRemoval, targetToken, input);
+    expect(closed.outcome.status).not.toBe('ok');
+    expect(closed.events).toEqual([]);
+    // And Postgres opens it no new one, by key or by code.
+    await expect(target.token()).rejects.toThrow();
+    await expect(sessionFor(target.id, 'totp')).rejects.toThrow();
+
+    const decided = await act(confirmKeyRemoval, await second.token(), input);
+    expect(decided.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_decided));
+    expect(decided.events).toEqual([]);
+  });
+
+  it('cancels: the account itself may not, the requester may, with the function’s one audit event', async () => {
+    const target = await keyAdmin();
+    await act(requestKeyRemoval, await first.token(), { organizationId: admin.internalId, userId: target.id });
+    const input = { organizationId: admin.internalId, removalId: (await removalOf(target.id))?.id };
+    const own = await act(cancelKeyRemoval, await target.token(), input);
+    expect(own.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_not_own_account));
+    expect(own.events).toEqual([]);
+    const cancelled = await act(cancelKeyRemoval, await first.token(), input);
+    expect(cancelled.outcome).toMatchObject({ status: 'ok', data: { redirect: `/console/organizations/${admin.internalId}` } });
+    expect(cancelled.events).toEqual(['hardware_key_removal_cancelled']);
+    expect((await removalOf(target.id))?.state).toBe('cancelled');
+    const again = await act(cancelKeyRemoval, await second.token(), input);
+    expect(again.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_decided));
+    expect(await resolveSession(app, await target.token(), 'test')).toMatchObject({ state: 'active' });
+  });
+
+  it('opens registration with a code shown once: only its SHA-256 is kept, and the code is in no redirect, audit row or log line', async () => {
+    const member = await keyMember();
+    await act(requestKeyRemoval, await first.token(), { organizationId: organizationId(), userId: member.id });
+    const input = { organizationId: organizationId(), removalId: (await removalOf(member.id))?.id };
+    // Not yet confirmed, so the account is not closed: nothing to open.
+    const early = await act(openKeyRegistration, await second.token(), input);
+    expect(early.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_registration_not_closed));
+    await act(confirmKeyRemoval, await second.token(), input);
+
+    const weak = await act(openKeyRegistration, await staleToken(first), input);
+    expect(weak.outcome).toEqual(refusedWith(KEY_REFUSALS.not_permitted));
+    expect([...early.events, ...weak.events]).toEqual([]);
+
+    const lines: string[] = [];
+    const logged = { ...services, logger: createLogger({ sink: (line) => lines.push(line) }) };
+    const opened = await act(openKeyRegistration, await first.token(), input, logged);
+    expect(opened.outcome).toMatchObject({ status: 'ok', data: { objectId: input.removalId } });
+    const data = (opened.outcome as unknown as { data: { registrationCode: string; openUntil: Date; redirect?: string } }).data;
+    expect(isRegistrationCodeShaped(data.registrationCode)).toBe(true);
+    expect(data.redirect).toBeUndefined();
+    expect(data.openUntil.getTime()).toBeGreaterThan(Date.now());
+    expect(opened.events).toEqual(['hardware_key_registration_opened']);
+    expect((await removalOf(member.id))?.registration_code_sha256?.equals(registrationCodeDigest(data.registrationCode))).toBe(true);
+    const audit = await owner.query('SELECT row_to_json(e)::text AS row FROM audit_event e WHERE request_id = $1', [opened.requestId]);
+    expect(JSON.stringify([audit.rows, lines])).not.toContain(data.registrationCode);
+
+    const page = await run(organizationPage, await second.token(), undefined, { organizationId: organizationId() });
+    const row = (page as { data: { members: { userId: string; keyRemoval: { registrationOpenUntil: Date | null; registrationClosed: boolean } }[] } }).data.members.find((each) => each.userId === member.id);
+    expect(row?.keyRemoval).toMatchObject({ state: 'confirmed', registrationClosed: true, liveKeys: 0 });
+    expect(row?.keyRemoval.registrationOpenUntil?.getTime()).toBe(data.openUntil.getTime());
+    expect(JSON.stringify(page)).not.toContain(data.registrationCode);
+
+    const twice = await act(openKeyRegistration, await second.token(), input);
+    expect(twice.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_registration_open_once));
+    expect(twice.events).toEqual([]);
   });
 });
