@@ -14,6 +14,11 @@ BEGIN
   IF current_setting('transaction_isolation') <> 'read committed' THEN
     RAISE EXCEPTION 'the stored-statement preflight needs READ COMMITTED: its closing count must see every committed statement' USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
+  -- The list of practices is whole only for the role practice_resolver names; any other role would read none or some.
+  IF NOT EXISTS (SELECT 1 FROM pg_policy p WHERE p.polrelid = 'practice'::regclass AND p.polname = 'practice_resolver' AND p.polcmd = 'r'
+                    AND pg_get_expr(p.polqual, p.polrelid) = 'true' AND p.polroles = ARRAY[(SELECT r.oid FROM pg_roles r WHERE r.rolname = current_user)]) THEN
+    RAISE EXCEPTION 'the stored-statement preflight runs as the role that reads every practice (practice_resolver); it is running as another' USING ERRCODE = 'object_not_in_prerequisite_state';
+  END IF;
   ids := ARRAY(SELECT id FROM practice ORDER BY id);
   n := cardinality(ids);
   seen := array_fill(0::bigint, ARRAY[n]); bad := array_fill(0::bigint, ARRAY[n]);
@@ -40,7 +45,7 @@ BEGIN
   t2 := clock_timestamp();
   FOR pass IN 1..3 LOOP
     moved := 0;
-    arrived := ARRAY(SELECT id FROM practice WHERE id <> ALL (ids) ORDER BY id);
+    arrived := ARRAY(SELECT a.id FROM (SELECT id FROM practice EXCEPT SELECT unnest(ids)) a ORDER BY a.id);
     IF cardinality(arrived) > 0 THEN
       ids := ids || arrived; seen := seen || array_fill(0::bigint, ARRAY[cardinality(arrived)]); bad := bad || array_fill(0::bigint, ARRAY[cardinality(arrived)]);
       n := cardinality(ids);
@@ -59,13 +64,14 @@ BEGIN
   IF moved > 0 AND NOT locked THEN
     RAISE EXCEPTION 'statements kept arriving in % practices through three closing counts; run the deploy again', moved USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
+  -- The totals are taken from the whole arrays, so no loop bound can leave a practice out of them.
+  SELECT coalesce(sum(x), 0) INTO total FROM unnest(seen) x;
+  SELECT coalesce(sum(x), 0), count(*) FILTER (WHERE x > 0) INTO refused, hit FROM unnest(bad) x;
   FOR i IN 1..n LOOP
-    total := total + seen[i]; refused := refused + bad[i];
     IF bad[i] > 0 THEN
-      hit := hit + 1;
       IF cardinality(refused_ids) < 20 THEN
         PERFORM set_config('app.practice_ids', ARRAY[ids[i]]::text, true);
-        more := ARRAY(SELECT s.id FROM roi_statement s WHERE s.practice_id = ids[i] AND roi_links_valid(s.links) IS NOT TRUE ORDER BY s.id LIMIT 20 - cardinality(refused_ids));
+        more := ARRAY(SELECT s.id FROM roi_statement s WHERE s.practice_id = ids[i] AND roi_links_valid(s.links) IS NOT TRUE ORDER BY s.id LIMIT least(20 - cardinality(refused_ids), bad[i]));
         refused_ids := refused_ids || more;
       END IF;
     END IF;

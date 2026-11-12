@@ -1,0 +1,34 @@
+
+io before: heap 0 (read 0), index 3
+5s
+A installed: 13c4dd46b9203095
+1
+Time: 0.289 ms
+psql:preflight.sql:93: NOTICE:  preflight: 0 statements checked in 0 practices, 0 refused; scan 35 ms, lock wait 0 ms, closing 27 ms, 0 practices read again (lock held from then to commit: t)
+Time: 65.767 ms
+scope after: {}
+lock: pg_authid AccessShareLock x1
+lock: pg_authid_oid_index AccessShareLock x1
+lock: pg_authid_rolname_index AccessShareLock x1
+lock: pg_db_role_setting AccessShareLock x1
+lock: pg_db_role_setting_databaseid_rol_index AccessShareLock x1
+lock: pg_locks AccessShareLock x1
+lock: pg_policy AccessShareLock x1
+lock: pg_policy_oid_index AccessShareLock x1
+lock: pg_policy_polrelid_polname_index AccessShareLock x1
+lock: pg_proc AccessShareLock x1
+lock: pg_proc_oid_index AccessShareLock x1
+lock: pg_proc_proname_args_nsp_index AccessShareLock x1
+lock: pg_roles AccessShareLock x1
+lock: practice AccessShareLock x1
+lock: practice_by_organization AccessShareLock x1
+lock: practice_pkey AccessShareLock x1
+lock: roi_statement AccessShareLock x1
+lock: roi_statement_by_period AccessShareLock x1
+lock: roi_statement_pkey AccessShareLock x1
+lock: roi_statement_quarterly AccessShareLock x1
+lock: roi_statement ShareLock x1
+lock: transactionid ExclusiveLock x1
+
+io after: heap 0 (read 0), index 6
+body after rollback: 49416713dd4d13dd

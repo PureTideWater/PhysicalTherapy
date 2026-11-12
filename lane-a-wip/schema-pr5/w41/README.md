@@ -7,3 +7,7 @@ migrated by `pnpm db:migrate` at f7b777d3 (bodies `49416713dd4d13dd`, `5a8bc6319
   run by hand afterwards (writer at 185 s, open 20 s, beside the block with the lock).
 - `plans.sql` printed "unterminated quoted string" twice for an `\echo` label (an apostrophe, since removed); every
   EXPLAIN ran.
+- After the two reviews `preflight.sql` was revised outside its scan loop (the role assertion, totals from the arrays,
+  `EXCEPT` for new practices, the ID cap): SHA-256 `38ddc2b78117a6e3...`. The full-size runs used `73c0f7bc6eccb702...`
+  (commit 6403473c); the revised block was run on the small set and the empty database only
+  (`out/base_empty_preflight_lock1.txt`).

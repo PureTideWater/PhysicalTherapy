@@ -1,6 +1,37 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
-## RESUME-BLOCK (W35, session_019i9ifAqmhWzhrv9YbKKE4R; 2026-11-12 about 07:50 UTC; W35's brief is done; W35 has stood down)
+## RESUME-BLOCK (W41, session_019i9ifBHTHrNAPcLzYZj2P9; 2026-11-12 about 15:40 UTC; the preflight's design step is done; W41 has stood down)
+- **Where it stands:** the grant is whole (Appendix A, 2026-11-07; Appendix D2 with its one header line, 2026-11-12;
+  the record is "Decided" in `approval-summaries/lane-a-ledger-freeze-ask-pr5-d2-2026-11-12.md`). The one open design
+  point, the stored-statement preflight (the note's step 3.3), is designed, measured, reviewed twice and revised once:
+  `designs/lane-a-ledger-freeze-batch-preflight.md`. Nothing is built. No migration is started.
+- **The result:** scanning one practice at a time under the migration role's own one-practice scope takes
+  196 to 206 s at 1,000,000 statements in 1,000 practices, against the limit of 5 minutes (the scan as written:
+  734 s here, 765 s before). No policy, role, grant or FORCE setting changes. The function alone costs 193 s.
+- **Blocked on one answer (a person's, not a founder ask; the orchestrator decides whether it is relayed):** the
+  addendum's question 1, whether the block takes a short SHARE lock on `roi_statement` for its closing count.
+  Recommended: yes. Without it a statement inserted by a transaction still open at the closing count is never
+  checked (the review reproduced it). With it, statement writers wait 0.12 to 2.7 s at that size, and it corrects
+  the sentence "it takes only reading locks" that the founder read. Step 1 of the build does not start before it.
+  Questions 2 to 4 (cold storage, a self-stop, IDs in the refusal) have recommendations and stop nothing.
+- **The builder reads, in this order, and nothing else of the superseded blocks below:**
+  1. `designs/lane-a-ledger-freeze-batch-preflight.md`: lines 9-31 (the design), 68-113 (locks, the refusal's
+     words, the proof, tests P1 to P5), 115-126 (the build cut), 128-141 (the questions and their answers once given).
+  2. `lane-a-wip/schema-pr5/w41/preflight.sql` (the reference block, SHA-256 `38ddc2b78117a6e3...`; its `w41.lock`
+     switch and its list of statement IDs do not go into the migration) and `w41/README.md`.
+  3. `designs/lane-a-ledger-freeze-batch.md`: section 3 but 3.3, and sections 4 to 7; its T2 and T2c are replaced by
+     P1 to P5. Wherever it says Appendix D, read Appendix D2 with the header line (hash `ad925199131cb411`).
+  4. W35's block below, lines for the two bodies' hashes and the D2 files only.
+- **First step, a person's:** after PR 4 has merged and question 1 is answered, type in the building session
+  `/new-migration roi_statement_actionable_lines`. Then the build cut's steps 1 to 6, one session each.
+- **Measured, with files:** `lane-a-wip/schema-pr5/w41/out/` (`jobA.log`, `jobB.log` hold the clock; the plans in
+  three statistics states; the failing case; a writer beside the scan and beside the lock). The build re-runs
+  `jobA.sh` and `jobB.sh` against the real file. Not shown: the limit on cold storage (question 2).
+- **Reviews:** `reviews/lane-a-ledger-freeze-batch-preflight-isolation-locks.md` and `...-proof.md`; what each
+  finding came to is the addendum's section 7.
+- **Holds:** none. The scratch databases `pr5w41_*` are dropped. No WIP ref beyond `claude/build-ops`.
+
+## Superseded as the top block by W41's above: RESUME-BLOCK (W35, session_019i9ifAqmhWzhrv9YbKKE4R; 2026-11-12 about 07:50 UTC; W35's brief is done; W35 has stood down)
 - **Where it stands:** the founder's ask for D2 (`approval-summaries/lane-a-ledger-freeze-ask-pr5-d2-2026-11-12.md`)
   now carries measured figures for W34's gaps 1 and 2. Not sent, not answered. Nothing is built. Everything in W34's
   block below still holds except its "Closed by W34" bullet and step (5)'s "none of which is measured yet".
