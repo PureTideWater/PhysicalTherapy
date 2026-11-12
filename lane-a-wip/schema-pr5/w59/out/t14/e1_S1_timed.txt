@@ -1,0 +1,51 @@
+RUN S1 tag=empty run=1
+stored
+Time: 17.004 ms
+RUN S1 tag=empty run=2
+stored
+Time: 4.364 ms
+RUN S1 tag=empty run=3
+stored
+Time: 3.667 ms
+RUN S1 tag=empty run=4
+stored
+Time: 3.647 ms
+RUN S1 tag=empty run=5
+stored
+Time: 3.267 ms
+RUN S1 tag=empty run=6
+stored
+Time: 2.346 ms
+RUN S1 tag=empty run=7
+stored
+Time: 1.541 ms
+RUN S1 tag=month run=1
+stored
+Time: 723.112 ms
+RUN S1 tag=month run=2
+stored
+Time: 513.859 ms
+RUN S1 tag=month run=3
+stored
+Time: 555.483 ms
+RUN S1 tag=month run=4
+stored
+Time: 589.496 ms
+RUN S1 tag=month run=5
+stored
+Time: 514.106 ms
+RUN S1 tag=month run=6
+stored
+Time: 502.934 ms
+RUN S1 tag=month run=7
+stored
+Time: 522.486 ms
+RUN S1 tag=month run=8
+stored
+Time: 509.460 ms
+RUN S1 tag=repeat run=1
+Time: 459.134 ms
+RUN S1 tag=repeat run=2
+Time: 452.454 ms
+RUN S1 tag=repeat run=3
+Time: 381.502 ms

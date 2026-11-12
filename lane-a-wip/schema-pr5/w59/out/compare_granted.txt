@@ -1,0 +1,10 @@
+roi_links_valid: appendix A 15 lines, generated 15
+  EQUAL, byte for byte
+roi_statement_rules: appendix D2 77 lines, generated 78
+/tmp/w59_D2.sql /tmp/w59_genD2.sql differ: char 146, line 5
+  diff (appendix D2 < > generated):
+    4a5
+    >  SET plan_cache_mode TO 'force_custom_plan'
+generated files' own hash lines:
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 13c4dd46b9203095
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: ad925199131cb411

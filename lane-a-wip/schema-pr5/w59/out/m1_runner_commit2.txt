@@ -1,0 +1,3 @@
+applied 1 (last 20261115090000_roi_statement_actionable_lines.sql), already 52, 184139 ms
+bodies after the runner: roi_links_valid 13c4dd46b9203095 {"search_path=pg_catalog, public, pg_temp"}, roi_statement_rules ad925199131cb411 {"search_path=pg_catalog, public, pg_temp",plan_cache_mode=force_custom_plan}
+migrations: 53

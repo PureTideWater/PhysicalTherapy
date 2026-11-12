@@ -1,0 +1,355 @@
+RUN S3-analyzed-month tag=month run=1
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 0.002 ms  plan:
+Query Text: 
+  SELECT ARRAY['mapping.edit', 'case.work', 'posting.reconcile', 'phi.export', 'file.upload']
+
+Result  (cost=0.00..0.01 rows=1 width=32) (actual rows=1.00 loops=1)
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 0.010 ms  plan:
+Query Text: 
+  SELECT EXISTS (SELECT 1 FROM "user" u WHERE u.id = app_actor_id())
+
+Result  (cost=8.18..8.19 rows=1 width=1) (actual rows=1.00 loops=1)
+  InitPlan 1
+    ->  Index Only Scan using user_pkey on "user" u  (cost=0.16..8.18 rows=1 width=0) (actual rows=0.00 loops=1)
+          Index Cond: (id = (NULLIF(current_setting('app.actor_id'::text, true), ''::text))::uuid)
+          Heap Fetches: 0
+          Index Searches: 1
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 0.025 ms  plan:
+Query Text: 
+  SELECT EXISTS (SELECT 1 FROM role_permission p WHERE p.role = ANY (held) AND p.action = wanted AND p.effect = 'allow')
+     AND NOT EXISTS (SELECT 1 FROM role_permission p WHERE p.role = ANY (held) AND p.action = wanted AND p.effect = 'deny')
+
+Result  (cost=7.84..7.85 rows=1 width=1) (actual rows=1.00 loops=1)
+  InitPlan 1
+    ->  Seq Scan on role_permission p  (cost=0.00..3.92 rows=1 width=0) (actual rows=0.00 loops=1)
+          Filter: ((role = ANY ('{}'::text[])) AND (action = 'mapping.edit'::text) AND (effect = 'allow'::text))
+          Rows Removed by Filter: 128
+  InitPlan 2
+    ->  Seq Scan on role_permission p_1  (cost=0.00..3.92 rows=1 width=0) (never executed)
+          Filter: ((role = ANY ('{}'::text[])) AND (action = 'mapping.edit'::text) AND (effect = 'deny'::text))
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 0.015 ms  plan:
+Query Text: 
+  SELECT EXISTS (SELECT 1 FROM role_permission p WHERE p.role = ANY (held) AND p.action = wanted AND p.effect = 'allow')
+     AND NOT EXISTS (SELECT 1 FROM role_permission p WHERE p.role = ANY (held) AND p.action = wanted AND p.effect = 'deny')
+
+Result  (cost=7.84..7.85 rows=1 width=1) (actual rows=1.00 loops=1)
+  InitPlan 1
+    ->  Seq Scan on role_permission p  (cost=0.00..3.92 rows=1 width=0) (actual rows=0.00 loops=1)
+          Filter: ((role = ANY ('{}'::text[])) AND (action = 'case.work'::text) AND (effect = 'allow'::text))
+          Rows Removed by Filter: 128
+  InitPlan 2
+    ->  Seq Scan on role_permission p_1  (cost=0.00..3.92 rows=1 width=0) (never executed)
+          Filter: ((role = ANY ('{}'::text[])) AND (action = 'case.work'::text) AND (effect = 'deny'::text))
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 0.011 ms  plan:
+Query Text: 
+  SELECT EXISTS (SELECT 1 FROM role_permission p WHERE p.role = ANY (held) AND p.action = wanted AND p.effect = 'allow')
+     AND NOT EXISTS (SELECT 1 FROM role_permission p WHERE p.role = ANY (held) AND p.action = wanted AND p.effect = 'deny')
+
+Result  (cost=7.84..7.85 rows=1 width=1) (actual rows=1.00 loops=1)
+  InitPlan 1
+    ->  Seq Scan on role_permission p  (cost=0.00..3.92 rows=1 width=0) (actual rows=0.00 loops=1)
+          Filter: ((role = ANY ('{}'::text[])) AND (action = 'posting.reconcile'::text) AND (effect = 'allow'::text))
+          Rows Removed by Filter: 128
+  InitPlan 2
+    ->  Seq Scan on role_permission p_1  (cost=0.00..3.92 rows=1 width=0) (never executed)
+          Filter: ((role = ANY ('{}'::text[])) AND (action = 'posting.reconcile'::text) AND (effect = 'deny'::text))
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 0.011 ms  plan:
+Query Text: 
+  SELECT EXISTS (SELECT 1 FROM role_permission p WHERE p.role = ANY (held) AND p.action = wanted AND p.effect = 'allow')
+     AND NOT EXISTS (SELECT 1 FROM role_permission p WHERE p.role = ANY (held) AND p.action = wanted AND p.effect = 'deny')
+
+Result  (cost=7.84..7.85 rows=1 width=1) (actual rows=1.00 loops=1)
+  InitPlan 1
+    ->  Seq Scan on role_permission p  (cost=0.00..3.92 rows=1 width=0) (actual rows=0.00 loops=1)
+          Filter: ((role = ANY ('{}'::text[])) AND (action = 'phi.export'::text) AND (effect = 'allow'::text))
+          Rows Removed by Filter: 128
+  InitPlan 2
+    ->  Seq Scan on role_permission p_1  (cost=0.00..3.92 rows=1 width=0) (never executed)
+          Filter: ((role = ANY ('{}'::text[])) AND (action = 'phi.export'::text) AND (effect = 'deny'::text))
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 0.011 ms  plan:
+Query Text: 
+  SELECT EXISTS (SELECT 1 FROM role_permission p WHERE p.role = ANY (held) AND p.action = wanted AND p.effect = 'allow')
+     AND NOT EXISTS (SELECT 1 FROM role_permission p WHERE p.role = ANY (held) AND p.action = wanted AND p.effect = 'deny')
+
+Result  (cost=7.84..7.85 rows=1 width=1) (actual rows=1.00 loops=1)
+  InitPlan 1
+    ->  Seq Scan on role_permission p  (cost=0.00..3.92 rows=1 width=0) (actual rows=0.00 loops=1)
+          Filter: ((role = ANY ('{}'::text[])) AND (action = 'file.upload'::text) AND (effect = 'allow'::text))
+          Rows Removed by Filter: 128
+  InitPlan 2
+    ->  Seq Scan on role_permission p_1  (cost=0.00..3.92 rows=1 width=0) (never executed)
+          Filter: ((role = ANY ('{}'::text[])) AND (action = 'file.upload'::text) AND (effect = 'deny'::text))
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 2.076 ms  plan:
+Query Text: 
+  WITH owner AS (
+    SELECT o.id, o.kind, o.status, o.status_reason, o.status_since, s.standing, s.suspended_since,
+           o.id = ANY ((SELECT app_actor_organization_ids())::uuid[]) AS member
+      FROM practice p JOIN organization o ON o.id = p.organization_id JOIN billing_standing s ON s.organization_id = o.id
+     WHERE p.id = target_practice
+  ), owner_hold AS (
+    -- D6: a non-member learns that work is on hold and whether it restarts, never why.
+    SELECT 'owner'::text AS source, id, kind,
+           CASE WHEN status = 'closed' THEN 'closed'
+                WHEN NOT member AND (status = 'suspended' OR standing = 'suspended') THEN 'on_hold'
+                WHEN status = 'suspended' THEN 'suspended'
+                WHEN standing = 'suspended' THEN 'nonpayment' END AS cause,
+           CASE WHEN member AND status = 'suspended' THEN status_reason END AS reason,
+           CASE WHEN status IN ('suspended', 'closed') THEN status_since WHEN standing = 'suspended' THEN suspended_since END AS since,
+           NULL::text[] AS stopped
+      FROM owner
+  ), paths AS (
+    -- The person's own paths and roles here; none for a job, whose actor is never a person.
+    SELECT a.role, g.organization_id AS grantee, coalesce(a.via = 'grant' AND o.status IN ('suspended', 'closed'), false) AS held
+      FROM effective_practice_access() a
+      LEFT JOIN "grant" g ON a.via = 'grant' AND g.id = a.grant_id
+      LEFT JOIN organization o ON o.id = g.organization_id
+     WHERE a.practice_id = target_practice AND app_actor_is_person()
+  ), roles AS (
+    SELECT coalesce(array_agg(DISTINCT role), '{}') AS every,
+           coalesce(array_agg(DISTINCT role) FILTER (WHERE NOT held), '{}') AS unheld
+      FROM paths
+  ), stops AS (
+    -- The run-starting work the person's roles allow, but not without the held grants (D1).
+    SELECT coalesce(array_agg(u.wanted ORDER BY u.n), '{}') AS stopped
+      FROM roles CROSS JOIN unnest(run_starting_permissions()) WITH ORDINALITY AS u(wanted, n)
+     WHERE roles_permit(roles.every, u.wanted) AND NOT roles_permit(roles.unheld, u.wanted)
+  ), grantee_hold AS (
+    SELECT 'grantee'::text, o.id, o.kind, o.status, o.status_reason, o.status_since, stops.stopped
+      FROM paths x JOIN organization o ON o.id = x.grantee CROSS JOIN stops
+     WHERE x.held AND cardinality(stops.stopped) > 0
+     ORDER BY o.status = 'suspended' DESC, o.id
+     LIMIT 1
+  )
+  SELECT * FROM owner_hold WHERE cause IS NOT NULL
+  UNION ALL
+  SELECT * FROM grantee_hold WHERE NOT EXISTS (SELECT 1 FROM owner_hold WHERE cause IS NOT NULL)
+
+Append  (cost=58.49..73.90 rows=2 width=184) (actual rows=0.00 loops=1)
+  CTE owner_hold
+    ->  Nested Loop Left Join  (cost=14.34..29.03 rows=1 width=184) (actual rows=0.00 loops=1)
+          InitPlan 1
+            ->  Result  (cost=0.00..0.26 rows=1 width=32) (never executed)
+          InitPlan 2
+            ->  Result  (cost=0.00..0.26 rows=1 width=32) (never executed)
+          ->  Nested Loop  (cost=5.67..20.24 rows=1 width=136) (actual rows=0.00 loops=1)
+                ->  Hash Join  (cost=5.53..19.94 rows=1 width=136) (actual rows=0.00 loops=1)
+                      Hash Cond: (o_1.id = p.organization_id)
+                      ->  Seq Scan on organization o_1  (cost=0.00..13.50 rows=350 width=120) (actual rows=0.00 loops=1)
+                      ->  Hash  (cost=5.51..5.51 rows=1 width=16) (never executed)
+                            ->  Seq Scan on practice p  (cost=0.00..5.51 rows=1 width=16) (never executed)
+                                  Filter: (id = '00000000-0000-4000-8000-00000000000a'::uuid)
+                ->  Index Only Scan using organization_pkey on organization o_2  (cost=0.15..0.29 rows=1 width=16) (never executed)
+                      Index Cond: (id = o_1.id)
+                      Heap Fetches: 0
+                      Index Searches: 0
+          ->  Limit  (cost=8.15..8.18 rows=1 width=24) (never executed)
+                ->  Incremental Sort  (cost=8.15..8.20 rows=2 width=24) (never executed)
+                      Sort Key: i.first_failed_at, i.id
+                      Presorted Key: i.first_failed_at
+                      ->  Index Scan using invoice_failing on invoice i  (cost=0.12..8.14 rows=1 width=24) (never executed)
+                            Index Cond: (organization_id = o_2.id)
+                            Index Searches: 0
+  CTE paths
+    ->  Result  (cost=13.21..29.47 rows=5 width=49) (actual rows=0.00 loops=1)
+          One-Time Filter: app_actor_is_person()
+          ->  Nested Loop Left Join  (cost=13.21..29.44 rows=5 width=112) (never executed)
+                ->  Hash Right Join  (cost=12.81..27.69 rows=5 width=80) (never executed)
+                      Hash Cond: (g.id = a.grant_id)
+                      Join Filter: (a.via = 'grant'::text)
+                      ->  Seq Scan on "grant" g  (cost=0.00..13.50 rows=350 width=32) (never executed)
+                      ->  Hash  (cost=12.75..12.75 rows=5 width=80) (never executed)
+                            ->  Function Scan on effective_practice_access a  (cost=0.25..12.75 rows=5 width=80) (never executed)
+                                  Filter: (practice_id = '00000000-0000-4000-8000-00000000000a'::uuid)
+                ->  Index Scan using organization_pkey on organization o_3  (cost=0.15..0.29 rows=1 width=48) (never executed)
+                      Index Cond: (id = g.organization_id)
+                      Index Searches: 0
+  ->  CTE Scan on owner_hold  (cost=0.00..0.02 rows=1 width=184) (actual rows=0.00 loops=1)
+        Filter: (cause IS NOT NULL)
+        Storage: Memory  Maximum Storage: 17kB
+  ->  Result  (cost=15.37..15.38 rows=1 width=184) (actual rows=0.00 loops=1)
+        One-Time Filter: (NOT (InitPlan 5).col1)
+        InitPlan 5
+          ->  CTE Scan on owner_hold owner_hold_1  (cost=0.00..0.02 rows=1 width=0) (actual rows=0.00 loops=1)
+                Filter: (cause IS NOT NULL)
+                Storage: Memory  Maximum Storage: 17kB
+        ->  Limit  (cost=15.35..15.35 rows=1 width=185) (actual rows=0.00 loops=1)
+              ->  Sort  (cost=15.35..15.35 rows=2 width=185) (actual rows=0.00 loops=1)
+                    Sort Key: ((o.status = 'suspended'::text)) DESC, o.id
+                    Sort Method: quicksort  Memory: 25kB
+                    ->  Nested Loop  (cost=2.98..15.34 rows=2 width=185) (actual rows=0.00 loops=1)
+                          ->  Aggregate  (cost=2.83..2.85 rows=1 width=32) (actual rows=0.00 loops=1)
+                                Filter: (cardinality(COALESCE(array_agg(u.wanted ORDER BY u.n), '{}'::text[])) > 0)
+                                Rows Removed by Filter: 1
+                                ->  Nested Loop  (cost=0.20..2.83 rows=1 width=40) (actual rows=0.00 loops=1)
+                                      Join Filter: (roles_permit((COALESCE(array_agg(DISTINCT paths.role), '{}'::text[])), u.wanted) AND (NOT roles_permit((COALESCE(array_agg(DISTINCT paths.role) FILTER (WHERE (NOT paths.held)), '{}'::text[])), u.wanted)))
+                                      Rows Removed by Join Filter: 5
+                                      ->  Function Scan on unnest u  (cost=0.00..0.05 rows=5 width=40) (actual rows=5.00 loops=1)
+                                      ->  Materialize  (cost=0.20..0.22 rows=1 width=64) (actual rows=1.00 loops=5)
+                                            Storage: Memory  Maximum Storage: 17kB
+                                            ->  Aggregate  (cost=0.20..0.21 rows=1 width=64) (actual rows=1.00 loops=1)
+                                                  ->  Sort  (cost=0.16..0.17 rows=5 width=33) (actual rows=0.00 loops=1)
+                                                        Sort Key: paths.role
+                                                        Sort Method: quicksort  Memory: 25kB
+                                                        ->  CTE Scan on paths  (cost=0.00..0.10 rows=5 width=33) (actual rows=0.00 loops=1)
+                                                              Storage: Memory  Maximum Storage: 17kB
+                          ->  Nested Loop  (cost=0.15..12.46 rows=2 width=120) (never executed)
+                                ->  CTE Scan on paths x  (cost=0.00..0.10 rows=2 width=16) (never executed)
+                                      Filter: held
+                                      Storage: Memory  Maximum Storage: 17kB
+                                ->  Index Scan using organization_pkey on organization o  (cost=0.15..6.17 rows=1 width=120) (never executed)
+                                      Index Cond: (id = x.grantee)
+                                      Index Searches: 0
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 7.459 ms  plan:
+Query Text: 
+  SELECT CASE
+    WHEN h.source = 'owner' AND h.cause = 'suspended' THEN 'PaidWhole has suspended your organization, so no new work starts at this practice until PaidWhole reinstates your organization; everything here stays readable'
+    WHEN h.source = 'owner' AND h.cause = 'closed' THEN 'the practice''s organization is closed, so no new work starts here; everything here stays readable'
+    WHEN h.source = 'owner' AND h.cause = 'nonpayment' THEN 'an invoice of your organization has been unpaid for 30 days since its payment failed, so no new work starts at this practice until it is paid; everything here stays readable'
+    WHEN h.source = 'owner' AND h.cause = 'on_hold' THEN 'the PaidWhole account of the practice''s organization is on hold, so no new work starts here; everything here stays readable'
+    WHEN h.source = 'grantee' AND (wanted IS NULL OR wanted = ANY (h.stopped)) AND h.cause = 'suspended' THEN 'PaidWhole has suspended your organization, so you start no new work here through its grant until PaidWhole reinstates your organization; you can still read this practice''s records'
+    WHEN h.source = 'grantee' AND (wanted IS NULL OR wanted = ANY (h.stopped)) AND h.cause = 'closed' THEN 'your organization is closed, so you start no new work here through its grant'
+  END
+    FROM practice_work_hold(target_practice) h
+
+Function Scan on practice_work_hold h  (cost=0.25..65.25 rows=1000 width=32) (actual rows=0.00 loops=1)
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 0.007 ms  plan:
+Query Text: 
+  SELECT EXISTS (SELECT 1 FROM "user" u WHERE u.id = app_actor_id())
+
+Result  (cost=8.18..8.19 rows=1 width=1) (actual rows=1.00 loops=1)
+  InitPlan 1
+    ->  Index Only Scan using user_pkey on "user" u  (cost=0.16..8.18 rows=1 width=0) (actual rows=0.00 loops=1)
+          Index Cond: (id = (NULLIF(current_setting('app.actor_id'::text, true), ''::text))::uuid)
+          Heap Fetches: 0
+          Index Searches: 1
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 0.023 ms  plan:
+Query Text: SELECT (SELECT count(*) FROM jsonb_array_elements_text(NEW.links -> 'recovered')) + (SELECT count(*) FROM jsonb_array_elements_text(NEW.links -> 'interest')) AS linked,
+         (SELECT count(*) FROM ledger_entry e WHERE e.practice_id = NEW.practice_id AND e.id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'recovered') x))
+           + (SELECT count(*) FROM ledger_entry e WHERE e.practice_id = NEW.practice_id AND e.id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'interest') x)) AS found,
+         (SELECT coalesce(sum(e.amount_cents), 0) FROM ledger_entry e WHERE e.practice_id = NEW.practice_id AND e.id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'recovered') x)) AS recovered,
+         (SELECT coalesce(sum(e.amount_cents), 0) FROM ledger_entry e WHERE e.practice_id = NEW.practice_id AND e.id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'interest') x)) AS interest
+Result  (cost=42.31..42.32 rows=1 width=80) (actual rows=1.00 loops=1)
+  InitPlan 1
+    ->  Aggregate  (cost=1.25..1.26 rows=1 width=8) (actual rows=1.00 loops=1)
+          ->  Function Scan on jsonb_array_elements_text  (cost=0.00..1.00 rows=100 width=0) (actual rows=0.00 loops=1)
+  InitPlan 2
+    ->  Aggregate  (cost=1.25..1.26 rows=1 width=8) (actual rows=1.00 loops=1)
+          ->  Function Scan on jsonb_array_elements_text jsonb_array_elements_text_1  (cost=0.00..1.00 rows=100 width=0) (actual rows=0.00 loops=1)
+  InitPlan 3
+    ->  Aggregate  (cost=9.93..9.94 rows=1 width=8) (actual rows=1.00 loops=1)
+          ->  Hash Right Semi Join  (cost=8.19..9.93 rows=1 width=0) (actual rows=0.00 loops=1)
+                Hash Cond: ((x.value)::uuid = e.id)
+                ->  Function Scan on jsonb_array_elements_text x  (cost=0.00..1.00 rows=100 width=32) (actual rows=0.00 loops=1)
+                ->  Hash  (cost=8.17..8.17 rows=1 width=16) (never executed)
+                      ->  Index Scan using ledger_entry_by_date on ledger_entry e  (cost=0.15..8.17 rows=1 width=16) (never executed)
+                            Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = '00000000-0000-4000-8000-00000000000a'::uuid))
+                            Index Searches: 0
+  InitPlan 4
+    ->  Aggregate  (cost=9.93..9.94 rows=1 width=8) (actual rows=1.00 loops=1)
+          ->  Hash Right Semi Join  (cost=8.19..9.93 rows=1 width=0) (actual rows=0.00 loops=1)
+                Hash Cond: ((x_1.value)::uuid = e_1.id)
+                ->  Function Scan on jsonb_array_elements_text x_1  (cost=0.00..1.00 rows=100 width=32) (actual rows=0.00 loops=1)
+                ->  Hash  (cost=8.17..8.17 rows=1 width=16) (never executed)
+                      ->  Index Scan using ledger_entry_by_date on ledger_entry e_1  (cost=0.15..8.17 rows=1 width=16) (never executed)
+                            Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = '00000000-0000-4000-8000-00000000000a'::uuid))
+                            Index Searches: 0
+  InitPlan 5
+    ->  Aggregate  (cost=9.94..9.95 rows=1 width=32) (actual rows=1.00 loops=1)
+          ->  Hash Right Semi Join  (cost=8.19..9.93 rows=1 width=8) (actual rows=0.00 loops=1)
+                Hash Cond: ((x_2.value)::uuid = e_2.id)
+                ->  Function Scan on jsonb_array_elements_text x_2  (cost=0.00..1.00 rows=100 width=32) (actual rows=0.00 loops=1)
+                ->  Hash  (cost=8.17..8.17 rows=1 width=24) (never executed)
+                      ->  Index Scan using ledger_entry_by_date on ledger_entry e_2  (cost=0.15..8.17 rows=1 width=24) (never executed)
+                            Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = '00000000-0000-4000-8000-00000000000a'::uuid))
+                            Index Searches: 0
+  InitPlan 6
+    ->  Aggregate  (cost=9.94..9.95 rows=1 width=32) (actual rows=1.00 loops=1)
+          ->  Hash Right Semi Join  (cost=8.19..9.93 rows=1 width=8) (actual rows=0.00 loops=1)
+                Hash Cond: ((x_3.value)::uuid = e_3.id)
+                ->  Function Scan on jsonb_array_elements_text x_3  (cost=0.00..1.00 rows=100 width=32) (actual rows=0.00 loops=1)
+                ->  Hash  (cost=8.17..8.17 rows=1 width=24) (never executed)
+                      ->  Index Scan using ledger_entry_by_date on ledger_entry e_3  (cost=0.15..8.17 rows=1 width=24) (never executed)
+                            Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = '00000000-0000-4000-8000-00000000000a'::uuid))
+                            Index Searches: 0
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 310.418 ms  plan:
+Query Text: SELECT (SELECT count(*) FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines')) AS linked,
+           count(*) FILTER (WHERE m.case_id IN (SELECT x::uuid FROM jsonb_array_elements_text(NEW.links -> 'actionable_open') x)) AS found,
+           coalesce(sum(m.variance_cents), 0) AS cents
+      FROM (SELECT DISTINCT x::uuid AS id FROM jsonb_array_elements_text(NEW.links -> 'actionable_open_lines') x) i
+     CROSS JOIN LATERAL (
+           SELECT p.variance_cents,
+                  (SELECT l.case_id FROM case_line l
+                    WHERE l.service_line_id = p.service_line_id AND l.priced_line_id = p.id AND l.practice_id = NEW.practice_id) AS case_id
+             FROM priced_line p
+            WHERE p.id = i.id AND p.practice_id = NEW.practice_id
+           OFFSET 0) m
+Aggregate  (cost=1702.52..1702.53 rows=1 width=48) (actual rows=1.00 loops=1)
+  InitPlan 1
+    ->  Aggregate  (cost=1.25..1.26 rows=1 width=8) (actual rows=1.00 loops=1)
+          ->  Function Scan on jsonb_array_elements_text  (cost=0.00..1.00 rows=100 width=0) (actual rows=30795.00 loops=1)
+  ->  Nested Loop  (cost=2.18..1698.75 rows=100 width=24) (actual rows=30795.00 loops=1)
+        ->  HashAggregate  (cost=1.75..3.25 rows=100 width=16) (actual rows=30795.00 loops=1)
+              Group Key: (x.value)::uuid
+              Batches: 1  Memory Usage: 2097kB
+              ->  Function Scan on jsonb_array_elements_text x  (cost=0.00..1.50 rows=100 width=16) (actual rows=30795.00 loops=1)
+        ->  Index Scan using priced_line_pkey on priced_line p  (cost=0.43..16.94 rows=1 width=24) (actual rows=1.00 loops=30795)
+              Index Cond: (id = ((x.value)::uuid))
+              Filter: ((practice_id = '00000000-0000-4000-8000-00000000000a'::uuid) AND (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])))
+              Index Searches: 30795
+              SubPlan 3
+                ->  Index Scan using case_line_once on case_line l  (cost=0.42..8.47 rows=1 width=16) (actual rows=1.00 loops=30795)
+                      Index Cond: (service_line_id = p.service_line_id)
+                      Filter: ((priced_line_id = p.id) AND (practice_id = '00000000-0000-4000-8000-00000000000a'::uuid) AND (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])))
+                      Index Searches: 30795
+  SubPlan 2
+    ->  Function Scan on jsonb_array_elements_text x_1  (cost=0.00..1.50 rows=100 width=16) (actual rows=1200.00 loops=1)
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 129.106 ms  plan:
+Query Text: 
+  SELECT jsonb_typeof(links) = 'object'
+     AND coalesce((SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(links) k), '{}') IN (
+           ARRAY['actionable_open', 'approved_unposted', 'interest', 'recovered'],
+           ARRAY['actionable_open', 'actionable_open_lines', 'approved_unposted', 'interest', 'recovered'])
+     AND NOT EXISTS (
+       SELECT 1 FROM jsonb_each(links) e
+        WHERE jsonb_typeof(e.value) <> 'array'
+           OR EXISTS (SELECT 1 FROM jsonb_array_elements(e.value) v WHERE jsonb_typeof(v) <> 'string' OR v #>> '{}' !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'))
+
+Result  (cost=9.71..9.73 rows=1 width=1) (actual rows=1.00 loops=1)
+  InitPlan 1
+    ->  Aggregate  (cost=4.83..4.84 rows=1 width=32) (actual rows=1.00 loops=1)
+          ->  Sort  (cost=4.32..4.57 rows=100 width=32) (actual rows=5.00 loops=1)
+                Sort Key: k.k
+                Sort Method: quicksort  Memory: 25kB
+                ->  Function Scan on jsonb_object_keys k  (cost=0.00..1.00 rows=100 width=32) (actual rows=5.00 loops=1)
+  InitPlan 2
+    ->  Aggregate  (cost=4.83..4.84 rows=1 width=32) (actual rows=1.00 loops=1)
+          ->  Sort  (cost=4.32..4.57 rows=100 width=32) (actual rows=5.00 loops=1)
+                Sort Key: k_1.k
+                Sort Method: quicksort  Memory: 25kB
+                ->  Function Scan on jsonb_object_keys k_1  (cost=0.00..1.00 rows=100 width=32) (actual rows=5.00 loops=1)
+  InitPlan 4
+    ->  Function Scan on jsonb_each e  (cost=0.00..3.75 rows=100 width=0) (actual rows=0.00 loops=1)
+          Filter: ((jsonb_typeof(value) <> 'array'::text) OR EXISTS(SubPlan 3))
+          Rows Removed by Filter: 5
+          SubPlan 3
+            ->  Function Scan on jsonb_array_elements v  (cost=0.00..2.00 rows=100 width=0) (actual rows=0.00 loops=5)
+                  Filter: ((jsonb_typeof(value) <> 'string'::text) OR ((value #>> '{}'::text[]) !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'::text))
+                  Rows Removed by Filter: 6399
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 0.363 ms  plan:
+Query Text: SELECT 1 FROM ONLY "public"."practice" x WHERE "id" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x
+LockRows  (cost=0.00..5.52 rows=1 width=10) (actual rows=1.00 loops=1)
+  ->  Seq Scan on practice x  (cost=0.00..5.51 rows=1 width=10) (actual rows=1.00 loops=1)
+        Filter: (id = '00000000-0000-4000-8000-00000000000a'::uuid)
+psql:out/t14/e2_S3_explain.sql:16: LOG:  duration: 511.469 ms  plan:
+Query Text: INSERT INTO roi_statement (practice_id, period_from, period_to, proof_level, fees_cents, recovered_cents, interest_cents, approved_unposted_cents, actionable_open_cents, pursuit_hours, links)
+SELECT '00000000-0000-4000-8000-00000000000a', '2026-07-01', '2026-09-30', 'posted', 0, 0, 0, 0, m.cents, 0, m.links FROM m_links m WHERE m.tag = 'month' ON CONFLICT (practice_id, period_from, period_to) WHERE generated_by IS NULL DO NOTHING RETURNING 'stored';
+Insert on roi_statement  (cost=0.15..8.18 rows=1 width=262) (actual rows=1.00 loops=1)
+  Conflict Resolution: NOTHING
+  Conflict Arbiter Indexes: roi_statement_quarterly
+  Tuples Inserted: 1
+  Conflicting Tuples: 0
+  ->  Index Scan using m_links_pkey on m_links m  (cost=0.15..8.18 rows=1 width=262) (actual rows=1.00 loops=1)
+        Index Cond: (tag = 'month'::text)
+        Index Searches: 1
+stored
+Time: 513.606 ms

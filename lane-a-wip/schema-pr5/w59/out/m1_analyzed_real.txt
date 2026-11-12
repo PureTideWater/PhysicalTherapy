@@ -1,0 +1,35 @@
+5s
+Time: 2.152 ms
+Time: 1.088 ms
+psql:/home/user/PhysicalTherapy/packages/db/migrations/20261115090000_roi_statement_actionable_lines.sql:186: NOTICE:  preflight: 1000000 statements checked in 1000 practices, 0 refused; scan 187536 ms, lock wait 0 ms, closing 158 ms, 0 practices read again
+Time: 187694.857 ms (03:07.695)
+Time: 1.351 ms
+Time: 0.823 ms
+scope after: {}
+lock: pg_authid AccessShareLock x1
+lock: pg_authid_oid_index AccessShareLock x1
+lock: pg_authid_rolname_index AccessShareLock x1
+lock: pg_db_role_setting AccessShareLock x1
+lock: pg_db_role_setting_databaseid_rol_index AccessShareLock x1
+lock: pg_locks AccessShareLock x1
+lock: pg_policy AccessShareLock x1
+lock: pg_policy_oid_index AccessShareLock x1
+lock: pg_policy_polrelid_polname_index AccessShareLock x1
+lock: pg_proc AccessShareLock x1
+lock: pg_proc_oid_index AccessShareLock x1
+lock: pg_proc_proname_args_nsp_index AccessShareLock x1
+lock: pg_roles AccessShareLock x1
+lock: pg_toast.pg_toast_1255_index RowExclusiveLock x1
+lock: pg_toast.pg_toast_1255 RowExclusiveLock x1
+lock: practice AccessShareLock x1
+lock: practice_by_organization AccessShareLock x1
+lock: practice_pkey AccessShareLock x1
+lock: roi_statement AccessShareLock x1
+lock: roi_statement_by_period AccessShareLock x1
+lock: roi_statement_pkey AccessShareLock x1
+lock: roi_statement_quarterly AccessShareLock x1
+lock: roi_statement ShareLock x1
+lock: transactionid ExclusiveLock x1
+bodies in the transaction: roi_links_valid 13c4dd46b9203095, roi_statement_rules ad925199131cb411
+bodies after rollback: roi_links_valid 49416713dd4d13dd, roi_statement_rules 5a8bc6319828acb2
+statements after: 1000000

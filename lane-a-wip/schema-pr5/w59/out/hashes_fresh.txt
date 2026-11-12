@@ -1,0 +1,8 @@
+w59_fresh (pnpm db:migrate on 7b05fd87, PostgreSQL 18.4):
+roi_links_valid 13c4dd46b9203095 config={"search_path=pg_catalog, public, pg_temp"}
+roi_statement_rules ad925199131cb411 config={"search_path=pg_catalog, public, pg_temp",plan_cache_mode=force_custom_plan}
+migrations applied: 53
+w59_base (through 20261114090000):
+roi_links_valid 49416713dd4d13dd config={"search_path=pg_catalog, public, pg_temp"}
+roi_statement_rules 5a8bc6319828acb2 config={"search_path=pg_catalog, public, pg_temp"}
+migrations applied: 52

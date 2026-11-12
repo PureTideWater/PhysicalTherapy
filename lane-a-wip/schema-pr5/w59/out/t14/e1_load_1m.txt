@@ -1,0 +1,1 @@
+loaded: priced_line 3000000, of A 2000000, case_line 2000000; reltuples priced_line=-1/0 case_line=-1/0; analyzed priced_line=never/never case_line=never/never

@@ -1,0 +1,12 @@
+/home/user/PhysicalTherapy/packages/db/src/migrate.ts:253
+  return new MigrationError(`${migration.name} failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+         ^
+
+MigrationError: 20261115090000_roi_statement_actionable_lines.sql failed: every object belongs to tp_owner and none to tp_app or tp_operator, but relation m_p is owned by postgres; type _m_p is owned by postgres; type m_p is owned by postgres
+    at failure (/home/user/PhysicalTherapy/packages/db/src/migrate.ts:253:10)
+    at migrate (/home/user/PhysicalTherapy/packages/db/src/migrate.ts:371:21)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async <anonymous> (/home/user/ops/lane-a-wip/schema-pr5/w59/migrate-base.mts:11:16)
+
+Node.js v24.22.0
+bodies after the runner: roi_links_valid 49416713dd4d13dd {"search_path=pg_catalog, public, pg_temp"}, roi_statement_rules 5a8bc6319828acb2 {"search_path=pg_catalog, public, pg_temp"}

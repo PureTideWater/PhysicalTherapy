@@ -1,0 +1,23 @@
+NOTICE:  database "w59_e1" does not exist, skipping
+NOTICE:  database "w59_e2" does not exist, skipping
+23:37:56 e1 setup
+  exit 0
+23:37:56 e1 S1
+  exit 0
+23:38:52 e1 S2
+  e1_S2_timed exit 0
+  e1_S2_explain exit 0
+23:39:02 e1 grow to 1M
+  e1_S2m_timed exit 0
+  e1_S2m_explain exit 0
+23:42:16 e2 setup
+23:43:04 e2 S3
+  e2_S3_timed exit 0
+  e2_S3_explain exit 0
+23:43:13 e2 grow, stale
+  e2_S3stale_timed exit 0
+  e2_S3stale_explain exit 0
+23:46:28 e2 S3m
+  e2_S3m_timed exit 0
+  e2_S3m_explain exit 0
+23:48:06 done

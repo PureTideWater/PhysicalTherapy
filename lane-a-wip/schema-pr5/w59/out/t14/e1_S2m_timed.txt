@@ -1,0 +1,52 @@
+RUN S2-never-analyzed-1M tag=month run=1
+stored
+Time: 846.239 ms
+RUN S2-never-analyzed-1M tag=month run=2
+stored
+Time: 707.762 ms
+RUN S2-never-analyzed-1M tag=month run=3
+stored
+Time: 705.319 ms
+RUN S2-never-analyzed-1M tag=month run=4
+stored
+Time: 702.165 ms
+RUN S2-never-analyzed-1M tag=month run=5
+stored
+Time: 693.726 ms
+RUN S2-never-analyzed-1M tag=month run=6
+stored
+Time: 729.436 ms
+RUN S2-never-analyzed-1M tag=month run=7
+stored
+Time: 717.252 ms
+RUN S2-never-analyzed-1M tag=month run=8
+stored
+Time: 694.114 ms
+RUN S2-never-analyzed-1M tag=month4 run=1
+stored
+Time: 6.720 ms
+RUN S2-never-analyzed-1M tag=month4 run=2
+stored
+Time: 6.252 ms
+RUN S2-never-analyzed-1M tag=month4 run=3
+stored
+Time: 5.985 ms
+RUN S2-never-analyzed-1M tag=repeat run=1
+Time: 683.205 ms
+RUN S2-never-analyzed-1M tag=repeat run=2
+Time: 635.234 ms
+RUN S2-never-analyzed-1M tag=repeat run=3
+Time: 571.473 ms
+RUN S2-never-analyzed-1M tag=repeat run=4
+Time: 624.717 ms
+RUN S2-never-analyzed-1M tag=repeat run=5
+Time: 729.595 ms
+RUN S2-never-analyzed-1M tag=all run=1
+stored
+Time: 28983.615 ms (00:28.984)
+RUN S2-never-analyzed-1M tag=all run=2
+stored
+Time: 28350.318 ms (00:28.350)
+RUN S2-never-analyzed-1M tag=all run=3
+stored
+Time: 27528.035 ms (00:27.528)

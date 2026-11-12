@@ -1,0 +1,15 @@
+5s
+Time: 2.670 ms
+Time: 0.952 ms
+psql:/home/user/PhysicalTherapy/packages/db/migrations/20261115090000_roi_statement_actionable_lines.sql:186: ERROR:  roi_statement stayed in use for 30 seconds at the preflight's closing count; run the deploy again
+CONTEXT:  PL/pgSQL function inline_code_block line 34 at RAISE
+Time: 219656.991 ms (03:39.657)
+psql:/home/user/PhysicalTherapy/packages/db/migrations/20261115090000_roi_statement_actionable_lines.sql:271: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+Time: 0.192 ms
+psql:/home/user/PhysicalTherapy/packages/db/migrations/20261115090000_roi_statement_actionable_lines.sql:298: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+Time: 0.096 ms
+psql:run_real.sql:9: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:run_real.sql:10: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+psql:run_real.sql:11: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+bodies after rollback: roi_links_valid 49416713dd4d13dd, roi_statement_rules 5a8bc6319828acb2
+statements after: 1000001

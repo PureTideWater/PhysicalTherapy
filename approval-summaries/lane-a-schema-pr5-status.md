@@ -1,6 +1,67 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
-## RESUME-BLOCK (W57, session_019i9ifB2vvAfQen1Y2vmLFZ; 2026-11-13 about 00:30 UTC; build step 3, the readers, is DONE; steps 4 to 6 are the last session's)
+## RESUME-BLOCK (W59, session_019i9ifBdSa9uHkRfdoGSgEW; 2026-11-12 about 23:55 UTC; build step 4, the measurements, is DONE and STOPS on one figure: the writer's cost is over the bound and waits for a ruling; step 5 is PART done; W59 hands over at its context line)
+- **WIP ref:** `co-001/wip-schema-pr5` at `01a56785` (on `7b05fd87`, step 3). `01a56785` changes no code, no test and
+  no migration: the regenerated domain model and two function files, the deploy runbook's section, the grant's record
+  in `reconciliation-001.md`, one data-dictionary row.
+- **THE STOP (a ruling is needed before step 5 can finish).** The writer's query at practice A's month (30,795 lines
+  in 1,200 cases, every line's pricing check `current`, real schema, tenant policies, 200 other practices' rows):
+  before 3.25 to 3.67 s, **as built 6.1 to 6.9 s: +2.86 s analyzed, +3.23 s never analyzed**, past the note's 1 s
+  (4.1) and T14's "the statement step no slower than today by more than 1 s". The note's one-pass form (a derived
+  table behind `OFFSET 0`, as `ACTIONABLE_NOW_OF`; NOT built, timed from a text W59 wrote from the exported
+  fragments) takes 3.29 to 3.68 s, level with before. W59's brief says stop and do not rewrite the writer; W55's and
+  the note's plan was the one-pass form with T5 still comparing against `ACTIONABLE_NOW('c')`. Whoever builds it: T16
+  pins `ACTIONABLE_NOW`'s string, the predicate stays `ACTIONABLE_NOW_LINE` written nowhere else, then the suites and
+  this timing again (`lane-a-wip/schema-pr5/w59/gen_writer_sess.sh` on `w59_wm`, if this machine still stands).
+- **Every figure, with its file:** `lane-a-wip/schema-pr5/w59/README.md` (scripts beside it, output in `out/`). In short:
+  - both bodies on a freshly migrated database are the granted ones (`13c4dd46b9203095`, `ad925199131cb411`) with the
+    header line stored; the generated files equal Appendix A byte for byte and Appendix D2 but for that one line;
+  - the preflight on the REAL file at 1,000,000 statements in 1,000 practices, pages cached: 196.1 s (never
+    analyzed), 187.7 s (analyzed), 184.1 s through the real runner, committed; closing under the lock 0.16 to 2.77 s;
+    a writer open 20 s across the closing: lock wait 16.0 s, 206.1 s in all, the new statement read; a writer open
+    across all 30 tries: refused at 219.7 s, nothing changed; three failing statements in two practices: refused at
+    189.8 s with counts only, nothing changed. **The 5-minute limit is met.** Cold storage not measured;
+  - T14: D2's block at A's month 0.40 to 0.85 s in every planner state (also inside a practice of 1,000,000 priced
+    lines), one plan throughout (`priced_line_pkey`, `case_line_once`); the daily repeat 0.38 to 0.73 s. **The 1 s
+    bound holds.** A statement listing 1,000,000 lines takes 28 to 29 s (beyond T14, recorded).
+- **Step 5, done:** `pnpm db:domain-model --out --strict` on a freshly migrated database wrote exactly the three
+  expected files (the document: head, the statement's trigger invariant, two rows of the function appendix, the
+  migration's row, its hash line; "Approved by" is the generator's blank); `--check` passes;
+  `docs/runbooks/deploy-and-rollback.md` has the migration's section and `packages/db/src/migrate.test.ts` passes
+  (32 of 32); `reconciliation-001.md` "Ledger semantics" has the grant (both dates, the questions as put) and the
+  "Amended" line; the data dictionary's `roi_statement` row names `links`.
+- **Step 5, NOT done (after the ruling, since a writer change reruns the gates):** ADR 0082's dated amendment
+  (Decision 6's correction, Decision 7, the measured figures; the runbook's heading and the reconciliation record
+  already call it "the dated note of 2026-11-13": keep that date or change all three); the test-matrix rows (W59
+  proposes LED-26 the writer and readers, LED-27 the database's rule, LED-28 the migration and its preflight; **the
+  IDs are the orchestrator's to give**, LED-19 to LED-22 being reserved); `pnpm verify-content`; the description's
+  draft (`approval-summaries/lane-a-schema-pr5-description-draft.md`); the gates whole (`pnpm test`, `pnpm test:db`
+  expecting 0 failed now, `pnpm test:golden`, typecheck, lint, lint:logs, verify-content). None was run by W59 on
+  `01a56785` but `migrate.test.ts` and `db:domain-model --check`. `pnpm test:e2e` not run (as before).
+- **Points for the two reviews (W57's below stand, and W42's and W55's in their blocks; W59 did not consolidate the
+  one numbered list, which is the finishing session's; W59 adds):**
+  - money: the writer runs the line predicate twice a line as built (the stop above); if the one-pass form is taken,
+    the figure and the list must still come from one snapshot and one predicate, and T5's independent comparison stays;
+  - database: the runner does not retry the closing lock's refusal (shown: one refusal at 219.7 s, the transaction
+    rolled back); the preflight's ACCESS SHARE and its snapshot are held about 3.2 minutes at this size;
+  - database: the five-key links value of A's month is 1.28 MB stored (TOAST); the trigger reads it several times;
+  - carried: the web rethrows an uncaught 22P02 and what the framework then logs is untested; T10's
+    unmigrated-database case rests on T3.
+- **The orchestrator's notes (carried):** this migration's timestamp 20261115090000 is also the key registry's first
+  migration's on its own branch; PR 5 opens first and keeps its name, the key registry's are renamed after it by the
+  co-founder's typed command in that item's session; one schema PR is open at a time. The description says, under
+  "What the founder should know before approving", that the preflight takes a short SHARE lock (not "only reading
+  locks"): statement writers wait 0.12 to 2.7 s at a million statements (W59 measured 0.16 to 2.77 s, and 16.0 s
+  behind a writer open 20 s) and nothing on an empty table; a writer or a vacuum holding the table past the 30 tries
+  makes the deploy refuse with nothing changed; the limit is met with pages cached and not measured cold; the refusal
+  prints counts only; what is granted and by which record.
+- **Machine note:** after `setup-container.sh` the checkout was left on `claude/build-platform` (fetch and check out
+  the WIP ref again), Node 22 is first on PATH (`PATH=/opt/node24/bin:$PATH`), and PostgreSQL answers on the `/tmp`
+  socket and localhost (`pg_isready` without `-h /tmp` says no response). Suites: `DATABASE_URL` on port 5433 for 18.4.
+- **Holds:** the WIP ref. Scratch databases on this machine only (port 5433): `w59_fresh`, `w59_base`, `w59_m1`
+  (migrated, 2.1 GB), `w59_w`, `w59_wm` (the month, for the writer's timing), `w59_e1`, `w59_e2`.
+
+## Superseded as the top block by W59's above: RESUME-BLOCK (W57, session_019i9ifB2vvAfQen1Y2vmLFZ; 2026-11-13 about 00:30 UTC; build step 3, the readers, is DONE; steps 4 to 6 are the last session's)
 - **WIP ref:** `co-001/wip-schema-pr5` at `7b05fd87` (on `cf1e4a80`, step 2; `9887dd77`, step 1). Step 3 changes four
   files, no migration, no granted text, no arithmetic:
   - `apps/worker/src/reconcile/print.ts`: `STATEMENT_COLUMNS` replaces `s.links` by note 4.2's four-key

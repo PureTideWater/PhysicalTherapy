@@ -1,0 +1,13 @@
+23:06:11 create m1
+NOTICE:  database "w59_m1" does not exist, skipping
+23:06:11 load m1
+  exit 0
+23:10:46 real file, never analyzed
+23:14:02 VACUUM ANALYZE m1
+23:14:09 real file, analyzed
+23:17:17 failing case (3 statements in 2 practices fail Appendix A)
+23:20:27 writer beside the closing (1 row at 185 s, open 20 s)
+23:23:54 writer across the whole closing (1 row at 150 s, open 120 s): the lock cannot be had
+23:28:24 the real runner, committed (migrate() with packages/db/migrations)
+  exit 1
+23:31:26 done

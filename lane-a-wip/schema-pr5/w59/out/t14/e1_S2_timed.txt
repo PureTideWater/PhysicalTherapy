@@ -1,0 +1,43 @@
+RUN S2-never-analyzed-month tag=month run=1
+stored
+Time: 543.893 ms
+RUN S2-never-analyzed-month tag=month run=2
+stored
+Time: 525.401 ms
+RUN S2-never-analyzed-month tag=month run=3
+stored
+Time: 481.394 ms
+RUN S2-never-analyzed-month tag=month run=4
+stored
+Time: 521.055 ms
+RUN S2-never-analyzed-month tag=month run=5
+stored
+Time: 473.474 ms
+RUN S2-never-analyzed-month tag=month run=6
+stored
+Time: 479.218 ms
+RUN S2-never-analyzed-month tag=month run=7
+stored
+Time: 534.450 ms
+RUN S2-never-analyzed-month tag=month run=8
+stored
+Time: 502.747 ms
+RUN S2-never-analyzed-month tag=month4 run=1
+stored
+Time: 6.977 ms
+RUN S2-never-analyzed-month tag=month4 run=2
+stored
+Time: 6.646 ms
+RUN S2-never-analyzed-month tag=month4 run=3
+stored
+Time: 6.100 ms
+RUN S2-never-analyzed-month tag=repeat run=1
+Time: 514.315 ms
+RUN S2-never-analyzed-month tag=repeat run=2
+Time: 470.695 ms
+RUN S2-never-analyzed-month tag=repeat run=3
+Time: 429.242 ms
+RUN S2-never-analyzed-month tag=repeat run=4
+Time: 430.816 ms
+RUN S2-never-analyzed-month tag=repeat run=5
+Time: 426.670 ms

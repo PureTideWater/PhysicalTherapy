@@ -1,0 +1,13 @@
+planted: 3 in 2 practices
+5s
+Time: 1.107 ms
+Time: 0.471 ms
+psql:/home/user/PhysicalTherapy/packages/db/migrations/20261115090000_roi_statement_actionable_lines.sql:186: ERROR:  3 of 1000003 stored ROI statements, in 2 of 1000 practices, fail the new roi_links_valid; nothing is changed
+CONTEXT:  PL/pgSQL function inline_code_block line 66 at RAISE
+Time: 189760.446 ms (03:09.760)
+psql:/home/user/PhysicalTherapy/packages/db/migrations/20261115090000_roi_statement_actionable_lines.sql:271: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+Time: 0.254 ms
+psql:/home/user/PhysicalTherapy/packages/db/migrations/20261115090000_roi_statement_actionable_lines.sql:298: ERROR:  current transaction is aborted, commands ignored until end of transaction block
+Time: 0.157 ms
+bodies after rollback: roi_links_valid 49416713dd4d13dd, roi_statement_rules 5a8bc6319828acb2
+statements after: 1000000

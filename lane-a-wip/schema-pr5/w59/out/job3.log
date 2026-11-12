@@ -1,0 +1,9 @@
+23:31:44 writer, never analyzed
+  exit 0
+23:33:18 ANALYZE
+23:33:24 writer, analyzed
+  exit 0
+23:34:50 the real runner, committed
+  exit 0
+23:37:55 T14
+23:48:06 done

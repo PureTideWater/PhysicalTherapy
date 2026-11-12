@@ -1,0 +1,1 @@
+loaded: priced_line 3000000, of A 2000000, case_line 2000000; reltuples priced_line=1.06159e+06/106159 case_line=1.030795e+06/17773; analyzed priced_line=2026-11-12 23:43:04.839938+00/never case_line=2026-11-12 23:43:04.971103+00/never

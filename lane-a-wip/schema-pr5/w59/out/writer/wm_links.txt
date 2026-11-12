@@ -1,0 +1,3 @@
+NOTICE:  table "m_links" does not exist, skipping
+links: five cases 1200 lines 30795 cents 92385000 bytes 1279906
+links: four cases 1200 lines - cents 92385000 bytes 48079
