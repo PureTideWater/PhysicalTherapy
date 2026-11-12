@@ -2251,3 +2251,127 @@ each recorded") are for Queues item 34 to weigh. The wider reading builds the ca
 charged for it only through `fold`; the charge per identifier (`workOfIdentifiers`) is taken once per check as on the
 base, and the time of a call with thousands of identifiers stays the open residual of the amendment above (Queues
 item 39).
+
+## Amendment (`co-001/redact-item-34`, 2026-11-12): the forms item 26 left in clear (MOD-25)
+
+**What was wrong.** The amendments of 2026-11-11 and 2026-11-12 (`co-001/redact-item-26`) recorded, under "Left, each
+recorded" and in review B's costs, forms of the call's own identifiers that a letter was still sent with: a member ID
+or claim number of digits alone glued to a letter (`Fax X76543210 ext 12`, `76543210B`, `XYZ7654 3210`), one piece of
+a stored number (`ZZ12345` of `ZZ12345 01`), a stored number with another mark than the records write (`ZZ12345.01`
+for `ZZ12345/01`: A-5), a word of a name the records hold with a mark between two words (`Ms. Zephyra` for
+`JANE+ZEPHYRA`), a part of a name split by a comma, a colon, a parenthesis or another mark (`Zephy, ra`: A-4), and a
+line feed before a CR between a label and its number (A-6). The drafter's check of a narrative's facts
+(`holdsNameOrNumber`) read none of them. Queues item 34 closes them before any real PHI. The construction is item
+26's, unchanged: the first reading stands, the wider reading only adds, a wider match is applied only to a letter the
+first reading's check does not refuse, and every reading counts on the letter check's one counter.
+
+**The rules, one for each form.**
+
+- *(c) A piece of a stored number.* In the wider reading each piece of a member ID or claim number set off by a
+  character of the stored value that is no letter and no digit is a number of its kind if it holds a digit and has
+  five characters or more. It takes its number's placeholder (the first in the call's order where two numbers share a
+  piece: claims, then member IDs) and keeps the first reading's exceptions (an amount after a currency sign, a whole
+  written date with no label). A piece is split at an apostrophe letter too (U+02BC, U+02B9, U+02CA).
+- *A-5. Any run of marks where the records write a separator.* Where the stored value holds a separator the wider
+  reading reads a run of marks; it keeps what the records write in the joining class beside it, so it reads all that
+  the amendment of 2026-11-11 read. It joins nothing over a letter, a digit or a placeholder.
+- *(a) A digits-only number glued to a letter is refused.* In the check (`holdsIdentifier`): a member ID or claim
+  number of digits alone, of `WIDER_NUMBER_FLOOR` (5) digits or more, in each of its wider forms (as stored, with A-5's
+  run of marks, each piece of (c), and the digits-only piece of a number that holds letters), with a letter of any
+  script right before or right after the match, refuses the letter. Plain and look-alike folds, every writing; no date
+  or amount exception (`Seen 20261115Paid` for a claim `20261115`, `97110GP` for a patient numbered `97110`). Nothing
+  is replaced: `redactLetter` leaves the text as written for the check to refuse. A label word glued to the number
+  stays the first reading's (`Acct12345` is a placeholder at any length). A call with no stored number that can hold
+  five digits returns before any reading and costs nothing.
+- *(b) A name held with a mark.* In the wider reading a stored name is also split into words at every character that
+  is no letter, no digit and no joiner the records' own split reads (a dash or an apostrophe splits no word). Each
+  piece is a word of the name as if a space were held there, and its initial is taken next to the name.
+- *A-4. Any run of marks inside a part of a name* joins (`GAP.apart`), with no case for each mark.
+- *A-6. A line feed before a CR.* `holdsIdentifier` and `refusedAsFirstRead` read a third time where the text with
+  each CR LF as a line feed still holds a line feed right before a CR, with each line feed and the CRs after it as one
+  line feed. The letter is refused if any reading refuses; the third reading is charged in full.
+- *(d) The drafter's check.* `holdsNameOrNumber` asks its reading of the base first, then numbers as the records hold
+  them with A-5, pieces (c), digits glued (a), and each name whose wider split has more words than the first, by its
+  wider words. A narrative whose facts hold one is refused before any call (`identifier_in_input`). A name written
+  apart is not read there (item 26's ruling: `in a` would fail every narrative of a patient INA). No counter runs in
+  this check. **The packet verifier keeps its narrower reading** (`nameOrNumberMatches` and `packages/packets/src` are
+  not touched): the check now holds wherever the matcher finds, and more, so the two are no longer one reading.
+
+**The floor is 5, one constant, for (a) and (c).** On the gate's own patients every floor from 2 to 6 newly refuses 0
+letters, so the gate cannot set it; it was set by what a number of L digits would meet in the gate's real-shaped
+letters (T3, 51,510). At 5, 0.15% of five-digit numbers are a value some such letter glues to a letter, and a patient
+numbered `97110` has every letter that writes `97110GP` refused (a refusal goes to a person; nothing leaks). At 4 a
+code is glued to a letter by its own format (`G0283`) and a year stands against a word: about one such patient in 70
+would have ordinary letters refused. At 6 the cost is a tenth of 5's and `Account12345` is sent: the safer side for
+privacy is 5 (the reader itself expects a five-digit patient control number). Not measured: a diagnosis code written
+without its point.
+
+**Open: W51's finding, a fix owed before this merges.** Stage 6's generated set (below) found two forms where rule (a)
+does not refuse and digits of the number are sent. Neither is a residual: the ruling of 2026-11-12 is that (a) is to
+be read on the letter as written, before any replacement, and the letter refused whatever placeholder took a part of
+the number. The fix is not in this tree yet.
+
+- A digits-only number held with a separator, one piece of five or more and one under five, written whole with a
+  letter glued on the short piece's side: (c) replaces the long piece, and the check, which reads the text after
+  replacement, no longer finds the number. Held `21318-5`, `Fax 21318-5B ext` is sent as `Fax [MEMBER_ID]-5B ext`;
+  held `1/852830`, `Fax X1/852830 ext` as `Fax X1/[MEMBER_ID] ext`; held `97537335/1821`, `[MEMBER_ID]/1821B`. One
+  to four digits are sent (the base sent the whole number). 130 of the set's 768 letters of this form.
+- A number of ten to twelve digits glued to a letter, with a joiner or a stored separator inside it: the Social
+  Security or phone reading takes nine or ten of its digits and one to three are sent (`Fax X8-852780545 ext` for a
+  member ID `8852780545` is `Fax X8-[SSN] ext`). The base writes the same text: 108 letters of the set.
+
+**What it costs, each pinned by a test; every one is a placeholder or a refusal, never a leak.**
+
+- (a): a patient whose number is a code's digits has letters that glue that code to a letter refused (`97110GP`). A
+  digits-only piece of a number that holds letters is read too (`XQ7654321` for `ZZ 7654321` is refused).
+- (c) and A-5: a piece that is a compact date replaces that date written compact; for a claim held `1234/56`,
+  `1234.56` is replaced, and `$1234.56` too (the amount exception asks for cents after the number).
+- (b) and A-4: for a patient HO, NA, LE or WO, `h/o`, `N/A`, `L/E`, `w/o` are replaced; `New, man. Under/wood.` for
+  NEWMAN UNDERWOOD; `Medicare` for a name held `ZEPHYRA*MEDICARE`. Over 539 prose texts and 64 names, one new
+  placeholder. In the gate, two letters differ, both A-4's (a fuzz letter `K.<emoji> RE` for KRE, and `member jun;e`
+  for MEMBER JUNE, where one span takes the claim's placeholder and covers one space more).
+- (d), each a narrative refused before its call: digits glued to a letter have no exception, so a case number
+  `20260305` refuses facts that hold `2026-03-05T00:00:00Z` and a number `97110` facts that hold `97110GP`; `12345`
+  alone is refused for a number held `ZZ 12345`; a name held `IN+A` or `VAN+TREE` refuses "in" and "van";
+  `ZEPHYRA*MEDICARE` refuses "Medicare".
+- Work, on the one counter, whose budget (`CHECK_WORK_BUDGET`, 420 million units) and weights are not changed and no
+  test's threshold or allowance moved: a crafted letter of dates with spaces and ten seven-digit claim numbers is
+  refused (420.78M; the base sent it at 418.78M; with nine it is sent); a marked name with a gap and initials is sent
+  at 62,008 characters (351.6M) and refused from 82,008; a letter with both line endings is read three times and
+  refused at 57,972 characters. The two rows nearest the budget are to the unit what they were on the base:
+  403,548,210 and 414,023,090, both sent.
+
+**Left in clear, each a recorded residual, plainly.**
+
+- A member ID or claim number of two to four digits alone glued to a letter that is no label word (`Account1234`,
+  `Fax X1234 ext`, `G0283` for a number `0283`): sent.
+- A digit right beside the number (`976543210`, `0076543210`, `7654321001`, `765432109B` for `76543210`): another,
+  longer number, as the amendment of 2026-10-27 left it: sent.
+- A piece under five characters (`01`, `1234`) or of letters alone (`ZZ`): sent.
+- A name the records glue to a digit or to another word (`ZEPHYRA2`, `JANEZEPHYRA`): one word, no split can be
+  known: `Ms. Zephyra` is sent.
+- `$300.00USD` for a number `30000`: the period stands between, so the glued rule does not read it (the base's reading).
+- The packet verifier's narrower reading: a packet narrative that holds one of (d)'s forms is refused by the drafter's
+  check before the call, and the verifier, reading text that is not the drafter's, does not flag it.
+- (d) runs with no work counter: a narrative's facts are code's own and short, and nothing bounds them there.
+- **Owed before any real PHI: the count of stored member IDs and claim numbers by length** (how many are digits
+  alone, and of 2, 3 and 4 digits), from the first practice's records, to show what the floor of 5 leaves. The gate's
+  digits-only numbers are 6 to 10 digits but one of 4, so it cannot say.
+
+**Tests.** `redact.leaks.test.ts`, `describe('MOD-25 ...')`, each written first and failing on a97d73e4: every form
+above with its rows as sent on the base, the floor's edges, each residual pinned as sent, each cost pinned, and a
+property for each form (what the first reading refuses or replaces, this reading does). `denial-letter.test.ts`: the
+crafted rows on the budget. `packages/redact/src/narrative.test.ts` and `functions/narrative.test.ts`: (d).
+`packages/packets/src/verifier-identifiers.test.ts`: the differential's oracle is the matcher asked plainly, and the
+check holds wherever the matcher does; the verifier's own rows did not change.
+
+**The gate, the generated set and the battery (stage 6, on 83d7bf7d against a97d73e4).** The gate, letter for letter
+with no cache: 975,489 letters, 2 differ (the two of A-4 above), 462,984 refused by both, nothing the base redacts or
+refuses sent, no real-shaped letter newly refused; the slowest letter 1,177 ms (the base 1,290 ms) of the 3,000 ms.
+The gate holds none of this item's forms, so a generated set of 13,780 synthetic letters ran through the gate's own
+worker (`designs/lane-b-redact-item-34/scripts/generated.sh` on `claude/build-ops`): nothing the base hides or refuses
+is shown; (a) refuses the glued number at 5 to 12 digits on each side, with another script's digits and by piece
+(where the first reading had not already replaced it); (c), A-5, (b) and A-4 replace the value in every letter of
+their forms, or the letter is refused; A-6 refuses 1,200 of 1,200; every residual above is sent as pinned, as the base
+sends it; and its 238 failures are the two open forms above, with a joiner, a CR LF or a stored separator inside the
+number.

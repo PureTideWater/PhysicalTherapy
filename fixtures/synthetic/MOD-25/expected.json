@@ -1,0 +1,24 @@
+{
+  "case": "MOD-25",
+  "module": "MOD",
+  "title": "A payer letter that writes one of the call's member IDs or claim numbers of digits alone, of five digits or more, glued to a letter (`Fax X76543210 ext`, `76543210B`, `XYZ7654 3210`; with a joiner, a CR LF or another script's digits inside it, as the records hold it with a separator, or one piece of it); one piece of a stored number standing whole (`ZZ12345` of `ZZ12345 01`, `12345` of `12345 01`); a stored number with another run of marks where the records write a separator (`ZZ12345.01`, `,01`, `+01`, `#01` for `ZZ12345/01`); a word of a name the records hold with a mark between two words (`Ms. Zephyra` or `JANE` for `JANE+ZEPHYRA`, `ZEPHYRA(JANE)`); a part of the name with a run of marks inside it (`Zephy, ra`, `Zephy(ra`, `Zephy/ra`); a Social Security or phone number the same letter written with LF is refused for, written with a line feed before a CR; and a packet narrative's facts that hold a case's number or marked name in one of those forms",
+  "assertion": "The glued number refuses the letter with `identifier_left`, beside a letter of any script, on either side, with no date or amount exception (`97110GP` for a patient numbered `97110`; a property over 5 to 12 digits, joiners and frames). A piece of five characters or more that holds a digit, a stored number written with any run of marks where the records write a separator, each word of a name held with a mark and a part written with marks inside it are the call's own placeholder (a property each: what the first reading refuses or replaces, this reading does), with the first reading's exceptions kept (an amount after a currency sign, a whole written date with no label). A letter with a line feed before a CR is refused wherever its writing with line feeds is (a property), and sent as written where it holds no identifier. The drafter's check (`holdsNameOrNumber`) holds wherever the verifier's matcher (`nameOrNumberMatches`) finds and reads these forms too, so `prepare` refuses such facts with `identifier_in_input` before any call; the packet verifier keeps its narrower reading, and a name written apart is no name in either (`in a`). Pinned as left, the recorded residuals of docs/adr/0054: a number of two to four digits glued to a letter that is no label word (`Account1234`, `G0283`), a digit right beside the number (`976543210`, `7654321001`), a piece under five characters or of letters alone (`01`, `ZZ`), a name the records glue to a digit or to another word (`ZEPHYRA2`, `JANEZEPHYRA`). Pinned as cost, each a placeholder or a refusal: `h/o`, `N/A`, `L/E` and `w/o` for a patient HO, NA, LE or WO, `New, man. Under/wood.` for NEWMAN UNDERWOOD, `Medicare` for a name held `ZEPHYRA*MEDICARE`, `1234.56` for a claim held `1234/56`. Every reading counts on the letter check's one counter (MOD-24), whose budget and weights are not changed: a crafted letter of dates and ten seven-digit claim numbers, one of a marked name with initials past the budget and one read a third time for its line endings are refused by the count, never sent. Open, recorded in docs/adr/0054 and owed a fix before any real PHI, with no test yet: a number held with a separator whose piece of five or more is replaced while the piece under five beside it is sent glued to a letter (`[MEMBER_ID]-5B` for `21318-5B`), and a number of ten to twelve digits glued to a letter of which `[SSN]` or `[PHONE]` takes nine or ten digits and one to three are sent",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/model-gateway/src/redact.leaks.test.ts",
+    "packages/model-gateway/src/redact.property.test.ts",
+    "packages/model-gateway/src/functions/denial-letter.test.ts",
+    "packages/model-gateway/src/functions/narrative.test.ts",
+    "packages/redact/src/narrative.test.ts",
+    "packages/packets/src/verifier-identifiers.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Letters and narrative facts are written in memory by the tests, a property for each form among them; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
