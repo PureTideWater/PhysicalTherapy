@@ -37,6 +37,15 @@
     D4) asserts that the previous image's insert is not locked, and fails. The draft follows 16.3 (without the lock a
     previous-image insert in a transaction open across a request and its confirmation is never swept). Step B changes
     that one assertion to the new truth and ADR 0095 amends 0093 D4, unless the orchestrator rules otherwise.
+    **Ruled by the orchestrator, 2026-11-12 06:55 UTC: follow 16.3, on four conditions.** (1) Change only the "nor
+    locks" half of that test; "neither checks" (no reset comparison for a row with no start) stays as it is, and a new
+    assertion pins what is locked, in which mode (the weakest that serialises against a removal: say why FOR UPDATE
+    is or is not needed; the draft takes FOR NO KEY UPDATE, the mode every other taker of the row uses), and that it
+    is released at the transaction's end. (2) ADR 0095 amends D4 in a dated section: what D4 protected and why that
+    still holds. (3) Step C measures parallel session inserts for one account (the wait added) and shows no deadlock
+    with End membership or a confirmation, the lock order stated in the note and the ADR; a wait or an order that
+    breaks the note's bound is a blocker. (4) **A named point for the build's auth review**, and a line in "What the
+    founder should know" (ADR 0093 was approved with #142).
   - `packages/db/domain-model/areas.json`: the four tables need an area. `MAIL_KINDS` and `MAIL_STREAM_KINDS`
     (`packages/db/src/schema/operations.ts`) need `hardware_keys_removed` after `password_changed`
     (`packages/db/src/mail.db.test.ts`).
