@@ -4,7 +4,8 @@ W31 (Lane A), 2026-11-12. `LANES.md` Queues item 37, **required before launch**;
 Base read: `claude/build-platform` 93e137f9. Sources: W22's design (`designs/lane-b-operator-removes-keys.md`, Part A
 and section 2b), ADR 0091, 0093 and 0094, migrations 20261111090000 and 20261112090000, `apps/web/src/lib/auth`,
 `apps/web/src/lib/routes/console.ts` and `settings.ts`, `apps/worker/src/platform/password-notices.ts`.
-**Status: v2, after its two reviews and one fix round (section 15).** Nothing is built. A fresh session builds from this file alone.
+**Status: v3 (W32, 2026-11-12): v2 plus the orchestrator's rulings on Q1 and Q3 and the one review of v2's fix round
+(section 16). Section 16 rules wherever it differs from sections 2 to 14.** A fresh session builds from this file alone.
 
 Numbers allocated by the orchestrator on 2026-11-12 (on `LANES.md`'s counters line): **ADR 0095**; test-matrix
 **SGN-20 to SGN-27**, **SEC-25 to SEC-27**, **JOB-06 to JOB-08**.
@@ -208,8 +209,8 @@ definer, granted to no role: only the definer functions here call it, as their o
   `organization.manage` (`roles_permit`);
 - if the founder says yes to Q1: that membership's `created_at` is more than seven days old **and** no
   `role_escalation` security event for that membership is younger than seven days. The second half is needed
-  because a role is changed in place (`settings.ts`, `UPDATE membership SET role`; the application role holds UPDATE on
-  `role`), so `created_at` alone does not measure time in the role; `membership_security_events` writes that event on
+  because a role can be changed in place at the database (the application role holds UPDATE on `membership.role`;
+  no route sets an internal role today: `settings.ts`'s list has none), so `created_at` alone does not measure time in the role; `membership_security_events` writes that event on
   every insert of, or change to, an administrator's role.
 
 The actor must also have **signed in with a hardware key in the last 15 minutes** (`actor_signed_in_with_key_lately()`:
@@ -353,7 +354,8 @@ practice). The functions check everything again; the table's constraints hold wh
 
 1. `account_removes_keys(app_actor_id())` and `actor_signed_in_with_key_lately()`, or `insufficient_privilege`.
 2. `target_user <> app_actor_id()`, or `check_violation` (`hardware_key_removal_not_own_account`).
-3. Lock the target's account row (not found: `no_data_found`, answered as not found).
+3. Lock the target's account row (not found: `no_data_found`, answered as not found). Then read `clock_timestamp()`
+   once into `at`: `requested_at = at`, `expires_at = at + interval '24 hours'` (the CHECK compares the two).
 4. A request of this account already past 24 hours is marked `expired` here (with its audit row), so step 5 is exact.
 5. Insert, `state = 'requested'`. A second open request for the account fails on `hardware_key_removal_open_once`.
 6. Audit `hardware_key_removal_requested`. Nothing else changes: no key, no session, no notice.
@@ -377,8 +379,8 @@ practice). The functions check everything again; the table's constraints hold wh
    membership's order; a membership ended in the same instant is caught by the next confirmation attempt or not
    needed.
 6. Then, all in this transaction:
-   - `UPDATE hardware_key SET removed_at = clock_timestamp(), removal_id = ...` for every live key of the account;
-   - the mark: `sign_in_not_before = GREATEST(sign_in_not_before, clock_timestamp())`;
+   - `UPDATE hardware_key SET removed_at = at, removal_id = ...` for every live key of the account;
+   - the mark: `sign_in_not_before = GREATEST(sign_in_not_before, at)`;
    - every open session of the account ended (`revoked`);
    - where ADR 0093 D6's hold stands (an `account_locked_key_across_reset` with no later `key_across_reset_cleared`),
      the `key_across_reset_cleared` security event, so `unlock_user` then works; the account is **not** unlocked here;
@@ -829,3 +831,160 @@ Not taken, with the reason: none of the findings was refused. Two of the databas
 build as checks: whether `assert_organization_keeps_administrator` takes a lock at commit, and whether the runner's
 statement timeout is longer than file 2's scan of `mail_send`.
 
+
+## 16. v3: the rulings and the review of the fix round (2026-11-12, W32). This section rules.
+
+Rulings (the orchestrator, 06:20 UTC, under the co-founder's standing instruction; the co-founder may overrule):
+**Q1 yes** (seven days, built as section 4 says). **Q3 yes** (16.2). Q2 is the founder's and blocks no code: the rule
+holds with any two eligible administrators who are not the account.
+
+Report: `reviews/lane-a-key-registry-review-delta1.md` (R1 to R11; it ran no SQL). Each finding was checked against
+the note's text and the base (`sign-in.ts` 445 to 451 and 665 to 748; `tenancy.sql` 343 to 358 and 597 to 604;
+`settings.ts` 1052; `console.ts` 771 to 790). All are taken except where "queue" is written. No second round.
+
+### 16.1 One live key an account (R1)
+
+- `hardware_key_record` refuses, under the account's lock, when the account already holds a live key
+  (`hardware_key_one_live`), and the table holds it too: unique index `hardware_key_one_live ON (user_id) WHERE
+  removed_at IS NULL` (it replaces the plain partial index `hardware_key_live`). The ten-key ceiling goes. The base
+  already offers registration only to an account with no key; a second (backup) key registered from inside a session
+  is a later feature with its own function (queue).
+- SGN-27: "the second registration is refused and the credential removed at the provider with the grant".
+
+### 16.2 Registration after a removal: closed until opened, and opened with a one-time code (Q3 yes; R2, R3)
+
+**Closed is derived, never stored.** An account's registration is *closed* when its latest `confirmed` removal has no
+`hardware_key` row of the account with `registered_at > decided_at`. An account with no confirmed removal is not
+closed (the deploy, a first enrolment). A removal confirmed with zero keys closes too.
+
+**Columns on `hardware_key_removal`** (all null until opened; set once, together, only on a `confirmed` row):
+`registration_opened_by uuid REFERENCES "user"`, `registration_opened_at timestamptz`, `registration_open_until
+timestamptz`, `registration_code_sha256 bytea` (32 bytes), `registration_code_tries smallint NOT NULL DEFAULT 0` (0 to
+5), `registration_opened_request_id text`. Constraints: `hardware_key_removal_opening` (the four are null together;
+set only when `state = 'confirmed'`; `registration_open_until = registration_opened_at + interval '1 hour'`;
+`registration_opened_at >= decided_at`) and `hardware_key_removal_opener_not_account` (`registration_opened_by <>
+user_id`). `hardware_key_removal_is_final` lets a confirmed row change only these columns: the opening set (also
+again, a later opening replacing an earlier one whose hour has passed or whose tries are spent, tries back to 0) and
+the tries counted up.
+
+**The opening is *usable*** when: the row is the account's latest confirmed removal; the account is closed;
+`registration_open_until > now`; `registration_opened_at > "user".sign_in_not_before` (so every mover of the mark, a
+later confirmation, End membership and a reset, closes it with no second statement; the confirmation writes `at` to
+the mark and to `decided_at`, so an opening is always after its own removal's mark); `registration_code_tries < 5`.
+It is consumed by the first successful `hardware_key_record` (the account is then no longer closed).
+
+**`hardware_key_registration_open(removal uuid, acting_session uuid, code_sha256 bytea, request text) RETURNS
+timestamptz`** (definer, `tp_app`): the actor passes `account_removes_keys` and 16.5's session rule; is not the
+account (`hardware_key_removal_not_own_account`); the account's row locked first, then the removal row; the removal
+is the account's latest confirmed one and the account is closed (`hardware_key_registration_not_closed` otherwise);
+no usable opening stands (`hardware_key_registration_open_once`); one clock reading; writes the columns, the reserved
+audit action `hardware_key_registration_opened` (actor the opener, object the account) and one `hardware_key_notice`
+row of a third kind, `registration_opened` (`hardware_key_notice_once` stays on `(removal_id, kind)`; a second
+opening of the same removal writes the audit row and no second notice). Returns `registration_open_until`.
+**One opener, by decision:** the opener already passes the seven days and the fresh key session, the code goes to
+the member by voice, and a second person here would be the third and fourth contact for one lost key.
+
+**The code.** The web makes it (8 characters of a 32-symbol alphabet without look-alikes, 40 bits, `crypto`'s
+random), shows it once to the opener, and passes only its SHA-256; the opener reads it to the member on a channel
+PaidWhole already holds (the runbook; never one given in the request). It appears in no log, URL, audit row or job
+payload, and in the database only as the digest.
+
+**`hardware_key_registration_judge(code_sha256 bytea, began timestamptz, request text) RETURNS text`** (definer,
+`tp_app`; acts for `app_actor_id()` only; locks the account): `not_closed` (registration needs no code), `open` (a
+usable opening and the digest matches, compared with no early exit on bytea equality), else `refused`. A wrong digest
+against a usable opening counts one try (the fifth spends the opening); every `refused` records the security event
+`key_registration_refused` at most once an account and an hour. It returns, never raises, so the count commits. The
+flow calls it before `beginKeyRegistration` and before `completeKeyRegistration` asks the provider, so the provider
+registers nothing for a closed account and ADR 0093 D6's lock is not reached by one.
+**`hardware_key_record` gains a fifth argument `code_sha256 bytea`** and judges the same under the lock: closed and
+not `open` is `check_violation`, `hardware_key_registration_closed`.
+
+**The screen.** A password-and-code sign-in of an account that must hold a key and has no live key reaches the
+`register_key` step as today; when the account is closed the step first asks for "the code PaidWhole gave you", the
+same screen whether or not an opening stands, answered alike for no opening and a wrong code. So there is nothing to
+poll, and a password and a code alone register no key (A1 closed, not narrowed). The pending step carries the code's
+digest only after `judge` answered `open`.
+
+**Section 4.1's "first after removal"** stays: the registration that consumes an opening writes
+`key_registered_after_removal` and the `registered_after_removal` notice.
+
+### 16.3 The session of a closed account is refused in Postgres (R4)
+
+`user_session_hardware_key` fires on **every** insert (no WHEN clause), takes the account's row, and:
+`mfa_method = 'webauthn'`: as section 4.3. Any other method: refused (`user_session_key_registration_closed`) when the
+account is closed in 16.2's sense, whatever `hardware_key_required` says (one platform administrator can change that
+column at the database). An account never removed is not touched by this branch. The lock is the one
+`user_session_sign_in_not_before` takes for the same row; the previous image's code session for a closed account is
+refused too, which is the same answer its flow gives today (a key is required). Section 14's item leaves the queue for
+this case only; the general "must hold a key" rule in Postgres stays there.
+
+### 16.4 The target of an open request changes no internal membership (R8)
+
+Section 6 step 5's exception goes: a requester who no longer passes `account_removes_keys` voids the request, with no
+exception. In its place a second trigger on `membership`, `membership_removal_target_holds` (BEFORE UPDATE, definer):
+when `app_actor_id()` is the account of a `requested` removal and the membership is of an `internal` organization, any
+change is refused (`check_violation`, `hardware_key_removal_target_acts`). So the target can neither end nor demote
+the requester or any other administrator while a request stands. SGN-24's case becomes "the target of an open request
+cannot end or change an internal membership; once the request is decided it can". Queue: a thief who ends the other
+administrators before any request exists (a second person for End membership in the internal organization).
+
+### 16.5 The acting session, not any session of the account (R9)
+
+`actor_signed_in_with_key_lately()` becomes `actor_key_session(acting_session uuid)`: the session is the actor's,
+live (`ended_at IS NULL`, unexpired), `mfa_method = 'webauthn'`, `started_at` within 15 minutes,
+`key_credential_sha256` not null and the digest of a **live** `hardware_key` of the actor; and when the actor has a
+confirmed removal, that key's `registered_at` is more than 24 hours old. The four functions that use it
+(`hardware_key_removal_request`, `_confirm`, `_cancel`, `hardware_key_registration_open`) take `acting_session` as an
+argument, which the route fills from the request's resolved session; the application role is trusted for it exactly as
+for the actor. The wrapper is not touched and no setting is added. SGN-23 gains: a no-digest key session, another live
+session of the same account while the fresh one is elsewhere, and a key registered an hour ago after a removal are
+each refused. Consequence for the deploy, said in the runbook: no removal is possible until both administrators have
+re-registered and signed in with the registered key. Queue (R11's second point): the seven days measure the
+membership row, not the person's hold on the account.
+
+### 16.6 The outbox (R5, R6, R7)
+
+- **Claim:** also sets `next_attempt_at = leased_until` (a row that never answers goes to the back of the order).
+- **Late:** `attempts >= 5`, or `attempts >= 4` with no running lease. A row whose worker dies on every try is paged
+  `LATE` at its fifth claim (about 8 to 12 minutes) whatever the order of the run's steps, and `GAVE_UP` after its
+  thirtieth lease lapses (60 to 90 minutes). Section 7's "about 8 minutes" and "about an hour" read so.
+- **Given up:** `attempts >= 30` with no running lease, or `queued_at` 24 hours old **and** `attempts >= 4` with no
+  running lease. A row never tried is never given up: after a long outage it is claimed.
+- **The sweep returns one row for each unacknowledged code** (a row may owe both lines). Each of
+  `provider_sign_out_undelivered` and `provider_signed_out` is written from the `RETURNING` of the UPDATE that set
+  its mark, which is what makes each exactly once under overlapping runs. `done` after given up leaves both audit
+  rows; the runbook says the later one supersedes.
+- **`failed`** also requires `gave_up_at IS NULL`. **Expiry** also deletes a given-up row 90 days after
+  `gave_up_reported_at`.
+- JOB-07 gains: `LATE` before the sixth claim with the sweep running second; a row queued 25 hours ago with no try is
+  claimed, not given up.
+- Queue: an operator function that tries a given-up row again (until then the one resend left is the founder's, as
+  section 11 says).
+
+### 16.7 Reserved actions, audit rows, notices, tests (what the above adds)
+
+- Section 4.4's list gains `hardware_key_registration_opened`. Security-event purposes gain
+  `key_registration_refused`. `hardware_key_notice.kind` gains `registration_opened` (words: PaidWhole has opened
+  registration of a new hardware key on this account for one hour, at a time; write to support at once if you did not
+  ask for this).
+- Signatures changed by this section: `hardware_key_record(new_credential, new_public_key, code_sha256, began,
+  request)`; `hardware_key_removal_request(target_user, acting_session, request)`;
+  `hardware_key_removal_confirm(removal, acting_session, request)`; `hardware_key_removal_cancel(removal,
+  acting_session, request)`. `hardware_key_removals()` also returns `registration_open_until` and whether the account
+  is closed. A fourth console route, `console.open_key_registration`, as the other three.
+- Tests: SGN-27 also: closed with no opening refused; opened and the right code registers and consumes; a wrong code
+  counts and the fifth spends; an opening before a later confirmation, End membership or reset is dead; the account
+  cannot open its own; opening an account that is not closed refused; the provider twin is not asked while closed.
+  SGN-20 also: a code session for a closed account is refused by name, and for an account never removed is not.
+
+| Finding | Checked | Taken as |
+| --- | --- | --- |
+| **R1, blocking:** a second key beside the first is silent | True of 4.1's text and `sign-in.ts` 665 to 679 | 16.1 |
+| **R2, blocking for "yes":** six rules missing from the opening | True: section 12 gave one sentence | 16.2 |
+| R3: the holder of password and code polls for the opening | True of any opening without a secret | 16.2's one-time code (the stronger of the two fixes) |
+| R4: one administrator can lower `hardware_key_required` at the database | Confirmed (`user_guarded_columns`; the UPDATE grant) | 16.3 |
+| R5, R6, R7: late by luck; untried rows given up; four small gaps | Arithmetic on section 7, to be proved by JOB-07 | 16.6; the retry function to the queue |
+| R8: the exception keeps the request, not a confirmer | Confirmed (`console.ts` refuses no one) | 16.4 |
+| R9: any session of the account; no-digest; a minute-old key | True of section 4's text | 16.5 |
+| R10: two clock contradictions | True | Fixed in section 6's text |
+| R11: no route sets an internal role | Confirmed (`settings.ts` 1052) | Section 4's sentence corrected |
