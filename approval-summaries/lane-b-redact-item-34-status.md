@@ -4,7 +4,88 @@ Design of record: `designs/lane-b-redact-item-34/design.md` (ops 163894a9). Ruli
 one constant; (d) the verifier keeps its reading; A-4's costs accepted; a digit beside the number stays recorded.
 WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. No PR is open.
 
-## RESUME-BLOCK (W51, 2026-11-12, after stage 6 and stage 7's records; ONE FIX IS OWED, then the two reviews and the PR)
+## RESUME-BLOCK (W54, 2026-11-12, after the fix of rule (a); THE ITEM IS WHOLE BUT FOR THE TWO REVIEWS AND THE PR)
+
+- **WIP head: 846968af** on `co-001/wip-redact-item-34`, pushed through the hook; the tree is clean. No PR is open.
+  W54's commits on 20af8fb3: 04e2932b (the fix and its tests), 229da4cc (a whole number under one first-reading
+  placeholder is hidden), c902443e (records), 6e4849f3 (the mark only where a placeholder is written), 846968af
+  (records). Product code as of 6e4849f3; every measure below is of that code.
+- **The fix, built as ruled (2026-11-12 20:15 UTC), both cases.** Rule (a) is read on the letter as written, before
+  any placeholder: `gluedBeforeRedaction` in `packages/redact/src/redact.ts`, called in `screenAsBothRead` and in
+  `redactionSpans` right after the wider reading, with `digitsGluedToLetter` given a `hidden` test and asked for every
+  place, in each writing of the line endings (`lineEndingsAsOne` maps a place back to the letter). Where a digits-only
+  number of 5 or more stands whole and glued to a letter and is not wholly under ONE span of the first reading, the
+  entry returns the first reading's text with the mark the check refuses (`refusedByMarkAfter`, the renamed
+  `unreadPastTheBudgetAfter`). Asked only where some placeholder is written: with none the check reads the same text.
+  The check (`holdsIdentifier`) is not changed.
+- **Files changed by W54:** `packages/redact/src/redact.ts`; `packages/model-gateway/src/redact.leaks.test.ts` (the
+  MOD-25 block, under "read on the raw letter", and one property beside it); `docs/adr/0054-...md` (the amendment's
+  paragraph "Rule (a) is read on the letter as written", which was "Open: W51's finding"); `docs/product/test-matrix.md`
+  and `packages/synth/src/cases/matrix.ts` (MOD-25's last sentence); `fixtures/synthetic/MOD-25/expected.json`.
+- **Tests first:** 30 new tests failed on 20af8fb3 (28 on an assertion of a row, the property, the CR LF row); the row
+  of what must not turn passed. Case 1 rows: each example, its mirror, the separators space, period, underscore and
+  slash, a joiner and a run of marks at the stored separator, a line ending after the letter, a label word before,
+  the long piece held as a number of its own. Case 2 rows: 10, 11 and 12 digits, a joiner, a space, a stored
+  separator. Not turned and pinned: the number not glued (replaced, sent), the whole number under one placeholder
+  (`Acct21318-5`, `Fax X8852780545 ext`, `Fax X900123456 ext` for `ZZ 900123456`), a glued piece under five, a number
+  under the floor in all, a digit beside.
+- **Measured on 6e4849f3 against a97d73e4** (`designs/lane-b-redact-item-34/measure/`):
+  - The two rows nearest the budget (`units-fix-6e4849f3.out`): 403,548,210 and 414,023,090, both sent, unchanged;
+    the budget and every weight untouched. (A first draft asked the look-alike question again for each writing of the
+    line endings and moved the second row to 418,370,840, still sent; the answer is now taken once. Never pushed.)
+  - The generated set (`generated-set-6e4849f3.summary.json`; notes identical to stage 6's): failures 0 of 13,780
+    (238 before), PHI classes none, refused A 1,680, B 5,213 (4,975 before: the 238 and no other: a.joiner 57, a.crlf
+    16, a.stored-separator 165). Every other form's counts as W51 recorded them. Against the base the 108 letters of
+    case 2 are class KEEP.refused.letter-with-identifiers (the base sends them with 1 to 3 digits in clear).
+  - The gate, full, `--no-cache` (`gate-fix-6e4849f3.report.md`): 975,489 letters, PHI none, unplaced none, refused
+    462,984 and 462,984, differ 2 (KEEP.changed.text 1, i 187859; the other in no class, as stage 6: W54 did not run
+    the two trees directly on i 187754 again), 0 letters newly refused, timing max A 944 ms, B 957 ms.
+  - Case 2 is in the fix: it newly refuses no letter of the gate and moves no budget row.
+- **Green on 6e4849f3** (846968af differs by the ADR only; `pnpm verify-content` passes on it): `pnpm typecheck` 24
+  projects; `pnpm lint` 1,943 files, 0 errors, 0 warnings; `pnpm lint:logs` 1,202 files; `packages/redact` 2 files, 54
+  tests; `packages/packets` 46 files, 1,825; `packages/synth` 14 files, 192; `packages/model-gateway` 32 files, 5,399
+  tests passed, 34 skipped. **Not run here:** `gateway.db.test.ts` and `patient-records.db.test.ts` (no DATABASE_URL
+  in this container), `pnpm test:db`, golden, e2e, and the battery (not run again on the fix).
+- **What the last session does:** two adversarial reviews on PHI and redaction, each finding verified before it is
+  recorded, at most two fix rounds; the base merged; the full local suite once; the PR from
+  `.github/pull_request_template.md`; the merge on green required checks.
+- **Every named point for the two reviews, in one list:**
+  1. (W39, stage 1) A-5 keeps what the records write in the joining class beside the run of marks: a superset of MOD-23's form.
+  2. (W39) A piece is split at an APOSTROPHE_LETTER too (U+02BC, U+02B9, U+02CA).
+  3. (W39) Two numbers that share a piece: the first in the call's order gives the placeholder (claims, then member IDs).
+  4. (W39) A cost the note's A-5 cell does not state: a claim held `1234/56` replaces `$1234.56` too (`isAmount` asks for cents after the number). A placeholder, never a leak.
+  5. (W39, stage 2) The prototype's rule (a) did not cost 0 for a call with no digits-only number (`alikeReads` charges `WORK.fold` per character outside ASCII); the build returns before any reading where no stored number can hold five digits and takes the wider reading's look-alike answer (`alikeOfWider`): 0 units.
+  6. (W39) A digits-only piece of a number that holds letters (`7654321` of `ZZ 7654321`) is read by (a) too: `XQ7654321` is refused. The safer side; the co-founder may rule otherwise.
+  7. (W39) The crafted letter (dates with spaces 100k, `SYN555001` and ten 7-digit claim numbers): 418.78M sent on the base, 420.78M refused on the head; with nine 419.73M sent.
+  8. (W48, stage 3) (b) splits at every non-letter, non-digit character that is no part joiner (a combining mark NFKC leaves too); the wider words' initials are taken next to a name; held `ZEPHYRA+JANE+Q` written `Zephyra, Jane` gives two placeholders.
+  9. (W48) `GAP.apart` is a getter returning `runOfMarks()` (declaration order).
+  10. (W48) Accepted costs pinned: `h/o`, `N/A`, `L/E`, `w/o` for a patient HO, NA, LE, WO; `New, man.`; held `ZEPHYRA*MEDICARE`; `a4.sh` on the build: one new placeholder (IDA: `id)'); // a`).
+  11. (W48) Added work for a name held with a mark: gap and initials 62,008 characters 351.6M sent, 82,008 420.0M REFUSED, 100,008 refused by the redaction's own count (the base sent each with the name in clear).
+  12. (W48, stage 4) A-6: a letter with LF CR is read a third time; U+33FE 30,002 with LF CR 139.9M to 214.4M sent; 57,972 with `\r\n\n\r` REFUSED by count; 0 of the gate's letters hold LF CR.
+  13. (W48) The stage 3 gate: differ 2, both A-4's cost of a placeholder (i 187859 `K.<emoji> RE`; i 187754 `member jun;e`, named above by W49); no PHI class, none newly refused.
+  14. (W49, stage 5) The packets differential test changed its oracle from the check to the matcher (see Tests above): is anything the verifier owed the check's reading lost? The verifier's source is not touched.
+  15. (W49) (d) reads a marked name's wider words only where the wider reading has MORE words than the first (a wider split only adds words); the words are rebuilt from folded, compacted parts joined by `-`.
+  16. (W49) Costs of (d), each a narrative call refused before it is made, never a leak (probed on synthetic rows): digits glued to a letter have no exception for a date or a code, so for a case number `20260305` facts holding `2026-03-05T00:00:00Z` are refused, and for a number `97110` facts holding `97110GP` (`2026-03-05 to` and `97110 GP` were and are as before; the synthetic facts hold neither glued form and still pass with `20260305` and `30000` in the case); a number held `1234/56` refuses `$1234.56` and `1234.56` (point 4, now in the check); `12345` alone is refused for a number held `ZZ 12345` (a piece); a name held `IN+A` or `VAN+TREE` refuses "in" and "van" (every part of two letters counts in this check, as on the base for `HYE-IN`); `ZEPHYRA*MEDICARE` refuses "Medicare".
+  17. (W49) `$300.00USD` for a number `30000` is NOT read by the glued rule (the period stands between), in the letter check too: the base's reading, unchanged; say if it should be.
+  18. (W49) The check runs with no work counter (the note: "No counter runs there"): a narrative's facts are code's own and short, but nothing bounds them here.
+  19. (W51, stage 6) Rule (a) is asked only on the redacted text: any replacement of a part of a glued number hides it from the check (the fix above). After the fix, is there another reading that replaces part of a stored number before the check (a date of birth's digits, a look-alike match)?
+  20. (W51) In the generated set 197 of 816 plainly glued letters are replaced by the first reading on the base and the head alike, not refused (`Fax X8852780545 ext` is `Fax X[MEMBER_ID] ext`): the base's reading of a long number after a phone word. Hidden either way; say if (a) should refuse there too once it reads the raw letter.
+  21. (W51) A-4 joins over a control character: `Dear Zeph<U+0004>yra,` is replaced (the battery's b1 row). The check refuses any text holding one of its own three marks; is every other control character meant to join?
+  22. (W51) MOD-20's matrix text now says the verifier flags wherever its whole-word reading or the matcher (`nameOrNumberMatches`) holds, where it said the drafter's check: W51's rewording after stage 5's oracle change (point 14). Is it what the verifier's tests assert?
+  23. (W51) The battery's nine scripts that do not load in `lay.sh`'s layout (above) ran for neither side here or in item 26: what they cover is unmeasured for this item.
+  24. (W51) The generated set draws each form from a small list of frames, letters and marks with one seed (34); a second seed is one argument of `generated.sh`.
+  25. (W54, the fix) Rule (a) on the letter as written is asked only where some placeholder is written (first reading's spans or wider matches); with none, the check's own reading of the unchanged text is relied on. Is there a text where `digitsGluedToLetter(masked(read, claims))` in the check misses what the same reader finds on `unmarked(normal)`?
+  26. (W54) What is not counted: the whole written number under ONE merged span of the first reading, whatever its placeholder (own, `[SSN]`, `[PHONE]`, a name's, a birth date's). 46 generated letters stay replaced and sent as on the base (a.glued 10, a.piece 12, a.piece-of-lettered 24); W54's first draft counted only `[MEMBER_ID]` and `[CLAIM_n]` and refused them. Point 20's 197 letters stay replaced too. Say if (a) should refuse there.
+  27. (W54) A span of the first reading for a PART of the number hides nothing, its own included: held `21318` and `21318-5`, `Fax 21318-5B ext` is refused. Is there a reading that removes or rewrites a part without a span (`unbracketed`, NFKC, `unmarked`) so that the number is no longer whole on the text read?
+  28. (W54) The refusal is the first reading's text with U+0001 after it (screen path), or the NFKC letter with it and the first reading's spans (`redactionSpans`), as the past-budget path already writes. `redactLetterForScreen`'s candidates are the first reading's. Does anything show or store a refused letter's text and now carry the mark where it did not?
+  29. (W54) Work: each reading is charged `WORK.formCharacter` for each character and form, once, however many places the number stands; every place is asked (`lastIndex` stepped by one), so a crafted letter of many glued numbers each hidden under a placeholder costs regex time the counter does not see. The position map of a letter with a CR (`lineEndingsAsOne`) is built with no charge. The gate's slowest letter is 957 ms; no crafted letter was timed.
+  30. (W54) The look-alike answer is taken once for all writings of the line endings (a CR is no look-alike) and from the wider reading where it read the text; asked afresh it moved the CR LF budget row by 4,347,750 units.
+  31. (W54) Case 2 refuses 108 generated letters the base sends (with 1 to 3 digits of the number in clear) and 0 of the gate's. The gate holds no letter of this form, so its cost on real-shaped letters is unmeasured beyond the floor table of the design.
+  32. (W54) `Fax 12-8852780545B ext` for a number `128852780545` is `Fax [MEMBER_ID]B ext` and `Fax 900123456B ext` for `900123456 01` is `Fax [SSN] ext`, on the base and now: the first reading's span takes the number whole, and in the second the letter after it. Not turned by this fix.
+  33. (W54) Not run on the fix: the battery, the two `.db.test.ts` files of `packages/model-gateway`, `pnpm test:db`, golden and e2e. The second differing gate letter (i 187754) was not compared directly again.
+- The gate's `cache/` under `designs/lane-b-redact-ssn-phone/gate/` is untracked scratch: do not commit it.
+
+## Earlier: RESUME-BLOCK (W51, 2026-11-12, after stage 6 and stage 7's records; its fix is built, see W54's block above)
 
 - **WIP head: 20af8fb3** (83d7bf7d stage 5; 3d75922a and 20af8fb3 are stage 7's records only: no product code changed
   by W51), pushed through the hook; the tree is clean. No PR is open. **The item is NOT whole: a fix to rule (a) is
@@ -75,31 +156,7 @@ WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. N
   two adversarial reviews on PHI and redaction, each finding verified before it is recorded, at most two fix rounds;
   the base merged; the full local suite once; the PR from `.github/pull_request_template.md`; the merge on green
   required checks.
-- **Every named point for the two reviews, in one list:**
-  1. (W39, stage 1) A-5 keeps what the records write in the joining class beside the run of marks: a superset of MOD-23's form.
-  2. (W39) A piece is split at an APOSTROPHE_LETTER too (U+02BC, U+02B9, U+02CA).
-  3. (W39) Two numbers that share a piece: the first in the call's order gives the placeholder (claims, then member IDs).
-  4. (W39) A cost the note's A-5 cell does not state: a claim held `1234/56` replaces `$1234.56` too (`isAmount` asks for cents after the number). A placeholder, never a leak.
-  5. (W39, stage 2) The prototype's rule (a) did not cost 0 for a call with no digits-only number (`alikeReads` charges `WORK.fold` per character outside ASCII); the build returns before any reading where no stored number can hold five digits and takes the wider reading's look-alike answer (`alikeOfWider`): 0 units.
-  6. (W39) A digits-only piece of a number that holds letters (`7654321` of `ZZ 7654321`) is read by (a) too: `XQ7654321` is refused. The safer side; the co-founder may rule otherwise.
-  7. (W39) The crafted letter (dates with spaces 100k, `SYN555001` and ten 7-digit claim numbers): 418.78M sent on the base, 420.78M refused on the head; with nine 419.73M sent.
-  8. (W48, stage 3) (b) splits at every non-letter, non-digit character that is no part joiner (a combining mark NFKC leaves too); the wider words' initials are taken next to a name; held `ZEPHYRA+JANE+Q` written `Zephyra, Jane` gives two placeholders.
-  9. (W48) `GAP.apart` is a getter returning `runOfMarks()` (declaration order).
-  10. (W48) Accepted costs pinned: `h/o`, `N/A`, `L/E`, `w/o` for a patient HO, NA, LE, WO; `New, man.`; held `ZEPHYRA*MEDICARE`; `a4.sh` on the build: one new placeholder (IDA: `id)'); // a`).
-  11. (W48) Added work for a name held with a mark: gap and initials 62,008 characters 351.6M sent, 82,008 420.0M REFUSED, 100,008 refused by the redaction's own count (the base sent each with the name in clear).
-  12. (W48, stage 4) A-6: a letter with LF CR is read a third time; U+33FE 30,002 with LF CR 139.9M to 214.4M sent; 57,972 with `\r\n\n\r` REFUSED by count; 0 of the gate's letters hold LF CR.
-  13. (W48) The stage 3 gate: differ 2, both A-4's cost of a placeholder (i 187859 `K.<emoji> RE`; i 187754 `member jun;e`, named above by W49); no PHI class, none newly refused.
-  14. (W49, stage 5) The packets differential test changed its oracle from the check to the matcher (see Tests above): is anything the verifier owed the check's reading lost? The verifier's source is not touched.
-  15. (W49) (d) reads a marked name's wider words only where the wider reading has MORE words than the first (a wider split only adds words); the words are rebuilt from folded, compacted parts joined by `-`.
-  16. (W49) Costs of (d), each a narrative call refused before it is made, never a leak (probed on synthetic rows): digits glued to a letter have no exception for a date or a code, so for a case number `20260305` facts holding `2026-03-05T00:00:00Z` are refused, and for a number `97110` facts holding `97110GP` (`2026-03-05 to` and `97110 GP` were and are as before; the synthetic facts hold neither glued form and still pass with `20260305` and `30000` in the case); a number held `1234/56` refuses `$1234.56` and `1234.56` (point 4, now in the check); `12345` alone is refused for a number held `ZZ 12345` (a piece); a name held `IN+A` or `VAN+TREE` refuses "in" and "van" (every part of two letters counts in this check, as on the base for `HYE-IN`); `ZEPHYRA*MEDICARE` refuses "Medicare".
-  17. (W49) `$300.00USD` for a number `30000` is NOT read by the glued rule (the period stands between), in the letter check too: the base's reading, unchanged; say if it should be.
-  18. (W49) The check runs with no work counter (the note: "No counter runs there"): a narrative's facts are code's own and short, but nothing bounds them here.
-  19. (W51, stage 6) Rule (a) is asked only on the redacted text: any replacement of a part of a glued number hides it from the check (the fix above). After the fix, is there another reading that replaces part of a stored number before the check (a date of birth's digits, a look-alike match)?
-  20. (W51) In the generated set 197 of 816 plainly glued letters are replaced by the first reading on the base and the head alike, not refused (`Fax X8852780545 ext` is `Fax X[MEMBER_ID] ext`): the base's reading of a long number after a phone word. Hidden either way; say if (a) should refuse there too once it reads the raw letter.
-  21. (W51) A-4 joins over a control character: `Dear Zeph<U+0004>yra,` is replaced (the battery's b1 row). The check refuses any text holding one of its own three marks; is every other control character meant to join?
-  22. (W51) MOD-20's matrix text now says the verifier flags wherever its whole-word reading or the matcher (`nameOrNumberMatches`) holds, where it said the drafter's check: W51's rewording after stage 5's oracle change (point 14). Is it what the verifier's tests assert?
-  23. (W51) The battery's nine scripts that do not load in `lay.sh`'s layout (above) ran for neither side here or in item 26: what they cover is unmeasured for this item.
-  24. (W51) The generated set draws each form from a small list of frames, letters and marks with one seed (34); a second seed is one argument of `generated.sh`.
+- The named points for the two reviews are in W54's block above (1 to 24 as W51 wrote them).
 - The gate's `cache/` under `designs/lane-b-redact-ssn-phone/gate/` is untracked scratch: do not commit it.
 
 ## Earlier: RESUME-BLOCK (W49, 2026-11-12, after stage 5)
