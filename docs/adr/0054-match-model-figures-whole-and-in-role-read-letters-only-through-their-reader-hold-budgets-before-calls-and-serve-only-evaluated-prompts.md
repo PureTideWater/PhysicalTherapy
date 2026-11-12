@@ -1797,6 +1797,15 @@ sooner than it would have been read (at most 1.7 s; 5,000,000 characters in unde
 of 40 characters, which took 40 s for a letter of 19 characters, in 1 ms). Item 26's second reading counts in the same
 counter and so shares this bound; it is given no time of its own.
 
+**After the comparison's weight went from one unit to four** (2026-11-12) the table stands: its families make few
+comparisons of matches, and a heavier comparison can only refuse a letter sooner. Measured again on the final reader
+(one claim number; calibration 150 to 152 ms): U+33FE and `;` repeated is read to 93,664 characters in 1.59 s at the
+reference speed, a name then `a;` repeated to 196,918 in 1.08 s, ordinary prose to 300,668 in 0.91 s, a digit to a
+line to 56,803 in 0.56 s. What moved is CT-2's shape alone: initials beside a name with one look-alike character are
+read to 23,875 characters (0.32 s) and refused from there on, and with the name written once with a joiner to 17,314
+(0.27 s); before, they were read to about 48,000 and 29,000. The review of that change found nothing the base redacts
+or refuses sent, and each timed row within its 3 s on a cold first run with coverage on (1.93 s at most).
+
 **Open residual, pinned: the first check of a fresh process with hundreds of identifiers on the call. It does not pass
 the 3 s.** The engine compiles each identifier's pattern the first time it meets it, so the first check a process makes
 costs many times its later ones, for a letter of any length (measured with a letter of 19 characters):
@@ -1850,12 +1859,13 @@ call that carries hundreds of claim numbers has its long letters refused, where 
 and a call whose names, member IDs and claim numbers come to more than about 60,000 characters (some two thousand
 claims of two numbers each) has every letter refused.
 
-**The gate, against 58fb29e5, letter for letter** (the check called as `prepare` calls it):
+**The gate, against 58fb29e5, letter for letter** (the check called as `prepare` calls it; run again on the final
+reader, a comparison at four units):
 
 - The differential gate's 975,489 synthetic letters (at most 2,000 characters each): every one has the same answer and
   the same sent text; 462,984 refused by both; none newly refused.
-- Every string of 40 characters or more in `fixtures/` (10,830, each read for two synthetic patients): no sent text
-  differs. The longest letter, narrative or worksheet is 27,644 characters and the dearest costs 41.5 million units, a
+- Every string of 40 characters or more in `fixtures/` (10,838, each read for two synthetic patients): no sent text
+  differs. The longest letter, narrative or worksheet is 27,644 characters and the dearest costs 42.0 million units, a
   tenth of the budget. One file is newly refused when read whole as a letter, which it is not: the synthetic ZIP-code
   table (`fixtures/synthetic/cms/ZIP9_SYNTHETIC.txt`, 729,000 characters).
 - The battery of the reviews' generators and fuzzers, every call run on both readers: no text differs, nothing the
@@ -1868,8 +1878,8 @@ as `prepare` does, `holdsIdentifier(text, patient, claims, checkWorkOf(redacted)
 
 **Left, each recorded.**
 
-- The quadratic comparison itself is not cured: a letter under the budget still pays it (29,000 characters of CT-2's
-  shape with a joiner take 0.57 s). Curing it (an index of the matches by position) changes the first reading's code
+- The quadratic comparison itself is not cured: a letter under the budget still pays it (17,300 characters of CT-2's
+  shape with a joiner take 0.27 s). Curing it (an index of the matches by position) changes the first reading's code
   and needs the redaction's reviews again: an optional follow-up.
 - `holdsIdentifier` called without the redaction's count starts from nothing, so a caller that drops the fourth
   argument holds each half to the budget and not the two together: a time cost of at most twice the budget, never a
