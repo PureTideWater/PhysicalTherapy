@@ -1,5 +1,23 @@
 # Lane B: the letter check's work budget (CT-2 on the merged base) — status
 
+## STOPPED 2026-11-12 (W25): a blocking finding after the second fix round; the orchestrator told, no third round without its word
+
+- WIP `co-001/wip-check-work-budget` = **b00e7cfc** (0289304f fix round 2, then the ADR's record of the ruling (A)).
+- `reviews/lane-b-check-work-budget-review-fix2-delta.md`: **G-1 BLOCKING (time, warm process)**: many SHORT identifiers
+  on the call, under the ceiling of characters, are read past 3 s with a 19-character letter: 6,300 claim numbers of 9
+  characters 3.1 s, 9,400 of 6 digits 6.9 s, 14,000 of 4 11.1 s, 18,500 of 3 18.4 s at reference. The time grows with
+  the square of the COUNT of identifiers (said to be `viewsOfCheck.find` per identifier inside `holdsIdentifier`; not
+  profiled); the charge is per CHARACTER. No PHI finding: nothing the base refuses is sent, no text differs.
+- Proposed, NOT built (it would be a third round): one more constant, a charge per identifier at each entry beside the
+  charge per character (about 50,000 units each, a ceiling of about 4,000 identifiers on a call, where 3,000 x 9
+  measured 1.4 to 1.8 s), a warm timed row at 3 or 4 characters, and its delta reviewed. G-2 (a call of 60,000 to
+  120,000 identifier characters is refused only after the redaction ran, 0.6 to 0.7 s), G-3 (empty identifiers are
+  charged nothing: the per-identifier charge covers it), G-4, G-5, G-6 (tests), G-7 (a name of 14,000 words throws a
+  SyntaxError whose message begins with the pattern built from the name: the base's own, to be run on the base; for
+  the queue) are recorded there.
+- Running when stopped, on 0289304f's code: gate run3, battery `recorded.sh` then `fresh.sh`, lint. Valid for the PR
+  only if no code changes after them.
+
 ## RESUME-BLOCK, current (W25, session_019i9ifCzDkV481emXJMM26J, 2026-11-12 about 02:40 UTC; fix round 2 pushed, its delta review running, a ruling asked; no PR yet)
 
 - **Where it stands.** WIP `co-001/wip-check-work-budget` = **0289304f** on base 58fb29e5 (the base is now fd14d89f,

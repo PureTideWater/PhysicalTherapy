@@ -1,0 +1,76 @@
+plain                                HEAD redact{len 137, replaced 5, spent 207840} check:SENT ; check alone on a clean text: false
+                                     BASE redact{len 137, replaced 5} check:SENT ; check alone on a clean text: false
+claim without claimNumbers           HEAD redact THREW TypeError: Cannot read properties of undefined (reading 'reduce') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+                                     BASE redact THREW TypeError: numbers is not iterable ; check alone on a clean text: THREW TypeError: numbers is not iterable
+claimNumbers null                    HEAD redact THREW TypeError: Cannot read properties of null (reading 'reduce') ; check alone on a clean text: THREW TypeError: Cannot read properties of null (reading
+                                     BASE redact THREW TypeError: numbers is not iterable ; check alone on a clean text: THREW TypeError: numbers is not iterable
+claimNumbers a Set                   HEAD redact THREW TypeError: claim.claimNumbers.reduce is not a function ; check alone on a clean text: THREW TypeError: claim.claimNumbers.reduce is not a func
+                                     BASE redact THREW TypeError: value.normalize is not a function ; check alone on a clean text: THREW TypeError: value.normalize is not a function
+claimNumbers a string                HEAD redact THREW TypeError: claim.claimNumbers.reduce is not a function ; check alone on a clean text: THREW TypeError: claim.claimNumbers.reduce is not a func
+                                     BASE redact{len 137, replaced 4} check:SENT ; check alone on a clean text: false
+claimNumbers array-like object       HEAD redact THREW TypeError: claim.claimNumbers.reduce is not a function ; check alone on a clean text: THREW TypeError: claim.claimNumbers.reduce is not a func
+                                     BASE redact THREW TypeError: numbers is not iterable ; check alone on a clean text: THREW TypeError: numbers is not iterable
+claimNumbers an iterator             HEAD redact THREW TypeError: value.normalize is not a function ; check alone on a clean text: THREW TypeError: value.normalize is not a function
+                                     BASE redact THREW TypeError: value.normalize is not a function ; check alone on a clean text: THREW TypeError: value.normalize is not a function
+claimNumbers [] (empty)              HEAD redact{len 137, replaced 4, spent 175558} check:SENT ; check alone on a clean text: false
+                                     BASE redact{len 137, replaced 4} check:SENT ; check alone on a clean text: false
+claimNumbers sparse [ , SYN]         HEAD redact THREW TypeError: Cannot read properties of undefined (reading 'normalize') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+                                     BASE redact THREW TypeError: Cannot read properties of undefined (reading 'normalize') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+claimNumbers [number]                HEAD redact{len 1, replaced 0, spent 420000001} check:REFUSED ; check alone on a clean text: true
+                                     BASE redact THREW TypeError: value.normalize is not a function ; check alone on a clean text: THREW TypeError: value.normalize is not a function
+claimNumbers [null]                  HEAD redact THREW TypeError: Cannot read properties of null (reading 'length') ; check alone on a clean text: THREW TypeError: Cannot read properties of null (reading
+                                     BASE redact THREW TypeError: Cannot read properties of null (reading 'normalize') ; check alone on a clean text: THREW TypeError: Cannot read properties of null (reading
+claimNumbers [undefined]             HEAD redact THREW TypeError: Cannot read properties of undefined (reading 'length') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+                                     BASE redact THREW TypeError: Cannot read properties of undefined (reading 'normalize') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+claimNumbers [[string]]              HEAD redact THREW TypeError: value.normalize is not a function ; check alone on a clean text: THREW TypeError: value.normalize is not a function
+                                     BASE redact THREW TypeError: value.normalize is not a function ; check alone on a clean text: THREW TypeError: value.normalize is not a function
+claimNumbers [String object]         HEAD redact{len 137, replaced 5, spent 207840} check:SENT ; check alone on a clean text: false
+                                     BASE redact{len 137, replaced 5} check:SENT ; check alone on a clean text: false
+claimNumbers [""]                    HEAD redact{len 137, replaced 4, spent 175558} check:SENT ; check alone on a clean text: false
+                                     BASE redact{len 137, replaced 4} check:SENT ; check alone on a clean text: false
+names undefined                      HEAD redact THREW TypeError: Cannot read properties of undefined (reading 'reduce') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+                                     BASE redact THREW TypeError: subject.names is not iterable ; check alone on a clean text: THREW TypeError: subject.names is not iterable
+names a string                       HEAD redact THREW TypeError: patient.names.reduce is not a function ; check alone on a clean text: THREW TypeError: patient.names.reduce is not a function
+                                     BASE redact THREW TypeError: names.flatMap is not a function ; check alone on a clean text: THREW TypeError: names.flatMap is not a function
+names a Set                          HEAD redact THREW TypeError: patient.names.reduce is not a function ; check alone on a clean text: THREW TypeError: patient.names.reduce is not a function
+                                     BASE redact THREW TypeError: names.flatMap is not a function ; check alone on a clean text: THREW TypeError: names.flatMap is not a function
+names [number]                       HEAD redact{len 1, replaced 0, spent 420000001} check:REFUSED ; check alone on a clean text: true
+                                     BASE redact THREW TypeError: name.normalize is not a function ; check alone on a clean text: THREW TypeError: name.normalize is not a function
+memberIds undefined                  HEAD redact THREW TypeError: Cannot read properties of undefined (reading 'reduce') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+                                     BASE redact THREW TypeError: subject.memberIds is not iterable ; check alone on a clean text: THREW TypeError: subject.memberIds is not iterable
+memberIds a Set                      HEAD redact THREW TypeError: patient.memberIds.reduce is not a function ; check alone on a clean text: THREW TypeError: patient.memberIds.reduce is not a funct
+                                     BASE redact{len 137, replaced 5} check:SENT ; check alone on a clean text: false
+memberIds [number]                   HEAD redact{len 1, replaced 0, spent 420000001} check:REFUSED ; check alone on a clean text: true
+                                     BASE redact THREW TypeError: value.normalize is not a function ; check alone on a clean text: THREW TypeError: value.normalize is not a function
+claims a Set                         HEAD redact THREW TypeError: claims.reduce is not a function ; check alone on a clean text: THREW TypeError: claims.reduce is not a function
+                                     BASE redact THREW TypeError: claims.map is not a function ; check alone on a clean text: THREW TypeError: claims.map is not a function
+claims [undefined]                   HEAD redact THREW TypeError: Cannot read properties of undefined (reading 'claimNumbers' ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+                                     BASE redact THREW TypeError: Cannot read properties of undefined (reading 'claimNumbers' ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+claims undefined                     HEAD redact THREW TypeError: Cannot read properties of undefined (reading 'reduce') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+                                     BASE redact THREW TypeError: Cannot read properties of undefined (reading 'map') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+claims []                            HEAD redact{len 137, replaced 4, spent 175558} check:SENT ; check alone on a clean text: false
+                                     BASE redact{len 137, replaced 4} check:SENT ; check alone on a clean text: false
+patient undefined                    HEAD redact THREW TypeError: Cannot read properties of undefined (reading 'names') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+                                     BASE redact THREW TypeError: Cannot read properties of undefined (reading 'names') ; check alone on a clean text: THREW TypeError: Cannot read properties of undefined (re
+text a number                        HEAD redact{len 1, replaced 0, spent 420000001} check:REFUSED ; check alone on a clean text: false
+                                     BASE redact THREW TypeError: text.normalize is not a function ; check alone on a clean text: false
+text undefined                       HEAD redact THREW TypeError: Cannot read properties of undefined (reading 'length') ; check alone on a clean text: false
+                                     BASE redact THREW TypeError: Cannot read properties of undefined (reading 'normalize') ; check alone on a clean text: false
+text a String object                 HEAD redact{len 137, replaced 5, spent 207840} check:SENT ; check alone on a clean text: false
+                                     BASE redact{len 137, replaced 5} check:SENT ; check alone on a clean text: false
+identifier object, length -1e9       HEAD redact{len 137, replaced 5, spent -3499999823660} check:REFUSED ; check alone on a clean text: false
+                                     BASE redact{len 137, replaced 5} check:SENT ; check alone on a clean text: false
+identifier object, length NaN        HEAD redact{len 1, replaced 0, spent 420000001} check:REFUSED ; check alone on a clean text: true
+                                     BASE redact{len 137, replaced 5} check:SENT ; check alone on a clean text: false
+identifier object, length 9          HEAD redact{len 137, replaced 5, spent 207840} check:SENT ; check alone on a clean text: false
+                                     BASE redact{len 137, replaced 5} check:SENT ; check alone on a clean text: false
+identifier object, length -Infinity  HEAD redact{len 137, replaced 5, spent -Infinity} check:REFUSED ; check alone on a clean text: false
+                                     BASE redact{len 137, replaced 5} check:SENT ; check alone on a clean text: false
+honest: spent 291400570 refused false
+fake length -200000: head spent -407948280, read true, check REFUSED | base SENT, same text true
+fake length -400000: head spent -1107948280, read true, check REFUSED | base SENT, same text true
+fake length -1000000: head spent -3207948280, read true, check REFUSED | base SENT, same text true
+
+real	0m6.872s
+user	0m6.652s
+sys	0m0.567s
