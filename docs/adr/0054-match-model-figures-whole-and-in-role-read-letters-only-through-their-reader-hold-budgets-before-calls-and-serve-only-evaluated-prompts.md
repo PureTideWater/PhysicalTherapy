@@ -2375,3 +2375,13 @@ is shown; (a) refuses the glued number at 5 to 12 digits on each side, with anot
 their forms, or the letter is refused; A-6 refuses 1,200 of 1,200; every residual above is sent as pinned, as the base
 sends it; and its 238 failures are the two open forms above, with a joiner, a CR LF or a stored separator inside the
 number.
+
+The battery of the earlier rounds (W5's and W13's scripts, as item 26 ran it), four runs: this reader and the base
+a97d73e4 each as "head", with the recorded seeds and with seeds not used before. Every verdict line of the reader's
+runs is the base's: the 697, 406 and 5 pinned rows refused or redacted as before, `SENT_WITHHELD` 0, `DEPART` 0, base
+flags 0, the head sends more than the base in 0 letters, the same flips of the month-named patient, 72 new refusals of
+12,000 must-stay letters as recorded; the counts of the time-boxed generators differ only by how many letters each run
+reached. One reproduction row differs, by rule A-4: `Dear Zeph<U+0004>yra,` was sent as written and is
+`Dear [PATIENT_NAME],`. Said plainly: in this layout nine of the battery's scripts do not load on either side (b2,
+c1 and c2's reproductions, `fz2`, the audit `fz2`, `stress16`, and review I2's layouts, a1 and time), as in item 26's
+kept runs; what they would add is not in this result.
