@@ -2,7 +2,34 @@ ACTING Lane B (W36, https://claude.ai/code/session_019i9ifBWTdAErWCMzjfhzn3) hol
 
 # Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
 
-## RESUME-BLOCK, current (W36, session_019i9ifBWTdAErWCMzjfhzn3, 2026-11-12 about 10:50 UTC; draft PR #158 OPEN on e013634b, CI by subscription; verified locally; NOT merged)
+## FINAL STATE: MERGED (W36, session_019i9ifBWTdAErWCMzjfhzn3, 2026-11-12 11:27 UTC). Nothing to resume.
+
+- **#158 merged as a97d73e4** (a merge commit) from head e013634b; `claude/build-platform` = a97d73e4 (`git ls-remote`).
+  CI on e013634b green on the first run (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`); no
+  MOD-15 re-run was needed (Queues item 38 did not show, locally or in CI). #156's head ac8500fc held no founder commit
+  beyond the base and was not merged at the merge (the rule of 06:10 UTC); the base was adaf7897 until the merge.
+- **What Queues item 34 inherits** (ADR 0054: the amendment of 2026-11-11 for `co-001/redact-item-26`, "Left, each
+  recorded", and the amendment "item 26's readings on the check's work budget"):
+  - Forms still sent in clear, each pinned in `redact.leaks.test.ts`: a part of a name split by a comma, colon or
+    semicolon with a space, a parenthesis or another script's full stop (A-4); a stored number written with another
+    separator than the records hold (A-5); a line feed before a CR (A-6); a digits-only number glued to a letter; a
+    name held with a plus sign; one piece of a stored number alone; the narrative drafter's own check.
+  - Recorded costs: the words of a name whose letters are ordinary words apart are replaced (13 of the gate's 975,489
+    letters); B-1 to B-5; C-PHI-1 (a letter the base sends refused past the budget), C-PHI-2 (without the screen a
+    refused letter's text is the first reading's with the mark), C-PHI-3 (the two paths count their own work).
+  - The count's costs: the table of letters refused at a third to two thirds of the length the base reads; two letters
+    with nothing of item 26's refused at the budget's edge (D-TIME-3); the dearest letter left read, 57,972 characters
+    with one CR LF, 1.7 to 2.0 s (D-TIME-1, a timed row now).
+  - Review D's stated limits: the first reading's charge is shown at least the base's by counts over 31,072 letters,
+    not per site; no search at the budget's edge; the narrative's and the verifier's readers not reviewed.
+  - One base row sits 4% under the budget on this reader ("a long gap after a name and many initials", 403M of 420M
+    units): a later change that adds counted work to the redaction of that letter will refuse it.
+- **Records.** `designs/lane-b-redact-item-26/`: `gate/report-ab-*.md`, `gate/report-fb-*.md`, `battery-*-e013634b.out`,
+  `reviews/d/brief.md` and `report.md`, `scripts/dear.mts` and its output.
+- W36 holds nothing: unsubscribed from #158, its check-in cancelled, no workflow. Branches `co-001/redact-item-26` and
+  `co-001/wip-redact-item-26` (both e013634b) are merged and can go on the cleanup list.
+
+## The block before the merge (W36, session_019i9ifBWTdAErWCMzjfhzn3, 2026-11-12 about 10:50 UTC; draft PR #158 OPEN on e013634b, CI by subscription; verified locally; NOT merged)
 
 - **Where it stands.** `co-001/redact-item-26` = WIP `co-001/wip-redact-item-26` = **e013634b** (the base adaf7897
   contained; a85ea22d the merge and the readings on the counter, a447958e MOD-23 in the registry, e013634b review D's
