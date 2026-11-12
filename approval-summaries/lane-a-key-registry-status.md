@@ -1,6 +1,243 @@
 # Status: Queues item 37, the key registry (Lane A)
 
-## RESUME-BLOCK (2026-11-12, W47, session_019i9if9pdiBq7WR2Rdf8ezT): the BUILD of item 37 is whole (W43's item 5 done: the web asks the provider for no sign-out, the alarms moved); what is left is seeing it in a browser, the two reviews, and the papers
+## RESUME-BLOCK (2026-11-12, W50, session_019i9ifDqnGxZb6EWNt5PoPf): the records, the absence alarm and green are done; the five SCREENS are NOT seen and SGN-22's test is owed; then the reviews, the domain model and the PR
+
+**WIP `co-001/wip-key-registry` 656854b1** (three commits on 7f986ed0: 1d86db50 the records, 2d0e08b4 the absence
+alarm, 656854b1 one alarm's words). No PR is open. No migration was touched, and none may be. W50 handed over at about
+185k tokens, at Part 3's end, **before Part 4**: nobody has yet seen item 37's screens in a browser.
+
+### What the next session does, in this order
+1. **SGN-22's test (the orchestrator's ruling, 19:50 UTC: not a residual).** The interleaving invariant (over sign-in,
+   a removal's confirmation, End membership and a reset on one account, two connections, each order of the account
+   lock: never a live session whose digest is not a live key, never one begun at or before the mark) and the count
+   that `resolveSession` issues the same statements as on the base. Failing first, by removing or reordering what it
+   guards, then green. Today the row says "Not yet written" (`packages/synth/src/cases/matrix.ts` SGN-22, the note in
+   `registry.ts`, `docs/product/test-matrix.md`): when the test exists, rewrite the row's assertion, drop the note,
+   name the test file in the registry, write the same row into the `.md` (the fixtures test compares word for word),
+   `pnpm synth --all`, and drop ADR 0095's nothing (it does not name SGN-22).
+2. **See the five screens (Part 4, not started).** `/sign-in/register-key`'s code screen and the four console states
+   on `/console/organizations/[organizationId]` (request key removal; requested, as the requester and as another
+   administrator; keys removed with Open registration; the code panel once and after a reload). Each at 390 px and
+   1,280 px light and 1,280 px dark, resting, a refusal, and after a refresh; each walked by keyboard with the focus
+   order written down. Fix only an outright break; list the rest for the UX and brand review. What W50 found out:
+   - `tools/lane-b-screen-tour/README.md` (ops), "From another lane": **the repository is public, so PNGs never go on
+     a branch**; they go in a `TOUR_DIR` in the scratchpad and are published as a private gallery
+     (`tools/lane-b-screen-gallery`); only findings, the manifest and small crops are committed to claude/build-ops.
+     The app has dark tokens and no switch: the tour sets `data-theme` itself.
+   - The tour already shoots `/sign-in/register-key`'s base states (`capture/tour.spec.ts` about line 1646) and
+     `apps/web/e2e/helpers.ts` holds a virtual authenticator (CDP `WebAuthn.addVirtualAuthenticator`).
+   - The console states need what the seed does not give: two platform administrators of the internal organization
+     **more than seven days in the role with no `role_escalation` in seven days** (back-date as the owner), each in a
+     **key session opened in the last 15 minutes with a registered key** (register through the app with the virtual
+     authenticator: a key from before the registry has no row), and a target member. The refusals to shoot: the
+     requester pressing Confirm on their own request; a wrong registration code; Open registration while one is open.
+   - The screens' files: `apps/web/src/components/console/key-removal.tsx`, `open-registration.tsx`,
+     `apps/web/src/app/sign-in/register-key/page.tsx`.
+3. **The e2e journey** (request, confirm, open, the code typed, the new key registered) is not written; `pnpm
+   test:e2e` and `pnpm test:golden` were not run by W50 or any session on this WIP.
+4. **W43's item 6** (the relying-party tie and the infra test tying `KEY_USER_VERIFICATION_REQUIRED` to the pool's
+   setting) is still not started. W50's brief did not list it; ask the orchestrator whether it rides this PR.
+5. **The two adversarial reviews** (auth and tenant isolation; the job, the outbox and deploy safety) and the **UX and
+   brand review**, on the one list below; at most two fix rounds.
+6. **The domain model's regeneration**, right before the PR, and **the PR** from `.github/pull_request_template.md`,
+   opened with `pnpm -s db:domain-model --summary-since origin/claude/build-platform --function-diffs list`, with
+   "What the founder should know before approving" (below), the approval line posted as a suggestion, never written.
+
+### What W50 built
+- **ADR 0095** (`docs/adr/0095-remove-a-members-hardware-keys-…md`): D1 to D20, the eight decisions the migration
+  took beyond the note, deploy and rollback, the amendments, "Open, said plainly" (points 20 and 21 below) and the
+  residuals. ADRs 0093 and 0094 each end with a dated amendment that points to it (0093 D4, D6, "Not covered" 5;
+  0094 D2 to D7, "left open", D3 moot).
+- **Runbooks.** `deploy-and-rollback.md`: a new section "The key registry (ADR 0095; Queues item 37)" with both
+  lock-loop lines as the deploy log shows them, what the deploy asks of staff (register keys again in the deploy's
+  session; the operator's audit-log check), while the previous images serve, and "Rollback across the key registry"
+  (**no staff sign-in until roll-forward**). `incident-response.md`: the two sections on a failed provider sign-out
+  are replaced by "A provider sign-out not delivered", "The provider sign-out job not running" and "The hardware key
+  section: removing a member's hardware keys"; triggers, End membership's paragraph, the sessions-not-ended section
+  (no sign-out was queued: the founder's session sends it), the key-across-reset steps (the console, not break-glass)
+  and the weekly review follow. `support-mail.md`: "Lost hardware key" and a new "A hardware-key email, I did not
+  expect this".
+- **Test matrix:** SGN-20 to SGN-27, SEC-25 to SEC-27, JOB-06 to JOB-08 in `matrix.ts`, `registry.ts`,
+  `docs/product/test-matrix.md` and `fixtures/synthetic/<id>/expected.json`; SGN-16's and SGN-19's rows no longer
+  describe the web asking the provider. Each row's words were checked against the tests' own titles.
+- **The absence alarm (the ruling on point 26).** The job writes `provider sign-outs run` once a run at info, with
+  `record_count` (rows claimed) and nothing else, whether or not a step failed. `PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM`
+  (`infra/lib/security-events.ts`): metric `ProviderSignOutsRun` on the **platform** log group, alarm
+  `ProviderSignOutsNotRunning` when two 300 s periods sum under 1, **missing data breaching**, operator topic on
+  ALARM and on OK. Filter count 41 to 42. Tests first: infra's failed on the missing construct (6), then on the
+  pinned count, then green. **Said plainly: the worker's new case was first run after the line existed** (PostgreSQL
+  was down when the test was written); what was seen failing there is nine older cases that pinned every captured
+  line, mended by holding the run's own line apart in the test's `capture()` (`lines` and `runs`), not by loosening
+  any case.
+- **`HardwareKeyRegisteredAcrossReset`'s description (the orchestrator's second ruling).** Old words: "so have the key
+  removed through the founder's break-glass before anyone unlocks it" and "the key signs in, so go to the break-glass
+  now". New: "so two platform administrators remove the account's keys in the console before anyone unlocks it" and
+  "the key signs in, so end the membership now, then remove the keys", with docs/adr/0095 cited; the test's pinned
+  words changed with it and now refuse "break-glass" there.
+
+### What is green (PostgreSQL 18, Node 24)
+The long run was on **2d0e08b4** with 656854b1's two infra files already edited in the tree when the unit suite
+began (the typecheck of that run had started before the edit); typecheck, lint and infra's tests were then run again
+on **656854b1**.
+- `pnpm typecheck`: passed, 24 projects (on 656854b1). `pnpm lint`: 1,959 files, 0 errors, 0 warnings (on 656854b1).
+  `pnpm lint:logs`: 1,209 files, every call allowlisted. `pnpm verify-content`: every content set passes.
+- `pnpm test` (the whole unit suite): **510 files passed; 14,373 passed, 4 skipped, 0 failed.** The two
+  `migrate.test.ts` failures, red since 03f0af53, are green by the runbook's two quoted lines; the test is unchanged.
+- Infra's tests (`vitest run --project unit infra/`, on 656854b1): **29 files, 828 passed, 0 failed.**
+- `pnpm test:db` whole, 26 minutes, alone on the machine: **175 files passed; 10,552 passed, 1 skipped, 0 failed.**
+- **Not run:** `pnpm test:e2e`, `pnpm test:golden`.
+
+### What the founder should know before approving (for the PR's section)
+- Staff register their hardware keys again in this deploy's session; a rollback of this release means **no staff
+  sign-in until the image rolls forward**.
+- Key removal leaves the founder's break-glass: two platform administrators, neither the account, each seven days in
+  the role; break-glass stays for fewer than two eligible administrators, and for a given-up provider sign-out.
+- After a removal the account can open **no session at all** until an administrator opens registration with a
+  one-time code read to the member by phone.
+- Every session insert now takes the account's row lock (amends ADR 0093 D4).
+- Two points are open by decision (20 and 21 below), and the migration took eight decisions beyond the design note
+  (ADR 0095 lists them).
+
+### Every named point for the reviews, in ONE list (W47's 1 to 39 with their numbers kept; W50's 40 to 47 after)
+**What changed in W47's points:** 2 and 23 are now said in ADR 0095 ("Amendments to earlier records"). 20 and 21 are
+recorded as open in ADR 0095: **20 goes to the security review** (closing it needs a migration, by the co-founder's
+typed command) and **21 is queued as its own item before launch**; neither is this PR's to close. **26 is built**
+(the absence alarm above): review the alarm itself (point 41). 32: the runbook now exists and says "by phone, on a
+number PaidWhole already holds". 39: the incident runbook's hardware key section now exists; GAVE_UP still goes to
+the founder's break-glass.
+
+**For the security review, first, from the orchestrator:**
+1. **A refused act leaves no trace.** A refused act writes no audit event because it rolls back (W46), so a refused
+   key removal (the requester confirming their own request, an administrator under seven days, a stale key session,
+   the account acting on itself) is recorded nowhere but a log line of the wrapper's. The security review says
+   whether sections 4.5 and 6 of the note require a trace of a refused removal and, if so, how it survives the
+   rollback (a second transaction after the refusal, an autonomous write by the function before it raises, or a
+   counted log line with an alarm).
+
+**Auth review**
+2. (W33, the ruling's point 4) Every session insert now takes the account's row, the previous image's included,
+   which ADR 0093 D4 had left unlocked on purpose. ADR 0095 needs the dated section amending D4, and "What the
+   founder should know" a line.
+3. (W33) `hardware_key_record` is an uncounted check of a code digest for whoever holds the application role
+   (decision 7); the 40 bits and the hour bound it.
+4. (W43) The job reads the provider's `UserNotFoundException` as `no_such_user` and marks the row done with no
+   sign-out; a pool ID naming the wrong pool would turn every row into that answer. Nothing checks the pool at start.
+5. (W43) The `removed` email tells the reader that support gives a one-time code: whether an email should say a code
+   exists at all.
+6. (W44, W45) `hardware_key_registration_judge` asked with no code counts a try, and the free "closed?" helper is
+   granted to no role. The web reads closed from the registry's rows; the one case it cannot see is a removal
+   confirmed for an account that never had a key row, whose first visit spends one of the five tries. Recorded for
+   the contract migration, not built.
+7. (W44) `codeRequired` and `code` live in the sealed step, but nothing trusts them: `judge` runs before each
+   provider call and `hardware_key_record` judges again under the lock.
+8. (W44) The cleaning skips a provider credential whose ID is not canonical base64url of 16 to 1,023 bytes; whether
+   Cognito's `CredentialId` is exactly the browser's `id` is unverified; if not, the cleaning deletes nothing.
+9. (W44) The cleaning measures "older than 15 minutes" from the database's clock against the provider's: two clocks.
+10. (W44) A registration that fails for a reason that is not a refusal now answers `key_not_registered` after
+    removing the key, where the base threw; the error's class name is logged.
+11. (W45) The code action is counted in `mfa` by the sealed step, the same budget as the key routes; whether the
+    code deserves a budget of its own.
+12. (W45) A code typed for an account that is not closed is answered as a step forward (`not_closed`), not a refusal.
+13. (W45) The shape's refusal differs from the wrong code's (a field issue against the one refusal).
+14. (W46) `AuditSpec.writtenBy: 'database'` lets a route name an audit action the wrapper never writes; only the
+    four key routes use it, each tested for exactly one event; no test yet refuses the flag on any other route.
+15. (W46) `runAction`'s `answer` returns a server action's success state without a redirect. One caller.
+16. (W46) 42501 from the functions is answered `invalid` with the rule's words, not `forbidden`.
+17. (W46) The lost code: one administrator can hold an account closed an hour at a time by opening and discarding
+    codes; each is audited and sends the member the opening's notice.
+18. (W46) The page lists removals only beside an organization's members; an account with no membership row has no
+    row to act on.
+19. (W46) `organizationId` in the key routes' inputs is used for the redirect only and is not checked against the
+    account's memberships.
+20. **(W47) A reset that recorded nothing now signs out nowhere.** When both tries of `endedByReset` fail (or the
+    database goes away after the provider took the new password), the previous web still asked the provider to sign
+    the user out; now no cause committed, so no row exists and nothing asks. The password is changed at the
+    provider, the app's sessions stand, and the one signal is `security event: password reset sessions not ended`
+    (`PasswordResetSessionsNotEnded`, whose words now say no sign-out was queued). The provider's sign-out never
+    ended the app's sessions, so what is lost is the provider's tokens ending for that account until the operator
+    acts. Closing it would take a way to queue a sign-out without the reset's event (a function and a grant: a
+    migration, closed to W47). The review says whether the runbook's step is enough.
+21. **(W47) The web's task can still send the sign-out.** The web and the worker share one task role
+    (`USER_POOL_ADMIN_ACTIONS`), so the web's credentials still hold `cognito-idp:AdminUserGlobalSignOut` though no
+    code of the web sends it. Splitting the role is larger than this step.
+22. **(W47) `whenCommitUnknown` is gone from the wrapper.** After a commit with no answer no handler work runs. No
+    route but the two End memberships used it; any later route that wants work for that case must write a row.
+23. **(W47) The Settings route no longer reads `cognito_sub`** under the administrator's scope before ending the
+    membership; ADR 0094's note on reading the subject "while the membership stands" is now moot and ADR 0095
+    should say so.
+
+**Security review**
+24. (W46) The registration code crosses the server-action response to the administrator's browser and lives in
+    React state until the page goes; `autocomplete`, storage and the URL never see it.
+25. **(W47) During a deploy the previous web's failure line pages nobody** once the new infra is in (its two alarms
+    are gone); covered by the row and the job, as "Safe with the previous image" says. And the reverse order (new
+    web, no job yet) asks the provider nothing until the worker is replaced.
+26. **(W47, W43's open point, still open) Nothing by name alarms when `provider_sign_outs` does not run.** Section 7
+    asks the build to confirm the platform schedule's missed-run alarm covers the job. W47 looked: `infra/lib` names
+    the job in no alarm list; what exists is the platform heartbeat (the process is alive) and the final-failure
+    filter on the platform group (`JobFailedOnLastAttempt`, a run that fails). A schedule that stops firing this one
+    job while the process beats is heard by neither, and rows then wait unpaged (LATE needs tries). Not built: it
+    needs a decision on a per-job missed-run signal (for example an alarm on rows undone past N minutes, written by
+    another job, or a per-job beat).
+27. (W43) The failed-try warning carries no cause `request_id` (`operator_provider_sign_out_claim()` does not return
+    it; migrations closed). The LATE and GAVE_UP lines carry it.
+
+**Database review**
+28. (W33) `membership_removal_target_holds` holds while a request is `requested`, including one past its 24 hours
+    that the job has not yet marked expired (at most a minute).
+29. (W43) The run's 8 seconds are counted from the first claim and each call may take 10 seconds more; the operator
+    pool has two connections and this job holds one for the run.
+30. (W43) The worker's tests assert `operator_key_removals_expire` is called; they do not expire a real lapsed
+    request (W32's database tests hold the function).
+
+**Wording, UX and brand review**
+31. (W43) The step-failed line's `error_code` is `<step>:<error name>`, a compound code.
+32. (W45, W46) "by phone, on a number you already hold" states the runbook before it exists.
+33. (W46) The Actions cell of a member under removal holds two paragraphs and two buttons in a table cell; at 390 px
+    the table scrolls sideways, not seen.
+34. (W46) "Confirm key removal" is one press with its consequence in the paragraph above, no typed confirmation.
+35. (W46) The refusals are lower-case rule sentences in the form's error; the first is long.
+36. (W46) If the code is lost the opening stands for its hour; the screen says "shown once" and not what to do then.
+37. (W46) "It cannot be undone" on a button whose effect a new registration mends.
+38. (W46) The requester sees their own request as "You asked".
+39. **(W47) The two new alarm descriptions** (`ProviderSignOutNotDelivered`, `RemovedHardwareKeyUsed`) point at
+    "docs/runbooks/incident-response.md, the hardware key section", which the runbook step has yet to write, and
+    `ProviderSignOutNotDelivered` tells the operator to have the user signed out "through the founder's break-glass"
+    for GAVE_UP (16.6: until an operator function exists the one resend left is the founder's).
+
+**W50's points**
+40. **(security and deploy review) SGN-22 has no test yet** (first in "What the next session does"); until it exists
+    the invariant is held only by its parts (SGN-20's refusals, SGN-26 case 7).
+41. **(deploy review) `ProviderSignOutsNotRunning` can raise once in the deploy that creates it**, between the alarm's
+    creation and the new platform task's first run (missing data breaches, two 300 s periods), and pages for as long
+    as a rolled-back platform image without the job runs. The deploy runbook says both. Whether ten minutes is the
+    right window, and whether the line should be written at the run's end (as built: a hung run is heard too) or its
+    start.
+42. **(deploy review) The run line is one a minute at info** on the platform group, about 1,440 lines a day.
+43. **(security review) The deploy runbook's staff check reads the audit log as the operator role**
+    (`hardware_key_registered` since the migration's commit); the registry's own count of live keys is the owner's
+    to read, since both runtime roles hold no privilege on the tables. Whether the founder's read belongs in every
+    deploy of this release.
+44. **(security review) `sign-in.ts` about line 1011 audits `hardware_key_registered` and `hardware_key_record`
+    inserts the same action**: W50 saw both while writing the runbook's query (which groups by actor) and did not
+    read whether one registration writes two rows.
+45. **(wording review) The runbooks' new words** (the three incident sections, the deploy section, the two support
+    bullets) and **the two alarm descriptions W50 wrote or changed** (`ProviderSignOutsNotRunning`,
+    `HardwareKeyRegisteredAcrossReset`) have had no wording review.
+46. **(wording review) The incident runbook tells the operator a lost code means waiting out its hour**: the database
+    refuses a second opening while one is usable (`hardware_key_registration_open_once`); point 36's screen words
+    should agree.
+47. **(UX and brand review) Nothing of item 37's screens has been seen**: points 33 to 38 stand as unseen.
+
+### Machine notes
+As W47's (PostgreSQL 18 was stopped again when this container woke; the same `pg_ctl` line). The checkout is detached
+at the WIP commit; push with `git push origin HEAD:refs/heads/co-001/wip-key-registry`. **Beyond what it was told to
+read, W50 read about 20 lines of the design note's section 10** (the one-line definitions of the fourteen matrix
+rows, and SGN-22's four lines), since no other record says what each row asserts. W50 holds nothing else: no PR, no
+subagent, no scheduled task; its one background run (the suites) has ended.
+
+
+## The earlier block (2026-11-12, W47, session_019i9if9pdiBq7WR2Rdf8ezT): the BUILD of item 37 is whole (W43's item 5 done: the web asks the provider for no sign-out, the alarms moved); what is left is seeing it in a browser, the two reviews, and the papers
 
 **WIP `co-001/wip-key-registry` 7f986ed0** (three commits on 03f0af53). No PR is open. No migration was touched: the step
 needed nothing the functions and grants did not already give (the row is queued by `audit_event_provider_sign_out`,
@@ -124,104 +361,7 @@ membership or records the reset.
   typed, the new key registered) is not written.
 
 ### Every named point for the two reviews, in one list (W33, W43, W44, W45, W46 carried over; W47's added)
-**For the security review, first, from the orchestrator:**
-1. **A refused act leaves no trace.** A refused act writes no audit event because it rolls back (W46), so a refused
-   key removal (the requester confirming their own request, an administrator under seven days, a stale key session,
-   the account acting on itself) is recorded nowhere but a log line of the wrapper's. The security review says
-   whether sections 4.5 and 6 of the note require a trace of a refused removal and, if so, how it survives the
-   rollback (a second transaction after the refusal, an autonomous write by the function before it raises, or a
-   counted log line with an alarm).
-
-**Auth review**
-2. (W33, the ruling's point 4) Every session insert now takes the account's row, the previous image's included,
-   which ADR 0093 D4 had left unlocked on purpose. ADR 0095 needs the dated section amending D4, and "What the
-   founder should know" a line.
-3. (W33) `hardware_key_record` is an uncounted check of a code digest for whoever holds the application role
-   (decision 7); the 40 bits and the hour bound it.
-4. (W43) The job reads the provider's `UserNotFoundException` as `no_such_user` and marks the row done with no
-   sign-out; a pool ID naming the wrong pool would turn every row into that answer. Nothing checks the pool at start.
-5. (W43) The `removed` email tells the reader that support gives a one-time code: whether an email should say a code
-   exists at all.
-6. (W44, W45) `hardware_key_registration_judge` asked with no code counts a try, and the free "closed?" helper is
-   granted to no role. The web reads closed from the registry's rows; the one case it cannot see is a removal
-   confirmed for an account that never had a key row, whose first visit spends one of the five tries. Recorded for
-   the contract migration, not built.
-7. (W44) `codeRequired` and `code` live in the sealed step, but nothing trusts them: `judge` runs before each
-   provider call and `hardware_key_record` judges again under the lock.
-8. (W44) The cleaning skips a provider credential whose ID is not canonical base64url of 16 to 1,023 bytes; whether
-   Cognito's `CredentialId` is exactly the browser's `id` is unverified; if not, the cleaning deletes nothing.
-9. (W44) The cleaning measures "older than 15 minutes" from the database's clock against the provider's: two clocks.
-10. (W44) A registration that fails for a reason that is not a refusal now answers `key_not_registered` after
-    removing the key, where the base threw; the error's class name is logged.
-11. (W45) The code action is counted in `mfa` by the sealed step, the same budget as the key routes; whether the
-    code deserves a budget of its own.
-12. (W45) A code typed for an account that is not closed is answered as a step forward (`not_closed`), not a refusal.
-13. (W45) The shape's refusal differs from the wrong code's (a field issue against the one refusal).
-14. (W46) `AuditSpec.writtenBy: 'database'` lets a route name an audit action the wrapper never writes; only the
-    four key routes use it, each tested for exactly one event; no test yet refuses the flag on any other route.
-15. (W46) `runAction`'s `answer` returns a server action's success state without a redirect. One caller.
-16. (W46) 42501 from the functions is answered `invalid` with the rule's words, not `forbidden`.
-17. (W46) The lost code: one administrator can hold an account closed an hour at a time by opening and discarding
-    codes; each is audited and sends the member the opening's notice.
-18. (W46) The page lists removals only beside an organization's members; an account with no membership row has no
-    row to act on.
-19. (W46) `organizationId` in the key routes' inputs is used for the redirect only and is not checked against the
-    account's memberships.
-20. **(W47) A reset that recorded nothing now signs out nowhere.** When both tries of `endedByReset` fail (or the
-    database goes away after the provider took the new password), the previous web still asked the provider to sign
-    the user out; now no cause committed, so no row exists and nothing asks. The password is changed at the
-    provider, the app's sessions stand, and the one signal is `security event: password reset sessions not ended`
-    (`PasswordResetSessionsNotEnded`, whose words now say no sign-out was queued). The provider's sign-out never
-    ended the app's sessions, so what is lost is the provider's tokens ending for that account until the operator
-    acts. Closing it would take a way to queue a sign-out without the reset's event (a function and a grant: a
-    migration, closed to W47). The review says whether the runbook's step is enough.
-21. **(W47) The web's task can still send the sign-out.** The web and the worker share one task role
-    (`USER_POOL_ADMIN_ACTIONS`), so the web's credentials still hold `cognito-idp:AdminUserGlobalSignOut` though no
-    code of the web sends it. Splitting the role is larger than this step.
-22. **(W47) `whenCommitUnknown` is gone from the wrapper.** After a commit with no answer no handler work runs. No
-    route but the two End memberships used it; any later route that wants work for that case must write a row.
-23. **(W47) The Settings route no longer reads `cognito_sub`** under the administrator's scope before ending the
-    membership; ADR 0094's note on reading the subject "while the membership stands" is now moot and ADR 0095
-    should say so.
-
-**Security review**
-24. (W46) The registration code crosses the server-action response to the administrator's browser and lives in
-    React state until the page goes; `autocomplete`, storage and the URL never see it.
-25. **(W47) During a deploy the previous web's failure line pages nobody** once the new infra is in (its two alarms
-    are gone); covered by the row and the job, as "Safe with the previous image" says. And the reverse order (new
-    web, no job yet) asks the provider nothing until the worker is replaced.
-26. **(W47, W43's open point, still open) Nothing by name alarms when `provider_sign_outs` does not run.** Section 7
-    asks the build to confirm the platform schedule's missed-run alarm covers the job. W47 looked: `infra/lib` names
-    the job in no alarm list; what exists is the platform heartbeat (the process is alive) and the final-failure
-    filter on the platform group (`JobFailedOnLastAttempt`, a run that fails). A schedule that stops firing this one
-    job while the process beats is heard by neither, and rows then wait unpaged (LATE needs tries). Not built: it
-    needs a decision on a per-job missed-run signal (for example an alarm on rows undone past N minutes, written by
-    another job, or a per-job beat).
-27. (W43) The failed-try warning carries no cause `request_id` (`operator_provider_sign_out_claim()` does not return
-    it; migrations closed). The LATE and GAVE_UP lines carry it.
-
-**Database review**
-28. (W33) `membership_removal_target_holds` holds while a request is `requested`, including one past its 24 hours
-    that the job has not yet marked expired (at most a minute).
-29. (W43) The run's 8 seconds are counted from the first claim and each call may take 10 seconds more; the operator
-    pool has two connections and this job holds one for the run.
-30. (W43) The worker's tests assert `operator_key_removals_expire` is called; they do not expire a real lapsed
-    request (W32's database tests hold the function).
-
-**Wording, UX and brand review**
-31. (W43) The step-failed line's `error_code` is `<step>:<error name>`, a compound code.
-32. (W45, W46) "by phone, on a number you already hold" states the runbook before it exists.
-33. (W46) The Actions cell of a member under removal holds two paragraphs and two buttons in a table cell; at 390 px
-    the table scrolls sideways, not seen.
-34. (W46) "Confirm key removal" is one press with its consequence in the paragraph above, no typed confirmation.
-35. (W46) The refusals are lower-case rule sentences in the form's error; the first is long.
-36. (W46) If the code is lost the opening stands for its hour; the screen says "shown once" and not what to do then.
-37. (W46) "It cannot be undone" on a button whose effect a new registration mends.
-38. (W46) The requester sees their own request as "You asked".
-39. **(W47) The two new alarm descriptions** (`ProviderSignOutNotDelivered`, `RemovedHardwareKeyUsed`) point at
-    "docs/runbooks/incident-response.md, the hardware key section", which the runbook step has yet to write, and
-    `ProviderSignOutNotDelivered` tells the operator to have the user signed out "through the founder's break-glass"
-    for GAVE_UP (16.6: until an operator function exists the one resend left is the founder's).
+Moved, whole and with its numbers kept, into W50's block at the top, which adds points 40 to 47 and says what changed in 2, 23, 26, 32 and 39.
 
 ### What is left of item 37 (no code of the build; in this order)
 1. **See it in a browser** (the list above) and write the e2e journey; `pnpm test:e2e`.
