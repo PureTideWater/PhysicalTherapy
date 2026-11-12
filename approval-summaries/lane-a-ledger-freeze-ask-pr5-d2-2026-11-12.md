@@ -6,7 +6,7 @@ From Lane A (W34; the measurements of 2026-11-12 marked "second machine" are W35
 content. Nothing is built on what is asked here.
 
 **In short:** three yes/no questions. The check you granted is correct but too slow to run; Question 1 asks for a text
-that gives the same answers in under a second. Question 2 asks for one setting that closes the one case where the new
+that gives the same answers in a second or less (0.4 to 1.0 s across the states measured). Question 2 asks for one setting that closes the one case where the new
 text could still be slow. Lane A recommends yes to both. Question 3 arises only if you say no to Question 1: whether
 PR 5 is then built with Appendix A alone. Lane A makes no recommendation on it; it is yours to say.
 
