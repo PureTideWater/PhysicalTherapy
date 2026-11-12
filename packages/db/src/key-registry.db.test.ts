@@ -422,7 +422,8 @@ describe('SGN-23: who may request a removal', () => {
     // The session: a code session, the previous image's key session (no digest), another account's, one 16 minutes old,
     // and an older live session of the same account while a fresh one stands elsewhere.
     const stale = await good.session();
-    await seeded("UPDATE user_session SET started_at = now() - interval '16 minutes' WHERE id = $1", [stale]);
+    // The session's twelve hours move with its start (user_session_twelve_hours holds for a seeded row too).
+    await seeded("UPDATE user_session SET started_at = started_at - interval '16 minutes', expires_at = expires_at - interval '16 minutes' WHERE id = $1", [stale]);
     await good.session();
     expect(await ask(good.id, stale)).toEqual(DENIED);
     expect(await ask(good.id, target.session)).toEqual(DENIED);
