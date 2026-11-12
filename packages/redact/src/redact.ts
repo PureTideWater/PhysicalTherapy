@@ -735,8 +735,16 @@ function patternOf(characters: readonly string[], gaps: readonly string[]): RegE
  * it is in every number. What the wider reading takes where a boundary is known to stand: no case per mark, since each
  * mark left out was a form sent in clear ("ZZ12345.01", "ZZ12345:01" and "ZZ12345#01" for a number held "ZZ12345/01").
  * A function, since two of the marks are named further down the file.
+ *
+ * `also` (what the records write at that place, numberForm) is read only where the first class does not take the
+ * character: the two alternatives never take the same one, so a run is read one way and in time linear in its length.
+ * With a separator of the records in both, a run of it not followed by the rest of the number was tried every way,
+ * the time doubling with each character (review 2 of Queues item 34, R2-1: 26 slashes 7 s, 500 no answer).
  */
-const runOfMarks = (also = '') => `(?:[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}${OWN_MARK}]|[\\u02BC\\u02B9\\u02CA${also}])*`;
+const runOfMarks = (also = '') => {
+  const noMark = `\\p{L}\\p{N}${BARRIER}${NAME_MARK}${OWN_MARK}`;
+  return `(?:[^${noMark}]|(?=[${noMark}])[\\u02BC\\u02B9\\u02CA${also}])*`;
+};
 
 /**
  * The fewest letters and digits of a piece of a stored number that is read as a number of its kind (piecesOf), and the
@@ -1311,6 +1319,13 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
       const start = match.index;
       const end = start + match[0].length;
       const range = inNormal(view, start, end);
+      if (wider) {
+        // The wider reading asks at every place, not from the end of the match before: under its gaps (a run of marks,
+        // MOD-25 A-4 and A-5) a match can begin at a cut form of the value, cross a mark and end inside the real writing
+        // after it ("ZEPHYRA: Z E P H Y R A Z" for ZEPHYRAZ), and a scan that went on from there sent the rest of that
+        // writing, which the narrower gaps replaced whole (review 1 of Queues item 34, R1-1). The spans are merged.
+        pattern.lastIndex = start + codePointAt(view.text, start).length;
+      }
       if (form.kind === 'name') {
         if (!wider && !spacedPiecesPass(form, view, normal, start, end)) {
           // Past the whole first code point: with the u flag, an index inside a surrogate pair finds the same match again.
@@ -3980,7 +3995,7 @@ function gluedBeforeRedaction(normal: string, subject: Subject, spans: readonly 
   // and taken from the wider reading where it read this text (alikeOfWider), as the reading above took it.
   const alike = alikeOfWider !== null && alikeOfWider.normal === normal && alikeOfWider.subject === subject ? alikeOfWider.alike : alikeReads(normal, subject);
   const hiddenIn = (at: readonly number[]) => (range: Range) => hidden({ start: at[range.start] ?? normal.length, end: at[range.end] ?? normal.length });
-  const lineFeeds = lineEndingsAsOne(normal, /\r+\n/g);
+  const lineFeeds = lineEndingsAsOne(normal, CR_LF);
   if (lineFeeds.text !== normal && digitsGluedToLetter(lineFeeds.text, subject, hiddenIn(lineFeeds.at), alike)) {
     return true;
   }
@@ -4016,9 +4031,12 @@ function lineEndingsAsOne(text: string, ending: RegExp): { readonly text: string
 
 /**
  * A text with each CR LF written as a line feed, every CR of a run before the line feed with it: "\r\r\n" is one line
- * ending too, a file converted twice (review A-6).
+ * ending too, a file converted twice (review A-6). A run is read from its first CR alone: asked from each CR of a run
+ * that no line feed ends, the pattern read the rest of the run again each time, 100,000 CRs in 8 s and more (review 2
+ * of Queues item 34, R2-2). The same runs are found: a match always began at a run's first CR.
  */
-const asLineFeeds = (text: string) => text.replace(/\r+\n/g, '\n');
+const CR_LF = /(?<!\r)\r+\n/g;
+const asLineFeeds = (text: string) => text.replace(CR_LF, '\n');
 
 /**
  * A text read with line feeds (asLineFeeds) that still holds a line feed right before a CR, with each line feed and

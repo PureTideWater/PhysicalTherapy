@@ -661,6 +661,46 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(forMore('76543', ['SYN555001'], ' \u0445') - forMore('7654', ['SYN555001'], ' \u0445')).toBe(4 * MORE);
   });
 
+  // Review 2 of Queues item 34 (R2-1): where the records hold a separator in a number, the wider reading joins a run of
+  // marks there (A-5). A run of that same separator in a letter, with the rest of the number not after it, was read in
+  // time that doubled with each character (26 slashes: 7 s; 500: no answer), on work the counter does not see.
+  it.each([
+    ['held with a slash, 26 slashes after the piece', 'ZZ12345/01', `Member ID: ZZ12345${'/'.repeat(26)} Group: 100`],
+    ['held with a slash, 2,000 slashes after the piece', 'ZZ12345/01', `Member ID: ZZ12345${'/'.repeat(2_000)} Group: 100`],
+    ['held with a space, a column padded with spaces to 100,000 characters', 'ZZ12345 01', `Member ID: ZZ12345${' '.repeat(N - 30)} Group: 100`],
+    ['held with a hyphen, a rule of hyphens to 100,000 characters', 'ZZ12345-01', `Member ID: ZZ12345 ${'-'.repeat(N - 30)} Group: 100`],
+    ['digits alone held with a hyphen, a rule of hyphens to 100,000 characters', '12345-01', `Ref 12345 ${'-'.repeat(N - 30)} paid`],
+  ])('reads a run of the separator the records hold in a number within the 3 s: %s', { timeout: HANG_GUARD_MS }, (_case, memberId, text) => {
+    const who = patient(['JANE Q VANTREE'], [memberId]);
+    const numbers = claim('SYN555001');
+    const run = timed(BUDGET_MS, () => {
+      const redacted = redactLetterForScreen(text, who, numbers);
+      return { text: redacted.text, held: holdsIdentifier(redacted.text, who, numbers, checkWorkOf(redacted)) };
+    });
+    // The piece of five or more is replaced (rule (c)) and the letter is sent, as before the run was read in linear time.
+    expect(run.value.held).toBe(false);
+    expect(run.value.text).not.toContain('12345');
+    expect(run.value.text).toContain('[MEMBER_ID]');
+    expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
+  });
+
+  // Review 2 of Queues item 34 (R2-2): every letter is now read for its CR LF line endings, and a run of CRs with no
+  // line feed after it was scanned again from each of its CRs (100,000: 8 to 16 s), on work the counter does not see.
+  it.each([
+    ['after a name', `Dear Vantree, ${'\r'.repeat(N)}`],
+    ['after prose, a letter after the run', `The claim was paid. ${'\r'.repeat(N)}x`],
+    ['after a CR LF', `Paid.\r\n${'\r'.repeat(N)}`],
+    ['after a line feed (the third reading)', `Paid.\n${'\r'.repeat(N)}x`],
+  ])('reads a run of 100,000 carriage returns with no line feed after it within the 3 s: %s', { timeout: HANG_GUARD_MS }, (_case, text) => {
+    const run = timed(BUDGET_MS, () => {
+      const redacted = redactLetterForScreen(text, digitsOnly.who, digitsOnly.numbers);
+      return { text: redacted.text, held: holdsIdentifier(redacted.text, digitsOnly.who, digitsOnly.numbers, checkWorkOf(redacted)) };
+    });
+    expect(run.value.held).toBe(false);
+    expect(run.value.text).not.toContain('Vantree');
+    expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
+  });
+
   // Review round 3 (GATEWAY3-3): the check's own paths, a letter it refuses included, in time linear in its length.
   it.each([
     // The call's identifiers glued to text (ownIdentifierGlued): a run of letters a digit touches, read once per part.

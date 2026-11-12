@@ -2657,3 +2657,60 @@ describe('MOD-25: a stored number written with other marks than the records hold
     });
   });
 });
+
+/**
+ * Review 1 of Queues item 34 (R1-1). A value that ends as it begins (ZEPHYRAZ; a number held "7,654,7"), with its
+ * beginning written before it and a mark between: under the wider gaps (A-4, A-5) a match began at the cut form, ended
+ * inside the real writing after it, and the scan went on from there, so the rest of the real writing was sent, where
+ * the base (which cannot cross the mark) replaced the real writing whole. The wider reading now asks at every place.
+ */
+describe('MOD-25: a match that begins before the real writing and ends inside it hides the real writing too (review 1, R1-1)', () => {
+  /** The letters and digits a sent text shows outside its placeholders, folded to lower case. */
+  const shown = (sent: string) => sent.replace(/\[[A-Z_0-9]+\]/g, ' | ').replace(/[^\p{L}\p{N}|]/gu, '').toLowerCase();
+  const hides = (letter: string, patient: PatientIdentifiers, numbers: readonly LetterClaim[], rest: string) => {
+    for (const sent of [sentOrRefused(letter, patient, numbers), redactLetter(letter, patient, numbers).text]) {
+      if (sent !== REFUSED) {
+        expect(shown(sent), `${JSON.stringify(letter)} sent as ${JSON.stringify(sent)}`).not.toContain(rest);
+      }
+    }
+  };
+
+  it.each([
+    ['ZEPHYRAZ', 'ZEPHYRA: Z E P H Y R A Z', 'ephyraz'],
+    ['ZEPHYRAZ', 'Zephyra, z e p h y r a z', 'ephyraz'],
+    ['ZEPHYRAZ', 'ZEPHYRA/Z.E.P.H.Y.R.A.Z paid', 'ephyraz'],
+    ['AMBRIDA ZEPHYRA', 'Ambrid, a m b r i d a', 'mbrida'],
+    ['ORLENDO', 'Orlend(o r l e n d o', 'rlendo'],
+    ['ZEPHZE', 'ZEPH+Z E P H Z E', 'ephze'],
+  ])('a name %s written apart after its own beginning: %s', (name, letter, rest) => {
+    hides(letter, patientOf([name]), claimsOf('SYNCLAIM0001'), rest);
+  });
+
+  it.each([
+    ['7,654,7', '7: 654 # 7,654,7', '6547'],
+    ['7,654,7', 'Paid 7.654 $7,654 7 today', '6547'],
+    ['2,212,2', '2\r\n212 $2,212 2', '2122'],
+    ['ZZ12/ZZ12/9', 'ZZ12: ZZ12/ZZ12/9', 'zz129'],
+  ])('a member ID held %s written after its own beginning: %s', (memberId, letter, rest) => {
+    hides(letter, patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], [memberId]), claimsOf('SYNCLAIM0001'), rest);
+  });
+
+  it('whatever mark and gap stand between the cut form and the name written apart', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('ZEPHYRAZ', 'ORLENDO', 'AMBRIDA', 'ELVANNE', 'TARKETT', 'NOXIAN', 'QUIXQU', 'ZEPHZE'),
+        fc.constantFrom(',', ':', ';', '/', '+', '(', '*', '。', '#', '!'),
+        fc.constantFrom('', ' ', '  '),
+        fc.constantFrom(' ', '.', '-'),
+        fc.boolean(),
+        (name, mark, gap, apart, lower) => {
+          const cut = name.slice(0, -1);
+          const real = [...name].join(apart);
+          const letter = `${lower ? cut.toLowerCase() : cut}${mark}${gap}${lower ? real.toLowerCase() : real} was seen.`;
+          hides(letter, patientOf([name]), claimsOf('SYNCLAIM0001'), name.slice(1).toLowerCase());
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+});
