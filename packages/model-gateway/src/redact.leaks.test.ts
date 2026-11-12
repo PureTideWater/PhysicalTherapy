@@ -1112,11 +1112,11 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
       expect(sentOrRefused('The member ZZ12345,01 was paid short.', held, claims)).toBe('The member [MEMBER_ID] was paid short.');
     });
 
-    it('A-6: every CR before a line feed is that line ending’s; a line feed before a CR is as written, recorded', () => {
+    it('A-6: every CR before a line feed is that line ending’s; a line feed before a CR was sent as written until Queues item 34 read it (MOD-25)', () => {
       expect(sentOrRefused('SSN verified. Account \nNo. 900-12-345678', JANE, JANE_CLAIMS)).toBe(REFUSED);
       expect(sentOrRefused('SSN verified. Account \r\nNo. 900-12-345678', JANE, JANE_CLAIMS)).toBe(REFUSED);
       expect(sentOrRefused('SSN verified. Account \r\r\nNo. 900-12-345678', JANE, JANE_CLAIMS)).toBe(REFUSED);
-      expect(sentOrRefused('SSN verified. Account \n\rNo. 900-12-345678', JANE, JANE_CLAIMS)).toBe('SSN verified. Account \n\rNo. 900-12-345678');
+      expect(sentOrRefused('SSN verified. Account \n\rNo. 900-12-345678', JANE, JANE_CLAIMS)).toBe(REFUSED);
     });
   });
 
@@ -2443,6 +2443,66 @@ describe('MOD-25: a stored number written with other marks than the records hold
               expect(sent, `${held}: ${written}`).toBe(`${before}[PATIENT_NAME]${after}`);
             }
           }
+        }),
+        { numRuns: 200 },
+      );
+    });
+  });
+
+  describe('A-6: a line feed before a CR is one line ending too, read once more', () => {
+    const ENDINGS = ['\n\r', '\n\r\r', '\r\n\r', '\n\r\r\r', '\r\r\n\r\r'];
+    /** Letters the check refuses when the line ending is a line feed: each reach over it is counted in characters. */
+    const REFUSED_WITH_LF = ['SSN verified. Account \nNo. 900-12-345678', 'Claim Number:\n\n20260112345.01', 'STATEMENT\n\n900-12-3456150.00', `${HELD}Member ID:\n\n802-45-678901`];
+
+    it.each(ENDINGS)('refuses with %j what is refused with a line feed there', (ending) => {
+      for (const withLf of REFUSED_WITH_LF) {
+        expect(sentOrRefused(withLf, JANE, JANE_CLAIMS), withLf).toBe(REFUSED);
+        const letter = withLf.replaceAll('\n', ending);
+        expect(sentOrRefused(letter, JANE, JANE_CLAIMS), JSON.stringify(letter)).toBe(REFUSED);
+        expect(letterPath(letter, JANE, JANE_CLAIMS), JSON.stringify(letter)).toBe(REFUSED);
+        expect(holdsIdentifier(letter, JANE, JANE_CLAIMS), JSON.stringify(letter)).toBe(true);
+      }
+    });
+
+    it('refuses where only one line ending of several is written so, and beside a CR LF', () => {
+      expect(sentOrRefused('Thank you.\r\nSSN verified. Account \n\rNo. 900-12-345678\r\nPaid.', JANE, JANE_CLAIMS)).toBe(REFUSED);
+      expect(sentOrRefused('Thank you.\nSSN verified. Account \n\rNo. 900-12-345678\nPaid.', JANE, JANE_CLAIMS)).toBe(REFUSED);
+    });
+
+    it('applies nothing of the wider reading to a letter the first reading’s check refuses read so', () => {
+      expect(sentOrRefused('Dear Zephy ra. SSN verified. Account \n\rNo. 900-12-345678', JANE, JANE_CLAIMS)).toBe(REFUSED);
+    });
+
+    it('sends a letter with such line endings and no identifier as it is written, and redacts in it as before', () => {
+      for (const ending of ENDINGS) {
+        const letter = `Thank you.${ending}Paid in full on the claim.${ending}`;
+        expect(sentOrRefused(letter, JANE, JANE_CLAIMS), JSON.stringify(letter)).toBe(letter);
+        expect(sentOrRefused(`Dear Zephyra,${ending}Paid in full.`, JANE, JANE_CLAIMS), JSON.stringify(ending)).toBe(`Dear [PATIENT_NAME],${ending}Paid in full.`);
+        expect(sentOrRefused(`Dear Zephy ra,${ending}Paid in full.`, JANE, JANE_CLAIMS), JSON.stringify(ending)).toBe(`Dear [PATIENT_NAME],${ending}Paid in full.`);
+      }
+    });
+
+    it('charges each further reading in full, on such a letter only: a crafted letter near the budget with both endings is refused', () => {
+      // The dearest letter MOD-23 leaves read (414.0M of the 420M with a CR LF at its end, sent) is read twice. With a
+      // line feed before a CR in place of the CR LF it is read twice too (as written, and as one line feed): sent, where
+      // before Queues item 34 it was read once (at 30,002 characters 139.9M then, 214.4M now). With both endings it is
+      // read three times, and the third reading takes it past the budget: REFUSED, to a person. No letter of the gate's
+      // 975,489 holds a line feed before a CR.
+      const patient = patientOf(['JANE Q VANTREE'], ['1961-03-03'], ['ZZ1234567']);
+      const numbers = claimsOf('SYN555001');
+      const days = (count: number, ending: string) => `${'\u33FE;'.repeat(count)}${ending}`;
+      expect(sentOrRefused(days(28_985, '\n\r'), patient, numbers)).not.toBe(REFUSED);
+      expect(sentOrRefused(days(28_984, '\r\n\n\r'), patient, numbers)).toBe(REFUSED);
+      // Two crafted letters of 57,972 characters, each read to the budget: no timed row (functions/denial-letter.test.ts holds those).
+    }, 30_000);
+
+    it('property: a letter refused with line feeds is refused with any of them written with CRs after or around it', () => {
+      const ending = fc.constantFrom('\n', ...ENDINGS, '\r\n');
+      fc.assert(
+        fc.property(fc.constantFrom(...REFUSED_WITH_LF), fc.array(ending, { minLength: 2, maxLength: 2 }), fc.constantFrom('', 'Thank you.\n', 'Dear Zephy ra,\n'), (withLf, endings, before) => {
+          let at = 0;
+          const letter = `${before}${withLf}`.replaceAll('\n', () => endings[at++ % endings.length] ?? '\n');
+          expect(sentOrRefused(letter, JANE, JANE_CLAIMS), JSON.stringify(letter)).toBe(REFUSED);
         }),
         { numRuns: 200 },
       );

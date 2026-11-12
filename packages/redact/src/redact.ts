@@ -3836,8 +3836,12 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
     // letter is refused wherever its writing with LF is ("SSN on file. Statement", CR LF and "No. 900-12-3456150.00":
     // review K-1 of co-001/redact-ssn-phone-leaks). The first reading stands, and this one only adds. Every reading
     // here counts its work on the one counter of the letter (work): the second reading is charged as the first is, and
-    // a letter whose readings together pass the budget is refused, never read on.
-    return inOneReading(() => holds(text) || (text.includes('\r\n') && holds(asLineFeeds(text))));
+    // a letter whose readings together pass the budget is refused, never read on. A third reading where a line feed
+    // still stands right before a CR (asOneLineFeed; MOD-25, A-6), charged in full as the second is.
+    return inOneReading(() => {
+      const lineFeeds = asLineFeeds(text);
+      return holds(text) || (lineFeeds !== text && holds(lineFeeds)) || (lineFeeds.includes('\n\r') && holds(asOneLineFeed(lineFeeds)));
+    });
   } catch (error) {
     if (!(error instanceof PastCheckWorkBudget)) {
       throw error;
@@ -3905,17 +3909,31 @@ function digitsGluedToLetter(normal: string, subject: Subject): boolean {
 const asLineFeeds = (text: string) => text.replace(/\r+\n/g, '\n');
 
 /**
+ * A text read with line feeds (asLineFeeds) that still holds a line feed right before a CR, with each line feed and
+ * the CRs after it written as one line feed: "\n\r" is a line ending written in two characters too, and "\n\r\r"
+ * one (Queues item 34, MOD-25, A-6; review A-6 of item 26: "Account \n\rNo. 900-12-345678" was sent, the CR counted
+ * as a character of the reach). A third reading of the check, on such letters only; it only adds.
+ */
+const asOneLineFeed = (lineFeeds: string) => lineFeeds.replace(/\n\r+/g, '\n');
+
+/**
  * A text the wider reading's work passed the budget on in redactionSpans, which has no other refusal to give: the
  * first reading's text with one of the checks' own marks at its end, which holdsIdentifier refuses at its first line.
  */
 const unreadPastTheBudgetAfter = (text: string) => `${text}${BARRIER}`;
 
 /**
- * Whether the first reading's check refuses a text in either writing holdsIdentifier reads it in: as written, and with
- * its CR LF line endings as line feeds. What decides whether the wider reading's matches are applied.
+ * Whether the first reading's check refuses a text in any writing holdsIdentifier reads it in: as written, with its CR
+ * LF line endings as line feeds, and where a line feed then still stands before a CR, with those as one line feed
+ * (asOneLineFeed). What decides whether the wider reading's matches are applied.
  */
 function refusedAsFirstRead(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): boolean {
-  return holdsAsFirstRead(text, patient, claims) || (text.includes('\r\n') && holdsAsFirstRead(asLineFeeds(text), patient, claims));
+  const lineFeeds = asLineFeeds(text);
+  return (
+    holdsAsFirstRead(text, patient, claims) ||
+    (lineFeeds !== text && holdsAsFirstRead(lineFeeds, patient, claims)) ||
+    (lineFeeds.includes('\n\r') && holdsAsFirstRead(asOneLineFeed(lineFeeds), patient, claims))
+  );
 }
 
 /**
