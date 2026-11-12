@@ -88,6 +88,12 @@ for (const n of LENGTHS) for (const kind of KINDS) for (let draw = 0; draw < 3; 
   // No other side is asked: a joiner and digits, or digits, after a number a letter stands before.
   add(`a.glued.${n}`, 'refused', p, ['Ref XYZ', [kind, value], '-01 on file.']);
   add(`a.glued.${n}`, 'refused', p, ['Ref XYZ', [kind, value], '123 on file.']);
+  // Review 1, R1-2 (fix round 2): the writing after a label, joined over "." or "/", glued to a letter, label or none.
+  // No draw is taken here, so every other letter of the set is as it was (13,780 before these 576).
+  for (const sep of ['.', '/']) for (const label of ['Claim No. ', 'Member ID: ', 'Paid ']) for (const [b, a] of [['X', ''], ['', 'B']] as const) {
+    const cut = Math.floor(n / 2);
+    add('a.labeled-separator', 'refused', p, [label + b, [kind, value.slice(0, cut) + sep + value.slice(cut)], a + ' on file.']);
+  }
   // Left, recorded: a digit right beside the number is another, longer number.
   for (const [b, a] of [['Ref 9', ' on file.'], ['Ref 00', ' on file.'], ['Ref ', '01 on file.'], ['Ref ', '9B on file.'], ['Ref B00', ' on file.']] as const) add('left.digit-beside', 'left', p, [b, [kind, value], a]);
   // Set apart it is the first reading's.

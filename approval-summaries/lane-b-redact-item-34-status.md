@@ -4,7 +4,57 @@ Design of record: `designs/lane-b-redact-item-34/design.md` (ops 163894a9). Ruli
 one constant; (d) the verifier keeps its reading; A-4's costs accepted; a digit beside the number stays recorded.
 WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. No PR is open.
 
-## RESUME-BLOCK (W54, 2026-11-12, after the fix of rule (a); THE ITEM IS WHOLE BUT FOR THE TWO REVIEWS AND THE PR)
+## RESUME-BLOCK (W56, 2026-11-12 about 23:05 UTC, at the token limit: BOTH REVIEWS DONE, BOTH FIX ROUNDS COMMITTED, ROUND 2 NOT YET MEASURED, NO PR)
+
+- **WIP head: 17028cfa** on `co-001/wip-redact-item-34`, pushed through the hook. On 846968af: 483ac960 (fix round 1),
+  17028cfa (fix round 2). No PR is open; `co-001/redact-item-34` exists only locally in W56's container (same commit).
+- **Reviews** (`designs/lane-b-redact-item-34/reviews/`): `review-1.md` (leaks, R1-1 to R1-6), `review-2.md` (cost
+  and refusal, R2-1 to R2-7). The delta review of round 1 (`review-3-fix-round-1.md`) was running when this was
+  written: if the file is not on the branch, it is lost with the container and is owed again, with round 2's delta.
+- **Fix round 1 (483ac960), each verified by tests failing first on an assertion:**
+  - R1-1 REGRESSION: under the wider gaps a match began at a cut form of a value and ended inside the real writing
+    (`ZEPHYRA: Z E P H Y R A Z` for ZEPHYRAZ sent as `[PATIENT_NAME] E P H Y R A Z`; the base hid it). `ownMatchesIn`
+    with `wider` now asks at every place (`pattern.lastIndex` one code point past the match's start). 9 tests failed first.
+  - R2-1 BLOCKER: `runOfMarks(own)` took a stored separator by both alternatives: exponential time on a run of it
+    (26 slashes 7 s). The second alternative is behind a lookahead; the alternatives are disjoint.
+  - R2-2 BLOCKER: `/\r+\n/g` on every letter: quadratic on a run of CRs (100,000: 7 to 16 s). Now `CR_LF =
+    /(?<!\r)\r+\n/g`. 4 timed tests failed first.
+  - Measured on 483ac960 against a97d73e4: budget rows 403,548,210 and 414,023,090, both sent, both sides;
+    generated set failures 0 of 13,780, PHI classes none, refused A 1,680, B 5,213, notes 6. The full gate, the
+    letter 187754 comparison, `pnpm test:db` and the battery were still running in W56's container (not read).
+- **Fix round 2 (17028cfa), the orchestrator's ruling of 22:55 UTC:** R1-2 (`Claim No. 7654.3210B` sent whole on both
+  sides) is inside rule (a): `gluedCoresOf` in `redact.ts` makes `digitsGluedToLetter` read the writing joined over
+  "." and "/" (`Form.labeled`), label or none; the number of forms charged is as before. 201 tests failed first.
+  R1-3 and R1-4 are pinned as sent in `redact.leaks.test.ts` (Queues item 40). The generated set has a new form
+  `a.labeled-separator`, 576 letters (14,356 in all; no draw taken, the other letters as they were).
+  **NOT MEASURED on 17028cfa:** the generated set (0 failures owed), the full gate `--no-cache` (PHI none; refused
+  462,984 both or B higher only by named letters; real-shaped newly refused 0: **if any is newly refused or a budget
+  row moves, do not decide: revert R1-2 to the base's reading, pin it as sent, bring the orchestrator the counts**),
+  the two budget rows, the suite on a quiet machine. Four older tests timed out with the gate running beside them
+  (load 9; each passes alone): `redact.property.test.ts` seed 1162287068 (60 s limit; **check this one quiet: every-
+  place scanning may have slowed it**), two of `functions/denial-letter.test.ts`, one of `narrative-roles.test.ts`.
+  `$300.00USD` for a number `30000` is now refused (was a residual line of the ADR: point 17).
+- **Run before the fixes (846968af):** `gateway.db.test.ts` and `patient-records.db.test.ts`: 2 files, 34 tests pass.
+  The local PostgreSQL must be started by hand (`su postgres -c "/opt/pg18/bin/pg_ctl -D /root/pgdata18 -o '-p 5433
+  -k /tmp' -l /tmp/pg18.log -w start"`), then `DATABASE_URL=postgres://postgres:test@localhost:5433/postgres pnpm
+  db:migrate` and the tests with that URL: the migrations need PostgreSQL 18, and vitest's default is port 5432 (16).
+- **Exact next steps:** (1) measure 17028cfa (W56's `measure.sh` is in this block's commit under
+  `designs/lane-b-redact-item-34/scripts/measure-w56.sh`: units, generated set, gate, differ on shard 2, test:db,
+  the battery on both sides, recorded and fresh seeds); (2) a delta review of 483ac960..17028cfa (and of 483ac960 if
+  review-3 is missing); two fix rounds are spent: further findings are recorded here for the queue; (3) the ADR 0054
+  amendment: the two fix rounds, R1-2's cost, R1-3 and R1-4 as residuals for Queues item 40, the `$300.00USD` line,
+  the new counts; test-matrix MOD-25 if its text names the forms; (4) the PR branch from the WIP head, the base
+  merged, the full local suite once, one push, the draft PR, the merge as W56's brief orders.
+- **For the queue (lesser findings, not built):** R1-3, R1-4 (item 40); R1-5 (`redactLetter`'s text holds a glued
+  number in clear with the mark; no product caller shows a refused letter); R1-6 (A-6 reads only `\n\r+`: `\f\r`,
+  `\v\r`, U+2028 or U+0085 with a CR are sent where the one-character control is refused); R2-3 (the (d) test bounds
+  the check from above on 3 cases at 1,000 runs, was 4 at 2,000); R2-4 ("the check holds wherever the verifier
+  matches" is not asserted for the verifier's whole-word reading: 5 of 22 probe rows flag in the verifier and pass
+  the check); R2-5 (closed by round 1's timed rows); R2-6 (of the battery's nine scripts that do not load,
+  `review-i2/time.mts` and `stress16` cover what nothing else that ran covers); R2-7 (A-6's third reading adds 51.4M
+  units on 99,974 characters with LF CR, sent); the count of stored numbers by length; the verifier's widening.
+
+## Earlier: RESUME-BLOCK (W54, 2026-11-12, after the fix of rule (a); THE ITEM IS WHOLE BUT FOR THE TWO REVIEWS AND THE PR)
 
 - **WIP head: 846968af** on `co-001/wip-redact-item-34`, pushed through the hook; the tree is clean. No PR is open.
   W54's commits on 20af8fb3: 04e2932b (the fix and its tests), 229da4cc (a whole number under one first-reading
