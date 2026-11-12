@@ -414,6 +414,11 @@ while it still runs, selects `operator_record_mail_event()`'s six columns by nam
 adds the alarms `PASSWORD_NOTICE_UNDELIVERED`, `PasswordNoticeRecordFailed`, `PasswordResetSessionsNotEnded` and
 `PasswordResetProviderSignOutFailed`; while IAM propagates, a refused first send is retried a minute later.
 
+The release that carries ADR 0094 adds one alarm, `MembershipEndProviderSignOutFailed`, and no migration: End membership
+then commits whatever Cognito answers and asks Cognito to sign the person out only afterwards. Rolled back, the previous
+web asks Cognito inside End membership's transaction again (a refusal there ends nothing and shows an error) and
+writes no line the alarm counts, so the alarm stays silent, not broken.
+
 **The rolling platform deploy.** The platform service rolls with a minimum of 100% and a maximum of 200%
 (`infra/lib/environments.ts`), so an old and a new platform task overlap, and an old task cannot read an SES event of
 kind `password_changed` (it logs `MAIL_EVENT_UNREADABLE` and leaves the event, which moves to `tp-<env>-mail-events-dlq`
