@@ -670,8 +670,15 @@ const GAP = {
   tight: `(?:[${NAME_JOINERS}]|${HYPHENATION})*`,
   /** Inside a name's part, two letters or more from each end: a space or period too, if the pieces it makes pass (spacedPiecesPass). */
   spaced: `[${NAME_JOINERS}\\s.]*`,
-  /** Inside a name's part in the letter reader's wider reading (nameForm with `apart`): as `spaced`, and U+0085, a line break here (LINE_BREAK) that \\s does not hold. */
-  apart: `[${NAME_JOINERS}\\s\\u0085.]*`,
+  /**
+   * Inside a name's part in the letter reader's wider reading (nameForm with `apart`): any run of marks (runOfMarks;
+   * Queues item 34, MOD-25, A-4), which holds all of `spaced`, every line break (U+0085 too, which \\s does not hold) and
+   * every other mark: "Zephy, ra", "Zephy(ra", "Zephy/ra", "Zephy+ra". No case per mark: each mark left out was a name
+   * sent in clear. Read when a form is built, since runOfMarks names marks declared further down the file.
+   */
+  get apart(): string {
+    return runOfMarks();
+  },
   /** Between the parts the records hold apart: any joiner, white space, a period or a comma. */
   part: `[${NAME_JOINERS}\\s.,]*`,
   number: `[${NUMBER_JOINERS}]*`,
@@ -793,10 +800,19 @@ function piecesOf(value: string): string[] {
   return pieces.length < 2 ? [] : pieces.filter((piece) => [...piece].length >= WIDER_NUMBER_FLOOR && /\p{N}/u.test(piece));
 }
 
-/** A name's parts, each compacted from its folded value, grouped by word. */
-function nameWords(name: string): string[][] {
+/**
+ * A stored name's words in the letter reader's wider reading (Queues item 34, MOD-25, rule (b)): split at every
+ * character that is no letter, no digit and no joiner the records' split of a word into parts reads (PIECE_SPLIT), as
+ * if a space were held there. A name held "JANE+ZEPHYRA", "JANE&ZEPHYRA" or "ZEPHYRA(JANE)" is the words JANE and
+ * ZEPHYRA, where the first reading holds one word JANEZEPHYRA and sent "Ms. Zephyra" in clear. Every character
+ * WORD_SPLIT splits at is one of these, so each word of the first reading is a word or several here: it only adds.
+ */
+const WIDER_WORD_SPLIT = /[^\p{L}\p{N}\p{Pd}−⁃'‘’`´._\u00AD]+/u;
+
+/** A name's parts, each compacted from its folded value, grouped by word; with `wider`, the words of the wider reading (WIDER_WORD_SPLIT). */
+function nameWords(name: string, wider = false): string[][] {
   return viewOf(name.normalize('NFKC'), 'join')
-    .text.split(WORD_SPLIT)
+    .text.split(wider ? WIDER_WORD_SPLIT : WORD_SPLIT)
     .map((word) => word.split(PIECE_SPLIT).map(compactFolded).filter((piece) => piece !== ''))
     .filter((word) => word.length > 0);
 }
@@ -902,7 +918,7 @@ function formsBuiltOf(subject: Subject, wider: boolean): Form[] {
     addPieces(memberId, 'member', 0);
   }
   for (const name of subject.names) {
-    const words = nameWords(name);
+    const words = nameWords(name, wider);
     add(nameForm(words.flat(), wider));
     for (const word of words) {
       add(nameForm(word, wider));
@@ -919,9 +935,9 @@ function formsBuiltOf(subject: Subject, wider: boolean): Form[] {
   return [...forms].filter(([key]) => !first.has(key)).map(([, form]) => form);
 }
 
-/** The first letter of each part of each name, folded: the initials taken next to a name. */
-function initialsOf(names: readonly string[]): Set<string> {
-  return new Set(names.flatMap((name) => nameWords(name).flatMap((word) => word.map((part) => [...part][0] ?? ''))).filter((letter) => /^\p{L}$/u.test(letter)));
+/** The first letter of each part of each name, folded: the initials taken next to a name; with `wider`, of the wider reading's words (nameWords). */
+function initialsOf(names: readonly string[], wider = false): Set<string> {
+  return new Set(names.flatMap((name) => nameWords(name, wider).flatMap((word) => word.map((part) => [...part][0] ?? ''))).filter((letter) => /^\p{L}$/u.test(letter)));
 }
 
 /**
@@ -1347,7 +1363,7 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
   // does not ask then (the first reading asks as it always did): on a letter of initials that search is most of a
   // reading's counted work, and it would be done, and charged, once more for nothing.
   if (subject.initials && !(wider && names.length === 0)) {
-    for (const initial of initialsNextToNames(view, normal, names, initialsOf(subject.names))) {
+    for (const initial of initialsNextToNames(view, normal, names, initialsOf(subject.names, wider))) {
       found.push({ ...inNormal(view, initial.start, initial.end), kind: 'name', claim: 0 });
     }
   }

@@ -831,7 +831,8 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
       const letter = 'Records in a timely manner. This is a new claim under review. Resubmit it as a new claim.';
       expect(sentOrRefused(letter, patientOf([name]), claims)).toBe(letter);
     }
-    expect(sentOrRefused('New, man. Under/wood.', patientOf(['NEWMAN UNDERWOOD']), claims)).toBe('New, man. Under/wood.');
+    // Sent as written until Queues item 34 (MOD-25, A-4), whose run of marks joins inside a part: an accepted cost, a placeholder.
+    expect(sentOrRefused('New, man. Under/wood.', patientOf(['NEWMAN UNDERWOOD']), claims)).toBe('[PATIENT_NAME].');
   });
 
   it('leaves the narrative’s reading as it was: there a part split so is no name', () => {
@@ -1093,9 +1094,8 @@ describe('MOD-23: a name with a space or a period anywhere inside a part, a numb
       expect(sentOrRefused(`Dear Zephy${between}ra, your claim`, patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
     });
 
-    it.each([', ', ': ', '; ', '(', '。', '・', '*', '/'])('A-4, recorded for Queues item 34: a part split by %j is sent as written, as on the base', (between) => {
-      const letter = `Dear Zephy${between}ra, your claim`;
-      expect(sentOrRefused(letter, patient, claims)).toBe(letter);
+    it.each([', ', ': ', '; ', '(', '。', '・', '*', '/'])('A-4, recorded here until Queues item 34 closed it (MOD-25): a part split by %j is the name', (between) => {
+      expect(sentOrRefused(`Dear Zephy${between}ra, your claim`, patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
     });
 
     it.each([
@@ -2299,6 +2299,152 @@ describe('MOD-25: a stored number written with other marks than the records hold
           }
         }),
         { numRuns: 300 },
+      );
+    });
+  });
+
+  describe('A-4: inside a part of a name, any run of marks joins', () => {
+    const patient = heldAs('SYNMEMBER0042');
+    const MARKS = [', ', ',', '(', ')', '。', '*', '/', '+', ': ', '; ', '&', '=', '#', '!', '?', '"', '%', '@', '<', '>', '{', '|', '~', '^', '\\', '・', '…', ' / ', '., ', '\n, ', ' * '];
+
+    it.each(MARKS)('redacts a part written with %j inside it', (between) => {
+      const letter = `Dear Zephy${between}ra, your claim`;
+      expect(sentOrRefused(letter, patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
+      expect(letterPath(letter, patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
+      expect(holdsIdentifier(letter, patient, claims)).toBe(true);
+    });
+
+    it('reads a mark between every two letters, and marks of several kinds in one name', () => {
+      expect(sentOrRefused('Dear Z,e,p,h,y,r,a: your claim', patient, claims)).toBe('Dear [PATIENT_NAME]: your claim');
+      expect(sentOrRefused('Dear Ze/ph*yr+a and Ja, ne.', patient, claims)).toBe('Dear [PATIENT_NAME] and [PATIENT_NAME].');
+    });
+
+    it('joins nothing over a letter, a digit or a placeholder', () => {
+      for (const letter of ['Dear Zephy x ra, your claim', 'Dear Zephy 2 ra, your claim']) {
+        expect(sentOrRefused(letter, patient, claims), letter).toBe(letter);
+      }
+      // A placeholder is one of the checks' marks to the check, and no mark of a run: the pieces on its two sides are no name.
+      for (const redacted of ['Dear Zephy [PHONE] ra, your claim', 'Dear Zephy [SSN] ra, your claim', 'Dear Zephy [CLAIM_1] ra, your claim', 'Dear Zephy [MEMBER_ID] ra, your claim']) {
+        expect(holdsIdentifier(redacted, patient, claims), redacted).toBe(false);
+      }
+    });
+
+    it('in a held letter, which the first reading’s check refuses or sends on its own reading, shows no more than before', () => {
+      for (const between of MARKS) {
+        const sent = sentOrRefused(`${HELD}Dear Zephy${between}ra, your claim`, patient, claims);
+        expect(sent === REFUSED || sent === `${HELD}Dear [PATIENT_NAME], your claim`, between).toBe(true);
+      }
+    });
+
+    // The accepted costs (the orchestrator's ruling of 2026-11-12 on the design's third question): each a placeholder, never a leak.
+    it.each([
+      ['HO VANTREE', 'Pt with h/o low back pain.', 'Pt with [PATIENT_NAME] low back pain.'],
+      ['NA VANTREE', 'Modifier: N/A for this line.', 'Modifier: [PATIENT_NAME] for this line.'],
+      ['LE VANTREE', 'Strength of L/E reduced.', 'Strength of [PATIENT_NAME] reduced.'],
+      ['WO VANTREE', 'Seen w/o referral.', 'Seen [PATIENT_NAME] referral.'],
+      ['NEWMAN UNDERWOOD', 'It is new, man. Under/wood.', 'It is [PATIENT_NAME].'],
+    ])('the accepted cost, pinned: for a patient %s, %j is sent with a placeholder', (name, letter, sent) => {
+      expect(sentOrRefused(letter, patientOf([name]), claims)).toBe(sent);
+    });
+
+    it('property: a name’s part written with any run of marks inside it is never sent', () => {
+      const mark = fc.constantFrom(...MARKS, ' ', '.', '-', '\r\n', '·', '_');
+      fc.assert(
+        fc.property(fc.constantFrom('ZEPHYRA', 'Zephyra', 'zephyra'), fc.integer({ min: 1, max: 6 }), fc.array(mark, { minLength: 1, maxLength: 3 }), fc.constantFrom('Dear ', 'Re: ', '(', ''), fc.constantFrom(', your claim', '.', ''), (name, cut, marks, before, after) => {
+          const written = `${name.slice(0, cut)}${marks.join('')}${name.slice(cut)}`;
+          const sent = sentOrRefused(`${before}${written}${after}`, patient, claims);
+          if (sent !== REFUSED) {
+            expect(sent, JSON.stringify(written)).toBe(`${before}[PATIENT_NAME]${after}`);
+          }
+        }),
+        { numRuns: 300 },
+      );
+    });
+  });
+
+  describe('(b): a name the records hold with a mark between two words is each of its words', () => {
+    const named = (name: string) => patientOf([name]);
+
+    it.each(['+', '&', '*', ':', '(', '=', '#', ' + ', ' & ', '|', '\\', '@', '!'])('reads each word of a name held with %j between two words', (mark) => {
+      const patient = named(`JANE${mark}ZEPHYRA`);
+      expect(sentOrRefused('Ms. Zephyra was seen.', patient, claims)).toBe('Ms. [PATIENT_NAME] was seen.');
+      expect(sentOrRefused('Seen: JANE, twice.', patient, claims)).toBe('Seen: [PATIENT_NAME], twice.');
+      expect(sentOrRefused('Dear Jane Zephyra, your claim', patient, claims)).toBe('Dear [PATIENT_NAME], your claim');
+      expect(letterPath('Ms. Zephyra was seen.', patient, claims)).toBe('Ms. [PATIENT_NAME] was seen.');
+      expect(holdsIdentifier('Ms. Zephyra was seen.', patient, claims)).toBe(true);
+    });
+
+    it.each(['ZEPHYRA(JANE)', 'ZEPHYRA*JANE', 'ZEPHYRA:JANE', 'ZEPHYRA [JANE]', 'ZEPHYRA+JANE+Q'])('reads a name held %j written first name first, each word as of the name held with spaces', (name) => {
+      expect(sentOrRefused('Dear Jane Zephyra, your claim', named(name), claims)).toBe('Dear [PATIENT_NAME] [PATIENT_NAME], your claim');
+      expect(sentOrRefused('Dear Jane Zephyra, your claim', named('ZEPHYRA JANE Q'), claims)).toBe('Dear [PATIENT_NAME] [PATIENT_NAME], your claim');
+      expect(sentOrRefused('Dear Zephyra, Jane: your claim', named(name), claims)).toMatch(/^Dear \[PATIENT_NAME\](?:, \[PATIENT_NAME\])?: your claim$/u);
+      expect(sentOrRefused('Dear Zephyra, your claim', named(name), claims)).toBe('Dear [PATIENT_NAME], your claim');
+    });
+
+    it('takes an initial of a word split so next to the name, as of a word held with a space', () => {
+      expect(sentOrRefused('Dear J. Zephyra, your claim', named('JANE+ZEPHYRA'), claims)).toBe(sentOrRefused('Dear J. Zephyra, your claim', named('JANE ZEPHYRA'), claims));
+      expect(sentOrRefused('Dear Jane Z., your claim', named('JANE+ZEPHYRA'), claims)).toBe(sentOrRefused('Dear Jane Z., your claim', named('JANE ZEPHYRA'), claims));
+      expect(sentOrRefused('Dear Jane Z., your claim', named('JANE+ZEPHYRA'), claims)).not.toContain('Jane');
+    });
+
+    it('keeps the parts the records’ own split reads: a dash or an apostrophe splits no word', () => {
+      // "VAN-TREE" is one word of two parts on the base and here: each part and the word are read, as before.
+      expect(sentOrRefused('Dear Van-tree, your claim', named('JANE+VAN-TREE'), claims)).toBe('Dear [PATIENT_NAME], your claim');
+      expect(sentOrRefused('Dear Vantree, your claim', named('JANE+VAN-TREE'), claims)).toBe('Dear [PATIENT_NAME], your claim');
+    });
+
+    it('the cost, pinned: what the name held with a space costs today', () => {
+      expect(sentOrRefused('Billed to Medicare.', named('ZEPHYRA*MEDICARE'), claims)).toBe(sentOrRefused('Billed to Medicare.', named('ZEPHYRA MEDICARE'), claims));
+      expect(sentOrRefused('Billed to Medicare.', named('ZEPHYRA*MEDICARE'), claims)).toBe('Billed to [PATIENT_NAME].');
+    });
+
+    it('left, the recorded residual: a name the records glue to a digit or to another word is one word, no split known', () => {
+      expect(sentOrRefused('Ms. Zephyra was seen.', named('JANEZEPHYRA'), claims)).toBe('Ms. Zephyra was seen.');
+      expect(sentOrRefused('Ms. Zephyra was seen.', named('ZEPHYRA2'), claims)).toBe('Ms. Zephyra was seen.');
+    });
+
+    it('counts the wider reading’s initials on the check’s work budget: a crafted letter past it is refused, never sent with the name', () => {
+      // For JANE Q VANTREE held with spaces the first reading finds the name and its initials (403.5M of the 420M at 100,008
+      // characters, sent). Held with a plus sign only the wider reading does, and the first reading's check is asked once
+      // more: 273.0M for the redaction at 62,008 characters, sent; past the budget at 82,008 (the check's count) and at
+      // 100,008 (the redaction's own), REFUSED. The base sent each with "Vantree" in clear.
+      const letter = (initials: number) => `Vantree${' '.repeat(2_000)}x${' J'.repeat(initials)}`;
+      const count = (initials: number) => {
+        const screened = redactLetterForScreen(letter(initials), named('JANE+Q+VANTREE'), claims);
+        return { work: checkWorkOf(screened), refused: holdsIdentifier(screened.text, named('JANE+Q+VANTREE'), claims, checkWorkOf(screened)), text: screened.text };
+      };
+      const sent = count(30_000);
+      expect(sent.work).toBe(273_019_560);
+      expect(sent.refused).toBe(false);
+      expect(sent.text.startsWith('[PATIENT_NAME]')).toBe(true);
+      expect(sent.text).not.toMatch(/vantree/iu);
+      const past = count(49_000);
+      expect(past.work).toBeGreaterThan(CHECK_WORK_BUDGET);
+      expect(past.refused).toBe(true);
+      expect(past.text).not.toMatch(/vantree/iu);
+      expect(count(40_000).refused).toBe(true);
+    });
+
+    it('in a held letter shows no more than before', () => {
+      const sent = sentOrRefused(`${HELD}Ms. Zephyra was seen.`, named('JANE+ZEPHYRA'), claims);
+      expect(sent === REFUSED || sent === `${HELD}Ms. [PATIENT_NAME] was seen.`).toBe(true);
+    });
+
+    it('property: a word of a name held with a mark between its words is never sent, and the name held with a space is read no less', () => {
+      const mark = fc.constantFrom('+', '&', '*', ':', '(', ')', '=', '#', '|', '@', ' + ', '++');
+      const word = fc.constantFrom('JANE', 'ZEPHYRA', 'VANTREE', 'QUILLON');
+      fc.assert(
+        fc.property(fc.uniqueArray(word, { minLength: 2, maxLength: 3 }), fc.array(mark, { minLength: 2, maxLength: 2 }), fc.constantFrom('Dear ', 'Ms. ', ''), fc.constantFrom(', your claim', ' was seen.', ''), fc.boolean(), (words, marks, before, after, upper) => {
+          const held = words.map((part, i) => `${part}${i + 1 < words.length ? (marks[i] ?? '+') : ''}`).join('');
+          for (const part of words) {
+            const written = upper ? part : `${part[0] ?? ''}${part.slice(1).toLowerCase()}`;
+            const sent = sentOrRefused(`${before}${written}${after}`, named(held), claims);
+            if (sent !== REFUSED) {
+              expect(sent, `${held}: ${written}`).toBe(`${before}[PATIENT_NAME]${after}`);
+            }
+          }
+        }),
+        { numRuns: 200 },
       );
     });
   });
