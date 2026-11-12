@@ -367,7 +367,7 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
   });
 
-  // The letter check's work budget (docs/adr/0054, amendment of 2026-11-12; CHECK_WORK_BUDGET in @tp/redact). The merged
+  // MOD-24. The letter check's work budget (docs/adr/0054, amendment of 2026-11-12; CHECK_WORK_BUDGET in @tp/redact). The merged
   // reader took 3.0 to 8.3 s of its 3 s on the first three letters (review C-TIME's CT-2: once per match it searched a
   // list of matches, 1.25 to 2.5 thousand million comparisons) and 1.9 to 2.6 s on the letters of one digit to a line.
   // The check counts its own work now and refuses a letter past the budget: by a count, so on every machine alike.
