@@ -67,6 +67,17 @@ export const PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE = 'security event: passwo
 export const PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE = 'security event: password reset provider sign-out failed';
 
 /**
+ * An ended membership whose sign-out at the provider did not happen (docs/adr/0094; test matrix SGN-19). End membership
+ * ends the membership and the app's sessions in one transaction and asks the provider only once it has committed
+ * (apps/web/src/lib/auth/provider-sign-out.ts); a failure undoes nothing and is logged at error with the user's ID, the
+ * request's ID and the error's name only (`NO_PROVIDER_SUBJECT` when the subject could not be read and the provider was
+ * not asked). The provider's grant of a key-registration step begun before it then still works for the step's 15
+ * minutes, and nothing retries the sign-out. One alarms (docs/runbooks/incident-response.md, "An ended membership whose
+ * provider sign-out failed").
+ */
+export const MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE = 'security event: membership end provider sign-out failed';
+
+/**
  * The four lines of a sign-in around a password reset (docs/adr/0093; test matrix SGN-17 and SGN-18). The web logs each
  * as the `msg` of a JSON line with the user's ID, the request's ID and a code in `error_code` only
  * (apps/web/src/lib/auth/sign-in.ts).
@@ -122,6 +133,7 @@ export const RESET_AND_ENROLMENT_COUNTS = [
   { metricName: 'PasswordResetRequestOverFloor', message: PASSWORD_RESET_OVER_FLOOR_MESSAGE, errorCodes: [], threshold: 3, periodSeconds: 3600 },
   { metricName: 'PasswordResetSessionsNotEnded', message: PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'PasswordResetProviderSignOutFailed', message: PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
+  { metricName: 'MembershipEndProviderSignOutFailed', message: MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'SignInStepRefusedAfterReset', message: STEP_REFUSED_AFTER_RESET_MESSAGE, errorCodes: STEP_REFUSED_AFTER_RESET_COUNTED_STEPS, threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'HardwareKeyRegisteredAcrossReset', message: KEY_REGISTERED_ACROSS_RESET_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'PasswordResetOutcomeUnknown', message: PASSWORD_RESET_OUTCOME_UNKNOWN_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
