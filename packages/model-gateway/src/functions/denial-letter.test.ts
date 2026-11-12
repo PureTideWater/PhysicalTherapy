@@ -447,7 +447,7 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(checkWorkOf({ text: clean, claims: new Map(), replaced: 0 })).toBe(0);
   });
 
-  it('counts every name, member ID and claim number the call reads for: 1,000 claim numbers are no way past the 3 s', { timeout: HANG_GUARD_MS }, () => {
+  it('counts every name, member ID and claim number the call reads for, by the letter’s length and by their own', { timeout: HANG_GUARD_MS }, () => {
     // The review of the build (scope time, T-1): each of the call's identifiers is read for over the whole letter, and
     // with 400 to 1,000 claim numbers a letter still read took 3.5 to 5.9 s. Each now costs work per character.
     const who = patient(['JANE Q VANTREE']);
@@ -470,6 +470,28 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(read.value).toMatchObject({ text: short, held: false });
     expect(read.value.spent).toBeGreaterThan(5 * check(short, claim('SYN555001')).spent);
     expect(read.ms, `read ${String(short.length)} characters in ${read.said}`).toBeLessThan(read.allowedMs);
+    // Each form of a name is read for too (the whole name, each word, each part): a name of twelve words of three
+    // parts costs the letter work for each of its forty-nine forms (the review of fix round 1, F-2).
+    const parts = 'BCDFGHJKLMNPQRSTVWXZ';
+    const longName = Array.from({ length: 12 }, (_word, word) => [0, 1, 2].map((part) => `${parts[word] ?? ''}${parts[part + 3] ?? ''}${parts[(word + part) % 20] ?? ''}X`).join('-')).join(' ');
+    const spentFor = (names: string[]) => checkWorkOf(redactLetterForScreen(short, patient(names), claim('SYN555001')));
+    expect(spentFor([longName])).toBeGreaterThan(spentFor(['JANE Q VANTREE']) + 2 * 40 * short.length);
+    // A pattern is built for every identifier whatever the letter's length (F-1): the identifiers cost work by their
+    // own length, charged before one pattern is built, so a call with more than the budget holds is refused at once
+    // (5,000 claim numbers of 40 characters took 40 s for a letter of 19).
+    const numbers = (count: number, length: number) => [{ claimId: SYNTHETIC_IDS.claimOne, patientPseudonym: 'synthetic-patient-7', claimNumbers: Array.from({ length: count }, (_unused, index) => `SYN${String(556_000 + index)}${'0918273645QWRTYPSDFGHJKLZXCVBNM'.slice(0, length - 9)}`) }];
+    const tiny = 'The claim was paid.';
+    const past = timed(BUDGET_MS, () => redactLetterForScreen(tiny, who, numbers(5_000, 40)));
+    expect(past.value).toMatchObject({ text: BARRIER, replaced: 0, candidates: [] });
+    expect(checkWorkOf(past.value)).toBe(CHECK_WORK_BUDGET + 1);
+    expect(past.ms, `refused in ${past.said}`).toBeLessThan(100);
+    // The check alone refuses the same call as fast, whatever text it is given.
+    expect(holdsIdentifier(tiny, who, numbers(5_000, 40), 0)).toBe(true);
+    // A call of 300 claim numbers of 15 characters is read, and its identifiers are most of what it costs.
+    const few = redactLetterForScreen(tiny, who, numbers(300, 15));
+    expect(few.text).toBe(tiny);
+    expect(checkWorkOf(few)).toBeGreaterThan(300 * 15 * 3_000);
+    expect(holdsIdentifier(few.text, who, numbers(300, 15), checkWorkOf(few))).toBe(false);
   });
 
   it('charges the letter as NFKC writes it, and takes no count that is not a number', () => {
@@ -478,6 +500,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
     const ligatures = redactLetterForScreen('ﷺ'.repeat(1_000), who, claim('SYN555001'));
     const letters = redactLetterForScreen('a'.repeat(1_000), who, claim('SYN555001'));
     expect(checkWorkOf(ligatures)).toBeGreaterThan(10 * checkWorkOf(letters));
+    // The same count as the same letter written out as NFKC writes it: the charge is on what is read (F-4).
+    expect(checkWorkOf(ligatures)).toBe(checkWorkOf(redactLetterForScreen('\uFDFA'.repeat(1_000).normalize('NFKC'), who, claim('SYN555001'))));
     // null would switch the counter off, a string or a bigint would count as no number counts (the reviews, P-1 and T-3).
     for (const spent of [null, '0', '5', 0n, {}, [], true]) {
       expect(holdsIdentifier('The claim was denied for timely filing.', who, claim('SYN555001'), spent as unknown as number), typeof spent).toBe(true);

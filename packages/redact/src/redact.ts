@@ -303,6 +303,7 @@ export const CHECK_WORK_BUDGET = 420_000_000;
 const WORK = {
   comparison: 1,
   formCharacter: 2,
+  identifierCharacter: 3_500,
   mayBe: 30,
   viewCharacter: 30,
   fold: 150,
@@ -331,9 +332,21 @@ function work(units: number): void {
     return;
   }
   checkWorkSpent += units;
-  if (checkWorkSpent > CHECK_WORK_BUDGET) {
+  // Written so that a count that is no number (a charge from a list with no length) is past the budget too.
+  if (!(checkWorkSpent <= CHECK_WORK_BUDGET)) {
     throw new PastCheckWorkBudget();
   }
+}
+
+/**
+ * What each of the two entries charges for the call's own identifiers before it reads anything: a pattern is built for
+ * each of them at every reading that asks for the forms, whatever the letter's length, so they cost work by their own
+ * length, and a call with more of them than the budget holds is refused before one pattern is built (the review of
+ * fix round 1, F-1).
+ */
+function workOfIdentifiers(patient: PatientIdentifiers, claims: readonly LetterClaim[]): number {
+  const lengthOf = (sum: number, identifier: string) => sum + identifier.length;
+  return WORK.identifierCharacter * (patient.names.reduce(lengthOf, 0) + patient.memberIds.reduce(lengthOf, 0) + claims.reduce((sum, claim) => claim.claimNumbers.reduce(lengthOf, sum), 0));
 }
 
 /** list.some(test), with every comparison it makes counted: the answer is `some`'s own. */
@@ -716,9 +729,6 @@ interface Subject {
   readonly patterns: boolean;
 }
 
-/** How many names, member IDs and claim numbers the call reads for: each is read for over the whole letter, so each costs work per character (WORK.formCharacter). */
-const identifiersOf = (subject: Subject): number => subject.names.length + subject.memberIds.length + subject.claims.reduce((sum, numbers) => sum + numbers.length, 0);
-
 function formsOf(subject: Subject): Form[] {
   const forms = new Map<string, Form>();
   const add = (form: Form | null) => {
@@ -1081,13 +1091,15 @@ function birthFormsIn(normal: string, subject: Subject): (range: Range) => boole
 const MONTH_IN = new RegExp(MONTH_WORD, 'iu');
 
 function ownMatchesIn(normal: string, subject: Subject): Found[] {
-  work(WORK.formCharacter * identifiersOf(subject) * normal.length);
+  // Each form (a claim number, a member ID, a name, each of its words and parts) is read for over the whole letter.
+  const forms = formsOf(subject);
+  work(WORK.formCharacter * forms.length * normal.length);
   const { births, inWholeDate, inDateAsRead } = datesOf(normal, subject);
   const inBirthForm = birthFormsIn(normal, subject);
   const found: Found[] = births.map((range) => ({ ...range, kind: 'birth' as const, claim: 0 }));
   const view = viewOf(normal, 'join');
   const names: Range[] = [];
-  for (const form of formsOf(subject)) {
+  for (const form of forms) {
     const pattern = new RegExp(form.pattern.source, form.pattern.flags);
     for (let match = pattern.exec(view.text); match !== null; match = pattern.exec(view.text)) {
       const start = match.index;
@@ -1350,7 +1362,7 @@ const joinedTokens = (a: WrittenToken, b: WrittenToken): WrittenToken => ({ unit
  * The forms the confusable reading looks for: five letters or digits or more, six for a number of digits alone. A form of
  * four is as often an ordinary token ("11am" for LIAM, "CO13" for COLE, "80th" for BOTH: the review of the build, B2-1).
  */
-const confusableForms = (subject: Subject) => formsOf(subject).flatMap((form) => { const units = [...form.compact]; return units.length >= (form.digitsOnly ? 6 : 5) ? [{ form, units }] : []; });
+const confusableOf = (forms: readonly Form[]) => forms.flatMap((form) => { const units = [...form.compact]; return units.length >= (form.digitsOnly ? 6 : 5) ? [{ form, units }] : []; });
 
 /** A date written with no space, a month's word and its day's or year's digits ("MAR13" is no MARIE, "10MAR2026", "JUL1326"): the token is the date. */
 const MONTH_DAY_TOKEN = /^(?:[0-9]{1,2})?(?:JAN(?:UARY)?|FEB(?:RUARY)?|MAR(?:CH)?|APR(?:IL)?|MAY|JUNE?|JULY?|AUG(?:UST)?|SEPT?(?:EMBER)?|OCT(?:OBER)?|NOV(?:EMBER)?|DEC(?:EMBER)?)(?:[0-9]{1,6})?$/iu;
@@ -1384,8 +1396,9 @@ function confusedAs(token: WrittenToken, at: number, units: readonly string[]): 
  * "ZZ765432l"): each such word, as a Found range of the form's kind.
  */
 function confusedMatchesIn(tokens: readonly WrittenToken[], subject: Subject, normal: string): Found[] {
-  work(WORK.formCharacter * identifiersOf(subject) * normal.length);
-  const forms = confusableForms(subject);
+  const all = formsOf(subject);
+  work(WORK.formCharacter * all.length * normal.length);
+  const forms = confusableOf(all);
   const found: Found[] = [];
   if (forms.length === 0) return found;
   const longest = Math.max(...forms.map(({ units }) => units.length));
@@ -1437,7 +1450,7 @@ function confusedMatchesIn(tokens: readonly WrittenToken[], subject: Subject, no
  * letter for one (confusedGlued), and no pattern takes a part of one first ("ZZ76S432197110" is no "ZZ76S[SSN]").
  */
 function confusedGluedIn(tokens: readonly WrittenToken[], subject: Subject): Range[] {
-  const forms = confusableForms(subject);
+  const forms = confusableOf(formsOf(subject));
   const ranges: Range[] = [];
   if (forms.length === 0) return ranges;
   for (const token of tokens) {
@@ -3391,7 +3404,7 @@ export function redactLetterForScreen(text: string, patient: PatientIdentifiers,
 
 /** redactLetterForScreen's reading, its work counted by the entry above. */
 function redactedForScreen(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
-  work(WORK.character * text.length);
+  work(WORK.character * text.length + workOfIdentifiers(patient, claims));
   const normal = unbracketed(text);
   // The reading is of the letter as NFKC writes it, which can be many times as long as the letter (U+FDFA is eighteen characters).
   if (normal.length > text.length) {
@@ -3485,7 +3498,7 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
   viewsOfCheck = [];
   datesOfCheck = [];
   try {
-    work(WORK.character * text.length);
+    work(WORK.character * text.length + workOfIdentifiers(patient, claims));
     const scanned = masked(text, claims.length);
     const subject = letterSubject(patient, claims);
     // The patterns read the same text with the call's own placeholders as OWN_MARK, so a number a label names through a

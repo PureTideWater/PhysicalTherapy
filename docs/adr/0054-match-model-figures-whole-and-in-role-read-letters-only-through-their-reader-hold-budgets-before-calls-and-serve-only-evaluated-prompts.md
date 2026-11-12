@@ -1746,10 +1746,12 @@ goes to a person), never sent on a partial reading.
   measurement showed as drivers of some letter's time, each at a fixed weight: a view built (per character), a label's
   window, a label scanned, a date's readings, a search of a sorted list, a digit read across a line break, a join of two
   tokens, a look-alike fold and a digit-for-letter reading; each reading of the letter for the call's own identifiers
-  charges every character once for each name, member ID and claim number the call carries (the review's T-1, below);
-  and each of the two entries charges every character of its text once, the redaction on the letter as NFKC writes it
-  where that is the longer, for the passes no site counts, so a letter's length alone is bounded (about 600,000
-  characters).
+  charges every character once for each form the call reads for (a claim number, a member ID, a name, each of its
+  words and parts: the reviews' T-1 and F-2, below); each of the two entries charges every character of its text once,
+  the redaction on the letter as NFKC writes it where that is the longer, for the passes no site counts, so a letter's
+  length alone is bounded (about 600,000 characters); and each entry charges every character of the call's own
+  identifiers before it reads anything, since a pattern is built for each at every reading whatever the letter's
+  length (F-1), so the identifiers of a call are bounded too (about 60,000 characters).
 - **One budget for both halves.** `redactLetterForScreen` counts from nothing and keeps what it spent beside the letter
   it returns (`checkWorkOf`, a count and no text); `holdsIdentifier` takes that count as its fourth argument and counts
   on from it. `prepare` hands it on. A count that is no number, is negative or is past the budget refuses the letter
@@ -1779,20 +1781,35 @@ budget and timed each as a letter still read:
 | Ordinary prose, one claim number | 291,497 | 1.48 s |
 | A name, then `a;` repeated, one claim number | 168,856 | 1.76 s |
 | **The dearest found: U+33FE (NFKC writes it `31日`) and `;` repeated, one claim number** | 93,006 | **2.06 to 2.29 s** (2.41 s at 100,000 characters before the NFKC charge) |
-| Ordinary prose, 1,000 claim numbers | 32,080 | 0.92 s |
-| A name, then `a;` repeated, 1,000 claim numbers | 32,902 | 1.34 s (5.92 s at 171,534 characters before the charge per identifier) |
+| Ordinary prose, 1,000 claim numbers | 27,241 | 0.78 s |
+| A name, then `a;` repeated, 1,000 claim numbers | 27,970 | 1.76 s (5.92 s at 171,534 characters before the charge per form) |
+| Ordinary prose, 50 names of twelve words of three parts | 17,225 | 0.52 s (3.8 s before the forms were counted) |
+| U+33FE and `;` repeated, the same 50 names | 8,318 | 0.89 s (5.9 s before) |
+| A letter of 19 characters, 1,250 claim numbers of 40 characters (50,000 characters of identifiers) | 19 | 1.05 s in a warm process |
 
 So the dearest letter still read takes about 2.3 s of the 3 s at the reference speed, not the 1.35 s the builder's own
 families gave: digits glued to a letter cost about 5 ns a unit where the fit assumed 2.5. A letter refused is refused
-sooner than it would have been read (at most 1.7 s; 5,000,000 characters in under 4 ms). Item 26's second reading
-counts in the same counter and so shares this bound; it is given no time of its own.
+sooner than it would have been read (at most 1.7 s; 5,000,000 characters in under 4 ms; a call of 5,000 claim numbers
+of 40 characters, which took 40 s for a letter of 19 characters, in 1 ms). Item 26's second reading counts in the same
+counter and so shares this bound; it is given no time of its own.
+
+**The first check of a fresh process is not held to the 3 s where the call carries hundreds of identifiers.** The
+engine compiles each identifier's pattern the first time it meets it: a letter of 19 characters takes 1.8 s on the
+first check of a fresh process with 300 claim numbers of 15 characters (0.11 s after), 4.1 s with 1,000 of nine
+(0.25 s after) and 15.7 s with 1,250 of 40 (1.05 s after). The weight of an identifier's character (3,500 units at each
+entry) is set for a warm process, so that a patient with some thousands of claim numbers is still read; holding the
+first check to 3 s would take about seven times the weight and refuse every letter of a patient with more than about
+250 claims. Which of the two holds is the orchestrator's ruling, asked on 2026-11-12; this row is pinned until it is
+given.
 
 **What it refuses.** At 100,000 characters: CT-2's letters (in the redaction), 50,000 initials beside a name with no
 look-alike, and the letters of one digit to a line (bare line feed, CR LF, a dash before the line feed, another
 script's digit with U+2028 or U+0085), the last six in the check. The three budget rows of that kind are read at 50,000
 characters and refused at 100,000 (`denial-letter.test.ts`, "refuses a letter past the check's work budget"). A letter
-of ordinary prose is read to about 290,000 characters with one claim number and to about 32,000 with a thousand: a
-call that carries hundreds of claim numbers has its long letters refused, where before they were read past the 3 s.
+of ordinary prose is read to about 290,000 characters with one claim number and to about 27,000 with a thousand: a
+call that carries hundreds of claim numbers has its long letters refused, where before they were read past the 3 s,
+and a call whose names, member IDs and claim numbers come to more than about 60,000 characters (some two thousand
+claims of two numbers each) has every letter refused.
 
 **The gate, against 58fb29e5, letter for letter** (the check called as `prepare` calls it):
 
