@@ -1,19 +1,68 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
-## RESUME-BLOCK (W30, session_019i9ifDPVj1VzzJE78QWvC3; updated 2026-11-12 about 06:50 UTC; STOPPED at step 1)
-- **Brief:** build schema PR 5 exactly as granted (Appendices A and D), measuring first; stop on a fault or a time past
-  the note's limits. Base 93e137f9.
-- **State: STOPPED at step 1, nothing built.** Both of the note's measurements pass its limits (figures below). No
-  migration written, `/new-migration` not invoked, no test, no code, no domain-model change, no counter taken, no PR.
-  The branch `co-001/wip-ledger-freeze-batch` exists only locally, at the base, with no commit: nothing to push.
-- **Told the orchestrator:** the blocker at about 05:55 UTC (Appendix D's time); the preflight's figure with this
-  record.
-- **Not decided here (the founder's or the co-founder's):** whether a slow plan "traces to Q2's text" (the note,
-  section 6: the founder's reading, not the build's); which proof the preflight runs (the note, section 5: a decision
-  to record, not a tuning). Under the narrow reading (N1) nothing but A and D is granted, so no other text was tried,
-  timed or written. A design session, not this build, would propose a replacement text for a new ask.
-- **Next:** nothing unless the orchestrator says so. A resumed build starts again at step 2 of the brief, on a text the
-  founder has granted, and re-runs `measurements/` below against it first.
+## RESUME-BLOCK (W30, session_019i9ifDPVj1VzzJE78QWvC3; updated 2026-11-12 about 07:10 UTC; hands over at the context line, mid design step)
+- **Where it stands:** PR 5 is not built (the orchestrator's ruling, 06:00 UTC: right to stop; the item became a bounded
+  design step: a corrected text "Appendix D2", proved equal, reviewed, and a new ask for the founder). Steps 1 to 4 of
+  that ruling are done but for one fix-round decision; **step 5 (the ask) is NOT drafted**: the next session writes
+  `approval-summaries/lane-a-ledger-freeze-ask-pr5-d2-2026-11-12.md` from the section "Appendix D2" below.
+- **Nothing is built on D2:** no migration file, nothing in the application repository, no counter, no WIP commit.
+- **Open for the next session, in order:** (1) the review's finding 1 (below): decide with the orchestrator whether the
+  ask carries it as a stated residual or adds a second question for `SET plan_cache_mode TO force_custom_plan` in the
+  function's header (a change outside the block, so its own question); (2) read `lane-a-wip/schema-pr5/d2/out/` for
+  the S3-1M repeat, S4 and S5 of the second timing run (it was still running at hand-over; if those files are absent,
+  re-run `jobE.sh` on fresh databases, about 10 minutes, with at least 10 GB of disk free); (3) draft the ask; (4)
+  tell the orchestrator its path.
+- **Holds:** nothing but scratch databases `pr5_*` on this session's machine (gone with it).
+
+## Appendix D2, a draft (W30, 2026-11-12): the design step's results
+
+- **Texts:** `lane-a-wip/schema-pr5/d2/D-as-granted.sql` (the ask's Appendix D) and `D2-draft.sql`. They differ in one
+  statement only, the `SELECT ... INTO lines` inside `IF NEW.links ? 'actionable_open_lines'`; every other line,
+  message, SQLSTATE and the function's header are D's. The draft file's SHA-256 begins `8053d62454b821e2` (the file
+  with its `CREATE OR REPLACE` line; the body's hash as the domain model prints it is still to compute from a
+  database for the ask).
+- **How D2 reads:** the line list is made distinct once and drives the query; each listed line is looked up by its
+  primary key inside a `LATERAL` subquery fenced with `OFFSET 0`, which the planner can only run once per listed
+  line; the line's case comes from its one case line (`case_line_once`); the case is tested with
+  `count(*) FILTER (WHERE m.case_id IN (...))`, a hashed lookup the planner does not turn into a join. No list is
+  re-read per line in any plan.
+- **Equal to D (step 3):** 27 fixed statements through the real trigger and CHECK as the application role (the
+  30,795-line month; a cent over; a line twice; another practice's line; four keys; empty lists; a missing key; a
+  superseded line; a line that is no row; nulls; malformed and upper-case IDs; a non-list; a sixth key) and 400
+  random statements through the two blocks alone (314 of them with a repeated line): the dumps are byte-identical
+  (`d2/eq/cases_D.txt` and `cases_D2.txt`, SHA-256 `ea6e3f348ce81e66...`; `rand_D.txt` and `rand_D2.txt`,
+  `975cafdbbaba02c1...`). Harness: `d2/eq/setup.sql`, `run.sql`, on a database with 1,000,000 lines in the practice.
+- **Times (whole insert of the 30,795-line statement; the block itself is 0.15 to 0.3 s less), second run, clean disk:**
+  never analyzed, planned on empty tables: 0.79 to 0.84 s (forced generic 0.77 to 0.83 s); never analyzed at the
+  month: 0.79 to 1.03 s; never analyzed with 1,000,000 lines in the practice: 0.86 to 0.99 s; analyzed at the month:
+  0.81 to 0.87 s; statistics stale at 1,000,000: 0.76 to 0.94 s; analyzed at 1,000,000: 0.78 to 0.86 s; one practice
+  alone, analyzed (first run): 0.46 to 0.67 s. A statement listing all 1,000,000 lines: 35 to 37 s (linear). D2's block
+  alone in the forced-generic sessions: 0.63 to 0.75 s with plan output on. Against D: 190 to 580 s.
+  The first timing run (`out3`) lost two states to a full disk and is not used, except S5.
+- **Not within 1 s:** statistics taken when the practice had 10 lines, then its month loaded, no ANALYZE since
+  (first run, other practices' rows missing because of the full disk): 1.55 to 1.8 s, primary-key probes through a
+  bitmap scan. Linear, but past the note's bound; the second run's figure is in `d2/out/e3_S4_*` if it finished.
+- **The review (step 4):** `reviews/lane-a-ledger-freeze-d2-equality.md`. Verdict: equal for every `links` the CHECK
+  passes in every state the schema allows; no input that one accepts and the other refuses. Findings, each read
+  against the texts by this session but NOT re-run:
+  1. *should-fix:* a generic plan cached while both tables were analyzed and tiny (under about 100 priced lines and
+     200 case lines: sequential scans inside the fence) stays quadratic if the tables then grow with no ANALYZE,
+     autovacuum or DDL in between (cancelled at 30 s and 70 s on stand-in tables). Narrow window; D is no better
+     there. The reviewer's working fix, `SET plan_cache_mode TO force_custom_plan` in the function header (427 ms),
+     is outside the block, so it is a question for the founder, not a liberty. Not decided.
+  2. *note:* D2 leans on `case_line_once`; with it dropped D2 raises 21000 where D counts two pairs. The schema
+     forbids the state; the note's T15 (c) already pins the constraint.
+  3. *note:* for a `links` the CHECK refuses, both refuse, sometimes with a different SQLSTATE (one case found: a
+     malformed case ID with a line list matching no priced line gives 22P02 under D and 23514 under D2).
+  4. *note:* 14 reachable cases and two odd states equal, types bigint, bigint, numeric.
+  5. *note:* the hashed lookup stays hashed at `work_mem` 64 kB; the practice indexes were never chosen.
+- **Appendix A stands, measured on its own:** it hashes to the granted value; its CHECK costs 141 ms on the
+  30,795-line statement and about 197 microseconds on a 40-ID statement; nothing found against it. What does not
+  stand as designed is the preflight's scan (12 min 45 s at 1,000,000 statements, section 2 below): that is the
+  migration's, not A's text, and which proof the preflight runs is still to decide (the cost is the policy's
+  per-row filter; a scan a practice at a time, or the `links = '{}'` test, would avoid it).
+
+## The first stop (W30, 2026-11-12 about 06:50 UTC), kept for the record
 - **Facts checked (do not re-derive):** on a database migrated to 93e137f9 (PostgreSQL 18.4), today's bodies hash to
   `49416713dd4d13ddf0766e35db60cc7306cebb8e06ee89ea7345beae2b5e51a3` (`roi_links_valid`) and
   `5a8bc6319828acb29a7f57aad9ebd57501734a71826a1e4d1d6953db9e85965c` (`roi_statement_rules`); the ask's Appendix A and D,

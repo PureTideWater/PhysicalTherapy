@@ -1,0 +1,20 @@
+RUN S5 mode=auto tag=month run=1
+Time: 671.840 ms
+RUN S5 mode=auto tag=month run=2
+Time: 523.707 ms
+RUN S5 mode=auto tag=month run=3
+Time: 625.543 ms
+RUN S5 mode=auto tag=month run=4
+Time: 524.393 ms
+RUN S5 mode=auto tag=month run=5
+Time: 523.838 ms
+RUN S5 mode=auto tag=month run=6
+Time: 605.548 ms
+RUN S5 mode=auto tag=month run=7
+Time: 601.787 ms
+RUN S5 mode=auto tag=month run=8
+Time: 529.663 ms
+RUN S5 mode=auto tag=month4 run=1
+Time: 8.309 ms
+RUN S5 mode=auto tag=month4 run=2
+Time: 6.349 ms

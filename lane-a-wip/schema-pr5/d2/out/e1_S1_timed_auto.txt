@@ -1,0 +1,30 @@
+RUN S1 mode=auto tag=empty run=1
+Time: 14.419 ms
+RUN S1 mode=auto tag=empty run=2
+Time: 2.933 ms
+RUN S1 mode=auto tag=empty run=3
+Time: 2.426 ms
+RUN S1 mode=auto tag=empty run=4
+Time: 2.326 ms
+RUN S1 mode=auto tag=empty run=5
+Time: 2.248 ms
+RUN S1 mode=auto tag=empty run=6
+Time: 2.359 ms
+RUN S1 mode=auto tag=empty run=7
+Time: 0.858 ms
+RUN S1 mode=auto tag=month run=1
+Time: 838.089 ms
+RUN S1 mode=auto tag=month run=2
+Time: 791.490 ms
+RUN S1 mode=auto tag=month run=3
+Time: 792.774 ms
+RUN S1 mode=auto tag=month run=4
+Time: 795.232 ms
+RUN S1 mode=auto tag=month run=5
+Time: 822.101 ms
+RUN S1 mode=auto tag=month run=6
+Time: 841.311 ms
+RUN S1 mode=auto tag=month run=7
+Time: 785.091 ms
+RUN S1 mode=auto tag=month run=8
+Time: 799.088 ms

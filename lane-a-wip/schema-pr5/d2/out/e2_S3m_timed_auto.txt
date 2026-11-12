@@ -1,0 +1,24 @@
+RUN S3-1M mode=auto tag=month run=1
+Time: 858.513 ms
+RUN S3-1M mode=auto tag=month run=2
+Time: 859.846 ms
+RUN S3-1M mode=auto tag=month run=3
+Time: 794.123 ms
+RUN S3-1M mode=auto tag=month run=4
+Time: 788.981 ms
+RUN S3-1M mode=auto tag=month run=5
+Time: 802.240 ms
+RUN S3-1M mode=auto tag=month run=6
+Time: 821.865 ms
+RUN S3-1M mode=auto tag=month run=7
+Time: 805.544 ms
+RUN S3-1M mode=auto tag=month run=8
+Time: 776.666 ms
+RUN S3-1M mode=auto tag=month4 run=1
+Time: 6.804 ms
+RUN S3-1M mode=auto tag=month4 run=2
+Time: 6.502 ms
+RUN S3-1M mode=auto tag=all run=1
+Time: 34571.825 ms (00:34.572)
+RUN S3-1M mode=auto tag=all run=2
+Time: 34325.588 ms (00:34.326)

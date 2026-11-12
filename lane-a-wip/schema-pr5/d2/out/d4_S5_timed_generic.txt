@@ -1,0 +1,6 @@
+RUN S5 mode=force_generic_plan tag=month run=1
+Time: 618.041 ms
+RUN S5 mode=force_generic_plan tag=month run=2
+Time: 458.522 ms
+RUN S5 mode=force_generic_plan tag=month run=3
+Time: 544.440 ms

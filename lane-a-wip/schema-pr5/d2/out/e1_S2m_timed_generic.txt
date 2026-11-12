@@ -1,0 +1,6 @@
+RUN S2-1M mode=force_generic_plan tag=month run=1
+Time: 980.433 ms
+RUN S2-1M mode=force_generic_plan tag=month run=2
+Time: 920.673 ms
+RUN S2-1M mode=force_generic_plan tag=month run=3
+Time: 895.284 ms

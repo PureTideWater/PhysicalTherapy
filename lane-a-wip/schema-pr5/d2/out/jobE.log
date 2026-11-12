@@ -1,0 +1,30 @@
+06:55:25 e1 setup
+  exit 0
+06:55:25 e1 S1
+  exit 0
+06:56:44 e1 S2
+  e1_S2_timed_auto exit 0
+  e1_S2_explain_auto exit 0
+  e1_S2_timed_generic exit 0
+  e1_S2_explain_generic exit 0
+06:57:01 e1 grow to 1M
+  e1_S2m_timed_auto exit 0
+  e1_S2m_explain_auto exit 0
+  e1_S2m_timed_generic exit 0
+  e1_S2m_explain_generic exit 0
+07:00:41 e2 analyzed
+  e2_S3_timed_auto exit 0
+  e2_S3_explain_auto exit 0
+  e2_S3_timed_generic exit 0
+  e2_S3_explain_generic exit 0
+07:02:08 e2 grow, stale
+  e2_S3stale_timed_auto exit 0
+  e2_S3stale_explain_auto exit 0
+  e2_S3stale_timed_generic exit 0
+  e2_S3stale_explain_generic exit 0
+07:04:30 e2 1M analyzed
+  e2_S3m_timed_auto exit 0
+  e2_S3m_explain_auto exit 0
+  e2_S3m_timed_generic exit 0
+  e2_S3m_explain_generic exit 0
+07:05:55 e3 S4

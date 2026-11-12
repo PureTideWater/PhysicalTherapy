@@ -1,0 +1,20 @@
+RUN S4-practice-loaded-since-analyze mode=auto tag=month run=1
+Time: 1807.156 ms (00:01.807)
+RUN S4-practice-loaded-since-analyze mode=auto tag=month run=2
+Time: 1645.907 ms (00:01.646)
+RUN S4-practice-loaded-since-analyze mode=auto tag=month run=3
+Time: 1655.462 ms (00:01.655)
+RUN S4-practice-loaded-since-analyze mode=auto tag=month run=4
+Time: 1694.186 ms (00:01.694)
+RUN S4-practice-loaded-since-analyze mode=auto tag=month run=5
+Time: 1557.136 ms (00:01.557)
+RUN S4-practice-loaded-since-analyze mode=auto tag=month run=6
+Time: 1641.157 ms (00:01.641)
+RUN S4-practice-loaded-since-analyze mode=auto tag=month run=7
+Time: 1644.179 ms (00:01.644)
+RUN S4-practice-loaded-since-analyze mode=auto tag=month run=8
+Time: 1566.889 ms (00:01.567)
+RUN S4-practice-loaded-since-analyze mode=auto tag=month4 run=1
+Time: 6.766 ms
+RUN S4-practice-loaded-since-analyze mode=auto tag=month4 run=2
+Time: 6.203 ms

@@ -1,0 +1,6 @@
+RUN S3-stale-1M mode=force_generic_plan tag=month run=1
+Time: 874.157 ms
+RUN S3-stale-1M mode=force_generic_plan tag=month run=2
+Time: 844.360 ms
+RUN S3-stale-1M mode=force_generic_plan tag=month run=3
+Time: 804.031 ms

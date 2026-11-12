@@ -1,0 +1,20 @@
+RUN S1 mode=force_generic_plan tag=empty run=1
+Time: 16.855 ms
+RUN S1 mode=force_generic_plan tag=empty run=2
+Time: 1.295 ms
+RUN S1 mode=force_generic_plan tag=empty run=3
+Time: 1.205 ms
+RUN S1 mode=force_generic_plan tag=empty run=4
+Time: 0.910 ms
+RUN S1 mode=force_generic_plan tag=empty run=5
+Time: 1.075 ms
+RUN S1 mode=force_generic_plan tag=empty run=6
+Time: 0.913 ms
+RUN S1 mode=force_generic_plan tag=empty run=7
+Time: 0.759 ms
+RUN S1 mode=force_generic_plan tag=month run=1
+Time: 815.669 ms
+RUN S1 mode=force_generic_plan tag=month run=2
+Time: 834.365 ms
+RUN S1 mode=force_generic_plan tag=month run=3
+Time: 769.516 ms

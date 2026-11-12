@@ -1,0 +1,20 @@
+RUN S3 mode=auto tag=month run=1
+Time: 874.248 ms
+RUN S3 mode=auto tag=month run=2
+Time: 864.207 ms
+RUN S3 mode=auto tag=month run=3
+Time: 851.833 ms
+RUN S3 mode=auto tag=month run=4
+Time: 867.263 ms
+RUN S3 mode=auto tag=month run=5
+Time: 810.573 ms
+RUN S3 mode=auto tag=month run=6
+Time: 826.021 ms
+RUN S3 mode=auto tag=month run=7
+Time: 814.434 ms
+RUN S3 mode=auto tag=month run=8
+Time: 810.610 ms
+RUN S3 mode=auto tag=month4 run=1
+Time: 6.802 ms
+RUN S3 mode=auto tag=month4 run=2
+Time: 6.546 ms

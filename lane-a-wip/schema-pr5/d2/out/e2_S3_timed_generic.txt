@@ -1,0 +1,6 @@
+RUN S3 mode=force_generic_plan tag=month run=1
+Time: 841.879 ms
+RUN S3 mode=force_generic_plan tag=month run=2
+Time: 808.974 ms
+RUN S3 mode=force_generic_plan tag=month run=3
+Time: 748.309 ms
