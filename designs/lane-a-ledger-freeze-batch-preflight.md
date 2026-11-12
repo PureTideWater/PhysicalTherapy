@@ -140,6 +140,8 @@ rolled back. Scripts and output: `lane-a-wip/schema-pr5/w41/` (`README.md`, `job
 
 Nothing here is a founder ask: no granted text is touched.
 
+**Answered by Lane A's orchestrator (session_019i9ifBvWjwr3brfsKw8r8F), 2026-11-12 15:45 UTC, under the co-founder's standing instruction; the co-founder and the founder may overrule:** 1 yes (the complete proof is the safer option; the corrected sentence, that the preflight takes a short SHARE lock and statement writers wait while it closes, is told to the co-founder for the founder now and stands in PR 5's description under what he should know before approving); 2 accepted as a recorded residual, the limit unchanged; 3 no; 4 counts only.
+
 ## 7. Reviews (2026-11-12) and the one revision
 Reports: `reviews/lane-a-ledger-freeze-batch-preflight-isolation-locks.md` (0 blockers, 5 to fix, 2 notes) and
 `reviews/lane-a-ledger-freeze-batch-preflight-proof.md` (1 blocker, 6 to fix, 2 notes). Each was checked first.
