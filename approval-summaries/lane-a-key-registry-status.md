@@ -1,6 +1,53 @@
 # Status: Queues item 37, the key registry (Lane A)
 
-## RESUME-BLOCK (2026-11-12, W32, session_019i9ifC7PLenwLnTRu7ZVhZ; handed over at about 240k tokens)
+## RESUME-BLOCK, the database half (2026-11-12, W33, session_019i9ifBTTYtTEJn5cydNmex): WAITING for the co-founder's typed commands
+
+- **State:** step A done. Nothing of the migration is in the repository: no file, no marker. W33 waits in its own
+  session for the co-founder to type `/new-migration key_registry` and then `/new-migration key_registry_validate`
+  (two files: the note's 9.1 and 9.2; the second must be its own file so the first one's exclusive locks are released
+  before any scan).
+- **WIP `co-001/wip-key-registry` 7e0192af** (base 93e137f9): W32's 26 tests plus one correction (SGN-23's seeded
+  stale session moves `expires_at` with `started_at`; `user_session_twelve_hours` refused the seed).
+- **The draft** is complete and lives only on W33's machine, outside the repository (the scratchpad's
+  `key_registry.template.sql`, `build_sql.py`, `key_registry.sql`, `key_registry_validate.sql`). **If W33's container
+  is lost the draft is lost**: a successor writes it again from the note (about 900 lines; the points below are what
+  the note does not say). Checked without writing into the repository: both files apply on a database migrated to
+  the base, and **the 26 tests pass, 26 of 26**, against it (the runner's reads of the migrations directory answered
+  from a scratch copy by a local preload).
+- **Decisions the draft takes beyond the note (the safer side; each to be said in ADR 0095 and the PR):**
+  1. `hardware_key_removal.address_sha256` (SHA-256 of the removal's ID, a colon, the lower-cased address at the
+     request). The note's 7 wanted the notice sent only to the address the account had when the removal was requested
+     and offered `"user".updated_at`; that column moves with every sign-in and with the confirmation's own mark, so it
+     can never answer. `operator_key_notice_claim` compares the digest, fails the notice as `AddressChanged`, reports
+     it, and returns the row with no address and `undelivered = true`.
+  2. `hardware_key_notice.event_at`, not the note's `removed_at`: two of the three kinds are not removals.
+  3. `operator_mail_expire(integer)` replaced in place (one DELETE added) so key notices expire as password notices
+     do; the note gave the table an `expires_at` and nothing that reads it.
+  4. `hardware_key_removals()` asks `app_actor_platform_permitted('organization.manage')`, not the seven days: a new
+     administrator sees the list (IDs and times) and can act on nothing.
+  5. Helpers granted to no role beside the three the tests name: `hardware_key_opening_usable(uuid, timestamptz)` and
+     `hardware_key_notice_report_undelivered(uuid, text)`. Code digests are compared after a second SHA-256 of each side.
+  6. `operator_record_mail_event` keeps its seven result columns (the note: signature unchanged): an undelivered key
+     notice is on the audit log (`hardware_key_notice_undelivered`), not in a column. The job reads it there.
+  7. `hardware_key_record` raises on a wrong code and so counts no try (its count would roll back); only
+     `hardware_key_registration_judge` counts. The flow must call `judge` first, as the note says.
+- **Found by one run of the whole database suite against the draft, for step B:**
+  - **A conflict to rule on (told to the orchestrator):** the note's 16.3 takes the account's row lock on every session
+    insert; `packages/db/src/sign-in-not-before.db.test.ts` ("neither checks nor locks a row with no start", ADR 0093
+    D4) asserts that the previous image's insert is not locked, and fails. The draft follows 16.3 (without the lock a
+    previous-image insert in a transaction open across a request and its confirmation is never swept). Step B changes
+    that one assertion to the new truth and ADR 0095 amends 0093 D4, unless the orchestrator rules otherwise.
+  - `packages/db/domain-model/areas.json`: the four tables need an area. `MAIL_KINDS` and `MAIL_STREAM_KINDS`
+    (`packages/db/src/schema/operations.ts`) need `hardware_keys_removed` after `password_changed`
+    (`packages/db/src/mail.db.test.ts`).
+  - `apps/web/src/lib/auth/sign-in.db.test.ts`, SGN-19's two cases, assert ADR 0094's open case (a step begun before
+    End membership still opens a session). The mark now closes it: they are rewritten to the refusal, not skipped.
+  - Not yet read: the lists in `catalog`, `cross-tenant`, `migrate.db.test.ts`, `hardening.db.test.ts`.
+- **Left of the database half after the commands:** fill the two files through the skill; the Drizzle schema; the
+  lists above; `pnpm test:db` whole; the lock and round-trip measurements (step C); `pnpm db:domain-model --out
+  --strict` with the approval line blank (step D).
+
+## The earlier block (2026-11-12, W32, session_019i9ifC7PLenwLnTRu7ZVhZ; handed over at about 240k tokens)
 
 - **Brief:** build item 37 from the note; the orchestrator's brief of 2026-11-12 06:20 UTC (steps 1 to 7) stands for
   the successor. Rulings: Q1 yes, Q3 yes; Q2 is the founder's. No PR until the orchestrator says #156 has merged.
