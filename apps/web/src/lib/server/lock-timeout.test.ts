@@ -69,7 +69,9 @@ describe('a signed-in request’s lock waits are bounded (CAS-57)', () => {
     );
     expect(found).toEqual({
       // Sign-in: it commits in steps (a failed attempt's count, a session after the provider's grant), and none may be given up.
-      'lib/auth/sign-in.ts': 5,
+      // Two of the seven are the key registry's (docs/adr/0095), both before any session: the judgement of a
+      // registration after a removal, whose counted try must commit, and the record of a registered key.
+      'lib/auth/sign-in.ts': 7,
       // The wrapper: the four transactions above, bounded, and before them the session's read and the rate limit's
       // count, which are not (a session's end and its audit event are two steps).
       'lib/http/invoke.ts': 6,

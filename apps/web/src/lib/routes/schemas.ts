@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { isRegistrationCodeShaped, normalizeRegistrationCode } from '../auth/registration-code';
+
 /**
  * Shared input schemas. URLs and forms carry opaque IDs only (PRD 7, Information architecture
  * rules): every ID is a UUID, normalized to lowercase.
@@ -46,3 +48,16 @@ export const sixDigitCode = z
   .max(32)
   .transform((value) => value.replace(/[\s-]/g, ''))
   .pipe(z.string().regex(/^\d{6}$/, 'enter the six digits your authenticator app shows'));
+
+/**
+ * The one-time code that opens key registration after a removal (docs/adr/0095), as a person types what was read to
+ * them: spaces and hyphens are dropped and the letters upper-cased. Only the shape is checked here, which says nothing
+ * of whether the code is right and is no secret; a code of the wrong shape never reaches the database, so it counts no try.
+ */
+export const registrationCode = z
+  .string()
+  .max(32)
+  .transform(normalizeRegistrationCode)
+  .refine((code) => code === '' || isRegistrationCodeShaped(code), 'enter the eight letters and digits of the code PaidWhole gave you')
+  .refine((code) => code !== '', 'fill this in');
+
