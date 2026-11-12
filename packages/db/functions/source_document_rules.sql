@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- source_document_rules()
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 6625d5827492f774
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: e5f1eff58bed188f
 -- Trigger function of: source_document.source_document_rules
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.source_document_rules()
@@ -62,6 +62,9 @@ BEGIN
   IF TG_OP = 'UPDATE' THEN
     IF NEW.filed_for_submission_id IS DISTINCT FROM OLD.filed_for_submission_id THEN
       RAISE EXCEPTION 'the submission a document was filed for never changes' USING ERRCODE = 'check_violation';
+    END IF;
+    IF NEW.parent_document_id IS DISTINCT FROM OLD.parent_document_id THEN
+      RAISE EXCEPTION 'the zip a document was inserted under, or none, never changes' USING ERRCODE = 'check_violation';
     END IF;
     IF OLD.sha256 IS NOT NULL AND NEW.sha256 IS DISTINCT FROM OLD.sha256 THEN
       RAISE EXCEPTION 'a document''s SHA-256 never changes once recorded' USING ERRCODE = 'check_violation';

@@ -224,6 +224,7 @@ const FILE_REFUSAL_PERSON = 'a letter is filed for a submission by a person who 
 const FILE_REFUSAL_LATEST = 'a letter is filed for the latest submission of a case of its practice';
 const ZIP_REFUSAL = 'a zip entry carries its zip\'s submission';
 const NEVER_CHANGES = 'the submission a document was filed for never changes';
+const ZIP_NEVER_CHANGES = 'the zip a document was inserted under, or none, never changes';
 
 /** A top-level upload by `actor` linking `filedFor`. */
 function upload(actor: string, kind: string, filedFor: string | null, uploader = actor, practice: TenantWorld = north) {
@@ -390,6 +391,22 @@ describe('source_document.filed_for_submission_id (item 5)', () => {
     await asOwner(owner, [north.practiceId], () => owner.query(DOC_INSERT, [plain, north.practiceId, 'payer_letter', manager, null, null]), manager);
     const set = settle(asOwner(owner, [north.practiceId], () => owner.query('UPDATE source_document SET filed_for_submission_id = $2 WHERE id = $1', [plain, sent.id]), manager));
     expect(await set).toEqual({ code: '23514', message: NEVER_CHANGES });
+  });
+
+  it('keeps a document under the zip it was inserted under, or under none: the owner role cannot move it (23514), so an entry’s link stays its zip’s', async () => {
+    const sent = await submission();
+    const [filed, unfiled, letter] = [randomUUID(), randomUUID(), randomUUID()];
+    await asOwner(owner, [north.practiceId], () => owner.query(DOC_INSERT, [filed, north.practiceId, 'payer_letter', manager, null, sent.id]), manager);
+    await asOwner(owner, [north.practiceId], () => owner.query(DOC_INSERT, [unfiled, north.practiceId, 'payer_letter', manager, null, null]), manager);
+    await asOwner(owner, [north.practiceId], () => owner.query(DOC_INSERT, [letter, north.practiceId, 'payer_letter', manager, null, null]), manager);
+    const move = (id: string, parent: string | null) =>
+      settle(asOwner(owner, [north.practiceId], () => owner.query('UPDATE source_document SET parent_document_id = $2 WHERE id = $1', [id, parent]), manager));
+    // A filed letter moved under an unfiled document would be an entry whose link is not its zip's.
+    expect(await move(filed, unfiled)).toEqual({ code: '23514', message: ZIP_NEVER_CHANGES });
+    // An unfiled letter moved under a filed document would be an unfiled entry of a filed zip.
+    expect(await move(letter, filed)).toEqual({ code: '23514', message: ZIP_NEVER_CHANGES });
+    const { rows } = await owner.query('SELECT count(*)::int AS moved FROM source_document WHERE id = ANY ($1::uuid[]) AND parent_document_id IS NOT NULL', [[filed, unfiled, letter]]);
+    expect(rows).toEqual([{ moved: 0 }]);
   });
 
   it('leaves other updates of a linked document alone (the scan verdict by a job)', async () => {
