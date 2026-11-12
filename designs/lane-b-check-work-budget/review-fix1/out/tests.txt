@@ -1,0 +1,10 @@
+head  TEST1 pass {"one sent as written":true,"1000 refused":true,"fifth sent":true,"spent > 5x":true,"ratio":"7.39"} 
+      TEST2 pass {"ligatures > 10x letters":true,"ratio":"38.25","guards":{"null":true,"\"0\"":true,"\"5\"":true,"0n":true,"{}":true,"[]":true,"true":true}}
+pre   TEST1 FAIL {"one sent as written":true,"1000 refused":true,"fifth sent":true,"spent > 5x":false,"ratio":"2.98"} 
+      TEST2 FAIL {"ligatures > 10x letters":true,"ratio":"28.47","guards":{"null":false,"\"0\"":true,"\"5\"":true,"0n":"threw TypeError: Cannot mix BigInt and other types, use ","{}":true,"[]":true,"true":false}}
+no1   TEST1 FAIL {"one sent as written":true,"1000 refused":true,"fifth sent":true,"spent > 5x":false,"ratio":"2.98"} 
+      TEST2 pass {"ligatures > 10x letters":true,"ratio":"38.48","guards":{"null":true,"\"0\"":true,"\"5\"":true,"0n":true,"{}":true,"[]":true,"true":true}}
+no2   TEST1 pass {"one sent as written":true,"1000 refused":true,"fifth sent":true,"spent > 5x":true,"ratio":"7.39"} 
+      TEST2 pass {"ligatures > 10x letters":true,"ratio":"28.44","guards":{"null":true,"\"0\"":true,"\"5\"":true,"0n":true,"{}":true,"[]":true,"true":true}}
+no3   TEST1 pass {"one sent as written":true,"1000 refused":true,"fifth sent":true,"spent > 5x":true,"ratio":"7.39"} 
+      TEST2 FAIL {"ligatures > 10x letters":true,"ratio":"38.25","guards":{"null":false,"\"0\"":true,"\"5\"":true,"0n":"threw TypeError: Cannot mix BigInt and other types, use ","{}":true,"[]":true,"true":false}}

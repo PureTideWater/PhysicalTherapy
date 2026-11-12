@@ -1,0 +1,18 @@
+{
+ "seed": "11",
+ "letters": 1000,
+ "bad": 0,
+ "stat": {
+  "k1 head sent": 814,
+  "k30 head sent": 813,
+  "k300 head refused, base sent": 11,
+  "k300 head sent": 800,
+  "uncounted compared": 3936,
+  "k1 both refused": 185,
+  "k30 both refused": 186,
+  "k300 both refused": 189,
+  "k300 redaction past budget": 6,
+  "k1 head refused, base sent": 1,
+  "k30 head refused, base sent": 1
+ }
+}

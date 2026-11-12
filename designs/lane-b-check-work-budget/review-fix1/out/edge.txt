@@ -1,0 +1,47 @@
+== 1. empty and odd subjects (head | base)
+no names/ids/claims                      {"text":"Dear provider, the claim SYN556000 of Jane Zephyra (ZZ123456","len":118,"replaced":1,"cand":9,"spent":84510,"held":false} | {"text":"Dear provider, the claim SYN556000 of Jane Zephyra (ZZ123456","len":118,"replaced":1,"cand":9,"held":false}
+claims hold empty lists                  {"text":"Dear provider, the claim SYN556000 of [PATIENT_NAME] [PATIEN","len":137,"replaced":4,"cand":5,"spent":94154,"held":false} | {"text":"Dear provider, the claim SYN556000 of [PATIENT_NAME] [PATIEN","len":137,"replaced":4,"cand":5,"held":false}
+all empty + empty lists                  {"text":"Dear provider, the claim SYN556000 of Jane Zephyra (ZZ123456","len":118,"replaced":1,"cand":9,"spent":91290,"held":false} | {"text":"Dear provider, the claim SYN556000 of Jane Zephyra (ZZ123456","len":118,"replaced":1,"cand":9,"held":false}
+claimNumbers a Set                       {"threw":"TypeError: value.normalize is not a function"} | {"threw":"TypeError: value.normalize is not a function"}
+names a Set                              {"threw":"TypeError: names.flatMap is not a function"} | {"threw":"TypeError: names.flatMap is not a function"}
+memberIds a Set                          {"text":"Dear provider, the claim [CLAIM_1] of [PATIENT_NAME] [PATIEN","len":137,"replaced":5,"cand":0,"spent":null,"held":true} | {"text":"Dear provider, the claim [CLAIM_1] of [PATIENT_NAME] [PATIEN","len":137,"replaced":5,"cand":0,"held":false}
+claimNumbers undefined                   {"threw":"TypeError: Cannot read properties of undefined (reading 'length')"} | {"threw":"TypeError: numbers is not iterable"}
+claimNumbers a string                    {"text":"Dear provider, the claim SYN556000 of [PATIENT_NAME] [PATIEN","len":137,"replaced":4,"cand":5,"spent":99572,"held":false} | {"text":"Dear provider, the claim SYN556000 of [PATIENT_NAME] [PATIEN","len":137,"replaced":4,"cand":5,"held":false}
+names undefined                          {"threw":"TypeError: Cannot read properties of undefined (reading 'length')"} | {"threw":"TypeError: subject.names is not iterable"}
+memberIds undefined                      {"threw":"TypeError: Cannot read properties of undefined (reading 'length')"} | {"threw":"TypeError: subject.memberIds is not iterable"}
+claims sparse/length-only                {"threw":"TypeError: value.normalize is not a function"} | {"threw":"TypeError: value.normalize is not a function"}
+claimNumbers array-like with length "x"  {"threw":"TypeError: value.normalize is not a function"} | {"threw":"TypeError: value.normalize is not a function"}
+== 2. spent guard: holdsIdentifier(clean, .., spent) ; base answer false
+  spent=undefined (undefined) -> false
+  spent=0 (number) -> false
+  spent=1 (number) -> false
+  spent=420000000 (number) -> true
+  spent=420000001 (number) -> true
+  spent=-1 (number) -> true
+  spent=0 (number) -> false
+  spent=NaN (number) -> true
+  spent=Infinity (number) -> true
+  spent=null (object) -> true
+  spent=0 (string) -> true
+  spent=5 (string) -> true
+  spent=0n (bigint) -> true
+  spent=[object Object] (object) -> true
+  spent=[object Array] (object) -> true
+  spent=true (boolean) -> true
+  spent=[object Number] (object) -> true
+  spent=[object Object] (object) -> true
+== 3. uncounted entries past what the budget would be: no throw, equal to base
+  charge one ownMatchesIn call would make: 474916400 > 420000000
+  redactLetter         equal=true len=95957 
+  redactionSpans       equal=true len=279734 
+  holdsNameOrNumber    equal=true len=4 
+  nameOrNumberMatches  equal=true len=77610 
+== 4. the counted entry refuses the same, and state is whole after the throw
+  forScreen: spent 420000001 text "\u0001" held true
+  spent 419999999: held true; next letter equal to base: true
+  spent 419990000: held true; next letter equal to base: true
+  spent 419900000: held true; next letter equal to base: true
+  spent 419000000: held true; next letter equal to base: true
+  spent 415000000: held true; next letter equal to base: true
+  spent 400000000: held true; next letter equal to base: true
+  18 letters across the budget (8 refused in redaction): next letter and next uncounted call equal to base after 18/18

@@ -1,0 +1,3 @@
+const who = { pseudonym: 'p', names: ['JANE Q VANTREE'], memberIds: ['ZZ1234567'], datesOfBirth: ['1961-03-03'] } as any; const c = [{ claimId: 'c1', patientPseudonym: 'p', claimNumbers: ['SYN555001'] }] as any;
+for (const v of ['head', 'no2']) { const M = await import(v === 'head' ? '/home/user/PhysicalTherapy/packages/redact/src/redact.ts' : `/home/user/review-fix1/x/redact-${v}.ts`);
+  for (const u of ['ﷺ', '㏾;', 'Ａ', '½ ']) { const t = u.repeat(1000); const a = M.checkWorkOf(M.redactLetterForScreen(t, who, c)); const b = M.checkWorkOf(M.redactLetterForScreen(t.normalize('NFKC'), who, c)); console.log(v, JSON.stringify(u), 'as written', a, 'written in NFKC', b, 'equal', a === b, 'diff', b - a, '= 350 x', (b - a) / 350); } }

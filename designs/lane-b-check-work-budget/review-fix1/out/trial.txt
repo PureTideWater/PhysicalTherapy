@@ -1,0 +1,6 @@
+names50x40 prose               6252 ch   418.6 Mu  cpu   1627 ms (thread 1456, redact 745)  ref   1549 ms    3.70 ns/u@ref  out 6252 sent  [cal 178/151]
+names50x12 prefix2            19367 ch   413.7 Mu  cpu    832 ms (thread 786, redact 401)  ref    820 ms    1.98 ns/u@ref  out 19367 sent  [cal 170/146]
+names50x12 yensemi             9458 ch   414.8 Mu  cpu   1082 ms (thread 1047, redact 373)  ref   1058 ms    2.55 ns/u@ref  out 18916 sent  [cal 177/147]
+claims5000x40 prose            8710 ch   414.8 Mu  cpu   7454 ms (thread 7194, redact 2684)  ref   3245 ms    7.82 ns/u@ref  out 8710 sent  <<< OVER 3 s  [cal 359/331]
+members1000 digitLF           26605 ch   412.6 Mu  cpu   1930 ms (thread 1856, redact 906)  ref   1879 ms    4.55 ns/u@ref  out 26605 sent  [cal 182/148]
+yensemi 1 claim (earlier dearest)    92340 ch   413.7 Mu  cpu   2053 ms (thread 1846, redact 753)  ref   2056 ms    4.97 ns/u@ref  out 184680 sent  [cal 179/144]

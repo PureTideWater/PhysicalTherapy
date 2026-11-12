@@ -1,40 +1,41 @@
 # Lane B: the letter check's work budget (CT-2 on the merged base) — status
 
-## RESUME-BLOCK, current (W25, session_019i9ifCzDkV481emXJMM26J, 2026-11-12; reviews done, fix round 1 pushed, its delta review and the gate and battery on the fixed head running; no PR yet)
+## RESUME-BLOCK, current (W25, session_019i9ifCzDkV481emXJMM26J, 2026-11-12 about 02:40 UTC; fix round 2 pushed, its delta review running, a ruling asked; no PR yet)
 
-- **Where it stands.** WIP `co-001/wip-check-work-budget` = **7a5a26bb** on base 58fb29e5 (the base is now fd14d89f,
-  #150, said not to touch packages/redact: merge it right before the last push). Local branch `co-001/check-work-budget`.
-  Commits on W24's 33380cd5: 70b1eb0f the MOD-24 row; c5fc89a8 fix round 1; 7a5a26bb a lint fix in a test.
-  Typecheck and lint pass; `denial-letter.test.ts` 1,038 pass (Node 24). Orchestrator's seat: session_019i9ifCaMokBYHaARonYamS
-  (as its former session said on 2026-11-12 01:24 UTC; check it exists before reporting there).
-- **Reviews** (`reviews/lane-b-check-work-budget-review-phi.md`, `-time.md`; scripts in
-  `designs/lane-b-check-work-budget/review-*`). PHI: no blocking finding; P-1 (a `null` count switched the counter
-  off) fixed; P-2, P-3, P-4 recorded in the ADR. TIME: **T-1 blocking** (a letter still read took 3.5 to 5.9 s with 400
-  to 1,000 claim numbers) **fixed in round 1**: `WORK.formCharacter` = 2 per character per name, member ID and claim
-  number at the top of `ownMatchesIn` and `confusedMatchesIn` (now 0.85 to 1.34 s at reference with 1,000); T-2 (the
-  dearest letter still read is 2.1 to 2.4 s at reference, U+33FE and `;` repeated, NOT the builder's 1.35 s) is under
-  the 3 s and RECORDED in the ADR, with the NFKC-length charge added; T-3 fixed (`typeof spent !== 'number'`); T-4,
-  T-5 recorded. **For the orchestrator's line: the dearest read letter is about 2.3 s, not 1.35 s.**
-- **Fix round 1's delta review**: `reviews/lane-b-check-work-budget-review-fix1-delta.md` (running; one more round is
-  allowed after it, reviewed on its delta only).
-- **Gate** (`/home/user/gate`, the kept gate with the check called as `prepare` calls it: `checkWorkOf` handed on;
-  trees given as `packages/redact/src` directories). On 33380cd5: 975,489 letters, same 975,489, differ 0
-  (`designs/lane-b-check-work-budget/gate/run1-33380cd5-report.md`). Fixtures (`gate/repo.mts`, `repo.out`): 10,830
-  strings x 2 patients, no text differs, newly refused only the 729,000-character ZIP table read whole. **To do: the
-  same two on the fixed head (run2 started), and again after the base merge.**
-- **Battery** (`battery/`: `shim-head-redact.ts` goes to `/home/user/fix/packages/model-gateway/src/redact.ts`; it runs
-  every call on the head, `/home/user/headsrc`, and on the base, `/home/user/tree-base`, and appends totals to
-  `/home/user/battery-out/shim.jsonl`, differences to `shim-bad.jsonl`; every other tree of the leaks battery's layout
-  is a copy of the base's two files; `recorded.sh` is the leaks battery less its gate and audit lines, `fresh.sh` the
-  seeded generators on fresh seeds). On 33380cd5, recorded seeds, 63 scripts before a container restart: 567,753
-  redactions, 516,552 checks, 0 texts differ, 0 base-refused-head-sent, 0 newly refused. **To do: both scripts on the
-  fixed head (started), then total `shim.jsonl`.**
-- **Then:** fix what the delta review finds (at most one more round); the full local suite once on Node 24 (output to
-  a file); merge the base, gate again; the ADR's battery line and the PR text take the final counts; draft PR into
-  claude/build-platform from the template, saying in plain words what is newly refused (crafted letters past the
-  budget; long letters on a call with hundreds of claim numbers) and why; subscribe; merge on green; one line to the
-  orchestrator (merge commit; hook: `checkWorkSpent` / `work()`, item 26's readings inside the two entries, hand
-  `checkWorkOf(redacted)` to `holdsIdentifier`; the 2.3 s).
+- **Where it stands.** WIP `co-001/wip-check-work-budget` = **0289304f** on base 58fb29e5 (the base is now fd14d89f,
+  #150: merge it right before the last push). Local branch `co-001/check-work-budget`. Commits on W24's 33380cd5:
+  70b1eb0f MOD-24 row; c5fc89a8 fix round 1; 7a5a26bb a test's lint; 0289304f fix round 2 (THE LAST ALLOWED).
+  Orchestrator's seat: session_019i9ifCaMokBYHaARonYamS (exists, child of the former one).
+- **RULING ASKED of the orchestrator (02:00 UTC, no answer yet): warm or cold.** The base builds a pattern per
+  identifier of the CALL at every reading, whatever the letter: the first check of a fresh process takes 1.8 s with 300
+  claim numbers of 15 characters, 4.1 s with 1,000 of nine, 15.7 s with 1,250 of 40 (0.11, 0.25, 1.05 s warm). Built:
+  (A) `WORK.identifierCharacter` = 3,500 per character of every name, member ID and claim number at each entry, charged
+  before anything is read: warm-safe, calls read to about 60,000 identifier characters, over that refused in 1 ms.
+  (B) cold-safe would be about seven times the weight (refuses every letter of a patient with more than about 250
+  claims): one constant to change, then the tests' 1,000-claim rows and the ADR's pinned paragraph ("The first check of
+  a fresh process...") change with it. **No PR before the orchestrator's word on this.**
+- **Reviews.** `reviews/lane-b-check-work-budget-review-phi.md`, `-time.md` (build), `-fix1-delta.md` (F-1 the above;
+  F-2 name forms, fixed: the per-character charge counts forms; F-3 NaN, fixed in `work`; F-4, F-5 tests, fixed),
+  `-fix2-delta.md` (RUNNING; a blocking finding in it means STOP and tell the orchestrator: no third round).
+  PHI in every review: nothing the base refuses is sent, no text differs.
+- **Recorded, not fixed (ADR 0054, "Left"):** the dearest read letter with one claim is 2.1 to 2.4 s at reference
+  (U+33FE and `;`), not W24's 1.35 s; a copy of the result has no count (time only); T-4, T-5, P-3, P-4.
+- **Gate** (`/home/user/gate`; trees as directories holding redact.ts; A = `/home/user/tree-base/packages/redact/src`,
+  cached). 33380cd5 and c5fc89a8: 975,489 letters, same 975,489, differ 0 (`designs/lane-b-check-work-budget/gate/`).
+  Fixtures (`gate/repo.mts`): no text differs; newly refused only the 729,000-character ZIP table. **Running on
+  0289304f: run3 (B = `/home/user/headsrc`, a copy of the head's two files). To do: `repo.mts` on it, and both again
+  after the base merge.**
+- **Battery** (`battery/`; the shim in `/home/user/fix/...` runs every call on `/home/user/headsrc` and on the base and
+  totals to `/home/user/battery-out/shim.jsonl`, differences to `shim-bad.jsonl`). 33380cd5: 63 scripts, 567,753
+  redactions, 0 differences. c5fc89a8: 14 scripts, 211,711, 0. **Running on 0289304f: `recorded.sh` then `fresh.sh`
+  (`CHAIN-DONE` in `/home/user/battery-out/fresh.log`); then total `shim.jsonl`.**
+- **Then:** typecheck and lint (running: `/home/user/gate-out/checks2.done`); the full local suite once on Node 24
+  (output to a file); merge fd14d89f, gate again; the ADR's battery line and the PR text take the final counts; draft
+  PR into claude/build-platform from the template, saying in plain words what is newly refused (crafted letters past
+  the budget; long letters on a call with hundreds of claim numbers; every letter of a call with more than about
+  60,000 characters of identifiers) and why; subscribe; merge on green; one line to the orchestrator (merge commit;
+  hook: `checkWorkSpent` / `work()`, item 26's readings inside the two entries, `checkWorkOf(redacted)` handed to
+  `holdsIdentifier`; the 2.3 s; the cold first check).
 
 ## Earlier block (W24), kept for the build's detail
 

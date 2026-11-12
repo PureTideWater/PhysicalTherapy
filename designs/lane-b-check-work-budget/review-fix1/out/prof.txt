@@ -1,0 +1,18 @@
+CPU.20261112.015516.1476.0.001.cpuprofile total ms 23290
+   99.4%  (idle)  :0
+    0.3%  (program)  :0
+    0.0%  compileForInternalLoader  realm:383
+    0.0%  compileSourceTextModule  utils:317
+    0.0%  resolve  node:path:1245
+    0.0%  getCLIOptionsValues  :0
+    0.0%  syncLink  module_job:260
+    0.0%  (garbage collector)  :0
+CPU.20261112.015516.1493.0.001.cpuprofile total ms 23054
+   45.2%  ownMatchesIn  redact-lifted.ts:2
+   27.2%  (anon)  redact-lifted.ts:2
+   15.3%  patternOf  redact-lifted.ts:2
+    4.0%  calibrationWork  time-budget.ts:1
+    1.8%  RegExp: [^\p{L}\p{N}]+  :0
+    1.1%  numberForm  redact-lifted.ts:2
+    1.1%  (garbage collector)  :0
+    1.0%  RegExp: (?<![\p{L}\p{N}])\p{Lu}[\p{L}'\s.]*?(?=[\p{N},;])  :0

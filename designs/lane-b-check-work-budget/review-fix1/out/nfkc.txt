@@ -1,0 +1,8 @@
+head "ﷺ" as written 23190170 written in NFKC 23190170 equal true diff 0 = 350 x 0
+head "㏾;" as written 4140100 written in NFKC 4140100 equal true diff 0 = 350 x 0
+head "Ａ" as written 606230 written in NFKC 606230 equal true diff 0 = 350 x 0
+head "½ " as written 5081220 written in NFKC 5081220 equal true diff 0 = 350 x 0
+no2 "ﷺ" as written 17240170 written in NFKC 23190170 equal false diff 5950000 = 350 x 17000
+no2 "㏾;" as written 3440100 written in NFKC 4140100 equal false diff 700000 = 350 x 2000
+no2 "Ａ" as written 606230 written in NFKC 606230 equal true diff 0 = 350 x 0
+no2 "½ " as written 4381220 written in NFKC 5081220 equal false diff 700000 = 350 x 2000
