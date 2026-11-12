@@ -2277,6 +2277,153 @@ describe('MOD-25: a stored number written with other marks than the records hold
       expect(sentOrRefused(lettered, heldAs('76543ZZ'), claims)).toBe(lettered);
     });
 
+    /**
+     * Rule (a) is read on the RAW letter, before any placeholder is written (the ruling of 2026-11-12 on the generated
+     * set's finding): a stored number that stands whole and glued to a letter refuses the letter whatever placeholder
+     * took a part of it. On 20af8fb3 the check read (a) only on the redacted text, where rule (c)'s placeholder for the
+     * long piece, or the first reading's [SSN] or [PHONE], had already taken a part of the number: the rest was sent.
+     */
+    describe('read on the raw letter: a placeholder for a part of the glued number hides nothing from the rule', () => {
+      /** Both paths: the screen's, and redactLetter with the check from nothing. */
+      const bothRefuse = (letter: string, patient: PatientIdentifiers, numbers: readonly LetterClaim[]) => {
+        expect(sentOrRefused(letter, patient, numbers), JSON.stringify(letter)).toBe(REFUSED);
+        expect(letterPath(letter, patient, numbers), JSON.stringify(letter)).toBe(REFUSED);
+        expect(holdsIdentifier(written(redactionSpans(letter, patient, numbers)), patient, numbers), JSON.stringify(letter)).toBe(true);
+      };
+      const written = ({ text, spans }: ReturnType<typeof redactionSpans>) => {
+        let sent = '';
+        let kept = 0;
+        for (const span of spans) {
+          sent += text.slice(kept, span.start) + span.placeholder;
+          kept = span.end;
+        }
+        return sent + text.slice(kept);
+      };
+
+      // Case 1, each sent on 20af8fb3 with the long piece replaced and the short one in clear ("Fax [MEMBER_ID]-5B ext").
+      it.each([
+        ['21318-5', 'Fax 21318-5B ext'],
+        ['5-21318', 'Fax X5-21318 ext'],
+        ['1/852830', 'Fax X1/852830 ext'],
+        ['852830/1', 'Fax 852830/1B ext'],
+        ['97537335/1821', 'Fax 97537335/1821B ext'],
+        ['1821/97537335', 'Fax X1821/97537335 ext'],
+        // Each separator the records may hold, written as held.
+        ['21318 5', 'Fax 21318 5B ext'],
+        ['21318.5', 'Fax 21318.5B ext'],
+        ['21318_5', 'Fax 21318_5B ext'],
+        ['21318/5', 'Fax 21318/5B ext'],
+        // A joiner or a run of marks where the records hold the separator (A-5), and a line ending after the letter.
+        ['21318-5', 'Fax 21318 5B ext'],
+        ['21318-5', 'Fax 21318.5B ext'],
+        ['21318/5', 'Fax 21318 : 5B ext'],
+        ['21318-5', 'Fax 21318-5B\r\next'],
+        // A label word before the number gives the first reading the long piece; the letter after the short one still refuses.
+        ['21318-5', 'Member ID21318-5B ext'],
+      ])('refuses, for a number held %j, %j', (held, letter) => {
+        bothRefuse(letter, heldAs(held), claims);
+        // A claim number is read as a member ID is.
+        bothRefuse(letter, heldAs('SYNMEMBER0042'), claimsOf('SYNCLAIM0001', held));
+      });
+
+      it('refuses where the long piece is held as a number of its own too: the first reading’s placeholder for it covers no whole', () => {
+        bothRefuse('Fax 21318-5B ext', heldAs('21318', '21318-5'), claims);
+        bothRefuse('Fax 21318-5B ext', heldAs('SYNMEMBER0042'), claimsOf('21318', '21318-5'));
+      });
+
+      // Case 2, each sent on a97d73e4 and on 20af8fb3 alike: [SSN] or [PHONE] took 9 or 10 digits and 1 to 3 were sent ("Fax X8-[SSN] ext").
+      it.each([
+        ['8852780545', 'Fax X8-852780545 ext'],
+        ['8852780545', 'Fax 885278054-5B ext'],
+        ['8852780545', 'Fax X8 852780545 ext'],
+        ['8852780545', 'Fax X8-852780545\r\next'],
+        ['18852780545', 'Fax X1-8852780545 ext'],
+        ['18852780545', 'Fax X18-852780545 ext'],
+        ['128852780545', 'Fax X12-8852780545 ext'],
+        ['128852780545', 'Fax X128-852780545 ext'],
+        // A stored separator inside it.
+        ['8/852780545', 'Fax X8/852780545 ext'],
+        ['885278054/5', 'Fax 885278054/5B ext'],
+      ])('refuses, for a number held %j, %j', (held, letter) => {
+        bothRefuse(letter, heldAs(held), claims);
+        bothRefuse(letter, heldAs('SYNMEMBER0042'), claimsOf('SYNCLAIM0001', held));
+      });
+
+      it('refuses with a CR LF where a line feed joins the number', () => {
+        for (const [held, withLf] of [
+          ['21318-5', 'Fax 21318\n5B ext'],
+          ['21318-5', 'Fax X21318\n5 ext'],
+          ['8852780545', 'Fax X8\n852780545B ext'],
+        ] as const) {
+          const refusedWithLf = sentOrRefused(withLf, heldAs(held), claims) === REFUSED;
+          for (const ending of ['\r\n', '\r\r\n', '\n\r']) {
+            const letter = withLf.replace('\n', ending);
+            // Never sent with a digit of the number; refused wherever the letter with a line feed is.
+            const sent = sentOrRefused(letter, heldAs(held), claims);
+            if (refusedWithLf) {
+              expect(sent, JSON.stringify(letter)).toBe(REFUSED);
+            }
+            if (sent !== REFUSED) {
+              expect(sent.replace(/\[CLAIM_\d+\]/gu, ''), JSON.stringify(letter)).not.toMatch(/[0-9]/u);
+            }
+          }
+        }
+      });
+
+      it('does not turn what the rule does not read: sent as on 20af8fb3', () => {
+        const held = heldAs('21318-5');
+        // The number not glued to a letter is replaced, whole or by its piece, and sent.
+        expect(sentOrRefused('Fax 21318-5 ext', held, claims)).toBe('Fax [MEMBER_ID] ext');
+        expect(sentOrRefused('Fax 21318 ext', held, claims)).toBe('Fax [MEMBER_ID] ext');
+        expect(sentOrRefused('Fax 21318-5, B ext', held, claims)).toBe('Fax [MEMBER_ID], B ext');
+        expect(sentOrRefused('Fax 8-852780545 ext', heldAs('8852780545'), claims)).toBe('Fax [MEMBER_ID] ext');
+        expect(letterPath('Fax 21318-5 ext', held, claims)).toBe('Fax [MEMBER_ID] ext');
+        // The whole glued number under one placeholder of the call's own (the first reading's, a label word or a phone
+        // word against it) is hidden whole: replaced and sent, as on the base.
+        expect(sentOrRefused('Acct21318-5 ext', held, claims)).toBe('Acct[MEMBER_ID] ext');
+        expect(sentOrRefused('Fax X8852780545 ext', heldAs('8852780545'), claims)).toBe('Fax X[MEMBER_ID] ext');
+        expect(sentOrRefused('Fax X8\r\n852780545 ext', heldAs('8852780545'), claims)).toBe('Fax X[MEMBER_ID] ext');
+        // THE RECORDED RESIDUAL, pinned: a glued piece under five digits, and a number under the floor in all.
+        expect(sentOrRefused('Fax X1821 ext', heldAs('97537335/1821'), claims)).toBe('Fax X1821 ext');
+        expect(sentOrRefused('Fax 21-35B ext', heldAs('21-35'), claims)).toBe('Fax 21-35B ext');
+        expect(sentOrRefused('Fax X1234 ext', heldAs('1234'), claims)).toBe('Fax X1234 ext');
+        // A digit right beside the number is another, longer number: the residual of 2026-10-27, as before.
+        expect(sentOrRefused('Fax 921318-5 ext', held, claims)).toBe('Fax 921318-5 ext');
+      });
+
+      it('a letter refused so carries the check’s mark after the first reading’s text, and no more of the letter than that reading sends', () => {
+        const held = heldAs('21318-5');
+        const screened = redactLetterForScreen('Fax 21318-5B ext, Zephyra', held, claims);
+        expect(screened.text).toBe('Fax 21318-5B ext, [PATIENT_NAME]\u0001');
+        const { text, spans } = redactionSpans('Fax 21318-5B ext, Zephyra', held, claims);
+        expect(text).toBe('Fax 21318-5B ext, Zephyra\u0001');
+        expect(spans.map((span) => span.placeholder)).toEqual(['[PATIENT_NAME]']);
+      });
+    });
+
+    // A call of its own for every run (the number is drawn), so each builds its patterns: no budget, only how long it may hang.
+    it('never sends a part of a digits-only number of 5 to 12 digits that stands glued to a letter, whatever placeholder takes the rest (property)', { timeout: 120_000 }, () => {
+      const number = fc.stringMatching(/^[0-9]{5,12}$/);
+      const letterOf = fc.constantFrom('X', 'a', 'Q', 'é', 'Ж', '中');
+      const separator = fc.constantFrom('-', ' ', '/', '.', '_');
+      const joiner = fc.constantFrom('', '-', ' ', '_', '\r\n', '\n');
+      fc.assert(
+        fc.property(number, fc.option(letterOf, { nil: '' }), fc.option(letterOf, { nil: '' }), fc.option(separator, { nil: '' }), joiner, fc.nat(), fc.boolean(), (value, left, right, stored, between, at, asClaim) => {
+          fc.pre(left !== '' || right !== '');
+          const cut = 1 + (at % (value.length - 1));
+          const held = `${value.slice(0, cut)}${stored}${value.slice(cut)}`;
+          const written = `${value.slice(0, cut)}${stored === '' ? between : stored}${value.slice(cut)}`;
+          const letter = `Fax ${left}${written}${right} ext`;
+          const sent = sentOrRefused(letter, heldAs(asClaim ? 'SYNMEMBER0042' : held), asClaim ? claimsOf('SYNCLAIM0001', held) : claims);
+          if (sent !== REFUSED) {
+            // Sent only with the whole number under one placeholder: no digit of it is left in the letter.
+            expect(sent.replace(/\[CLAIM_\d+\]/gu, ''), JSON.stringify([held, letter])).not.toMatch(/[0-9]/u);
+          }
+        }),
+        { numRuns: 400 },
+      );
+    });
+
     // A call of its own for every run (the number is drawn), so each builds its patterns: no budget, only how long it may hang.
     it('never sends a digits-only number of 5 to 12 digits with a letter against it, however it is joined (property)', { timeout: 60_000 }, () => {
       const number = fc.stringMatching(/^[0-9]{5,12}$/);
