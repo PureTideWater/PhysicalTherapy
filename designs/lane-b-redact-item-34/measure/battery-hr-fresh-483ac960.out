@@ -1,0 +1,125 @@
+== rows (the head is /home/user/bt/hr/fix)
+  syscall: 'open',
+  path: '/home/user/bt/hr/tree-ef3/packages/model-gateway/src/redact.residuals.json'
+}
+== the reviews' reproduction scripts: lines that differ from the run before
+b1: 3 lines differ
+b2: 3 lines differ
+c1: 3 lines differ
+c2: 3 lines differ
+d1p4: 3 lines differ
+== PHI fuzzers (flips = the base refused, the head sent; expect 0 but the month-named patient M's, ruling B)
+Node.js v24.22.0
+Node.js v24.22.0
+Node.js v24.22.0
+Node.js v24.22.0
+
+Node.js v24.22.0
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+{"letters":55872,"withheld":6506,"SENT_WITHHELD":0,"threw":0} seed 2939 in 120 s
+Node.js v24.22.0
+Node.js v24.22.0
+== the audit variant: DEPART lines (expect 0)
+DEPART: 0
+== the PHI reviews' generators (head against their before and base; expect base flags 0)
+0
+  url: 'file:///home/user/bt/hr/tree-ef3/packages/model-gateway/src/redact.ts'
+}
+
+Node.js v24.22.0
+
+Node.js v24.22.0
+
+Node.js v24.22.0
+  url: 'file:///home/user/bt/hr/tree-ef3/packages/model-gateway/src/redact.ts'
+}
+
+Node.js v24.22.0
+== reviewer J's and K's generators
+    at moduleResolve (node:internal/modules/esm/resolve:879:10)
+    at defaultResolve (node:internal/modules/esm/resolve:1006:11)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at resolve (file:///home/user/bt/hr/work/ts-resolve-hooks.mjs:6:10)
+    at nextResolve (node:internal/modules/esm/hooks:785:28)
+    at AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:30)
+    at MessagePort.handleMessage (node:internal/modules/esm/worker:251:24)
+    at [nodejs.internal.kHybridDispatch] (node:internal/event_target:869:20)
+    at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///home/user/bt/hr/tree-ef3/packages/model-gateway/src/redact.ts'
+}
+
+Node.js v24.22.0
+    at MessagePort.handleMessage (node:internal/modules/esm/worker:251:24)
+    at [nodejs.internal.kHybridDispatch] (node:internal/event_target:869:20)
+    at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///home/user/bt/hr/tree-ef3/packages/model-gateway/src/redact.ts'
+}
+
+Node.js v24.22.0
+0
+Node.js v24.22.0
+
+
+## R rule lines: 15 letters; slowest that returned: head 41ms, before 39ms, base 0ms base ERR rker:251:24)
+    at [nodejs.internal.kHybridDispatch] (node:internal/event_target:869:20)
+    at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///home/user/bt/hr/tree-ef3/packages/model-gateway/src/redact.ts'
+}
+
+Node.js v24.22.0
+
+
+total 23s
+}
+
+Node.js v24.22.0
+}
+
+Node.js v24.22.0
+}
+
+Node.js v24.22.0
+}
+
+Node.js v24.22.0
+    at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///home/user/bt/hr/tree-ef3/packages/model-gateway/src/redact.ts'
+}
+
+Node.js v24.22.0
+== must-stay
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/home/user/bt/hr/tree-ef3/packages/model-gateway/src/redact.ts' imported from /home/user/bt/hr/work/d2p6/lib2.mts
+    at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///home/user/bt/hr/tree-ef3/packages/model-gateway/src/redact.ts'
+}
+
+Node.js v24.22.0
+    at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///home/user/bt/hr/tree-ef3/packages/model-gateway/src/redact.ts'
+}
+
+Node.js v24.22.0
+Node.js v24.22.0
+
+## vL: P0:20000 P1:20000 P2:20000 P3:20000 P4:20000 P5:20000 P6:20000 P1:20000 P6:20000 ERR ode:internal/modules/esm/worker:251:24)
+    at [nodejs.internal.kHybridDispatch] (node:internal/event_target:869:20)
+    at MessagePort.<anonymous> (node:internal/per_context/messageport:23:28) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///home/user/bt/hr/review-i2/v/vL.mts'
+}
+
+Node.js v24.22.0
+
+total 6s
+battery done 23:46:02

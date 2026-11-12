@@ -59,6 +59,15 @@ WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. N
     pre-fix head with 5 of 8 name letters in clear; 483ac960 hides it whole; that class was not searched further.
   - Held: 0 of 54,702 letters where the base or the pre-fix head hides or refuses what the fix shows; the old and
     new patterns agree on every compared string.
+- **Fix round 1's measures finished after this block was written (483ac960 against a97d73e4; files in `measure/`,
+  counts read, NOT analysed further by W56):** the gate, full, `--no-cache` (`gate-fix1-483ac960.report.md`): 975,489
+  letters, PHI none, unplaced none, refused 462,984 and 462,984, **differ 3 (it was 2: the third letter is not yet
+  named; read the report's KEEP classes)**, max A 1,176 ms, B 1,107 ms. The direct comparison on shard 2
+  (`differ-shard2-483ac960.jsonl`): 121,936 letters, differ 1 (i 187754 is in this shard: confirm it is that one).
+  `pnpm test:db` whole with PostgreSQL 18: 168 files, 10,287 passed, 1 skipped (run on the working tree while round
+  2 was being written). The battery, base and head, recorded and fresh seeds (`battery-*-483ac960.out`): each
+  summary is 102 lines, where W51's were 186 and 187, so it stopped short or lost more scripts in this layout:
+  **not a result yet**; base against head differ in 20 lines (recorded) and 18 (fresh), unread.
 - **For the queue (lesser findings, not built):** R1-3, R1-4 (item 40); R1-5 (`redactLetter`'s text holds a glued
   number in clear with the mark; no product caller shows a refused letter); R1-6 (A-6 reads only `\n\r+`: `\f\r`,
   `\v\r`, U+2028 or U+0085 with a CR are sent where the one-character control is refused); R2-3 (the (d) test bounds
