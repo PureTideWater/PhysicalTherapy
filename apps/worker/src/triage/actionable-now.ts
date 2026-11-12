@@ -37,24 +37,9 @@ export const LATEST_STAGE = (x: string) => `(${LATEST_STAGE_ROW(x)})`;
 export const ACTIONABLE_NOW_LINE = (x: string, stage: string = LATEST_STAGE(x)) =>
   `(CASE WHEN ${x}.written_off_reason IS NULL AND ${stage} = 'actionable' THEN coalesce(priced_line_pricing_check(${x}.priced_line_id) = 'current', false) ELSE false END)`;
 
-/**
- * The rows of case `alias`'s figure: its case lines ACTIONABLE_NOW_LINE admits, each with its priced line. The one
- * text ACTIONABLE_NOW sums and ACTIONABLE_NOW_LINE_IDS lists, so the figure and the list cannot come to read
- * different rows.
- */
-const ACTIONABLE_NOW_ROWS = (alias: string) => `FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id
-    WHERE x.case_id = ${alias}.id AND x.practice_id = ${alias}.practice_id AND ${ACTIONABLE_NOW_LINE('x')}`;
-
 /** Case `alias`'s figure: the variance of its lines ACTIONABLE_NOW_LINE admits, in integer cents (0 for none). */
-export const ACTIONABLE_NOW = (alias: string) => `(SELECT coalesce(sum(p.variance_cents), 0) ${ACTIONABLE_NOW_ROWS(alias)})`;
-
-/**
- * The priced lines ACTIONABLE_NOW sums for case `alias`, as an array of their IDs in ID order (empty for none): what
- * an ROI statement stores beside its actionable figure, and the database's roi_statement_rules() checks the figure
- * against (docs/adr/0082, Decision 7). The per-line amount is priced_line.variance_cents and nothing else; a figure
- * that reads another amount or other rows needs that function replaced (actionable-now.test.ts).
- */
-export const ACTIONABLE_NOW_LINE_IDS = (alias: string) => `(SELECT coalesce(array_agg(p.id ORDER BY p.id), '{}')::text[] ${ACTIONABLE_NOW_ROWS(alias)})`;
+export const ACTIONABLE_NOW = (alias: string) => `(SELECT coalesce(sum(p.variance_cents), 0) FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id
+    WHERE x.case_id = ${alias}.id AND x.practice_id = ${alias}.practice_id AND ${ACTIONABLE_NOW_LINE('x')})`;
 
 /** How many lines ACTIONABLE_NOW sums: the same predicate, counted. */
 export const ACTIONABLE_NOW_LINES = (alias: string) => `(SELECT count(*) FROM case_line x
@@ -94,6 +79,28 @@ export const ACTIONABLE_NOW_OF = (alias: string) => `(
            count(*) FILTER (WHERE y.open AND y.stage IS DISTINCT FROM 'actionable') AS moved_on,
            count(*) FILTER (WHERE y.open AND y.stage = 'actionable' AND NOT y.now) AS stale
       FROM (SELECT p.variance_cents, x.written_off_reason IS NULL AS open, st.stage, ${ACTIONABLE_NOW_LINE('x', 'st.stage')} AS now
+              FROM case_line x
+              JOIN priced_line p ON p.id = x.priced_line_id
+              LEFT JOIN LATERAL (${LATEST_STAGE_ROW('x')}) st ON true
+             WHERE x.case_id = ${alias}.id AND x.practice_id = ${alias}.practice_id
+            OFFSET 0) y)`;
+
+
+/**
+ * Case `alias`'s figure and the priced lines it sums, in one pass over its lines, for a `CROSS JOIN LATERAL ... a` (one
+ * row per case): `cents`, as ACTIONABLE_NOW, and `line_ids`, those lines' priced line IDs in ID order (empty for none).
+ * What an ROI statement stores beside its actionable figure and the database's roi_statement_rules() checks the figure
+ * against (docs/adr/0082, Decision 7). Each case line is read once, as ACTIONABLE_NOW_OF reads it: the predicate
+ * (ACTIONABLE_NOW_LINE, written nowhere else) is a column of a derived table behind an optimization fence (OFFSET 0),
+ * and the sum and the list FILTER by that one column of the same rows, so they cannot come to read different lines and
+ * the pricing check runs once a line, not once for the figure and once for the list. The per-line amount is
+ * priced_line.variance_cents and nothing else; a figure that reads another amount or other rows needs that function
+ * replaced (actionable-now.test.ts).
+ */
+export const ACTIONABLE_NOW_WITH_LINES = (alias: string) => `(
+    SELECT coalesce(sum(y.variance_cents) FILTER (WHERE y.now), 0) AS cents,
+           coalesce(array_agg(y.id ORDER BY y.id) FILTER (WHERE y.now), '{}')::text[] AS line_ids
+      FROM (SELECT p.id, p.variance_cents, ${ACTIONABLE_NOW_LINE('x', 'st.stage')} AS now
               FROM case_line x
               JOIN priced_line p ON p.id = x.priced_line_id
               LEFT JOIN LATERAL (${LATEST_STAGE_ROW('x')}) st ON true

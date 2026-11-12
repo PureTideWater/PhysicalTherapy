@@ -20,13 +20,27 @@ describe('the actionable figure and the lines it counted', () => {
     expect(actionableNow.ACTIONABLE_NOW('c')).toBe(`(SELECT coalesce(sum(p.variance_cents), 0) ${ROWS})`);
   });
 
-  it('T15 a: the list reads the rows the figure sums, and the figure’s per-line amount is priced_line.variance_cents and nothing else', () => {
-    const lineIds = (
+  it('T15 a: the list reads the rows the figure sums, in one pass, and the figure’s per-line amount is priced_line.variance_cents and nothing else', () => {
+    const withLines = (
       actionableNow as unknown as {
-        ACTIONABLE_NOW_LINE_IDS?: (alias: string) => string;
+        ACTIONABLE_NOW_WITH_LINES?: (alias: string) => string;
       }
-    ).ACTIONABLE_NOW_LINE_IDS;
-    expect(lineIds?.('c'), GUARD).toBe(`(SELECT coalesce(array_agg(p.id ORDER BY p.id), '{}')::text[] ${ROWS})`);
+    ).ACTIONABLE_NOW_WITH_LINES;
+    // The statement writer's figure and list: one derived table, each line read once, the predicate ACTIONABLE_NOW_LINE.
+    expect(withLines?.('c'), GUARD).toBe(`(
+    SELECT coalesce(sum(y.variance_cents) FILTER (WHERE y.now), 0) AS cents,
+           coalesce(array_agg(y.id ORDER BY y.id) FILTER (WHERE y.now), '{}')::text[] AS line_ids
+      FROM (SELECT p.id, p.variance_cents, ${actionableNow.ACTIONABLE_NOW_LINE('x', 'st.stage')} AS now
+              FROM case_line x
+              JOIN priced_line p ON p.id = x.priced_line_id
+              LEFT JOIN LATERAL (SELECT s.stage FROM line_status s WHERE s.practice_id = x.practice_id AND s.service_line_id = x.service_line_id ORDER BY s.seq DESC LIMIT 1) st ON true
+             WHERE x.case_id = c.id AND x.practice_id = c.practice_id
+            OFFSET 0) y)`);
+    expect(withLines?.('c').match(/priced_line_pricing_check\(/g), GUARD).toHaveLength(1);
+    expect(withLines?.('c').match(/_cents/g), GUARD).toEqual(['_cents', '_cents']);
+    // With the stage it reads as a column, the predicate is the one ACTIONABLE_NOW filters by.
+    expect(actionableNow.ACTIONABLE_NOW_LINE('x', actionableNow.LATEST_STAGE('x'))).toBe(actionableNow.ACTIONABLE_NOW_LINE('x'));
+    expect(ROWS.endsWith(`AND ${actionableNow.ACTIONABLE_NOW_LINE('x')}`), GUARD).toBe(true);
     const figure = actionableNow.ACTIONABLE_NOW('c');
     expect(figure.startsWith('(SELECT coalesce(sum(p.variance_cents), 0) FROM case_line x JOIN priced_line p ON p.id = x.priced_line_id'), GUARD).toBe(true);
     expect(figure.match(/_cents/g), GUARD).toEqual(['_cents']);

@@ -10,11 +10,12 @@ import { ACTIONABLE_NOW } from '../triage/actionable-now';
 import { CAS_AS_OF, CAS_RUNS, type CasRun } from '../triage/test-support/cas-runs';
 import { TriageWorld } from '../triage/test-support/triage-world';
 import type { Scope } from './ledger';
-import { NO_BILLING, NO_TIME_LOG, generateRoiStatement } from './statements';
+import { NO_BILLING, NO_TIME_LOG, OPEN_CASES_ACTIONABLE, generateRoiStatement } from './statements';
 import { attemptErrorCode } from '../worker';
 import { STATEMENT_COLUMNS, storedStatement } from './print';
 import { generateFourKeyStatement } from './test-support/four-key-writer';
 import { LedgerWorld } from './test-support/ledger-world';
+import { type OpenCasePathRow, PLAIN_PATH_OPEN_CASES } from './test-support/plain-path-writer';
 import { FOUR_KEYS, PREVIOUS_STATEMENT_COLUMNS, printWatched, recoupedLedSix, statementTwins } from './test-support/statement-twins';
 
 /**
@@ -110,6 +111,23 @@ async function bothWriters(pools: Pools, practice: Practice): Promise<{ readonly
   );
   const before = await rolledBack(pools, practice.practiceId, async (scope) => storedRow(scope, (await generateFourKeyStatement(scope, { practiceId: practice.practiceId, ...QUARTER }, SOURCES))?.statementId));
   return { now, before };
+}
+
+/**
+ * The note's 4.1: the writer's one-pass query and the plain path's (the figure ACTIONABLE_NOW gives and the list as a
+ * second subquery), in one transaction as the job, answer the same rows: each open case in the same order, its figure
+ * to the cent and its lines ID for ID.
+ */
+async function expectBothPathsEqual(pools: Pools, practice: Practice): Promise<readonly OpenCasePathRow[]> {
+  expect(OPEN_CASES_ACTIONABLE).not.toBe(PLAIN_PATH_OPEN_CASES);
+  expect(OPEN_CASES_ACTIONABLE.match(/priced_line_pricing_check\(/g)).toHaveLength(1);
+  expect(PLAIN_PATH_OPEN_CASES.match(/priced_line_pricing_check\(/g)).toHaveLength(2);
+  const { onePass, plain } = await rolledBack(pools, practice.practiceId, async (scope) => ({
+    onePass: (await scope.client.query<OpenCasePathRow>(OPEN_CASES_ACTIONABLE, [practice.practiceId])).rows,
+    plain: (await scope.client.query<OpenCasePathRow>(PLAIN_PATH_OPEN_CASES, [practice.practiceId])).rows,
+  }));
+  expect(onePass).toEqual(plain);
+  return onePass;
 }
 
 /** T11: the two rows are equal but for the fifth key. */
@@ -347,6 +365,8 @@ describe('the writer lists the lines its figure counted (T5, T11)', () => {
       const check = async (): Promise<void> => {
         const rows = await bothWriters(w, practice);
         expectEqualButTheList(rows);
+        const paths = await expectBothPathsEqual(w, practice);
+        expect(rows.now.links.actionable_open_lines).toEqual(paths.flatMap((row) => row.line_ids));
         const { listed, perCase } = await expectListIsTheFigure(practice, rows.now);
         seen.listedNull += listed.filter((line) => line.variance_cents === null).length;
         seen.listedZero += listed.filter((line) => line.variance_cents === '0').length;
@@ -387,6 +407,7 @@ describe('the writer lists the lines its figure counted (T5, T11)', () => {
     const check = async (): Promise<StoredRow> => {
       const rows = await bothWriters(led, practice);
       expectEqualButTheList(rows);
+      expect(rows.now.links.actionable_open_lines).toEqual((await expectBothPathsEqual(led, practice)).flatMap((row) => row.line_ids));
       await expectListIsTheFigure(practice, rows.now, (target, sql, values) => led.rows(target, sql, values));
       stages.push((await led.rows<{ stage: string }>(practice, 'SELECT stage FROM line_status WHERE practice_id = $1 ORDER BY seq DESC LIMIT 1', [practice.practiceId]))[0]?.stage ?? null);
       listed.push(rows.now.links.actionable_open_lines?.length ?? -1);

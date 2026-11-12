@@ -4,7 +4,7 @@ import { type LedgerEntry, type LedgerTotals, type ProofLevel, type RoiStatement
 import { type Cents, ZERO_CENTS, parseCents } from '@tp/money';
 
 import { PAID_INVOICE_FEES } from '../billing/fees';
-import { ACTIONABLE_NOW, ACTIONABLE_NOW_LINE_IDS } from '../triage/actionable-now';
+import { ACTIONABLE_NOW_WITH_LINES } from '../triage/actionable-now';
 import { type Scope, ledgerEntries, practiceLedgerSettings } from './ledger';
 
 /**
@@ -118,14 +118,17 @@ interface OpenCaseRow {
 
 /**
  * The cases still being worked (any not resolved or closed, as the practice home and Cases count them) with
- * each one's live figure (ACTIONABLE_NOW: its lines still actionable on their pricing in effect; docs/adr/
+ * each one's live figure (as ACTIONABLE_NOW: its lines still actionable on their pricing in effect; docs/adr/
  * 0082), never the case's stored ask. An input to roiStatement(), which sums it as the statement's
- * actionable figure for open cases. Beside each figure, the priced lines it sums (ACTIONABLE_NOW_LINE_IDS: the same
- * rows, read in this same statement, so one snapshot; a line that moves on between two queries could otherwise make a
- * correct statement's figure and list disagree and the database refuse it).
+ * actionable figure for open cases. Beside each figure, the priced lines it sums. Both come from one pass over the
+ * case's lines (ACTIONABLE_NOW_WITH_LINES: the same rows and the one predicate, each line read once), in this one
+ * statement, so one snapshot; a line that moves on between two queries could otherwise make a correct statement's
+ * figure and list disagree and the database refuse it. The tests hold the figure equal to ACTIONABLE_NOW's, a query of
+ * its own, for every case (statement-lines.db.test.ts, statement-paths.db.test.ts).
  */
-export const OPEN_CASES_ACTIONABLE = `SELECT c.id, ${ACTIONABLE_NOW('c')}::text AS actionable_cents, ${ACTIONABLE_NOW_LINE_IDS('c')} AS line_ids
+export const OPEN_CASES_ACTIONABLE = `SELECT c.id, a.cents::text AS actionable_cents, a.line_ids
        FROM "case" c
+      CROSS JOIN LATERAL ${ACTIONABLE_NOW_WITH_LINES('c')} a
       WHERE c.practice_id = $1 AND c.state NOT IN ('resolved', 'closed_written_off')
       ORDER BY c.opened_at, c.id`;
 
