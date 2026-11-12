@@ -3,7 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import type { FlagRow } from '../flags';
-import { BARRIER, type LetterClaim, type PatientIdentifiers, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '@tp/redact';
+import { BARRIER, CHECK_WORK_BUDGET, type LetterClaim, type PatientIdentifiers, checkWorkOf, dateForms, datesIn, fold, holdsIdentifier, identifierCandidates, redactLetter, redactLetterForScreen, redactionForms } from '@tp/redact';
 import { SYNTHETIC_IDS, SYNTHETIC_LETTER, localGateway, registerOutput, syntheticLetterInput, syntheticLetterOutput, syntheticRecords } from '../testing';
 import { type DenialLetterInput, type DenialLetterOutput, denialLetterSpec, verifyDenialLetter } from './denial-letter';
 import { mentionsIdentifier } from './narrative';
@@ -340,9 +340,11 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['a digit and an indented line break, repeated', ['JANE Q VANTREE'], fill('5\n    '), ['SYN555001']],
     ['a digit, two dashes and a line break, repeated', ['JANE Q VANTREE'], fill('5--\n  '), ['SYN555001']],
     // Review round 1, corr-ssn-2: every digit a wrapped candidate (about 10 to 30 times base 00fd2906's time before the fix).
-    ['a digit and a bare line break, repeated', ['JANE Q VANTREE'], fill('5\n'), ['SYN555001']],
-    ['a digit and a CRLF, repeated', ['JANE Q VANTREE'], fill('1\r\n'), ['SYN555001']],
-    ['a digit, a dash and a bare line break, repeated', ['JANE Q VANTREE'], fill('5-\n'), ['SYN555001']],
+    // At 100,000 characters these three took 1.9 to 2.6 s of the 3 s and are past the check's work budget now (the rows
+    // under "the letter check's work budget" below); half that length is still read.
+    ['a digit and a bare line break, repeated, to 50,000 characters', ['JANE Q VANTREE'], fill('5\n').slice(0, N / 2), ['SYN555001']],
+    ['a digit and a CRLF, repeated, to 50,000 characters', ['JANE Q VANTREE'], fill('1\r\n').slice(0, N / 2), ['SYN555001']],
+    ['a digit, a dash and a bare line break, repeated, to 50,000 characters', ['JANE Q VANTREE'], fill('5-\n').slice(0, N / 2), ['SYN555001']],
     ['an amount before a date, repeated', ['JANE Q VANTREE'], fill('$150.00 2026-11-01 '), ['SYN555001']],
     // Review round 2: a date or amount range, and a list a keep-noun names (each followed back LIST_REACH numbers at most).
     ['date ranges joined by a hyphen, repeated', ['JANE Q VANTREE'], fill('10/01/2026-10/15/2026 '), ['SYN555001']],
@@ -359,10 +361,95 @@ describe('one pass over one folded view: every placeholder survives and no ident
     // reference machine's, held on any machine by a calibration in the same process (test-support/time-budget.ts).
     const run = timed(BUDGET_MS, () => {
       const redacted = redactLetterForScreen(text, who, claim(...claimNumbers));
-      return { held: holdsIdentifier(redacted.text, who, claim(...claimNumbers)), mentioned: mentionsIdentifier(redacted.text, { names, numbers: [...who.memberIds, ...claimNumbers] }) };
+      return { held: holdsIdentifier(redacted.text, who, claim(...claimNumbers), checkWorkOf(redacted)), mentioned: mentionsIdentifier(redacted.text, { names, numbers: [...who.memberIds, ...claimNumbers] }) };
     });
     expect(run.value).toEqual({ held: false, mentioned: false });
     expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
+  });
+
+  // The letter check's work budget (docs/adr/0054, amendment of 2026-11-12; CHECK_WORK_BUDGET in @tp/redact). The merged
+  // reader took 3.0 to 8.3 s of its 3 s on the first three letters (review C-TIME's CT-2: once per match it searched a
+  // list of matches, 1.25 to 2.5 thousand million comparisons) and 1.9 to 2.6 s on the letters of one digit to a line.
+  // The check counts its own work now and refuses a letter past the budget: by a count, so on every machine alike.
+  /** The path prepare runs: the redaction, then the check with the work the redaction spent. */
+  const checked = (names: string[], text: string) => {
+    const who = patient(names);
+    const redacted = redactLetterForScreen(text, who, claim('SYN555001'));
+    return { text: redacted.text, replaced: redacted.replaced, candidates: redacted.candidates, spent: checkWorkOf(redacted), held: holdsIdentifier(redacted.text, who, claim('SYN555001'), checkWorkOf(redacted)) };
+  };
+  it.each([
+    ['initials beside a name and one look-alike character (CT-2: 3.0 to 4.3 s before)', ['JANE Q VANTREE'], `Vantree${' J'.repeat(49_990)} \u0445`, 'redaction'],
+    ['the same with the name written once with a joiner (CT-2: 5.6 to 8.3 s before)', ['JANE Q VANTREE'], `Van\u2219tree Vantree${' J'.repeat(49_980)} \u0445`, 'redaction'],
+    ['initials beside a name, as many as fill the letter', ['JANE Q VANTREE'], `Vantree${' J'.repeat(49_990)}`, 'check'],
+    ['a digit and a bare line break, repeated', ['JANE Q VANTREE'], fill('5\n'), 'check'],
+    ['a digit and a CRLF, repeated', ['JANE Q VANTREE'], fill('1\r\n'), 'check'],
+    ['a digit, a dash and a bare line break, repeated', ['JANE Q VANTREE'], fill('5-\n'), 'check'],
+    ['another script’s digit and a line separator, repeated', ['JANE Q VANTREE'], fill('\u0665\u2028'), 'check'],
+    ['another script’s digit and a next-line character, repeated', ['JANE Q VANTREE'], fill('\u0665\u0085'), 'check'],
+  ])('refuses a letter past the check’s work budget, by the count and within the 3 s: %s', { timeout: HANG_GUARD_MS }, (_case, names, text, pastIn) => {
+    const run = timed(BUDGET_MS, () => checked(names, text));
+    expect(run.value.held).toBe(true);
+    if (pastIn === 'redaction') {
+      // Past the budget in the redaction: not one character of the letter comes back, only the mark the check refuses.
+      // The check refuses that text whatever count comes with it.
+      expect(run.value).toEqual({ text: BARRIER, replaced: 0, candidates: [], spent: CHECK_WORK_BUDGET + 1, held: true });
+      expect(holdsIdentifier(run.value.text, patient(names), claim('SYN555001'))).toBe(true);
+    } else {
+      // The redaction ran to its end within the budget; the check, counting on from there, is past it and refuses.
+      expect(run.value.text).not.toContain(BARRIER);
+      expect(run.value.spent).toBeLessThanOrEqual(CHECK_WORK_BUDGET);
+    }
+    expect(run.ms, `refused ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
+    // The same letter has the same answer, and the same count, again.
+    expect(checked(names, text)).toEqual(run.value);
+  });
+
+  it('counts the same work for the same letter in every run, and none of a letter before it', () => {
+    const letter = `Vantree${' J'.repeat(8_000)} \u0445 was seen 11/01/2026; call (202) 555-0123.`;
+    const first = checked(['JANE Q VANTREE'], letter);
+    expect(first.held).toBe(false);
+    expect(first.spent).toBeGreaterThan(0);
+    expect(first.spent).toBeLessThan(CHECK_WORK_BUDGET);
+    // After a letter past the budget, and after a letter the check alone refused, the count starts from nothing.
+    expect(checked(['JANE Q VANTREE'], fill('5\n')).held).toBe(true);
+    expect(checked(['JANE Q VANTREE'], 'Seen 150.00Vantree')).toMatchObject({ held: true });
+    expect(checked(['JANE Q VANTREE'], letter)).toEqual(first);
+  });
+
+  it('holds one budget for the redaction and the check together: a letter the check takes past it is refused', () => {
+    const who = patient(['JANE Q VANTREE']);
+    const text = fill('5\n').slice(0, 60_000);
+    const redacted = redactLetterForScreen(text, who, claim('SYN555001'));
+    // The redaction ran to its end within the budget and wrote the letter.
+    expect(redacted.text).toBe(text);
+    expect(checkWorkOf(redacted)).toBeLessThan(CHECK_WORK_BUDGET);
+    // The check, counting on from there, is past it before it has read the whole letter, and refuses.
+    expect(holdsIdentifier(redacted.text, who, claim('SYN555001'), checkWorkOf(redacted))).toBe(true);
+    // prepare hands the count on: the letter is refused by the check's own refusal and nothing is sent.
+    expect(() => denialLetterSpec.prepare({ ...input, text })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
+    expect(() => denialLetterSpec.prepare({ ...input, text: `${SYNTHETIC_LETTER}\n${fill('5\n')}` })).toThrow(expect.objectContaining({ code: 'identifier_left', message: 'the letter still holds an identifier after redaction; it is not sent' }));
+  });
+
+  it('refuses on a count that is no count or is past the budget, and never reads on from one', () => {
+    const who = patient(['JANE Q VANTREE']);
+    const clean = 'The claim was denied for timely filing.';
+    expect(holdsIdentifier(clean, who, claim('SYN555001'))).toBe(false);
+    expect(holdsIdentifier(clean, who, claim('SYN555001'), 0)).toBe(false);
+    for (const spent of [CHECK_WORK_BUDGET, CHECK_WORK_BUDGET + 1, Number.POSITIVE_INFINITY, Number.NaN, -1, Number.NEGATIVE_INFINITY]) {
+      expect(holdsIdentifier(clean, who, claim('SYN555001'), spent), String(spent)).toBe(true);
+    }
+    // A text the check refuses is refused with any count: the budget never turns a refusal into a letter sent.
+    for (const spent of [0, 1, CHECK_WORK_BUDGET - 1, CHECK_WORK_BUDGET, Number.NaN]) {
+      expect(holdsIdentifier('Seen 150.00Vantree', who, claim('SYN555001'), spent), String(spent)).toBe(true);
+      expect(holdsIdentifier(BARRIER, who, claim('SYN555001'), spent), String(spent)).toBe(true);
+    }
+    // A redacted letter the reader did not write has no count: the check reads it from nothing, whole.
+    expect(checkWorkOf({ text: clean, claims: new Map(), replaced: 0 })).toBe(0);
+  });
+
+  it('runs no counter where there is no refusal to give: redactLetter reads a letter past the budget as before', { timeout: HANG_GUARD_MS }, () => {
+    const text = fill('5\n');
+    expect(redactLetter(text, patient(['JANE Q VANTREE']), claim('SYN555001'))).toMatchObject({ text, replaced: 0 });
   });
 
   // Review round 3 (GATEWAY3-3): the check's own paths, a letter it refuses included, in time linear in its length.

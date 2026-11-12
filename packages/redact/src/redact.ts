@@ -135,6 +135,7 @@ function iso(year: number, month: number, day: number): string | null {
 
 /** Every calendar date the parts can be read as. */
 function readings(parts: readonly { readonly year: string; readonly month: number; readonly day: number }[]): string[] {
+  work(WORK.dateReadings);
   return parts.flatMap((part) => years(part.year).map((year) => iso(year, part.month, part.day))).filter((date): date is string => date !== null);
 }
 
@@ -273,6 +274,98 @@ const VANISHED = '\u00AD';
  */
 export const BARRIER = '\u0001';
 
+/**
+ * The letter check's work budget (docs/adr/0054, amendment of 2026-11-12): the most work redactLetterForScreen and
+ * holdsIdentifier together may do on one letter. The reader's own readings are linear in a letter's length, but a few
+ * of its comparisons are not (matchesIn asks, once per match, whether a list of matches already holds it: a crafted
+ * letter of 100,000 characters made 1.25 to 2.5 thousand million such comparisons and took 3 to 8 s of the reader's 3 s),
+ * and its dearest linear letters (one digit to a line) took 1.9 to 2.6 s. So the check counts its own work where the
+ * work is done (`work`, at the sites WORK names) in one counter for the whole letter (checkWorkSpent), and past the
+ * budget the reading stops and the letter is REFUSED: redactLetterForScreen returns no text of the letter at all, only
+ * the mark the check refuses (unreadPastTheBudget), and holdsIdentifier answers that an identifier is left. Never a
+ * partial reading: a letter is sent only when both ran to their ends within the budget.
+ *
+ * A count, not a clock: a letter has the same answer on every machine and in every run. The count changes no decision
+ * of the reading; the only answer it changes is from sent to refused. Callers with no refusal to give (redactLetter,
+ * redactionSpans, the narrative's and the verifier's readings) run no counter and read as before.
+ *
+ * The unit is one comparison of two matches (about 2.5 ns on the reference machine); the budget is set so that the
+ * dearest letter still read takes about 1.5 s there (the ADR records the measurement), half the reader's 3 s.
+ */
+export const CHECK_WORK_BUDGET = 420_000_000;
+
+/**
+ * What each counted site costs, in the budget's units, fitted to the processor time of the crafted letters of
+ * denial-letter.test.ts on Node 24 (docs/adr/0054). A site is a reading the measurement showed as a driver of some
+ * letter's time; `character` is what each of the two entries charges for a character of its text, for the passes no
+ * site counts.
+ */
+const WORK = {
+  comparison: 1,
+  mayBe: 30,
+  viewCharacter: 30,
+  fold: 150,
+  digitAcross: 250,
+  character: 350,
+  letterJoin: 500,
+  labelWindow: 550,
+  search: 650,
+  dateReadings: 850,
+  scanLabel: 1_800,
+} as const;
+
+/** The work spent on the letter being read, in the budget's units; null where no letter check is running. */
+let checkWorkSpent: number | null = null;
+
+/** Thrown by `work` past the budget and caught only by the two entries, which refuse the letter. No letter's text is in it. */
+class PastCheckWorkBudget extends Error {
+  constructor() {
+    super('the letter check is past its work budget');
+  }
+}
+
+/** Counts `units` of work on the letter being read; past the budget the reading stops there (the entries refuse the letter). */
+function work(units: number): void {
+  if (checkWorkSpent === null) {
+    return;
+  }
+  checkWorkSpent += units;
+  if (checkWorkSpent > CHECK_WORK_BUDGET) {
+    throw new PastCheckWorkBudget();
+  }
+}
+
+/** list.some(test), with every comparison it makes counted: the answer is `some`'s own. */
+function someOf<T>(list: readonly T[], test: (item: T) => boolean): boolean {
+  for (let index = 0; index < list.length; index += 1) {
+    if (test(list[index] as T)) {
+      work(WORK.comparison * (index + 1));
+      return true;
+    }
+  }
+  work(WORK.comparison * list.length);
+  return false;
+}
+
+/**
+ * What redactLetterForScreen returns for a letter past the budget: one of the checks' own marks and not one character
+ * of the letter, so there is no partly redacted text for any caller to send, and holdsIdentifier refuses it at its
+ * first line, as it refuses every text that holds a mark.
+ */
+const unreadPastTheBudget = BARRIER;
+
+/** The work each redacted letter cost, for the check that follows it (checkWorkOf): the count alone, no text. */
+const workOfRedacted = new WeakMap<object, number>();
+
+/**
+ * The work redactLetterForScreen spent on the letter it returned, in the budget's units: what the caller hands to
+ * holdsIdentifier with that letter's text, so that one budget holds for the whole check. Past the budget for a letter
+ * the redaction did not finish.
+ */
+export function checkWorkOf(redacted: Redacted): number {
+  return workOfRedacted.get(redacted) ?? 0;
+}
+
 const PLACEHOLDER = /\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|SSN|PHONE|CLAIM_([1-9]\d*))\]/g;
 
 const foldedCodePoints = new Map<string, string>();
@@ -290,6 +383,7 @@ const asWritten = (codePoint: string): string => {
  * it stands for (Cyrillic "А", Greek "Α" and the small capital "ᴀ" are A), its case folded in full (ß and ẞ are SS).
  */
 export function fold(codePoint: string): string {
+  work(WORK.fold);
   let folded = foldedCodePoints.get(codePoint);
   if (folded === undefined) {
     if (DECIMAL_DIGIT.test(codePoint)) {
@@ -435,6 +529,7 @@ function alikeReads(normal: string, subject: Subject): boolean {
 let viewsOfCheck: { readonly normal: string; readonly key: string; readonly view: View }[] | null = null;
 
 function buildView(normal: string, invisible: 'join' | 'drop' | 'space', digits: boolean, alike: boolean): View {
+  work(WORK.viewCharacter * normal.length);
   // The units are collected and joined once, and whether the last one is a VANISHED of its own run is kept beside them:
   // reading the end of a string built by concatenation flattens it, which made a letter of invisible runs quadratic.
   const units: string[] = [];
@@ -1087,11 +1182,11 @@ function matchesIn(normal: string, subject: Subject, marked: string = normal): F
   // ef3e8d20's own matches stand settled. Whatever the new name joiners add is fresh: the name written with one, and what
   // is read only beside it (an initial next to that name: the review of the fix round's delta, D1-1).
   const plain = joined ? ownMatchesIn(normal, subject) : base;
-  const found: Found[] = plain === base ? [...base] : [...base, ...plain.filter((match) => !base.some((known) => known.start === match.start && known.end === match.end && known.kind === match.kind)).map((match) => ({ ...match, fresh: true }))];
+  const found: Found[] = plain === base ? [...base] : [...base, ...plain.filter((match) => !someOf(base, (known) => known.start === match.start && known.end === match.end && known.kind === match.kind)).map((match) => ({ ...match, fresh: true }))];
   if (alikeReads(normal, subject)) {
     onFold('alike', () => {
       for (const match of ownMatchesIn(normal, subject)) {
-        if (plain.some((known) => known.start <= match.start && match.end <= known.end)) continue;
+        if (someOf(plain, (known) => known.start <= match.start && match.end <= known.end)) continue;
         // A name part of two or three letters written wholly in another script's letters is that script's word ("\u043D\u0430"
         // in a Russian notice is no HA, "\u03BA\u03B1\u03B9" no KAI: the review of the build, B2-7).
         const written = normal.slice(match.start, match.end).normalize('NFD');
@@ -1115,9 +1210,9 @@ function matchesIn(normal: string, subject: Subject, marked: string = normal): F
   // it as written, which ef3e8d20's redaction replaced.
   const settled = found.filter((match) => match.fresh !== true);
   // Read here, before any pattern's match joins `found`: only the call's own matches cover a run.
-  const leftToTheCheck = glued.filter((range) => !found.some((whole) => whole.start <= range.start && range.end <= whole.end));
+  const leftToTheCheck = glued.filter((range) => !someOf(found, (whole) => whole.start <= range.start && range.end <= whole.end));
   for (const match of patternMatchesIn(marked, settled, subject)) {
-    const inRun = (match.kind === 'ssn' || match.kind === 'phone') && leftToTheCheck.some((range) => match.start < range.end && range.start < match.end);
+    const inRun = (match.kind === 'ssn' || match.kind === 'phone') && someOf(leftToTheCheck, (range) => match.start < range.end && range.start < match.end);
     found.push(inRun ? { ...match, withheld: true } : match);
   }
   return found;
@@ -1130,6 +1225,7 @@ function matchesIn(normal: string, subject: Subject, marked: string = normal): F
  * is no WEIL and "ella" no ELIA.
  */
 function mayBe(written: string): string {
+  work(WORK.mayBe);
   switch (written) {
     case 'O':
     case 'o':
@@ -1440,6 +1536,7 @@ function initialsNextToNames(view: View, normal: string, names: readonly Range[]
 
 /** The first index of a sorted list at which a monotone test holds (the list's length if it never does). */
 function firstIndex<T>(list: readonly T[], test: (item: T) => boolean): number {
+  work(WORK.search);
   let low = 0;
   let high = list.length;
   while (low < high) {
@@ -1609,6 +1706,7 @@ const DASH_UNIT = /^[\p{Pd}\u2212\u2043\u02D7\u2796]$/u;
  * the break, indentation and a digit. Read character by character, a fixed number of steps at most.
  */
 function digitAcross(text: string, at: number, side: 'before' | 'after'): number {
+  work(WORK.digitAcross);
   // Read by UTF-16 code, with no regular expression for ASCII: it runs for every wrapped candidate (review finding corr-ssn-2).
   const step = side === 'before' ? -1 : 1;
   let index = side === 'before' ? at - 1 : at;
@@ -1783,6 +1881,7 @@ const LINE_BREAK_CHARACTER = /^[\n\r\f\v\u0085\u2028\u2029]$/u;
  * GATEWAY2-1).
  */
 function labelWindow(text: string, start: number, stops: (index: number) => boolean, read: { readonly spanned?: (index: number) => boolean; readonly spansOnly?: boolean; readonly through?: boolean; readonly own?: (index: number) => boolean; readonly skipped?: { any: boolean } } = {}): string {
+  work(WORK.labelWindow);
   // `skipped.any` is set where the window read through the call's own identifier or a list number: ef3e8d20's window ended there.
   const { spanned, spansOnly = false, through = false, own, skipped } = read;
   let from = start;
@@ -2623,6 +2722,7 @@ const NOUN_WORD = new RegExp(`^(?:${KEEP_NOUN.source}|${SCAN_CODE_NOUN.source})$
  * chain to the unlabeled rules. Written for the scan on its own (R7: independent of R5's decision).
  */
 function scanLabeled(window: string, glued = false, long = true, decided?: { byLong: boolean }): ScanLabel {
+  work(WORK.scanLabel);
   if (!/\p{L}/u.test(window)) {
     // No word at all: no label (most windows in a column of digits).
     return null;
@@ -3263,6 +3363,29 @@ export function redactLetter(text: string, patient: PatientIdentifiers, claims: 
  * from the package (index.ts), so it is no part of its public type.
  */
 export function redactLetterForScreen(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
+  const before = checkWorkSpent;
+  checkWorkSpent = 0;
+  let redacted: Redacted & { readonly candidates: readonly string[] };
+  // Past the budget unless the reading ran to its end within it.
+  let spent = CHECK_WORK_BUDGET + 1;
+  try {
+    redacted = redactedForScreen(text, patient, claims);
+    spent = checkWorkSpent;
+  } catch (error) {
+    if (!(error instanceof PastCheckWorkBudget)) {
+      throw error;
+    }
+    redacted = { text: unreadPastTheBudget, claims: claimPlaceholders(claims), replaced: 0, candidates: [] };
+  } finally {
+    checkWorkSpent = before;
+  }
+  workOfRedacted.set(redacted, spent);
+  return redacted;
+}
+
+/** redactLetterForScreen's reading, its work counted by the entry above. */
+function redactedForScreen(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
+  work(WORK.character * text.length);
   const normal = unbracketed(text);
   const subject = letterSubject(patient, claims);
   const found = appliedMatches(normal, subject, claims.length);
@@ -3279,7 +3402,7 @@ export function redactLetterForScreen(text: string, patient: PatientIdentifiers,
   // match of the call's own inside a pattern's number, and not the whole of it, is that number's here as it is in merge
   // (R6b): a short claim number that is the number's last four digits stays as written with it (review M-1).
   const numbers = found.filter((match) => isPatternKind(match.kind));
-  const inNumber = (match: Found) => numbers.some((number) => number.start <= match.start && match.end <= number.end && (number.start !== match.start || number.end !== match.end));
+  const inNumber = (match: Found) => someOf(numbers, (number) => number.start <= match.start && match.end <= number.end && (number.start !== match.start || number.end !== match.end));
   const ownText = written(normal, merge(found.filter((match) => !isPatternKind(match.kind) && !inNumber(match))));
   for (const candidate of [...identifierCandidates(screenText), ...(ownText === screenText ? [] : identifierCandidates(ownText)), ...found.flatMap((match) => match.compacts ?? [])]) {
     if (!own.has(candidate)) {
@@ -3335,16 +3458,24 @@ function chainLeft(text: string, subject: Subject, claims: number, strict = true
  * by pattern, or a chain of digits the survivor scan reads as one no pattern took (the check after redaction:
  * docs/adr/0054, amendment of 2026-11-04, R7).
  */
-export function holdsIdentifier(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): boolean {
+export function holdsIdentifier(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], spent = 0): boolean {
   // A letter that itself writes one of the checks' own three marks is refused: ef3e8d20 read a letter's own mark as its
   // placeholder and refused such letters in places ("Total<U+0002>for45.00 ...": the review of the last round's delta,
   // H1-1); this reading reads it as the control character it is (B1-4), and text that holds one is no text to trust.
   if (text.search(PRIVATE_MARKS) >= 0) {
     return true;
   }
+  // The work the redaction of this letter spent comes with it (checkWorkOf): a count that is no count, or one past
+  // the budget, refuses the letter before anything is read.
+  if (!(spent >= 0 && spent <= CHECK_WORK_BUDGET)) {
+    return true;
+  }
+  const before = checkWorkSpent;
+  checkWorkSpent = spent;
   viewsOfCheck = [];
   datesOfCheck = [];
   try {
+    work(WORK.character * text.length);
     const scanned = masked(text, claims.length);
     const subject = letterSubject(patient, claims);
     // The patterns read the same text with the call's own placeholders as OWN_MARK, so a number a label names through a
@@ -3354,7 +3485,14 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
       return true;
     }
     return chainLeft(text, subject, claims.length);
+  } catch (error) {
+    if (!(error instanceof PastCheckWorkBudget)) {
+      throw error;
+    }
+    // Past the budget the check has not read the whole letter: it answers as it does for an identifier left.
+    return true;
   } finally {
+    checkWorkSpent = before;
     viewsOfCheck = null;
     datesOfCheck = null;
   }
@@ -4422,6 +4560,7 @@ const LABELED_GAP = new RegExp(`^[${NUMBER_JOINERS}./]+$`, 'u');
 
 /** What joins two tokens of one identifier in a letter: what joins a number's characters (NUMBER_JOINERS) anywhere, and ".", "/", ":", "#" or "(" next to a letter. */
 function letterJoins(between: string, left: string, right: string): boolean {
+  work(WORK.letterJoin);
   return LETTER_GAP.test(between) && (!/[./:#(]/u.test(between) || /\p{L}\p{M}*$/u.test(left) || /^\p{L}/u.test(right));
 }
 
