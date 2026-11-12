@@ -700,8 +700,10 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       expect(refused).toContain('docs/runbooks/incident-response.md, "A sign-in step refused after a password reset"');
       expect(refused).toContain('docs/adr/0093, D5');
       const key = description('HardwareKeyRegisteredAcrossReset');
-      expect(key).toContain('not_removed: the key is still on the account and the account is locked, so have the key removed through the founder\'s break-glass before anyone unlocks it');
-      expect(key).toContain('not_removed_not_locked: the key signs in, so go to the break-glass now');
+      // The console's two-person removal, not the founder's break-glass (docs/adr/0095).
+      expect(key).toContain('not_removed: the key is still on the account and the account is locked, so two platform administrators remove the account\'s keys in the console before anyone unlocks it');
+      expect(key).toContain('not_removed_not_locked: the key signs in, so end the membership now, then remove the keys');
+      expect(key).not.toContain('break-glass');
       expect(key).toContain('docs/runbooks/incident-response.md, "A hardware key registered across a password reset"');
       expect(key).toContain('docs/adr/0093, D6');
       const unknown = description('PasswordResetOutcomeUnknown');
