@@ -3624,8 +3624,9 @@ export function redactionSpans(text: string, patient: PatientIdentifiers, claims
       const covered = within([...first]);
       const raw = unmarked(normal);
       const wider = widerMatchesIn(raw, subject).filter((match) => !covered(match));
-      // Rule (a) on the letter as written, before any placeholder (gluedBeforeRedaction): the first reading's spans, and the mark.
-      if (gluedBeforeRedaction(raw, subject, first)) {
+      // Rule (a) on the letter as written, before any placeholder (gluedBeforeRedaction): the first reading's spans, and the
+      // mark. Where neither reading replaces anything the text is the letter as written, which the check reads itself.
+      if (first.length + wider.length > 0 && gluedBeforeRedaction(raw, subject, first)) {
         return { text: refusedByMarkAfter(normal), spans: first };
       }
       if (wider.length === 0) {
@@ -3732,7 +3733,9 @@ function screenAsBothRead(text: string, patient: PatientIdentifiers, claims: rea
   // Rule (a) of MOD-25 is read here, on the letter as written and before any placeholder is: a digits-only number that
   // stands whole and glued to a letter refuses the letter whatever took a part of it (gluedBeforeRedaction). The first
   // reading's text with the mark the check refuses at its first line: no more of the letter than that reading writes.
-  if (gluedBeforeRedaction(raw, subject, first.spans)) {
+  // Where neither reading replaces anything, what is sent to the check is the letter as written: the check reads the
+  // rule on that same text and refuses it itself, so the letter is left as it is and nothing is read twice.
+  if (first.spans.length + wider.length > 0 && gluedBeforeRedaction(raw, subject, first.spans)) {
     return { text: refusedByMarkAfter(first.text), claims: first.claims, replaced: first.replaced, candidates: first.candidates };
   }
   // Both the wider reading and the check asked again here count their work on this letter's counter, the check as a
@@ -3959,7 +3962,8 @@ function mayHoldWiderNumber(subject: Subject): boolean {
  * Read in each writing the check reads (holdsIdentifier): as written, with each CR LF as a line feed, and where a line
  * feed then stands before a CR with those as one, each place mapped back to where the letter writes it. Each reading
  * is charged on the letter's counter as the check's is (WORK.formCharacter for each character and form); a call with
- * no such number costs nothing. It refuses only: the caller writes the mark the check refuses (refusedByMarkAfter).
+ * no such number costs nothing. It refuses only: the caller writes the mark the check refuses (refusedByMarkAfter),
+ * and asks only for a letter in which some placeholder is written (with none, the check reads the letter as written).
  */
 function gluedBeforeRedaction(normal: string, subject: Subject, spans: readonly PlacedSpan[]): boolean {
   if (!mayHoldWiderNumber(subject)) {
