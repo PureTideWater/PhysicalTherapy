@@ -480,7 +480,7 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(checkWorkOf(ligatures)).toBeGreaterThan(10 * checkWorkOf(letters));
     // null would switch the counter off, a string or a bigint would count as no number counts (the reviews, P-1 and T-3).
     for (const spent of [null, '0', '5', 0n, {}, [], true]) {
-      expect(holdsIdentifier('The claim was denied for timely filing.', who, claim('SYN555001'), spent as unknown as number), String(spent)).toBe(true);
+      expect(holdsIdentifier('The claim was denied for timely filing.', who, claim('SYN555001'), spent as unknown as number), typeof spent).toBe(true);
     }
   });
 
