@@ -4,7 +4,7 @@ Design of record: `designs/lane-b-redact-item-34/design.md` (ops 163894a9). Ruli
 one constant; (d) the verifier keeps its reading; A-4's costs accepted; a digit beside the number stays recorded.
 WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. No PR is open.
 
-## RESUME-BLOCK (W39, 2026-11-12 18:50 UTC, after stage 2; the gate NOT yet run to its end)
+## RESUME-BLOCK (W39, 2026-11-12 18:50 UTC, after stage 2 and its gate; W39 stands down)
 
 - **WIP head: ea109dc0** (stage 1 d438ce76, stage 2 ea109dc0), pushed through the hook; the tree is clean. Stages 1
   and 2 are both built. Nothing of stage 3 is started.
@@ -29,12 +29,17 @@ WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. N
   were already refused.
 - **Decided, the safer side for privacy (the note does not settle it):** a digits-only piece of a number that holds
   letters (`7654321` of `ZZ 7654321`) is read by (a) too: `XQ7654321` is refused. Tell the co-founder if it should not be.
-- **NOT done: the gate.** It was started at about 12:38 UTC and cut off with the session (no `report.md`). Exact next
-  step: lay A from `git show a97d73e4:packages/redact/src/{redact,confusables}.ts` and B from the head's, each into
+- **The gate, run on ea109dc0 (2026-11-12 about 19:00 UTC): as expected.** A = a97d73e4 (`redact.ts` 8b2be7ade7ce),
+  B = ea109dc0 (`redact.ts` 6d2e97775dfd), 975,489 letters: **same 975,489, differ 0; refusedA 462,984, refusedB
+  462,984; PHI classes none; KEEP none; reverse none; errors 0; span mismatches 0.** Real-shaped letters newly
+  refused by count: 0 (no letter differs). Timing: max A 975 ms, B 964 ms of 3,000; none over in B. Report:
+  `designs/lane-b-redact-item-34/measure/gate-stage-2.report.md`. Both trees' outcomes were read from the gate's
+  cache, which the first run (cut off after its corpus pass, same two hashes) had written: the same outcomes.
+  Command: lay A from `git show a97d73e4:packages/redact/src/{redact,confusables}.ts` and B from the head's, each into
   `<root>/<tree>/packages/model-gateway/src/` (not `proto.sh`, which copies the checkout, now the head), then
-  `bash designs/lane-b-redact-ssn-phone/gate/run.sh <root>/base <root>/head <root>/out --workers 4` in the background
-  (about 8 minutes cold); read `<root>/out/report.md`. Expected: PHI classes 0, `refusedB` 462,984, no change from
-  these two stages; anything else, stop and report the counts. Then stage 3.
+  `bash designs/lane-b-redact-ssn-phone/gate/run.sh <root>/base <root>/head <root>/out --workers 4`.
+- **Exact next step:** stage 3, (b) and A-4 (a fresh session; W39 stands down). `runOfMarks` is the class A-4 takes.
+  The gate's `cache/` under `designs/lane-b-redact-ssn-phone/gate/` is untracked scratch: do not commit it.
 
 ## Earlier: after stage 1 (W39, 2026-11-12)
 
