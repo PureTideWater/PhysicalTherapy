@@ -12,6 +12,18 @@
   the S3-1M repeat, S4 and S5 of the second timing run (it was still running at hand-over; if those files are absent,
   re-run `jobE.sh` on fresh databases, about 10 minutes, with at least 10 GB of disk free); (3) draft the ask; (4)
   tell the orchestrator its path.
+- **The orchestrator's stand-down (sent 06:39 UTC, read 07:07 UTC, after the D2 work was already recorded):** the D2
+  request is withdrawn for this session; a fresh design session answers three questions from this file. What is here
+  for each: (1) *a D2 equal to D row for row, with a linear plan in every planner state and across cached plans:*
+  a draft with its proof and review is below; the cached-plan state of the review's finding 1 is NOT solved.
+  (2) *which proof the preflight runs, and under which scope, so the policy is not parsed again for each row:* not
+  designed; the figures are in section 2 below. (3) *what of Appendix A stands as measured:* all of it (last bullet
+  of "Appendix D2" below).
+- **Measurement scripts:** `lane-a-wip/schema-pr5/measurements/` (D and the preflight: `setup_d.sql`, `load_lines.sql`,
+  `gen_sess.sh`, `jobA.sh`, `jobA2.sh`, `jobD4.sh`, `pre_load1.sql`, `pre_load3.sql`, `pre_scan.sql`, `sample.sql`) and
+  `lane-a-wip/schema-pr5/d2/` (D2: `setup_d2.sql`, `jobE.sh`, `eq/setup.sql`, `eq/run.sql`). The appendices are cut
+  from the ask's file by section heading into `A.sql` and `D.sql`; the databases are copies of one migrated by
+  `pnpm db:migrate`.
 - **Holds:** nothing but scratch databases `pr5_*` on this session's machine (gone with it).
 
 ## Appendix D2, a draft (W30, 2026-11-12): the design step's results
