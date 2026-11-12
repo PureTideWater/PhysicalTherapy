@@ -1718,3 +1718,191 @@ and failed there;
 the engine's version moves the reader's cost more than the calibration's (12 to 21 % against 0 to 8 % between Node
 22 and 24), so the reference is stated for Node 24; and a first run in a cold process costs 14 to 16 % more than later
 runs, which the first-run rule counts whenever the first run is under the budget.
+
+## Amendment (`co-001/check-work-budget`, 2026-11-12): the letter check's work budget
+
+**What was wrong.** The reader's budget is 3 s for a letter of 100,000 characters on the reference machine. The merged
+reader (58fb29e5) broke it on crafted letters no budget row held (review C-TIME of Queues item 26, finding CT-2):
+
+- `matchesIn` asked, once per match, whether a list of matches already held it (`plain.some`, and `base.some` where a
+  name is written with a joiner). Initials beside a name, as many as fill the letter, and one look-alike character
+  anywhere make that 1.25 thousand million comparisons, 2.5 thousand million with a joiner: 3.0 to 4.3 s and 5.6 to
+  8.3 s at the reference speed (2.8 to 3.2 s and 4.7 to 6.7 s measured again here, Node 24, a machine whose calibration
+  reads 122 ms against the reference's 144).
+- Its dearest linear letters, one digit to a line, took 1.9 to 2.6 s of the 3 s, which left no room for a second
+  reading (item 26).
+
+No realistic letter is near either: the letters in question are 100,000 characters of initials or of single digits.
+
+**The decision: one deterministic work budget for the whole check, failing closed** (the orchestrator's ruling). How
+matching decides is not changed by one comparison. The check counts its own work where the work is done, in one counter
+for the whole letter, and past a fixed budget the letter is refused by the check's own refusal (`identifier_left`; it
+goes to a person), never sent on a partial reading.
+
+- **The counter** is `checkWorkSpent` in `packages/redact/src/redact.ts`, counted by `work(units)`; the budget is
+  `CHECK_WORK_BUDGET` = 420,000,000 units. A comparison of two matches costs four units (`WORK.comparison`). It cost
+  one as built and went to four on 2026-11-12 (the orchestrator's ruling, 04:10 UTC): with coverage instrumentation on,
+  as `pnpm test` and CI run the tests, a comparison takes about 13 ns and not 3, and CT-2's letters, refused only after
+  420 million of them, took 4.0 to 5.6 s of the 3 s. At four units they are refused after about 105 million (1.2 to
+  1.7 s with coverage on). The budget was tightened; the test's 3 s, its rows and how they are run did not change.
+- **What is counted** (`WORK`): every comparison of the five searches of a list of matches in `matchesIn` and
+  `redactLetterForScreen` (`someOf`, which answers as `Array.prototype.some` answers), four units each; and the readings the
+  measurement showed as drivers of some letter's time, each at a fixed weight: a view built (per character), a label's
+  window, a label scanned, a date's readings, a search of a sorted list, a digit read across a line break, a join of two
+  tokens, a look-alike fold and a digit-for-letter reading; each reading of the letter for the call's own identifiers
+  charges every character once for each form the call reads for (a claim number, a member ID, a name, each of its
+  words and parts: the reviews' T-1 and F-2, below); each of the two entries charges every character of its text once,
+  the redaction on the letter as NFKC writes it where that is the longer, for the passes no site counts, so a letter's
+  length alone is bounded (about 600,000 characters); and each entry charges every character of the call's own
+  identifiers before it reads anything, since a pattern is built for each at every reading whatever the letter's
+  length (F-1), so the identifiers of a call are bounded too (about 60,000 characters).
+- **One budget for both halves.** `redactLetterForScreen` counts from nothing and keeps what it spent beside the letter
+  it returns (`checkWorkOf`, a count and no text); `holdsIdentifier` takes that count as its fourth argument and counts
+  on from it. `prepare` hands it on. A count that is no number, is negative or is past the budget refuses the letter
+  before anything is read, and so does one that is not a number at all (`null` would have switched the counter off).
+- **Past the budget.** The reading stops where it stands (`PastCheckWorkBudget`, caught only by the two entries).
+  `redactLetterForScreen` then returns not one character of the letter: its text is one of the checks' own marks
+  (U+0001), which `holdsIdentifier` refuses at its first line with any count, and no candidates. `holdsIdentifier`
+  answers true. There is no partly redacted text for a caller to send.
+- **Why a count and not a clock.** A letter has the same answer on every machine and in every run; a clock would send
+  on a fast machine what it refuses on a loaded one, and no test could pin which.
+- **Who runs no counter.** `redactLetter`, `redactionSpans` and the narrative's and the packet verifier's readings
+  (`holdsNameOrNumber`, `nameOrNumberMatches`) have no refusal to give and read as before, whatever the letter.
+
+**The only answer this changes is from sent to refused.** The count reads nothing and decides nothing; where the counter
+is not past the budget every function returns what it returned on 58fb29e5.
+
+**The budget, measured** (Node 24, processor time, the least of three runs after a warm-up, each scaled to the
+reference by the calibration read beside it: 119 to 160 ms on a shared machine against the reference's 144). The
+weights were fitted by the builder to 52 crafted letters (the budget rows of `denial-letter.test.ts`, CT-2's letters
+and the digit-to-a-line letters). The review of the build (scope time) then sized families to sit just under the
+budget and timed each as a letter still read:
+
+| Family, sized to just under the budget | Characters | At the reference speed |
+| --- | --- | --- |
+| The builder's 50 rows | 49,000 to 380,000 | 0.64 to 1.59 s |
+| 41 plain and compatibility families, 929 seeded random families, mixes of drivers | to 457,680 | at most 2.25 s |
+| Ordinary prose, one claim number | 291,497 | 1.48 s |
+| A name, then `a;` repeated, one claim number | 168,856 | 1.76 s |
+| **The dearest found: U+33FE (NFKC writes it `31日`) and `;` repeated, one claim number** | 93,006 | **2.06 to 2.29 s** (2.41 s at 100,000 characters before the NFKC charge) |
+| Ordinary prose, 1,000 claim numbers | 27,241 | 0.78 s |
+| A name, then `a;` repeated, 1,000 claim numbers | 27,970 | 1.76 s (5.92 s at 171,534 characters before the charge per form) |
+| Ordinary prose, 50 names of twelve words of three parts | 17,225 | 0.52 s (3.8 s before the forms were counted) |
+| U+33FE and `;` repeated, the same 50 names | 8,318 | 0.89 s (5.9 s before) |
+| A letter of 19 characters, 1,250 claim numbers of 40 characters (50,000 characters of identifiers) | 19 | 1.05 s in a warm process |
+
+So the dearest letter still read takes about 2.3 s of the 3 s at the reference speed, not the 1.35 s the builder's own
+families gave: digits glued to a letter cost about 5 ns a unit where the fit assumed 2.5. A letter refused is refused
+sooner than it would have been read (at most 1.7 s; 5,000,000 characters in under 4 ms; a call of 5,000 claim numbers
+of 40 characters, which took 40 s for a letter of 19 characters, in 1 ms). Item 26's second reading counts in the same
+counter and so shares this bound; it is given no time of its own.
+
+**After the comparison's weight went from one unit to four** (2026-11-12) the table stands: its families make few
+comparisons of matches, and a heavier comparison can only refuse a letter sooner. Measured again on the final reader
+(one claim number; calibration 150 to 152 ms): U+33FE and `;` repeated is read to 93,664 characters in 1.59 s at the
+reference speed, a name then `a;` repeated to 196,918 in 1.08 s, ordinary prose to 300,668 in 0.91 s, a digit to a
+line to 56,803 in 0.56 s. What moved is CT-2's shape alone: initials beside a name with one look-alike character are
+read to 23,875 characters (0.32 s) and refused from there on, and with the name written once with a joiner to 17,314
+(0.27 s); before, they were read to about 39,500 and 29,200. The review of that change found nothing the base redacts
+or refuses sent, and each timed row within its 3 s on a cold first run with coverage on (1.93 s at most).
+
+**Open residual, pinned: the first check of a fresh process with hundreds of identifiers on the call. It does not pass
+the 3 s.** The engine compiles each identifier's pattern the first time it meets it, so the first check a process makes
+costs many times its later ones, for a letter of any length (measured with a letter of 19 characters):
+
+| The call's claim numbers | First check of a fresh process | Later checks |
+| --- | --- | --- |
+| 300 of 15 characters | 1.8 s | 0.11 s |
+| 1,000 of nine characters | **4.1 s** | 0.25 s |
+| 1,250 of 40 characters (50,000 characters, near the ceiling of about 60,000) | **15.7 to 17.4 s** | 1.05 s |
+
+This is the merged reader's own cost, not the budget's. The orchestrator's ruling (2026-11-12 02:05 UTC): the weight of
+an identifier's character (`WORK.identifierCharacter`, one constant, 3,500 units at each entry) is set for a warm
+process. Both choices send nothing the base refuses, so it is a question of latency and not of privacy; the identifiers
+come from the call, the practice's own claims, and not from the letter's author, so the threat the 3 s rule holds (a
+crafted letter) is held by the warm bound; a weight that held the first check to 3 s (about seven times this one) would
+refuse to a person every letter of a patient with more than about 250 claims. The 3 s rows are not loosened or
+re-timed; above the ceiling the call is refused by the count, before a pattern is built.
+
+**Open residual, pinned: thousands of short identifiers on the call. It does not pass the 3 s either.** The charge for
+the call's identifiers is by their characters; the time of the check grows with the square of their number (the review
+of fix round 2's delta, G-1). With a letter of 19 characters, in a warm process, read and sent under the budget:
+
+| The call's claim numbers | At the reference speed |
+| --- | --- |
+| 6,300 of 9 characters | **3.1 s** |
+| 9,400 of 6 digits | **6.9 s** |
+| 14,000 of 4 characters | **11.1 s** |
+| 18,500 of 3 characters | **18.4 s** |
+
+Up to 3,000 claim numbers of nine characters a letter sized to the budget is read in 1.4 to 1.8 s. This too is the
+merged reader's own cost and the call's, not the letter's. The orchestrator's ruling (2026-11-12 02:55 UTC): no third
+fix round; it is pinned here, not within the 3 s, and item 39 cures it, since matching without a pattern per identifier
+removes the square in the count.
+
+Who calls the check: `prepare` of the denial-letter reader, through `ModelGateway.readDenialLetter` (and `requestFor`,
+which builds a request without sending it, for the local provider and tests). The reader is v1.5 behind the flag
+`model.read_denial_letter`, off unless a row turns it on, and no web action and no worker job calls it yet
+(`apps/` holds no call), so no caller's timeout meets the cold figure today. The check has no caller in `apps/` today, and
+item 39 must merge before the first caller is wired.
+
+The cure is queued, not built here (Queues item 39, before launch): the call's identifiers matched without a pattern
+built per identifier per check (one pass over a prepared set, or patterns kept for the process), proven on the
+975,489-letter gate with none differing.
+
+**What it refuses.** At 100,000 characters: CT-2's letters (in the redaction), 50,000 initials beside a name with no
+look-alike, and the letters of one digit to a line (bare line feed, CR LF, a dash before the line feed, another
+script's digit with U+2028 or U+0085), the last six in the check. The three budget rows of that kind are read at 50,000
+characters and refused at 100,000 (`denial-letter.test.ts`, "refuses a letter past the check's work budget"). A letter
+of ordinary prose is read to about 290,000 characters with one claim number and to about 27,000 with a thousand: a
+call that carries hundreds of claim numbers has its long letters refused, where before they were read past the 3 s,
+and a call whose names, member IDs and claim numbers come to more than about 60,000 characters (some two thousand
+claims of two numbers each) has every letter refused.
+
+**The gate, against 58fb29e5, letter for letter** (the check called as `prepare` calls it; run again on the final
+reader, a comparison at four units):
+
+- The differential gate's 975,489 synthetic letters (at most 2,000 characters each): every one has the same answer and
+  the same sent text; 462,984 refused by both; none newly refused.
+- Every string of 40 characters or more in `fixtures/` (10,838, each read for two synthetic patients): no sent text
+  differs. The longest letter, narrative or worksheet is 27,644 characters and the dearest costs 42.0 million units, a
+  tenth of the budget. One file is newly refused when read whole as a letter, which it is not: the synthetic ZIP-code
+  table (`fixtures/synthetic/cms/ZIP9_SYNTHETIC.txt`, 729,000 characters).
+- The battery of the reviews' generators and fuzzers, every call run on both readers: no text differs, nothing the
+  base refuses is sent, none newly refused. On the final reader: 101 runs of the scripts, recorded seeds and fresh
+  ones, 1,116,939 redactions and 1,045,920 checks made on both readers, none differing; the longest letter among them
+  is 20,000 characters and the dearest costs 19.0 million units.
+
+**Where item 26 hooks in.** Its wider reading and its second reading run inside the two entries (inside
+`redactedForScreen`, and inside `holdsIdentifier`'s `try`), where the helpers they call count in `checkWorkSpent`
+already; a loop of their own calls `work(WORK.<site>)`; and an entry point of their own hands the redaction's count on
+as `prepare` does, `holdsIdentifier(text, patient, claims, checkWorkOf(redacted))`. No bound of their own is needed.
+
+**Left, each recorded.**
+
+- The quadratic comparison itself is not cured: a letter under the budget still pays it (17,300 characters of CT-2's
+  shape with a joiner take 0.27 s). Curing it (an index of the matches by position) changes the first reading's code
+  and needs the redaction's reviews again: an optional follow-up.
+- `holdsIdentifier` called without the redaction's count starts from nothing, so a caller that drops the fourth
+  argument holds each half to the budget and not the two together: a time cost of at most twice the budget, never a
+  partial reading. `prepare` is the one production caller and hands it on (pinned).
+- The weights are a fit, not a proof. The dearest family found costs about 5 ns a unit (digits glued to a letter, as
+  `31日;`: the date reading and the token readings behind it are charged once per reading, not per candidate) and is
+  read in 2.1 to 2.4 s, inside the 3 s with a fifth to spare (the review's T-2). Charging those readings per candidate
+  would bring it down; one weight tried moved it by nothing, so it is left to the follow-up that cures the comparison.
+  A new family is a new row.
+- A redacted letter the reader did not return (a copy of its result) has no count, and the check then starts from
+  nothing, as it does without the fourth argument: time only, as above (the reviews' P-2 and T-3).
+- With hundreds of identifiers the time of a letter, never its count, varies with what the process read before (1.98 s
+  fresh, 3.15 s after fourteen other families, before the charge per identifier; that charge bounds it: T-4).
+- The count is the same on every machine for one version of Unicode: it follows the engine's `normalize`, `\p{}`
+  classes and case mapping. Node 22 and 24 here both carry Unicode 17.0, so no difference of data was exercised (T-5).
+- Recorded by the review of fix round 2's delta, for the queue (the status file on `claude/build-ops` names the
+  report): a call of 60,000 to 120,000 characters of identifiers is refused only after the redaction has run (0.6 to
+  0.7 s), and the check called alone with no count reads such a call (G-2); an empty identifier is charged nothing
+  (G-3); a list of identifiers that is not an array of strings (`claimNumbers` a string, `memberIds` a Set) now throws
+  a TypeError where the base read it, a crash and not a letter sent (G-4, G-5); one name of 14,000 words throws the
+  engine's "Invalid regular expression" out of the reading, in the base's own `formsOf` (G-7).
+- `someOf` answers as `Array.prototype.some` on the dense lists its five callers give it, which no test mutates; on a
+  sparse list or one that grows under the test it would not (P-4). An uncounted public function called inside a
+  counted entry would throw past the budget through itself into the entry's own refusal; no code calls one so (P-3).

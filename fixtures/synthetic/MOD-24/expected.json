@@ -1,0 +1,17 @@
+{
+  "case": "MOD-24",
+  "module": "MOD",
+  "title": "A payer letter crafted to make the letter check work past its budget: as many initials beside a name as fill 100,000 characters, with or without one look-alike character or the name written once with a joiner, or one digit to a line (a bare line feed, CR LF, a dash before the line feed, another script's digit with U+2028 or U+0085) for 100,000 characters; the same digit-to-a-line letters at 50,000 characters; a letter read after one that was refused; a call that carries 1,000 claim numbers, a name of twelve words of three parts, or 5,000 claim numbers of 40 characters; a letter of one character that NFKC writes as eighteen; a count handed to the check that is no number, negative or past the budget; the same letter through `redactLetter`",
+  "assertion": "The check counts its own work in one counter for the redaction and the check together (`CHECK_WORK_BUDGET` in `@tp/redact`, a count and never a clock) and past the budget the letter is refused by the check's own refusal, `identifier_left`, within the reader's 3 s: past it in the redaction, not one character of the letter comes back, only the mark the check refuses with any count; past it in the check, the check answers that an identifier is left, and `prepare` hands the redaction's count on so one budget holds for both. The digit-to-a-line letters at 50,000 characters are read, within the 3 s. The same letter has the same answer and the same count in every run, and a letter read after a refused one counts from nothing. Every form of the call's identifiers costs work by the letter's length and every character of them by their own, charged before a pattern is built: ordinary prose of 100,000 characters is read with one claim number and refused with a thousand, a fifth of it is read with a thousand, and the call of 5,000 long claim numbers is refused in under 100 ms. The letter is charged as NFKC writes it. A count that is not a number, is negative or is past the budget refuses the letter before anything is read, and no count turns a refusal into a letter sent. `redactLetter`, which has no refusal to give, runs no counter and reads such a letter as before. The only answer the budget changes is from sent to refused",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": ["packages/model-gateway/src/functions/denial-letter.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Letters are written in memory by the tests; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
