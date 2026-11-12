@@ -188,11 +188,11 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
     expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId });`);
     // The completed reset whose sign-out at the provider failed (docs/adr/0091, D10): the user's ID, the request's and the error's name alone.
     expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId, error_code: errorCode(error) });`);
-    // The ended membership whose sign-out at the provider did not happen (docs/adr/0094): both of the web's lines hold these words
+    // The ended membership whose sign-out at the provider did not happen (docs/adr/0094): all three of the web's lines (no subject, the provider's failure, a commit with no answer) hold these words
     // and carry the user's ID, the request's ID and a code alone.
     const signOut = source('apps/web/src/lib/auth/provider-sign-out.ts');
-    expect(signOut.split(`deps.logger.error('${MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE}', { user_id: ids.userId, request_id: ids.requestId, error_code: `)).toHaveLength(3);
-    expect(signOut.match(/deps\.logger\./g)).toHaveLength(2);
+    expect(signOut.split(`deps.logger.error('${MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE}', { user_id: ids.userId, request_id: ids.requestId, error_code: `)).toHaveLength(4);
+    expect(signOut.match(/deps\.logger\./g)).toHaveLength(3);
     // The user's ID and the request's alone: the address is never in it (the rule keys on $.user_id).
     expect(flow).toContain(`this.deps.logger.info('${PASSWORD_RESET_REQUESTED_MESSAGE}', { user_id: userId, request_id: context.requestId });`);
   });
