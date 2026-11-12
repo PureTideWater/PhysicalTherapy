@@ -1,11 +1,14 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
-## RESUME-BLOCK (W35, session_019i9ifAqmhWzhrv9YbKKE4R; 2026-11-12 about 07:50 UTC; W35's brief is done but for one sentence the orchestrator rules on)
+## RESUME-BLOCK (W35, session_019i9ifAqmhWzhrv9YbKKE4R; 2026-11-12 about 07:50 UTC; W35's brief is done; W35 has stood down)
 - **Where it stands:** the founder's ask for D2 (`approval-summaries/lane-a-ledger-freeze-ask-pr5-d2-2026-11-12.md`)
   now carries measured figures for W34's gaps 1 and 2. Not sent, not answered. Nothing is built. Everything in W34's
   block below still holds except its "Closed by W34" bullet and step (5)'s "none of which is measured yet".
-- **Open, the orchestrator's to rule (gap 3):** the ask's "On no" under Question 1 ("schema PR 5 is not built") is
-  unchanged. The first ask's rule, its exact words (`lane-a-ledger-freeze-ask-pr5-2026-11-07.md`, "The questions"):
+- **Gap 3, ruled by the orchestrator (2026-11-12 07:50 UTC): neither reading is taken for the founder.** The ask
+  now has a Question 3, in the orchestrator's words: on Question 1 no, is PR 5 built with Appendix A alone (yes), or
+  not built (no, or no answer); with Question 1 yes it does not arise. The first ask's words are its footnote, and
+  "What stands unchanged" says nothing is built on any of the three until the answer is recorded. W34's "On Question
+  1 no: PR 5 is not built" below is superseded by Question 3's answer. The first ask's rule, its exact words (`lane-a-ledger-freeze-ask-pr5-2026-11-07.md`, "The questions"):
   "If the build's proof shows an appendix text itself wrong, the question whose change is at fault is treated as your
   no (in A, the five-key list is Q1's and the `coalesce` Q3's; a fault in lines an appendix keeps from today's body
   belongs to no question and stops the migration), and only the text the table names for the remaining answers is
@@ -13,7 +16,7 @@
   is the table's text for Q1 and Q3 as answered, which is Appendix A, without D; a fault in Appendix A is a no to Q1
   (the five-key list) or to Q3 (the `coalesce`), and what is built is the table's row for the answers left
   (Q1 no, Q3 yes: Appendix C; Q1 yes, Q3 no: Appendix B; both no: unchanged), D never without A or B; a fault in a
-  line kept from today's body belongs to no question and stops the migration. The two readings, not decided here:
+  line kept from today's body belongs to no question and stops the migration. The two readings W35 set out, neither taken:
   1. *The first ask's rule governs:* D's fault is the founder's no to Q2, so on Question 1 no PR 5 is still built,
      with Appendix A alone and no check of the actionable figure in the database.
   2. *The new ask governs:* Question 1 no means PR 5 is not built at all, and the schema queue goes on without it.

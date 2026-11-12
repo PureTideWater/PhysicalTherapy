@@ -5,9 +5,10 @@ From Lane A (W34; the measurements of 2026-11-12 marked "second machine" are W35
 (`approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md`). Synthetic data only; IDs and counts, no statement
 content. Nothing is built on what is asked here.
 
-**In short:** two yes/no questions. The check you granted is correct but too slow to run; Question 1 asks for a text
-that gives the same answers in about a second. Question 2 asks for one setting that closes the one case where the new
-text could still be slow. Lane A recommends yes to both.
+**In short:** three yes/no questions. The check you granted is correct but too slow to run; Question 1 asks for a text
+that gives the same answers in under a second. Question 2 asks for one setting that closes the one case where the new
+text could still be slow. Lane A recommends yes to both. Question 3 arises only if you say no to Question 1: whether
+PR 5 is then built with Appendix A alone. Lane A makes no recommendation on it; it is yours to say.
 
 ## What you granted
 On 2026-11-07 you answered Q1, Q2 and Q3 yes. That grant covers, word for word and for schema PR 5 only, Appendix A
@@ -101,8 +102,8 @@ role). One statement listing 30,795 priced lines on 1,200 cases:
   existing rule that a service line has one case line (`case_line_once`); if that rule were ever dropped, D2 would
   refuse with an error where D would miscount. The schema forbids the state. (3) For a statement the CHECK refuses
   anyway, both refuse, in one found case with a different error code (22P02 under D, 23514 under D2).
-- **On no:** schema PR 5 is not built, and the schema queue goes on without it. Nothing checks the actionable figure,
-  as today. Appendix D is not built, because it fails its bound.
+- **On no:** Appendix D2 is not built, and Appendix D is not built either, because it fails its bound. Nothing in
+  the database checks the actionable figure, as today. What becomes of the rest of PR 5 is Question 3.
 
 ## Question 2. May the function's header also carry one setting, so the database plans this check afresh each time?
 
@@ -139,12 +140,29 @@ a yes to Question 1.
 - **On no:** D2 is built with D's header, and the case above stays as a stated residual with exactly that trigger
   condition, recorded in the migration's notes and ended by any ANALYZE.
 
+## Question 3. If you say no to Question 1, should PR 5 be built with Appendix A alone?
+
+The first ask said that if the build's proof shows an appendix text itself wrong, the question at fault is treated as
+your no and only the remaining text is built, which for a fault in D means Appendix A alone, with no database check
+of the actionable figure.[^fault] Appendix D is not wrong in what it answers; it is too slow to ship. Lane A does not
+stretch that rule to cover this case without your word.
+
+- **Yes:** PR 5 is built with Appendix A alone, exactly as granted.
+- **No, or no answer:** PR 5 is not built, nothing on the ledger changes, and the schema chain goes on without it.
+- If you say yes to Question 1 this question does not arise.
+
+[^fault]: The first ask's exact words (`approval-summaries/lane-a-ledger-freeze-ask-pr5-2026-11-07.md`, under "The
+    questions"): "If the build's proof shows an appendix text itself wrong, the question whose change is at fault is
+    treated as your no (in A, the five-key list is Q1's and the `coalesce` Q3's; a fault in lines an appendix keeps
+    from today's body belongs to no question and stops the migration), and only the text the table names for the
+    remaining answers is built (D only with A or B)."
+
 ## What stands unchanged
 Appendix A, as granted, measured on its own: its body hashes to the granted `13c4dd46b9203095`; its CHECK costs
 141 ms on the 30,795-line statement and about 0.2 ms on a 40-ID statement; nothing was found against it. Your Q1
 and Q3 of 2026-11-07 are not asked again. All of the first ask's rules still hold: a grant covers the exact text
 only, is never widened, and holds for schema PR 5 only. This is not the approval of record for the pull request;
-you still approve that yourself.
+you still approve that yourself. Nothing is built on any of the three questions until your answer is recorded.
 
 ## Not asked here
 - **The migration's preflight scan.** The migration checks every stored statement against Appendix A before it
@@ -157,8 +175,9 @@ you still approve that yourself.
   not reopened and not answered by a reply to this one.
 
 ## The questions (yes or no)
-Please answer each: "Question 1: yes or no. Question 2: yes or no." Each can be answered alone; with Question 1 no,
-Question 2 lapses.
+Please answer each: "Question 1: yes or no. Question 2: yes or no. Question 3: yes or no." Each can be answered
+alone. With Question 1 no, Question 2 lapses and Question 3 decides whether PR 5 is built with Appendix A alone;
+with Question 1 yes, Question 3 does not arise.
 
 ## Appendix D2: the exact text asked (body `ad925199131cb411`)
 `roi_statement_rules` as `pnpm db:domain-model` would print it after the migration, with Question 1 yes and Question
