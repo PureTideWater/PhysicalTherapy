@@ -1203,6 +1203,7 @@ function inOneReading<T>(read: () => T): T {
     viewsOfCheck = null;
     datesOfCheck = null;
     formsOfCheck = null;
+    alikeOfWider = null;
   }
 }
 
@@ -1446,11 +1447,21 @@ function widerMatchesIn(normal: string, subject: Subject): Found[] {
   }
 }
 
+/**
+ * Whether the wider reading last read a text on the look-alike fold too (alikeReads, which costs WORK.fold for every
+ * character outside ASCII): its answer for that text and subject, null outside an entry (inOneReading drops it, so no
+ * letter's text is held past one).
+ */
+let alikeOfWider: { readonly normal: string; readonly subject: Subject; readonly alike: boolean } | null = null;
+
 /** widerMatchesIn's reading; it takes stored views and dates for nothing (Stored), and counts what it does itself. */
 function widerMatchesRead(normal: string, subject: Subject): Found[] {
   const read = () => ownMatchesIn(normal, subject, true).filter((match) => match.kind !== 'birth');
   const found = read();
-  if (alikeReads(normal, subject)) {
+  const alike = alikeReads(normal, subject);
+  // Kept for the check's glued reading of this same text (digitsGluedToLetter), which asks nothing twice.
+  alikeOfWider = { normal, subject, alike };
+  if (alike) {
     onFold('alike', () => {
       for (const match of read()) {
         const written = normal.slice(match.start, match.end).normalize('NFD');
@@ -3796,7 +3807,14 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
   try {
     // The first reading's check, and the call's own identifiers in the wider reading (widerMatchesIn; MOD-23).
     const subject = letterSubject(patient, claims);
-    const holds = (read: string) => holdsAsFirstRead(read, patient, claims) || widerMatchesIn(masked(read, claims.length), subject).length > 0;
+    // Then a digits-only number glued to a letter (digitsGluedToLetter; MOD-25), on the text the wider reading read.
+    const holds = (read: string) => {
+      if (holdsAsFirstRead(read, patient, claims)) {
+        return true;
+      }
+      const scanned = masked(read, claims.length);
+      return widerMatchesIn(scanned, subject).length > 0 || digitsGluedToLetter(scanned, subject);
+    };
     // A CR LF is one line ending written in two characters, and every reach of a label, a noun or a window is counted in
     // characters: the text is read once more with each CR LF written as a line feed, and the worse answer is taken, so a
     // letter is refused wherever its writing with LF is ("SSN on file. Statement", CR LF and "No. 900-12-3456150.00":
@@ -3812,6 +3830,55 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
     return true;
   } finally {
     checkWorkSpent = before;
+  }
+}
+
+/**
+ * Whether masked text holds one of the call's member IDs or claim numbers of digits alone, of WIDER_NUMBER_FLOOR digits
+ * or more, with a letter right before or right after it (Queues item 34, MOD-25, rule (a); docs/adr/0054): "Fax
+ * X76543210 ext 12", "XYZ76543210", "76543210B", "XYZ7654 3210", each sent in clear before, since no reading takes a
+ * number with a letter against it unless a label word is. The check's alone: where the number ends cannot be known, so
+ * the letter is REFUSED and nothing is redacted. The number is read in every form the readings hold it in: joined as
+ * any number is, as the records hold it and with a run of marks there (numberForm), and each piece that is a number
+ * of its kind (piecesOf). Only one side is asked: what stands on the other is not read ("XYZ76543210-01" and
+ * "XYZ76543210123" are refused), and there is no exception for a date or an amount ("2026-11-15Paid" for a claim
+ * number 20261115). A digit right beside the number is another, longer number and stays the recorded residual of the
+ * amendment of 2026-10-27 ("976543210", "765432109B"), as does a number under the floor ("Account1234").
+ *
+ * Read on the plain fold and, where a look-alike stands, on the look-alike fold, as the wider reading is, and in every
+ * writing the check reads (holdsIdentifier). It runs as part of the wider reading (widerReading): the view is the one
+ * that reading stored of this same text, taken for nothing, so a reading costs WORK.formCharacter for each character
+ * and form, and a call with no such number costs nothing at all.
+ */
+function digitsGluedToLetter(normal: string, subject: Subject): boolean {
+  const outer = widerReading;
+  widerReading = true;
+  try {
+    // A call none of whose numbers holds five digits or more is read no further, and pays nothing: no reading of the
+    // letter is asked for it (a digit of another script or a look-alike is a digit only on the folded view, so a
+    // stored value is counted by what may fold to a digit: its digits and its characters outside ASCII).
+    const mayHoldDigits = (value: string) => (value.normalize('NFKC').match(/\p{N}|[^\0-\x7F]/gu) ?? []).length >= WIDER_NUMBER_FLOOR;
+    if (![...subject.memberIds, ...subject.claims.flat()].some(mayHoldDigits)) {
+      return false;
+    }
+    const read = () => {
+      const cores = new Set(
+        [...formsOf(subject), ...formsOf(subject, true)]
+          .filter((form) => (form.kind === 'claim' || form.kind === 'member') && form.digitsOnly && [...form.compact].length >= WIDER_NUMBER_FLOOR)
+          .map(coreOf),
+      );
+      if (cores.size === 0) {
+        return false;
+      }
+      work(WORK.formCharacter * cores.size * normal.length);
+      const { text } = viewOf(normal, 'join');
+      return [...cores].some((core) => new RegExp(`(?<=\\p{L})(?:${core})|(?:${core})(?=\\p{L})`, 'u').test(text));
+    };
+    // The look-alike fold where the wider reading read this text on it: its own answer, taken for nothing.
+    const alike = alikeOfWider !== null && alikeOfWider.normal === normal && alikeOfWider.subject === subject ? alikeOfWider.alike : alikeReads(normal, subject);
+    return read() || (alike && onFold('alike', read));
+  } finally {
+    widerReading = outer;
   }
 }
 

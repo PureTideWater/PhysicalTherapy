@@ -2190,4 +2190,116 @@ describe('MOD-25: a stored number written with other marks than the records hold
       );
     });
   });
+
+  describe('(a): a member ID or claim number of digits alone, of five digits or more, glued to a letter is refused', () => {
+    const digits = heldAs('76543210');
+
+    // Each was sent in clear on a97d73e4: the first reading reads no number with a letter against it, unless a label word is.
+    it.each([
+      'Fax X76543210 ext 12',
+      'Ref XYZ76543210 on file.',
+      'Ref 76543210B on file.',
+      'Ref XYZ7654 3210 on file.',
+      'Fax X7654-3210 ext',
+      'Fax 76 54 32 10B ext',
+      'Fax X7654\r\n3210 ext',
+      'Room AB76543210',
+      // The other side is not asked: a joiner and digits, or digits alone, after a number a letter stands before.
+      'Ref XYZ76543210-01 on file.',
+      'Ref XYZ76543210123 on file.',
+      // NFKC writes full-width digits as ASCII; another script's digits are the number's on the folded view.
+      'Fax X７６５４３２１０ ext',
+      'Fax X٧٦٥٤٣٢١٠ ext',
+      // Any letter: another script's, and a modifier letter the first reading takes for one (U+02BC).
+      'Fax Х76543210 ext',
+      'Fax 中76543210 ext',
+      'Fax ʼ76543210 ext',
+    ])('refuses %j for a member ID 76543210, and redactLetter leaves it as written for the check to refuse', (letter) => {
+      expect(sentOrRefused(letter, digits, claims)).toBe(REFUSED);
+      expect(holdsIdentifier(redactLetter(letter, digits, claims).text, digits, claims)).toBe(true);
+      // A claim number is read as a member ID is.
+      expect(sentOrRefused(letter, heldAs('SYNMEMBER0042'), claimsOf('SYNCLAIM0001', '76543210'))).toBe(REFUSED);
+    });
+
+    it('reads the number in each of its wider forms: as the records hold it, with a run of marks there, and each piece', () => {
+      for (const letter of ['Fax X7654/3210 ext', 'Fax X7654.3210 ext', 'Fax 7654:3210B ext', 'Fax X76543210 ext', 'Fax X7654 # 3210 ext']) {
+        expect(sentOrRefused(letter, heldAs('7654/3210'), claims), letter).toBe(REFUSED);
+      }
+      for (const letter of ['Fax X76543 ext', 'Fax 21098B ext', 'Fax X7-6-5-4-3 ext']) {
+        expect(sentOrRefused(letter, heldAs('76543 21098'), claims), letter).toBe(REFUSED);
+      }
+      // A piece of digits alone of a number that holds letters is a number of its kind (rule (c)), and is read so here.
+      for (const letter of ['Fax XQ7654321 ext', 'Fax 7654321B ext']) {
+        expect(sentOrRefused(letter, heldAs('ZZ 7654321'), claims), letter).toBe(REFUSED);
+      }
+    });
+
+    it('has no date or amount exception: the number’s digits written as a date against a word are refused', () => {
+      const patient = heldAs('SYNMEMBER0042');
+      expect(sentOrRefused('Seen 2026-11-15Paid in full', patient, claimsOf('20261115'))).toBe(REFUSED);
+      expect(sentOrRefused('Seen 20261115Paid in full', patient, claimsOf('20261115'))).toBe(REFUSED);
+      // Set apart from the word the date stays, as the first reading keeps it.
+      expect(sentOrRefused('Seen 2026-11-15 Paid in full', patient, claimsOf('20261115'))).toBe('Seen 2026-11-15 Paid in full');
+    });
+
+    // The floor (WIDER_NUMBER_FLOOR; designs/lane-b-redact-item-34, measure/floor-edges.out): five digits are refused; four are
+    // sent, THE RECORDED RESIDUAL of docs/adr/0054: a code is glued to a letter by its own format ("G0283").
+    it.each([
+      ['12345', 'Account12345 was paid', REFUSED],
+      ['12345', 'Fax X12345 ext', REFUSED],
+      ['97110', 'Billed 97110GP twice', REFUSED],
+      ['012345', 'Billed G012345 twice', REFUSED],
+      ['1234', 'Account1234 was paid', 'Account1234 was paid'],
+      ['1234', 'Fax X1234 ext', 'Fax X1234 ext'],
+      ['0283', 'Billed G0283 twice', 'Billed G0283 twice'],
+      ['283', 'Billed G0283B twice', 'Billed G0283B twice'],
+      // A label word glued to the number is the first reading's own, at any length: replaced, as on the base.
+      ['12345', 'Acct12345 was paid', 'Acct[CLAIM_1] was paid'],
+      ['1234', 'Acct1234 was paid', 'Acct[CLAIM_1] was paid'],
+    ])('the floor’s edges: for a claim number %s, %j', (number, letter, sent) => {
+      expect(sentOrRefused(letter, heldAs('SYNMEMBER0042'), claimsOf(number))).toBe(sent);
+    });
+
+    it('pins what is left, recorded: a digit right beside the number is another, longer number and is sent as written', () => {
+      for (const letter of ['Ref 976543210 on file.', 'Ref 0076543210 on file.', 'Ref 7654321001 on file.', 'Ref 765432109B on file.', 'Ref B0076543210 on file.']) {
+        expect(sentOrRefused(letter, digits, claims), letter).toBe(letter);
+      }
+    });
+
+    it('leaves what the first reading reads and what is no writing of the number', () => {
+      expect(sentOrRefused('Fax 76543210 ext 12', digits, claims)).toBe('Fax [MEMBER_ID] ext 12');
+      expect(sentOrRefused('Fax x_76543210 ext', digits, claims)).toBe('Fax x_[MEMBER_ID] ext');
+      expect(sentOrRefused('Fax X​76543210 ext', digits, claims)).toBe('Fax X​[MEMBER_ID] ext');
+      expect(sentOrRefused('Fax X76543211 ext 12', digits, claims)).toBe('Fax X76543211 ext 12');
+      expect(sentOrRefused('Fax X7654 or 3210 ext', digits, claims)).toBe('Fax X7654 or 3210 ext');
+      // A number that holds a letter is not this rule's: glued to a word it is as it was.
+      const lettered = 'Fax XZ7654321 ext';
+      expect(sentOrRefused(lettered, heldAs('76543ZZ'), claims)).toBe(lettered);
+    });
+
+    // A call of its own for every run (the number is drawn), so each builds its patterns: no budget, only how long it may hang.
+    it('never sends a digits-only number of 5 to 12 digits with a letter against it, however it is joined (property)', { timeout: 60_000 }, () => {
+      const number = fc.stringMatching(/^[0-9]{5,12}$/);
+      const letterOf = fc.constantFrom('X', 'a', 'Q', 'é', 'Ж', '中', 'I', 'O');
+      const joiner = fc.constantFrom('', '', '-', ' ', '_', '\r\n', '\n');
+      const frame = fc.constantFrom(['Fax ', ' ext 12'], ['', ''], ['Re: ', '\r\nPaid 150.00'], ['(', ')'], [HELD, ' Paid']);
+      fc.assert(
+        fc.property(number, fc.option(letterOf, { nil: '' }), fc.option(letterOf, { nil: '' }), joiner, fc.nat(), fc.boolean(), frame, (value, left, right, between, at, asClaim, [before, after]) => {
+          fc.pre(left !== '' || right !== '');
+          const cut = 1 + (at % (value.length - 1));
+          const written = `${value.slice(0, cut)}${between}${value.slice(cut)}`;
+          const letter = `${before}${left}${written}${right}${after}`;
+          const patient = heldAs(asClaim ? 'SYNMEMBER0042' : value);
+          const numbers = asClaim ? claimsOf(value) : claims;
+          const sent = sentOrRefused(letter, patient, numbers);
+          if (sent !== REFUSED) {
+            // Sent only where the first reading replaced the number (a label word against it): never with its digits.
+            expect(sent, JSON.stringify(letter)).not.toContain(written);
+            expect(sent.replace(/[^0-9]/gu, ''), JSON.stringify(letter)).not.toContain(value);
+          }
+        }),
+        { numRuns: 300 },
+      );
+    });
+  });
 });
