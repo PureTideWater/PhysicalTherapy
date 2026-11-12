@@ -1,0 +1,23 @@
+CT-1 K1 5LF + apart 100k | 99999 | refused in the redaction | 710 to 970 ms
+CT-1 K2 5LF + CRLF 100k | 100000 | refused in the check | 788 to 997 ms
+CT-1 L9 arabic5 LS + apart | 99999 | refused in the redaction | 857 to 883 ms
+CT-1 L10 arabic5 NEL + CRLF | 100000 | refused in the check | 773 to 904 ms
+CT-1 L12 arabic5 LS 50k + CRLF + apart | 49984 | refused in the redaction | 673 to 801 ms
+5LF + apart 30k | 29999 | sent | 490 to 701 ms
+5LF + apart 36k | 35999 | refused in the check | 590 to 646 ms
+5LF + CRLF 30k | 30000 | sent | 467 to 518 ms
+5LF + CRLF 38k | 38000 | refused in the check | 548 to 599 ms
+5CRLF + apart 30k | 29999 | sent | 523 to 654 ms
+dates + CRLF + apart 25k | 25000 | sent | 765 to 865 ms
+dates + CRLF + apart 35k | 34996 | refused in the check | 899 to 987 ms
+dates + CRLF 50k | 49996 | sent | 747 to 909 ms
+dates + CRLF 70k | 70002 | refused in the check | 993 to 1151 ms
+slash dates + apart 50k | 49995 | sent | 721 to 745 ms
+apart + initials 50k | 50000 | sent | 437 to 720 ms
+name letter by letter 100k | 99988 | sent | 617 to 733 ms
+gap + initials 100k (base row) | 100008 | sent | 722 to 743 ms
+5LF 50k (base row) | 50000 | sent | 531 to 668 ms
+U+33FE; 93k (base dearest) | 93006 | refused in the check | 1572 to 1940 ms
+prose + apart 150k | 149997 | sent | 833 to 874 ms
+prose lines CRLF 150k | 150000 | sent | 642 to 722 ms
+dates spaces 100k (base row) | 99995 | sent | 904 to 1295 ms

@@ -1,8 +1,35 @@
-ACTING (Lane A's account, https://claude.ai/code/session_019i9ifAEQTFy4tvph8Cj9mD, W18; before it W17, session_019i9ifDNJ3ixNo2VHiiA93Y) holds this item from 2026-11-11 20:28 UTC; Lane B: read lanes/lane-b.md's latest entries before resuming.
+ACTING Lane B (W36, https://claude.ai/code/session_019i9ifBWTdAErWCMzjfhzn3) holds this item from 2026-11-12 07:40 UTC; before it W21, W18 and W17; Lane B: read lanes/lane-b.md's latest entries before resuming.
 
 # Queues item 26 (MOD-23): K-1, the two name forms, P6's stored numbers: status
 
-## RESUME-BLOCK, current (W21, session_019i9ifCPJnxuf8XPM3RFrt8, 2026-11-12 about 02:15 UTC; STOPPED at its token limit with review C's TIME findings BLOCKING and run; the fix is designed below, NOT built; no PR)
+## RESUME-BLOCK, current (W36, session_019i9ifBWTdAErWCMzjfhzn3, 2026-11-12 about 08:20 UTC; BUILT on the counter, tests green, the gate and the battery RUNNING, the delta review NOT yet run; no PR)
+
+- **Where it stands.** WIP `co-001/wip-redact-item-26` = **a85ea22d** (the base adaf7897 merged into c52f262a, item
+  26's readings on the base's counter, the character bound removed); local branch `co-001/redact-item-26` is one
+  commit past it, a447958e (MOD-23 in `packages/synth`'s matrix mirror and registry, fixtures regenerated; not pushed
+  yet). Typecheck and lint pass on a85ea22d; the five redaction test files pass (4,206 tests, Node 24, no coverage).
+- **What was built** (ADR 0054, the new amendment "item 26's readings on the check's work budget"):
+  - `CHECK_WORK_BUDGET`, `WORK`, `work`, `someOf` and the two entries are the base's to the character. The gate's
+    check (`holdsAsFirstRead` through `refusedAsFirstRead`) and K-1's second reading run inside the entries and charge
+    as a check of its own does (`WORK.character` per character, `workOfIdentifiers`, every counted site).
+  - `WIDER_WORK_BOUND`, `widerWorkOf`, `unreadPastTheBound` removed. `redactionSpans`/`redactLetter` (no counter on the
+    base) count only what item 26 adds, from nothing, and past the budget write the first reading's text and the mark.
+  - The shared stores (`inOneReading`) stay, with each stored answer's cost kept (`Stored`, `takenAgain`): a first
+    reading is charged as on the base, only the wider reading takes a stored answer for nothing. Without the stores four
+    of the base's own time rows were refused (the wider reading charged for dates and views it need not read again).
+  - The wider reading skips the initials search when it found no name (it returns none then): without it the base's row
+    "a long gap after a name and many initials" was refused (468M units; now 403M, the base 339M, the budget 420M).
+- **Measured** (`designs/lane-b-redact-item-26/scripts/dear.mts`, output `dear-a85ea22d.out`; no coverage): CT-1's rows
+  all refused by the count in 0.67 to 1.00 s; the dearest letter still read 0.90 to 1.30 s (the base's own row).
+  Costs (letters read on the base, refused now) are the table in the ADR's new amendment.
+- **Running / next.** (1) The gate: `/home/user/gate` (the count handed on in `worker.mts`), A = adaf7897
+  (`/home/user/snapA`), F = c52f262a, B = a85ea22d: `/home/user/gate-out/ab`, then `fb`. (2) The battery: four roots
+  laid under `/home/user/bt` (`hr`, `hf` the head; `rr`, `rf` the base as head), run as `tools/chain.sh` runs them.
+  (3) One adversarial review of the delta since c52f262a (report under `reviews/d/`). (4) The full local suite once
+  with coverage, the base merged right before the last push, the PR from the template on `co-001/redact-item-26`.
+- **Queue item 38** (MOD-15, seed 1596478644): not met yet in this session's runs.
+
+## RESUME-BLOCK of W21 (superseded by the block above; W21, session_019i9ifCPJnxuf8XPM3RFrt8, 2026-11-12 about 02:15 UTC; STOPPED at its token limit with review C's TIME findings BLOCKING and run; the fix is designed below, NOT built; no PR)
 
 - **Where it stands.** WIP `co-001/wip-redact-item-26` = **c52f262a** (f0d415e2, then 69e00b48 the work bound and its
   tests, 6f7029d9 ADR 0054 and the matrix row, c52f262a review C-PHI's three recorded findings pinned). Local branch

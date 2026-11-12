@@ -1,0 +1,15 @@
+const H = await import('/home/user/PhysicalTherapy/packages/redact/src/redact.ts'); const B = await import('/home/user/rev/base/redact.ts');
+const patientOf = (names: string[], datesOfBirth = ['1980-03-14'], memberIds = ['SYNMEMBER0042']) => ({ pseudonym: 'synthetic-patient-21', names, datesOfBirth, memberIds });
+const claimsOf = (...numbers: string[]) => numbers.map((number, index) => ({ claimId: `synthetic-claim-21-${String(index + 1)}`, patientPseudonym: 'synthetic-patient-21', claimNumbers: [number] }));
+const patient = patientOf(['JANE Q ZEPHYRA']); const claims = claimsOf('SYNCLAIM0001');
+const FILL = 'paid in full. ';
+const padded = (length: number, middle = '') => { const tail = `${middle} Dear Zephy ra,`; return `${FILL.repeat(Math.ceil(length / FILL.length)).slice(0, length - tail.length)}${tail}`; };
+const screen = (R: typeof H, t: string, w = patient) => { const r = R.redactLetterForScreen(t, w, claims); const h = R.holdsIdentifier(r.text, w, claims, R.checkWorkOf(r)); return `${h ? (r.text === '\u0001' ? 'RR' : 'R') : 's'}${(R.checkWorkOf(r) / 1e6).toFixed(0)}`; };
+const path = (R: typeof H, t: string, w = patient) => { const x = R.redactLetter(t, w, claims).text; return R.holdsIdentifier(x, w, claims) ? (x.endsWith('\u0001') ? 'Rm' : 'R') : 's'; };
+const show = (name: string, make: (n: number) => string, ns: number[], w = patient) => console.log(name, ns.map((n) => { const t = make(n); return `${n / 1000}k:${screen(H, t, w)}/${path(H, t, w)}|b:${screen(B, t, w)}/${path(B, t, w)}`; }).join('  '));
+const ns = [20000, 50000, 100000, 150000, 200000, 300000];
+show('padded', (n) => padded(n), ns);
+show('padded+crlf', (n) => padded(n, '\r\nThank you.\r\n'), ns);
+show('lines LF', (n) => `${`${FILL}\n`.repeat(n / 15)}Dear Jane Zephyra, your claim SYNCLAIM0001 was paid.`, ns);
+show('lines CRLF', (n) => `${`${FILL}\r\n`.repeat(n / 16)}Dear Jane Zephyra, your claim SYNCLAIM0001 was paid.`, ns);
+show('van', (n) => `${FILL.repeat(Math.ceil(n / FILL.length))}Dear Van tree, your claim`, ns, patientOf(['VAN VANTREE']));
