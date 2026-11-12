@@ -2714,3 +2714,57 @@ describe('MOD-25: a match that begins before the real writing and ends inside it
     );
   });
 });
+
+/**
+ * Review 1 of Queues item 34 (R1-2; the orchestrator's ruling of 2026-11-12 22:55 UTC: inside rule (a)). After an
+ * identifier label the first reading joins a digits-only number over "." and "/" too ("Claim No. 7654.3210"); with a
+ * letter against it no reading took it, and rule (a) read the number joined as any number is, never so: "Claim No.
+ * 7654.3210B" was sent whole. Rule (a) now reads that writing as well, label or none: where the number ends cannot be
+ * known, so the letter is refused.
+ */
+describe('MOD-25: a digits-only number written with a period or a slash and glued to a letter is refused (review 1, R1-2)', () => {
+  const asMember = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210']), numbers: claimsOf('ZZ99887') };
+  const asClaim = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['SYNMEMBER0042']), numbers: claimsOf('76543210') };
+  const LABELS = ['Claim No. ', 'Claim ', 'ICN ', 'Member ID: ', 'DCN ', 'Claim # ', 'Policy No. ', 'Ref. No. ', 'Paid ', ''] as const;
+  const WRITTEN = ['7654.3210', '7654/3210', '76.54.32.10', '7654./3210', '7654 . 3210'] as const;
+  const GLUED = [(n: string) => `X${n}`, (n: string) => `${n}B`, (n: string) => `${n}mg`, (n: string) => `q${n}`] as const;
+
+  it.each(LABELS.flatMap((label) => WRITTEN.flatMap((number) => GLUED.map((glue) => `${label}${glue(number)} paid`))))('%s', (letter) => {
+    for (const call of [asMember, asClaim]) {
+      expect(sentOrRefused(letter, call.who, call.numbers), JSON.stringify(letter)).toBe(REFUSED);
+      expect(holdsIdentifier(redactLetter(letter, call.who, call.numbers).text, call.who, call.numbers), JSON.stringify(letter)).toBe(true);
+    }
+  });
+
+  it('the drafter’s check refuses the same writings', () => {
+    for (const number of ['7654.3210B', 'X7654/3210']) {
+      expect(holdsNameOrNumber(`Claim No. ${number} paid`, { names: ['JANE ZEPHYRA'], numbers: ['76543210'] }), number).toBe(true);
+    }
+  });
+
+  it('not glued, the number after a label is replaced as before, and a number under the floor is read as before', () => {
+    expect(sentOrRefused('Claim No. 7654.3210 paid', asMember.who, asMember.numbers)).toBe('Claim No. [MEMBER_ID] paid');
+    const short = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['7654']);
+    expect(sentOrRefused('Claim No. 76.54B paid', short, claimsOf('ZZ99887'))).toBe('Claim No. 76.54B paid');
+  });
+});
+
+/**
+ * Recorded residuals, pinned as SENT (review 1 of Queues item 34, R1-3 and R1-4; the orchestrator's ruling of
+ * 2026-11-12 22:55 UTC: new forms outside this item's design, each needing its own measurement; Queues item 40, before
+ * any real PHI). When either is closed, these rows turn and are rewritten.
+ */
+describe('MOD-25: forms still sent in clear, recorded for Queues item 40 (review 1, R1-3 and R1-4)', () => {
+  const who = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210']);
+  const numbers = claimsOf('ZZ99887');
+
+  it.each([
+    ['a number character that is no decimal digit right before the number', 'Ref ↀ76543210 on file.'],
+    ['a number character that is no decimal digit right after the number', 'Ref 76543210፩ on file.'],
+    ['U+0085 inside the number after a label', 'Member ID 7654\u00853210 paid'],
+    ['U+0085 inside the number glued to a letter', 'Fax X7654\u00853210 ext'],
+    ['a control character inside the number after a label', 'Member ID 7654\u00003210 paid'],
+  ])('%s: sent unchanged', (_form, letter) => {
+    expect(sentOrRefused(letter, who, numbers)).toBe(letter.normalize('NFKC'));
+  });
+});

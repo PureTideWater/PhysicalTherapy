@@ -3919,7 +3919,7 @@ function digitsGluedToLetter(normal: string, subject: Subject, hidden?: (range: 
       const cores = new Set(
         [...formsOf(subject), ...formsOf(subject, true)]
           .filter((form) => (form.kind === 'claim' || form.kind === 'member') && form.digitsOnly && [...form.compact].length >= WIDER_NUMBER_FLOOR)
-          .map(coreOf),
+          .flatMap(gluedCoresOf),
       );
       if (cores.size === 0) {
         return false;
@@ -3949,6 +3949,23 @@ function digitsGluedToLetter(normal: string, subject: Subject, hidden?: (range: 
   } finally {
     widerReading = outer;
   }
+}
+
+/**
+ * The writings of a digits-only form that rule (a) reads glued to a letter (digitsGluedToLetter), each without word
+ * edges. Its writing after an identifier label, joined over "." and "/" too (Form.labeled, GAP.labeledNumber), label
+ * or none: "Claim No. 7654.3210B" was sent whole, since the first reading takes that writing only where the number
+ * stands and rule (a) read the number joined as any number is (review 1 of Queues item 34, R1-2). That writing holds
+ * every writing of a form joined as any number is (GAP.number is a part of GAP.labeledNumber), so such a form is read
+ * once, as before; a form with the records' own separators (numberForm with `asStored`) is read as it is as well.
+ */
+function gluedCoresOf(form: Form): string[] {
+  const own = coreOf(form);
+  if (form.labeled === null) {
+    return [own];
+  }
+  const labeled = form.labeled.source.slice(BEFORE.length, form.labeled.source.length - AFTER.length);
+  return labeled.split(GAP.labeledNumber).join(GAP.number) === own ? [labeled] : [labeled, own];
 }
 
 /**
