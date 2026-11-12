@@ -185,7 +185,7 @@ describe('on this repository', () => {
       expect((result.inert ?? []).filter((line) => line.includes('"typescript"')), what).toEqual([]);
     }
     // typescript-eslint is not test tooling: the exact name, not a prefix, is listed.
-    expect(judge(changed('pnpm-workspace.yaml', YAML, replaced('  typescript-eslint: ^8.72.0\n', '  typescript-eslint: ^8.72.1\n'))).packages).toEqual([]);
+    expect(judge(changed('pnpm-workspace.yaml', YAML, replaced('  typescript-eslint: ^8.72.1\n', '  typescript-eslint: ^8.72.2\n'))).packages).toEqual([]);
   });
 
   it('affects all four for decimal.js in the root manifest: money imports it, and every closure reaches money', () => {
@@ -393,7 +393,7 @@ describe('on this repository', () => {
 
   it('affects all four for catalog vitest, packages, onlyBuiltDependencies, overrides, patchedDependencies and nodeLinker', () => {
     for (const [what, after] of [
-      ['catalog vitest', replaced('  vitest: ^5.0.5\n', '  vitest: ^5.0.6\n')],
+      ['catalog vitest', replaced('  vitest: ^5.1.0\n', '  vitest: ^5.1.1\n')],
       ['packages', replaced('  - infra\n', '  - infra\n  - docs\n')],
       ['onlyBuiltDependencies', replaced('  - esbuild\n', '  - esbuild\n  - sharp\n')],
       ['overrides', replaced('  typed-rest-client>qs: 6.16.1\n', '  typed-rest-client>qs: 6.16.2\n')],
