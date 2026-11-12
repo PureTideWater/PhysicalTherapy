@@ -1,5 +1,115 @@
 # Status: Queues item 37, the key registry (Lane A)
 
+## RESUME-BLOCK (2026-11-12, W44, session_019i9ifCbvaBHG1q7YBdjKGM): the web half's FLOW is built (cut A, items 1 and 2); the code SCREEN and cut B are NOT started
+
+**WIP `co-001/wip-key-registry` dde86284** (one commit on e85c3b40). No PR is open. No migration was touched. W44
+handed over at about 250k tokens, most of it reading. The successor needs this block, W43's below (its "exact next
+step" items 3 to 6 are what is left) and W33's (signatures, refusals).
+
+### What W44 built (W43's items 1 and 2)
+- `apps/web/src/lib/auth/sign-in.ts`:
+  - `authenticated()` reads `sign_in_hardware_keys` (one read, only for a key sign-in or an account that must hold a
+    key) in place of `provider.hasHardwareKey`, which is gone from the interface and both providers.
+  - A key sign-in, section 5's four steps: `registeredKey()` (well formed; a live row, else `sign_in_key_refused`
+    `removed` or `not_registered`, the paging line `security event: removed hardware key used` for a removed one, and
+    `cleaned()` with the grant; the app's own `verifyAuthenticationResponse` against the row's public key, counter
+    zero, a failure logged as `security event: hardware key assertion refused by the registry` with the error's class
+    name only and recorded `assertion`); then `openSession` with the digest. `user_session_hardware_key_live` is
+    answered `expired` and recorded `removed`; `user_session_key_registration_closed` is answered
+    `hardware_key_required` with the warn line `security event: code session refused while key registration is closed`.
+  - The plumbing: `beginKey` seals `assertion` (the options' challenge) in the pending key step; `completeKey` passes
+    the response and it down; a key step with no `assertion` (the previous image's) starts again (`expired`).
+  - Registration: `judgeRegistration()` (`hardware_key_registration_judge` as the account) before
+    `beginKeyRegistration` and before `completeKeyRegistration` ask the provider; `recorded()` verifies the
+    registration response itself (the challenge sealed as `creation`) and calls `hardware_key_record` with the code's
+    digest; a failure of either removes the key at the provider with the grant, logs `hardware key registered at the
+    provider but not recorded` (`user_id`, `request_id`, `error_code` the constraint or a class name, `outcome_code`
+    removed or not_removed) and answers `key_not_registered`. The flow no longer writes `hardware_key_registered`
+    itself (the function does; the event's purpose is now empty, not `webauthn`). ADR 0093 D6's path is unchanged.
+  - The code: `answerRegistrationCode(pending, typed, context)`; the pending `register_key` step gains `creation`,
+    `codeRequired` and `code` (the digest in hex, only after `open`); a new refusal reason `registration_code`.
+- `apps/web/src/lib/auth/registration-code.ts` (new): the alphabet (32 symbols, no 0 1 I O), `newRegistrationCode()`
+  (8 symbols, `crypto.randomInt`), `normalizeRegistrationCode`, `isRegistrationCodeShaped`, `registrationCodeDigest`.
+  **Cut B's console route uses `newRegistrationCode` and `registrationCodeDigest` from here.**
+- `sessions.ts`: `openSession` carries `keyCredentialSha256` (the INSERT names the column, null for a code session);
+  `KEY_NOT_LIVE_CONSTRAINT`, `KEY_REGISTRATION_CLOSED_CONSTRAINT`, `refusedConstraint()`.
+- `provider.ts`, `cognito-provider.ts`, `dev-provider.ts`, `dev-store.ts`: `listHardwareKeys(grant)` (credential ID
+  and creation time; Cognito's by `ListWebAuthnCredentials`, paged); the twin stores `createdAt`.
+- `SignInDependencies.webauthn { rpId, origin }` (required); `services.ts` fills it from the configuration
+  (`ServiceParts.rpId`, the origin's host when absent). `KEY_USER_VERIFICATION_REQUIRED = true` is the one constant.
+- `apps/web/src/lib/routes/sign-in.ts`: ONLY the refusal's words, so the switch is whole (see the screen list). **The
+  code screen itself is not built: a closed account that reaches `/sign-in/register-key` today is sent back to the
+  same page with no options (nothing registers, nothing opens; a dead end until item 3 is built).**
+
+### What is green, and what is not known
+- `apps/web/src/lib/auth/sign-in.db.test.ts`: **72 passed** on PostgreSQL 18 (20 of them new or restated). Seen
+  failing first: the file did not load without `registration-code.ts`, then 14 failed on missing behaviour, with the
+  type errors naming `webauthn`, `answerRegistrationCode`, `codeRequired` and `creation`. `registration-code.ts` (a
+  pure helper the tests import) was written between those two runs; nothing else preceded its tests.
+- The web's type-check passed before the last two test-only edits.
+- **NOT known when this block was written:** `pnpm typecheck`, `pnpm lint`, `pnpm lint:logs`, the web's unit tests
+  and the web's other database tests (the route tests that sign in with a key are the likely breakage: every key
+  sign-in now needs a registry row, and a hand-made `key` pending needs `assertion`) were running in W44's background
+  when the context ran out; a later commit of this file gives the result if W44 saw it. **Until then count them as not
+  run on dde86284. `pnpm test:db` whole and the full local suite were not run by W44.** W43's whole-suite result on
+  e85c3b40 is in W43's block, if it was added.
+- Tests restated, none skipped or loosened: the first key test's event is `hardware_key_registered:` (no purpose);
+  SGN-17's "audit write fails" case is now "the registry's record fails": removed at the provider, the new line,
+  `key_not_registered` (it threw before); SEC-20's hand-made key step carries an `assertion`.
+- Numbers used: SGN-20, SGN-21, SGN-26, SGN-27 (the flow's cases). None other taken.
+
+### Session open: the round trips (acceptance)
+A password-and-code sign-in of an account that need not hold a key: **none added** (no statement changed but the
+INSERT's column list). A key sign-in: **one read added** (`sign_in_hardware_keys`), as section 5 states, and nothing
+else on the accepted path (the app's verification is local). A password-and-code sign-in of an account that must
+hold a key: the same one read **replaces** the provider's network call. `resolveSession` is untouched.
+
+### The exact next step
+1. See the background checks through on dde86284 (commands in W43's and W33's machine notes); fix what the route
+   tests need. Then W43's item 3: the code screen and `routes/sign-in.ts` (the register-key page shows the code form
+   when the sealed step has `codeRequired` and no `code`; a server action with a Zod schema calls
+   `answerRegistrationCode`; the `registration_code` refusal keeps the step and the typed value is not echoed;
+   `isRegistrationCodeShaped` is for the field's own message, before the database is asked).
+2. W43's items 4 and 5 (cut B, none started): the four console routes, the removal of `signOutAtProviderAfterCommit`
+   and the reset's `globalSignOut`, the two alarms swapped. Then item 6.
+
+### Named points for the two reviews (W44 adds; W43's and W33's stand)
+- **Auth review, a property of `hardware_key_registration_judge` the web works around:** called with no code for a
+  closed account with a usable opening, it counts a try. `account_key_registration_closed` is granted to no role, so
+  the web cannot ask "closed?" for free. The flow therefore reads closed from the registry's rows (any row and none
+  live means every key was removed) and seals `codeRequired`, and answers the code screen without asking the
+  database; reaching the screen counts no try (tested). **The one case it cannot see: a removal confirmed for an
+  account that never had a key row** (closed, no rows). Its first visit to the register-key step asks `judge` with no
+  code and, if an opening stands, spends one of the five tries. Small; a free "closed?" answer would need a grant,
+  so it is recorded for the contract migration, not built.
+- **Auth review:** `codeRequired` and `code` live in the sealed step, but nothing trusts them: `judge` runs before
+  each provider call and `hardware_key_record` judges again under the lock (the forged-step test).
+- **Auth review:** the cleaning skips a provider credential whose ID is not canonical base64url of 16 to 1,023 bytes
+  (never deleted). Whether Cognito's `CredentialId` in `ListWebAuthnCredentials` is exactly the browser's `id` is
+  unverified from here; if it is not, the cleaning deletes nothing (the safe side) and removed keys stay at the
+  provider, where they still open nothing.
+- **Auth review:** the cleaning measures "older than 15 minutes" from the attempt's start (the database's clock)
+  against the provider's creation time: two clocks.
+- **Auth review:** a registration that fails for a reason that is not a refusal (the database unreachable) now
+  answers `key_not_registered` after removing the key, where the base threw; the error's class name is logged.
+- **Not done, W43's item 6:** the relying-party tie (the web refusing to start when the pool's and the app's
+  differ) and the infra test tying `KEY_USER_VERIFICATION_REQUIRED` to the pool's setting.
+
+### For the UX and brand review: what a person sees that W44 changed
+- **Sign-in, the register-key step, one new error text** (`MESSAGES.registration_code`, `routes/sign-in.ts`): "That
+  code did not open registration. Check the code PaidWhole gave you and try again." The same words for no opening
+  and a wrong code. A refusal keeps the step (the person may type again); a refresh keeps it too (the sealed cookie).
+  **No screen shows it yet: the code form is not built.**
+- A key sign-in with an unknown or removed key, or one the registry's check refuses: the existing wrong-credential
+  words ("That did not match."), no new text. A key step sealed by the previous image: the existing restart.
+- A code sign-in of an account whose registration is closed and that need not hold a key: the existing
+  hardware-key-required page.
+- No other screen, email or PDF changed.
+
+### Machine notes
+As W33's, below; `pnpm install --offline --frozen-lockfile` was needed once here for W43's new worker dependency.
+W44 holds nothing else: no PR, no subagent, no scheduled task; one background check run that ends on its own.
+
 ## RESUME-BLOCK (2026-11-12, W43, session_019i9ifCCuiEbFzA2DZGJFA1): step 3 is cut in two; the JOB half is built; next is the WEB half
 
 **WIP `co-001/wip-key-registry` e85c3b40** (one commit on 969ac389). No PR is open. No migration was touched. The
