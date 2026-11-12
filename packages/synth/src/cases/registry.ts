@@ -343,6 +343,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/cases/write-off.test.ts',
     'apps/web/src/lib/routes/workbench-routes.db.test.ts',
     'apps/web/e2e/triage.spec.ts',
+    'packages/db/src/payer-response-db-mirrors.db.test.ts',
   ]),
   'CAS-46': none(8, 'A response and a submission logged on a synthetic practice the test creates: no file.', ['apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'CAS-47': none(8, 'A SYNTHETIC payer letter the test builds as a PDF and uploads in the browser: no file.', [
@@ -353,6 +354,9 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/routes/workbench-routes.db.test.ts',
     'apps/web/src/components/packets/response-letter.browser.test.tsx',
     'apps/web/e2e/packets.spec.ts',
+    'packages/db/src/document-use-rules.db.test.ts',
+    'packages/db/src/payer-response-db-mirrors.db.test.ts',
+    'packages/db/src/payer-response-document-rules-migration.db.test.ts',
   ]),
   // Lane B (co-001/suite-cap-3-reconcile, SUITE-CAP-3; docs/adr/0087): a reconcile pass compared with the per-line pass, its reads bounded
   // per pass, and a pass at real size.
@@ -405,6 +409,8 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/components/action-form.browser.test.tsx',
     'apps/web/src/components/uploads/uploader.test.tsx',
   ]),
+  // Lane A (co-001/payer-response-db-rules; docs/adr/0085's amendment of 2026-11-11): the upload-time link, in Postgres.
+  'CAS-58': none(8, 'Documents and submissions the test inserts on synthetic practices it creates: no file.', ['packages/db/src/payer-response-db-mirrors.db.test.ts']),
   'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
   'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
@@ -842,6 +848,10 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   // The Social Security, phone and own-identifier forms the range fix exposed, closed (the orchestrator's rulings A, A' and B of 2026-11-07; docs/adr/0054, amendment of 2026-11-11).
   'MOD-21': none(10, 'Letters are written in memory by the tests, a property among them, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   'MOD-22': none(10, 'Letters are written in memory by the tests, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/redact/src/confusables.test.ts']),
+  // A name written apart, a number as the records hold it, and a CR LF read as one line ending (docs/adr/0054, amendments of 2026-11-11 and 2026-11-12).
+  'MOD-23': none(10, 'Letters are written in memory by the tests, two properties among them; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
+  // The letter check's work budget (docs/adr/0054, amendment of 2026-11-12).
+  'MOD-24': none(10, 'Letters are written in memory by the tests; no file.', ['packages/model-gateway/src/functions/denial-letter.test.ts']),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
   'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
   'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),

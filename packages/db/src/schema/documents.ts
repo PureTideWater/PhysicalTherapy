@@ -1,6 +1,7 @@
 import { type SQL, sql } from 'drizzle-orm';
 import { type AnyPgColumn, bigint, boolean, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 
+import { submission } from './packets';
 import { practice, user } from './tenancy';
 
 /**
@@ -144,12 +145,20 @@ export const sourceDocument = pgTable(
     pageCount: integer('page_count'),
     /** An ERA export's vendor format, set exactly for kind era_export and never changed (migration 20261102090000). */
     formatId: text('format_id', { enum: ERA_FORMAT_IDS }),
+    /**
+     * The submission whose payer response form this letter was uploaded in; NULL for every other document. Written
+     * only when the row is inserted and never changed; a zip's entries take their zip's (migration 20261114090000).
+     */
+    filedForSubmissionId: uuid('filed_for_submission_id').references((): AnyPgColumn => submission.id),
   },
   (table) => [
     index('source_document_by_practice').on(table.practiceId, table.createdAt.desc(), table.id),
     index('source_document_by_parent')
       .on(table.parentDocumentId, table.status)
       .where(sql`parent_document_id IS NOT NULL`),
+    index('source_document_by_filed_submission')
+      .on(table.practiceId, table.filedForSubmissionId)
+      .where(sql`filed_for_submission_id IS NOT NULL`),
     // One document per bytes and format (migration 20261102090000): an ERA export of another format is read.
     uniqueIndex('source_document_first_of_its_bytes')
       .on(table.practiceId, table.sha256, sql`coalesce(${table.formatId}, '')`)

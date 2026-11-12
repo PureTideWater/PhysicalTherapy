@@ -206,3 +206,86 @@ sniffs a document, so a clean document could still be mid-intake, a duplicate, a
 - The denial-letter reader (v1.5) reads response letters.
 - A path to take a document out of a draft version exists.
 - An uploader offering several kinds is placed inside a form: its kind placeholder then becomes enabled (D1).
+
+## Amendment (`co-001/payer-response-db-rules`, 2026-11-11): the database half
+
+This decision left five rules "for Lane A", each needing a migration. Migration
+`20261114090000_payer_response_document_rules.sql` adds them, so each check a handler makes is now also made in
+Postgres (CLAUDE.md: check in the handler and in Postgres):
+
+1. **`case_line_rules()`**: a person's "Window passed" is refused while the line's dispute window is unknown or has
+   not ended, by the date the function already uses for triage's strike and for a reopen. A case line's INSERT is
+   unchanged: it carries triage's own judgement, on its pass's date.
+2. **`console_contract_queue()`**: a document a payer response names, or one filed for a submission, is not a
+   "document awaiting". With it, the index `payer_response_by_document`.
+3. **`payer_response_belongs()`**: the document a response names is the practice's, top-level, a payer letter or
+   other document, scanned clean, stored, and no contract version's source in any status: the route's own predicate.
+4. **`contract_version_documents_ok()`**: a contract version never names a document a payer response names, or a
+   letter filed for a submission. Every document of the version is checked every time, not only a newly named one.
+5. **`source_document.filed_for_submission_id`** closes the residual this decision recorded: a letter uploaded in
+   the response form but named by no response was still a payer letter the contract lists offered. The column says
+   why the letter was uploaded. It is written only when the document is inserted, by a person who logs submissions,
+   in their own name, for the latest submission of a case of the practice; a zip's entries take their zip's; it
+   never changes. Rules 2 and 4 read it from this migration on. The web half follows (the upload route writes it; the
+   contract lists and the tagging handlers read it; the response form lists a submission's own uploads first): until
+   then the column is NULL everywhere and nothing a person sees changes.
+
+**One lock, and why one function changed its kind.** Rules 3 and 4 shut each other out under the lock the handlers
+already take, `document_use:` and the document's id: each takes the lock, then checks, and holds it to the end of its
+transaction, so of a response and a version naming one document at the same moment the second waits and is then
+refused. Two things make that true, and both are enforced:
+
+- **The check after the wait must read what the wait was for.** `contract_version_documents_ok()` was a `STABLE` SQL
+  function, which reads the snapshot of the statement that called it: a lock taken inside it would wait and then check
+  with a snapshot from before the wait. It is now a `VOLATILE` plpgsql function, in which each statement reads a new
+  snapshot. Its signature, answer, owner and grant are unchanged.
+- **Only at READ COMMITTED.** At REPEATABLE READ or above a transaction keeps its first snapshot through the wait, so
+  both functions refuse there when a document is named. No mutating route runs above READ COMMITTED.
+
+A version locks its documents in ascending id order, and a response locks its document before its case's submission
+lock, so no two of these triggers take the same locks in opposite orders.
+
+**The invariant is proven when the migration applies.** Before it changes anything, the migration counts documents
+that both a response and a version name, in every practice, and stops if there is one: under rule 4 a version holding
+such a document could never be edited or amended again. `docs/runbooks/deploy-and-rollback.md` says what to do then.
+The count is asked of the responses and the versions, never by reading every document: the migration holds
+`source_document` against all access while it runs, and that is the table that grows with every upload (the database
+review's finding; the first form took seconds at a million documents).
+
+**A document stays under the zip it was inserted under, or under none.** Rule 5 gives an entry its zip's link at
+insert. The application role has never been able to change a document's zip; the owner role could, and a document
+moved under or out of a zip would be an entry whose link is not its zip's, or an unfiled entry of a filed zip that a
+version accepts. `source_document_rules()` now refuses the move for every role (the database review's note, taken).
+
+**A search path for `source_document_rules()`.** The function had no `search_path` of its own, so the
+`source_document` it reads a zip's row from was whatever the session's path found first, a temporary table of that
+name included, and a zip's link read from there could name another practice's submission. It now has
+`SET search_path = pg_catalog, public, pg_temp`, as every later trigger function of this schema has, and stays
+SECURITY INVOKER. On a migrated database the application role can create no temporary table, so this is defence in
+depth, with a test that failed first.
+
+**Not closed: a filed letter whose bytes an earlier upload already holds.** A letter uploaded in the response form
+whose bytes equal an earlier upload that carries no link becomes a `duplicate`, and the earlier copy stays as it was:
+stored, unlinked, still in the contract lists and still able to be a version's source, until a response names it
+(rules 3 and 4 close it from then). Matching by hash ("a document is filed when any document of the practice with the
+same bytes is") was refused: rule 4 checks every document of a version every time, so one person who logs submissions,
+by uploading a copy of a contract's source letter in the response form, would make every version naming that letter
+impossible to edit or amend, for good, since the link never changes. Expected amounts trace to those versions. What
+the duplicate leaves is no worse than before: the earlier copy was already a payer letter in the contract lists. What
+the form says and does when its upload duplicates an unlinked copy belongs to the web half.
+
+**Not taken.** The same window check on a case line's INSERT (it would tie triage's date to the database clock); a
+different lock order in the web's handlers (below; recorded for the handlers' own pull request); a composite foreign key from the link to the submission's practice (no
+table of this schema has one: a plain key and the trigger's practice check are the pattern, and with the search path
+set the trigger's lookup is the practice's).
+
+**Known, and the handlers' to close: a handler's one lock, then the trigger's several.** The triggers alone never
+cross. A handler that tags a document takes that one document's lock first, and the version's trigger then takes every
+document of the version in ascending order. Two people who each add a different letter to two open versions that end
+up naming both letters can therefore hold one lock each and wait for the other's (reproduced by this pull request's
+database review, as the application role). PostgreSQL ends one of the two after its deadlock timeout (`40P01`): that
+request fails with nothing saved, the other is recorded, and no wrong row is written. It is not answered as "busy"
+today. The fix is in the web, not in a migration: take the locks the trigger will take, in its order, before the
+write, or answer `40P01` on these routes as busy. The same review noted that the handlers hash the id as the request
+sent it and the triggers hash the stored uuid's text, which are equal only for a lowercase id; the triggers hold the
+rule either way, and the handlers should cast the id to `uuid` before hashing. Both are recorded for the web half.

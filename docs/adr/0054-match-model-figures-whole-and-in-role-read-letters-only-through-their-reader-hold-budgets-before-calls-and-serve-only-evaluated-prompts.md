@@ -452,7 +452,8 @@ when no identifier label stands right before it (member 031561 written `Seen 03-
 digits written after a currency sign and with cents are sent as an amount (`$555001.00`); digits alone with a slash
 or a period between them (`12/34/5678`, `1234.5678`) are not a number, being how dates and amounts are written, unless
 an identifier label stands right before them (R5-2), and then the candidates join them too (G1); a comma between digits
-(`1234,5678`) joins nothing; and a part written in lower case with a space inside it (`jo ann`) is not a name.
+(`1234,5678`) joins nothing; and a part written in lower case with a space inside it (`jo ann`) is not a name (for the
+letter reader both are closed by the amendment of 2026-11-11, `co-001/redact-item-26`, below: MOD-23).
 Recorded with review findings G2 to G4 (2026-11-02), each the cost of keeping a deadline or a word: a bare `ID`,
 `number`, `no` (lower case, or with no `.`, `:` or `#`), `#` or `reference` before a claim number or member ID written as
 a whole calendar date is no label, so that date is kept as an ordinary letter's would be (`ID 03-14-1962`,
@@ -1633,7 +1634,7 @@ glued after it and a point and two digits after its year, an amount's cents or n
 stands between them: a label's reach is counted in characters on every tree and a CR LF counts two, so the label owns
 the number in the writing with LF and the noun names it in the writing with CR LF (`SSN on file. Statement`, CR LF and
 `No. 900-12-3456150.00`: review K-1; ef3e8d20, cc3dd7f6 and every head of this build but one sent it, and one character
-further it is the label out of reach recorded above); the label right before a number with its parts in another order,
+further it is the label out of reach recorded above; closed by the amendment below, which refuses the letter); the label right before a number with its parts in another order,
 with `is`, or with a word in parentheses (`Phone number is 900 77.3283150.00`, `Phone # : 900 77.3283150.00`, `Phone
 (cell): 900 77.3283150.00`); a noun read from the first letters a slice of 120 characters shows (`Overpayment`, 113
 points and a number: `PAYMENT`); one or two digits
@@ -1655,8 +1656,8 @@ and the amount-shaped splits of review GATEWAY2-1 (`Soc Sec 93798 4 1.46`), each
 fold): a name written with a lower-case piece after a space or a period (`Zephy ra`, `Zephy. ra`) and a name written
 letter by letter (`Z e p h y r a`) are sent in clear in a letter with no held range by cc3dd7f6, ef3e8d20 and this head
 alike, and refused in a held one; the kept script `leaks-scripts/name-forms.mts` in the gate's folder reproduces both on
-any tree (`node --import ../ts-resolve.mjs name-forms.mts <redact.ts>...`), and `src/redact.leaks.test.ts` pins them as
-they are sent today. Of the list that ends the amendment above, this one closes: a label's list number (`Phone 1:
+any tree (`node --import ../ts-resolve.mjs name-forms.mts <redact.ts>...`), and `src/redact.leaks.test.ts` pinned them as
+they were sent (closed by the amendment below). Of the list that ends the amendment above, this one closes: a label's list number (`Phone 1:
 555-0100`, `TTY 1: 7,439.10 942.77 3098`), two phones with nothing between them, the Social Security label glued to a
 word (`PatientSSN 900.12 3456`, `PATIENTSSN 900.12 3456`), a masked SSN glued to a word, a year, a date or an amount's
 cents, an SSN or phone glued digit to digit to a date, an amount or a currency amount (`SSN 900-12-3456150.00`, `SSN
@@ -1718,3 +1719,535 @@ and failed there;
 the engine's version moves the reader's cost more than the calibration's (12 to 21 % against 0 to 8 % between Node
 22 and 24), so the reference is stated for Node 24; and a first run in a cold process costs 14 to 16 % more than later
 runs, which the first-run rule counts whenever the first run is under the budget.
+
+## Amendment (`co-001/redact-item-26`, 2026-11-11): a name written apart, a number as the records hold it, and a CR LF read as one line ending
+
+The amendment above leaves three things for the letter reader to close before any real PHI is processed (test matrix
+MOD-23; `LANES.md` Queues item 26): the two name forms it pins as sent (`Zephy ra` and `Zephy. ra`, `Z e p h y r a`),
+with `jo ann` of the amendment of 2026-10-27; review K-1, a Social Security number sent in clear where a CR LF stands
+between its label and the noun that names it; and a member ID or claim number written with the separator the records
+themselves hold it with (`ZZ12345/01`; a claim number held `1234.56`, which the amendment of 2026-10-27 reads as an
+amount's or a date's writing). This amendment closes the three by one construction. The base it is measured against is
+f3f5a642, the merge of the amendment above.
+
+**The construction: the first reading stands, and a second reading only adds.** `matchesIn`, `appliedMatches`, `merge`,
+the patterns and the survivor scan are unchanged. The base's `redactLetterForScreen` and `holdsIdentifier` are now
+`screenAsFirstRead` and `holdsAsFirstRead`, their bodies as they were. Around them:
+
+- **Redaction.** `widerMatchesIn` reads the call's own names and numbers a second, wider way (the rules below). Its
+  matches are applied only to a letter the first reading's own check does not refuse, as written or with its CR LF line
+  endings read as line feeds (`refusedAsFirstRead`). A letter that check refuses is
+  returned exactly as the first reading wrote it, and the check, which reads no less than before, refuses it again: no
+  placeholder of the wider reading can hide what that check read. In a letter the first reading sends, `merge` only
+  joins and widens spans, so every span the first reading replaced is replaced, and every run it offered the
+  one-patient screen is offered (its candidates, and those of the sent text, the call's own numbers never among them).
+- **The check.** `holdsIdentifier` is the first reading's check, or any wider match left in the text; and, where the
+  text holds a CR LF, the same once more on the text with each CR LF written as LF. The letter is refused if either
+  reading refuses it.
+
+So nothing f3f5a642 refuses is sent and nothing it redacts is shown, by how the functions are composed and not case by
+case. The reader already had both ideas: a match the base did not make is applied only where the scan does not refuse
+without it (`appliedMatches`), and a second reading whose worse answer is taken (`chainLeft`). `redactLetter` and
+`redactionSpans`, the reading without the screen, keep the same rule: the first reading's spans, and the wider
+reading's only where the first reading's check sends the text. (The first build applied every wider match there, and
+a wider placeholder then hid what the first reading's check refused the letter for: a claim number held `150.00`
+replaced in a held range, and the Social Security twin after it sent. Review A-1. No production code calls that path;
+the gateway exports it.)
+
+**The three rules of the wider reading.**
+
+1. *A name's part written apart.* A space or a period joins anywhere inside a part of a name, whatever the pieces it
+   leaves, their case or their length: `Zephy ra`, `Zephy. ra`, `Z e p h y r a`, `jo ann`. The pieces rule of the
+   amendment of 2026-10-27 (two letters or more each, capitalized as written) is not asked here; it stays in the first
+   reading. A space is white space or a line break of any kind (U+0085 too, which `\s` does not hold). An initial beside
+   a name read so is taken as beside any name. The plain fold and the look-alike fold are both
+   read, as in the first reading. One blunt rule was chosen over a narrower one (a capitals or length test to spare
+   `in a`): the narrower rule is the one that sent these forms, and each further form would need a case of its own.
+2. *A number as the records hold it.* What the stored value itself writes between two of its characters joins them
+   at that place too, beside what joins a number anywhere: a member ID held `ZZ12345/01`, `ZZ12345.01`, `ZZ12345,01`
+   or `ZZ12345+01` is read as held, and a claim number of digits held `1234.56` with no label before it. A stored
+   square bracket is read as the parenthesis a letter's bracket has become by then. The first reading's two exclusions
+   are asked of the wider match as of any: a claim's digits followed by cents after a currency sign, and a whole written
+   calendar date with no label of the number's kind before it. They do not keep an amount whose own cents are the
+   stored number's last digits: `$1234.56` is replaced for a claim held `1234.56` (only the thousands comma of
+   `$1,234.56` is no writing of it).
+3. *A CR LF is one line ending.* Every reach of a label, a noun or a window is counted in characters, and a CR LF
+   counts two. The check reads a text that holds a CR LF a second time with each written as LF (every CR of a run
+   before the line feed with it: `\r\r\n` is one line ending) and takes the worse answer, for every reach and not for
+   a label's alone. Redaction still reads the text as it is written, so the letter
+   of review K-1 is refused, not redacted.
+
+**What it costs, measured.**
+
+- *The gate* (975,489 synthetic letters, f3f5a642 against this head): no PHI class; the same 462,984 letters refused on
+  both; 975,476 letters identical and 13 changed, each of them `in a` replaced in "Records in a timely manner" for a
+  generated patient named INA. No letter the base sent is refused.
+- *Names whose letters are ordinary words apart.* Over the repository's synthetic prose (503 texts, 212,055
+  characters: the fixtures' `.txt` and `.md`, the narrative set, the letters quoted in the gateway's tests), with one
+  name alone as the patient, the places where words are replaced that the base kept: TOA 46 (`to a`), INA 32 (`in a`),
+  OFA 31, ORA 26 (`or a`), ASA 18, TOAN 11 (`to an`), ISA 10, ONA 6, ASIT 5, TOBE 4, ORAN 4, and one to three for
+  BEAN, ASAN, FORAN, ANDIS, IDA (`I'd a`: an apostrophe joined a part before this), AN, THEO, BEA, INAN and ORIN; of
+  the 64 names first measured, 53 (NEWMAN, UNDERWOOD and SMITH among them) lose no ordinary word (review B-2 added the
+  names the first table lacked). For such a patient the model reads `[PATIENT_NAME]` where the words stood, and the
+  letter is still sent. Three things are replaced that are more than two filler words (review B-3, each pinned): the
+  month of a day-and-month date for a name that is a month's word and a short word (`31 March and` for MARCHAND, `15
+  May a` for MAYA: the rule that keeps a name inside a whole written date asks for two numbers); the first half of a
+  hyphenated word, since a match ends at a hyphen (`and re-submit` for ANDRE, `the in-network` for THEIN); and, for a
+  part of two letters, its letters with periods (`P.O.` for PO, `M.D.` for MD), with a code's letter taken as an
+  initial beside such a match (`in a G-code` for INA G). Four tests that asserted the pieces rule now assert this
+  cost, and MOD-13's phrase property uses names no phrase writes.
+- *Refusals the wider reading adds.* Neither rule refuses a letter by what it replaces, but two families of letters
+  the base sent are now refused, each the safe side and each pinned. (1) The wider form glued to a number the first
+  reading replaces (`Dear Z e p h y r a900-12-3456`): redaction reads no name with a digit against it, the check reads
+  the placeholder as a barrier and finds the name; the base sent the name in clear beside `[SSN]`, and refuses the
+  same letter with the name whole (reviews A-3 and B S-1; 47 of 120,488 generated screens). (2) A wider placeholder
+  through which a label reads to a number: the Social Security and phone patterns are read before the wider
+  placeholder stands, so the number stays as written and the check, reading the label through the placeholder,
+  refuses (`Social Security number of V a n t r e e, 555-0123`; `Call in`, `a`, `555-0123` on three lines for a patient
+  INA; `Units 2026.00 123.45 555-0123` for a claim held `2026.00123`). With the name whole the same letter is redacted
+  and sent (review B-1: 85 of 44,553 and 91 of 51,611 letters generated to provoke it; none in 41 ordinary sentences
+  for a name of ordinary words, where it needs the phrase broken over a line between a label and a bare number).
+- *The narrative's check and the packet verifier are not widened* (`subject.patterns` false; `holdsNameOrNumber`,
+  `nameOrNumberMatches`). There a match fails the text, so `in a` would fail every narrative of a patient INA instead
+  of costing two words.
+- *A stored separator.* No fixture or corpus value holds one, so nothing changes today. For a patient whose stored
+  number does, the separator joins at its place beside the usual joiners, white space among them, wherever the digits
+  stand (review B-4, pinned): `1234.56 units` and `$1234.56` for a claim held `1234.56`; two amounts of a table row,
+  `2026.00  123.45`, for a claim held `2026.00123` (sent as `[CLAIM_1].45`); `ZZ12345/01/15/2026` for a member ID held
+  `ZZ12345/01`.
+- *CR LF letters.* A CR LF text is refused wherever the same text with LF is; where the letter's LF writing would
+  have been redacted it is refused, the safer of the two. One shape is recorded and pinned the other way (review A-2):
+  redaction reads the letter as written, so a CR LF letter whose redaction differs from that of its LF writing can be
+  sent, with nothing of the call's shown, where the LF writing is refused. The check reads a CR LF letter twice: the
+  gate's slowest letter is a digit and a CR LF repeated to 100,000 characters, 994 ms against 707 ms on the base.
+- *The dearest letter.* A wider match is applied only after the first reading's check has read the letter, so a letter
+  that holds one costs one more check, and a CR LF letter that holds one was checked four times in all: in both
+  writings before the wider match is applied, and in both after. The figure first recorded here for such letters (2.2
+  to 2.5 s, review B-5) was read under a time helper that the review of `co-001/time-budget-bound` found too lenient,
+  and is withdrawn. Against the plain 3 seconds, on Node 24 at the reference speed, a CR LF letter of 100,000
+  characters with one name written apart took 3.4 to 4.0 s (3.06 s at its best inside the suite); the base's own
+  dearest letter takes 1.1 to 1.5 s. The budget stands, no row was skipped and no number raised, so the reader
+  changed: the work bound below.
+- *The wider reading's work bound* (the orchestrator's ruling of 2026-11-11, this change's last fix round).
+  **Replaced on 2026-11-12, before this change merged, by the check's work budget: `WIDER_WORK_BOUND`, `widerWorkOf`
+  and `unreadPastTheBound` are gone, and what stands is the amendment "item 26's readings on the check's work budget"
+  below. The text of this item is kept as the record of that fix round.** A cheaper
+  way that keeps the construction was looked for first and not found: a profile of the dearest letter shows the wider
+  reading itself is cheap (it shares the first reading's views, dates and forms), and the time is the first reading's
+  check, run four times where the base runs it once; no change of a few lines removes one of the four and provably
+  keeps every answer. So the work is bounded, and past the bound the letter is refused.
+  - **The count.** The work the wider reading adds is the first reading's check reading the letter again to decide
+    whether a wider match may be applied. It is counted in characters of the text the first reading wrote,
+    placeholders included, which is what that check reads: the text's length, and where it holds a CR LF its length
+    once more with each CR LF written as a line feed (`widerWorkOf`; exactly what `refusedAsFirstRead` is given).
+  - **The bound.** `WIDER_WORK_BOUND` is 100,000 characters: the size of the letter the budget is proved on, so one
+    such letter's worth of re-reading. A letter with a wider match to apply is read as before to 100,000 characters,
+    and to about 50,000 where it holds a CR LF. Past the bound that check is not run and no wider match is applied.
+  - **Past it the letter is refused, never sent on the first reading alone.** The first reading's text by itself may
+    show what the wider reading would have joined (for a patient VAN VANTREE, "Van tree" leaves "tree"), and the check
+    cannot be relied on to find a wider match in a text the first reading has partly replaced. So the letter is
+    returned as the first reading wrote it, every span it replaced still replaced, with one of the checks' own marks
+    (U+0001) after its last character (`unreadPastTheBound`); `holdsIdentifier` refuses any text that holds such a
+    mark at its first line, before it reads anything, as it already refused a letter that writes one itself. The
+    refusal is the check's own: a caller has no second answer to remember, and a caller that runs the check, as every
+    caller must, cannot send the text. Both paths do this (`redactLetterForScreen` and `redactionSpans`, each counting
+    the text its own first reading wrote).
+  - **A count, not a clock.** Nothing in the reader is timed. The same letter has the same answer on every machine and
+    in every run. A letter with nothing for the wider reading to apply does none of this work and meets no bound,
+    whatever its length; the bound is no limit on a letter's size.
+  - **What the bound cannot do.** It only refuses. Under it the reader is, to the character, the reader before it;
+    past it nothing is sent. A letter the base refuses is refused on either side of it. A payer can use it only to
+    have a long letter that writes the call's own name or number in a wider form go to a person.
+  - **Must-stay cost.** A letter whose first reading's text is over 100,000 characters (over about 50,000 with CR LF
+    line endings) and that holds a name written apart, the words of a name's recorded cost ("in a" for a patient INA),
+    or a stored number in its stored writing, goes to a person where it was read before. Measured (synthetic letters
+    only): of the gate's 975,489 letters none can reach the bound (the longest is 1,780 characters; 6,861 hold a CR
+    LF); of the repository's prose (527 texts, 212,338 characters, the longest 9,933), each as written and with every
+    line ending as CR LF, read for each of 64 names (67,456 letters), the bound refuses none, and no letter's answer,
+    sent text or screen candidates differ from the reader before the bound (`scripts/bound-refusals.mts` on
+    `claude/build-ops`). The letters the bound refuses today are the crafted ones of the tests.
+  - **Time now** (Node 24, processor time at the reference calibration, best to worst of six runs;
+    `scripts/bound-time.mts`): the dearest letters still read were measured at 2.0 to 2.2 s. **That figure was wrong**:
+    it was taken on letters of dates, and the bound counted characters, which do not cost alike. Review C's CT-1
+    measured letters of one digit to a line that the bound still read at 3.0 to 3.8 s (a name written apart and no
+    CR LF, 100,000 characters: 3.2 to 3.8 s; one CR LF and nothing for the wider reading, which met no bound at all:
+    3.0 to 3.6 s; both, 49,984 characters: 2.8 to 2.9 s; the base 1.2 to 2.6 s on the same letters). The amendment
+    below gives what is measured now. The letters first measured were a digit and a CR LF repeated
+    to 100,000 characters with nothing for the wider reading to apply (K-1's cost: the check reads both writings), and
+    the same letter with a name written apart at the bound (59,996 characters). Dates written with spaces alone and a
+    CR LF, 100,000 characters: 1.6 to 1.8 s; a letter of dates with a name written apart, at the bound: 1.6 to 2.0 s;
+    with a CR LF as well, at the bound (49,997 characters): 1.5 to 1.7 s. A letter past the bound is refused in 0.4 to
+    0.8 s. Time grows with the letter's length and no faster.
+- *Time otherwise.* The wider reading read the letter's dates a second time and rebuilt the call's forms on every
+  call: a letter of dates took about 1.4 times the base's time. The check's stores (the views and dates of a text) are
+  now open around each exported reading and shared by both readings (`inOneReading`), and a subject's forms are built
+  once per reading for each fold and width (`formsOf`); each store is keyed by everything its answer depends on and is
+  dropped when the reading returns. The two letters of dates are back at the base's time (1.04 to 1.19 s against 1.04
+  to 1.16 s on one machine), the gate's whole run takes less time on the head than on the base, and the row that counts
+  regular-expression runs to show a plain letter is read once holds at its unchanged bar (2,106 runs against 2,385).
+  No budget or bar was moved.
+- *How the budget is proved.* By the amendment `co-001/time-budget-bound` above, which merged first: the reader's
+  work in the processor time of its own thread, its first run held to the 3 seconds themselves, and an allowance only
+  for a machine measured slower by a workload that runs none of the reader's code. This item's timed rows go through
+  the same helper; no row was removed and no number raised.
+
+**Left, each recorded.** Review N-1 and N-2 (the screen is asked about more than it need be) are as they were: no rule
+here touches what the first reading offers; where a wider placeholder uncovers a run glued to a label word, the screen
+is offered that run too (6 of 11,636 generated letters, never one of the call's own numbers). The costs above that a
+narrower rule could spare (a month's word beside a day, a hyphenated word, a part of two letters, an amount that is a
+stored number's writing, the two families of refusals) are for `LANES.md` Queues item 34 to weigh. Still sent in clear,
+as on the base, and also Queues item 34, to land before any real PHI is processed: a part of a name split by a comma,
+a colon or a semicolon with a space, by a parenthesis, or by another script's full stop (`Zephy, ra`, `Zephy(ra)`,
+`Zephy。ra`; review A-4, pinned); a stored number written with another separator than the records hold (`ZZ12345.01`
+for `ZZ12345/01`; A-5, pinned); a line feed before a CR, counted as written (A-6, pinned); a digits-only member ID or claim number glued to a letter (`XYZ76543210` for 76543210: the
+amendment of 2026-10-27 reads glued digits as another, longer identifier, and refusing them needs a floor on the
+number's length and its own measurement); a name the records hold with a plus sign (`JANE+ZEPHYRA` is one part);
+one piece of a stored number alone (`ZZ12345` of `ZZ12345 01`); and the narrative drafter's own check, which does not
+read stored separators. As recorded before and unchanged: a name glued to other letters, and a part split by `*`, `/`
+or `{`.
+
+Review C of the first bound (scope PHI; `designs/lane-b-redact-item-26/reviews/c-phi` on `claude/build-ops`) found no
+letter the base refuses sent and nothing it redacts shown, and three things recorded for Queues item 34, each pinned in
+`redact.leaks.test.ts` as it stands on the check's work budget (the amendment below):
+- **C-PHI-1.** A letter the base sends is refused where this change's readings take it past the budget (prose with a
+  name written apart: read to about 150,000 characters, refused from about 200,000; the base sends it, the name in
+  clear). A cost in letters sent to a person, never a leak.
+- **C-PHI-2.** Without the screen (`redactLetter`, `redactionSpans`), the text of a letter refused by the count is the
+  first reading's text with the mark after it, so a name written apart stands in it as the letter writes it. Only the
+  check stands between that text and a caller, as for every refused letter. With the screen no text of the letter
+  comes back at all.
+- **C-PHI-3.** The two paths count their own work, so the same letter can be refused by the count with the screen and
+  sent, redacted alike, without it (prose with a name written apart, 300,000 characters).
+
+**Tests.** `src/redact.leaks.test.ts`, `describe('MOD-23 ...')`: the name forms alone and in a held letter, the initial
+beside them, the recorded cost rows, the stored separators, K-1 and two properties (a CR LF letter is refused wherever
+its writing with LF is; no part of the name written with spaces or full stops inside it is sent, whatever the pieces).
+Against f3f5a642's reader 32 of its 39 tests fail. `describe('the work bound of the wider reading')`, written before the
+bound and failing without it: the bound's value; a letter read at the bound to the character and refused one character
+past it, with CR LF and without; the count taken on the first reading's text; nothing the first reading redacts shown in
+a letter refused past the bound; the same answer on every run; a letter the first reading refuses refused on either side;
+a letter of any length with nothing for the wider reading read as before; and a property (every letter past the bound
+that holds a name written apart is refused, whatever else it holds). `src/functions/denial-letter.test.ts` holds, to the
+3-second budget: the letters that write such a name once among dates and thousands of times, at the bound and still
+read; two CR LF letters of 100,000 characters with nothing for the wider reading; two CR LF letters with a name written
+apart at the bound; and, refused by the count well inside the budget, the same letters at 100,000 characters, among them
+the two that took 3.4 to 4.0 s.
+
+**Reviews.** Two adversarial reviews of the build, each finding run before any fix (`designs/lane-b-redact-item-26/
+reviews` on `claude/build-ops`). Review A (what is sent; 120,488 generated screens on three seeds, and the stores read
+inside and outside a reading): on the screen's path, no letter the base refuses was sent, no character it replaced
+shown and no candidate lost; A-1 and A-2 above were closed, with U+0085, the stored bracket and `\r\r\n`; A-3 to A-6
+are recorded above. Review B (must-stay, time, the screen; 108,164 generated letters): nothing the base refuses sent;
+B-1 to B-5 are the costs recorded above. The battery of the amendment above, on its recorded seeds and on fresh ones,
+head against the base run as head: the same answers but for the CR LF letters now refused; no flip but the month-named
+patient's of ruling B, each of which f3f5a642 sends the same way; no departure in the audit copy.
+
+## Amendment (`co-001/check-work-budget`, 2026-11-12): the letter check's work budget
+
+**What was wrong.** The reader's budget is 3 s for a letter of 100,000 characters on the reference machine. The merged
+reader (58fb29e5) broke it on crafted letters no budget row held (review C-TIME of Queues item 26, finding CT-2):
+
+- `matchesIn` asked, once per match, whether a list of matches already held it (`plain.some`, and `base.some` where a
+  name is written with a joiner). Initials beside a name, as many as fill the letter, and one look-alike character
+  anywhere make that 1.25 thousand million comparisons, 2.5 thousand million with a joiner: 3.0 to 4.3 s and 5.6 to
+  8.3 s at the reference speed (2.8 to 3.2 s and 4.7 to 6.7 s measured again here, Node 24, a machine whose calibration
+  reads 122 ms against the reference's 144).
+- Its dearest linear letters, one digit to a line, took 1.9 to 2.6 s of the 3 s, which left no room for a second
+  reading (item 26).
+
+No realistic letter is near either: the letters in question are 100,000 characters of initials or of single digits.
+
+**The decision: one deterministic work budget for the whole check, failing closed** (the orchestrator's ruling). How
+matching decides is not changed by one comparison. The check counts its own work where the work is done, in one counter
+for the whole letter, and past a fixed budget the letter is refused by the check's own refusal (`identifier_left`; it
+goes to a person), never sent on a partial reading.
+
+- **The counter** is `checkWorkSpent` in `packages/redact/src/redact.ts`, counted by `work(units)`; the budget is
+  `CHECK_WORK_BUDGET` = 420,000,000 units. A comparison of two matches costs four units (`WORK.comparison`). It cost
+  one as built and went to four on 2026-11-12 (the orchestrator's ruling, 04:10 UTC): with coverage instrumentation on,
+  as `pnpm test` and CI run the tests, a comparison takes about 13 ns and not 3, and CT-2's letters, refused only after
+  420 million of them, took 4.0 to 5.6 s of the 3 s. At four units they are refused after about 105 million (1.2 to
+  1.7 s with coverage on). The budget was tightened; the test's 3 s, its rows and how they are run did not change.
+- **What is counted** (`WORK`): every comparison of the five searches of a list of matches in `matchesIn` and
+  `redactLetterForScreen` (`someOf`, which answers as `Array.prototype.some` answers), four units each; and the readings the
+  measurement showed as drivers of some letter's time, each at a fixed weight: a view built (per character), a label's
+  window, a label scanned, a date's readings, a search of a sorted list, a digit read across a line break, a join of two
+  tokens, a look-alike fold and a digit-for-letter reading; each reading of the letter for the call's own identifiers
+  charges every character once for each form the call reads for (a claim number, a member ID, a name, each of its
+  words and parts: the reviews' T-1 and F-2, below); each of the two entries charges every character of its text once,
+  the redaction on the letter as NFKC writes it where that is the longer, for the passes no site counts, so a letter's
+  length alone is bounded (about 600,000 characters); and each entry charges every character of the call's own
+  identifiers before it reads anything, since a pattern is built for each at every reading whatever the letter's
+  length (F-1), so the identifiers of a call are bounded too (about 60,000 characters).
+- **One budget for both halves.** `redactLetterForScreen` counts from nothing and keeps what it spent beside the letter
+  it returns (`checkWorkOf`, a count and no text); `holdsIdentifier` takes that count as its fourth argument and counts
+  on from it. `prepare` hands it on. A count that is no number, is negative or is past the budget refuses the letter
+  before anything is read, and so does one that is not a number at all (`null` would have switched the counter off).
+- **Past the budget.** The reading stops where it stands (`PastCheckWorkBudget`, caught only by the two entries).
+  `redactLetterForScreen` then returns not one character of the letter: its text is one of the checks' own marks
+  (U+0001), which `holdsIdentifier` refuses at its first line with any count, and no candidates. `holdsIdentifier`
+  answers true. There is no partly redacted text for a caller to send.
+- **Why a count and not a clock.** A letter has the same answer on every machine and in every run; a clock would send
+  on a fast machine what it refuses on a loaded one, and no test could pin which.
+- **Who runs no counter.** `redactLetter`, `redactionSpans` and the narrative's and the packet verifier's readings
+  (`holdsNameOrNumber`, `nameOrNumberMatches`) have no refusal to give and read as before, whatever the letter.
+
+**The only answer this changes is from sent to refused.** The count reads nothing and decides nothing; where the counter
+is not past the budget every function returns what it returned on 58fb29e5.
+
+**The budget, measured** (Node 24, processor time, the least of three runs after a warm-up, each scaled to the
+reference by the calibration read beside it: 119 to 160 ms on a shared machine against the reference's 144). The
+weights were fitted by the builder to 52 crafted letters (the budget rows of `denial-letter.test.ts`, CT-2's letters
+and the digit-to-a-line letters). The review of the build (scope time) then sized families to sit just under the
+budget and timed each as a letter still read:
+
+| Family, sized to just under the budget | Characters | At the reference speed |
+| --- | --- | --- |
+| The builder's 50 rows | 49,000 to 380,000 | 0.64 to 1.59 s |
+| 41 plain and compatibility families, 929 seeded random families, mixes of drivers | to 457,680 | at most 2.25 s |
+| Ordinary prose, one claim number | 291,497 | 1.48 s |
+| A name, then `a;` repeated, one claim number | 168,856 | 1.76 s |
+| **The dearest found: U+33FE (NFKC writes it `31日`) and `;` repeated, one claim number** | 93,006 | **2.06 to 2.29 s** (2.41 s at 100,000 characters before the NFKC charge) |
+| Ordinary prose, 1,000 claim numbers | 27,241 | 0.78 s |
+| A name, then `a;` repeated, 1,000 claim numbers | 27,970 | 1.76 s (5.92 s at 171,534 characters before the charge per form) |
+| Ordinary prose, 50 names of twelve words of three parts | 17,225 | 0.52 s (3.8 s before the forms were counted) |
+| U+33FE and `;` repeated, the same 50 names | 8,318 | 0.89 s (5.9 s before) |
+| A letter of 19 characters, 1,250 claim numbers of 40 characters (50,000 characters of identifiers) | 19 | 1.05 s in a warm process |
+
+So the dearest letter still read takes about 2.3 s of the 3 s at the reference speed, not the 1.35 s the builder's own
+families gave: digits glued to a letter cost about 5 ns a unit where the fit assumed 2.5. A letter refused is refused
+sooner than it would have been read (at most 1.7 s; 5,000,000 characters in under 4 ms; a call of 5,000 claim numbers
+of 40 characters, which took 40 s for a letter of 19 characters, in 1 ms). Item 26's second reading counts in the same
+counter and so shares this bound; it is given no time of its own.
+
+**After the comparison's weight went from one unit to four** (2026-11-12) the table stands: its families make few
+comparisons of matches, and a heavier comparison can only refuse a letter sooner. Measured again on the final reader
+(one claim number; calibration 150 to 152 ms): U+33FE and `;` repeated is read to 93,664 characters in 1.59 s at the
+reference speed, a name then `a;` repeated to 196,918 in 1.08 s, ordinary prose to 300,668 in 0.91 s, a digit to a
+line to 56,803 in 0.56 s. What moved is CT-2's shape alone: initials beside a name with one look-alike character are
+read to 23,875 characters (0.32 s) and refused from there on, and with the name written once with a joiner to 17,314
+(0.27 s); before, they were read to about 39,500 and 29,200. The review of that change found nothing the base redacts
+or refuses sent, and each timed row within its 3 s on a cold first run with coverage on (1.93 s at most).
+
+**Open residual, pinned: the first check of a fresh process with hundreds of identifiers on the call. It does not pass
+the 3 s.** The engine compiles each identifier's pattern the first time it meets it, so the first check a process makes
+costs many times its later ones, for a letter of any length (measured with a letter of 19 characters):
+
+| The call's claim numbers | First check of a fresh process | Later checks |
+| --- | --- | --- |
+| 300 of 15 characters | 1.8 s | 0.11 s |
+| 1,000 of nine characters | **4.1 s** | 0.25 s |
+| 1,250 of 40 characters (50,000 characters, near the ceiling of about 60,000) | **15.7 to 17.4 s** | 1.05 s |
+
+This is the merged reader's own cost, not the budget's. The orchestrator's ruling (2026-11-12 02:05 UTC): the weight of
+an identifier's character (`WORK.identifierCharacter`, one constant, 3,500 units at each entry) is set for a warm
+process. Both choices send nothing the base refuses, so it is a question of latency and not of privacy; the identifiers
+come from the call, the practice's own claims, and not from the letter's author, so the threat the 3 s rule holds (a
+crafted letter) is held by the warm bound; a weight that held the first check to 3 s (about seven times this one) would
+refuse to a person every letter of a patient with more than about 250 claims. The 3 s rows are not loosened or
+re-timed; above the ceiling the call is refused by the count, before a pattern is built.
+
+**Open residual, pinned: thousands of short identifiers on the call. It does not pass the 3 s either.** The charge for
+the call's identifiers is by their characters; the time of the check grows with the square of their number (the review
+of fix round 2's delta, G-1). With a letter of 19 characters, in a warm process, read and sent under the budget:
+
+| The call's claim numbers | At the reference speed |
+| --- | --- |
+| 6,300 of 9 characters | **3.1 s** |
+| 9,400 of 6 digits | **6.9 s** |
+| 14,000 of 4 characters | **11.1 s** |
+| 18,500 of 3 characters | **18.4 s** |
+
+Up to 3,000 claim numbers of nine characters a letter sized to the budget is read in 1.4 to 1.8 s. This too is the
+merged reader's own cost and the call's, not the letter's. The orchestrator's ruling (2026-11-12 02:55 UTC): no third
+fix round; it is pinned here, not within the 3 s, and item 39 cures it, since matching without a pattern per identifier
+removes the square in the count.
+
+Who calls the check: `prepare` of the denial-letter reader, through `ModelGateway.readDenialLetter` (and `requestFor`,
+which builds a request without sending it, for the local provider and tests). The reader is v1.5 behind the flag
+`model.read_denial_letter`, off unless a row turns it on, and no web action and no worker job calls it yet
+(`apps/` holds no call), so no caller's timeout meets the cold figure today. The check has no caller in `apps/` today, and
+item 39 must merge before the first caller is wired.
+
+The cure is queued, not built here (Queues item 39, before launch): the call's identifiers matched without a pattern
+built per identifier per check (one pass over a prepared set, or patterns kept for the process), proven on the
+975,489-letter gate with none differing.
+
+**What it refuses.** At 100,000 characters: CT-2's letters (in the redaction), 50,000 initials beside a name with no
+look-alike, and the letters of one digit to a line (bare line feed, CR LF, a dash before the line feed, another
+script's digit with U+2028 or U+0085), the last six in the check. The three budget rows of that kind are read at 50,000
+characters and refused at 100,000 (`denial-letter.test.ts`, "refuses a letter past the check's work budget"). A letter
+of ordinary prose is read to about 290,000 characters with one claim number and to about 27,000 with a thousand: a
+call that carries hundreds of claim numbers has its long letters refused, where before they were read past the 3 s,
+and a call whose names, member IDs and claim numbers come to more than about 60,000 characters (some two thousand
+claims of two numbers each) has every letter refused.
+
+**The gate, against 58fb29e5, letter for letter** (the check called as `prepare` calls it; run again on the final
+reader, a comparison at four units):
+
+- The differential gate's 975,489 synthetic letters (at most 2,000 characters each): every one has the same answer and
+  the same sent text; 462,984 refused by both; none newly refused.
+- Every string of 40 characters or more in `fixtures/` (10,838, each read for two synthetic patients): no sent text
+  differs. The longest letter, narrative or worksheet is 27,644 characters and the dearest costs 42.0 million units, a
+  tenth of the budget. One file is newly refused when read whole as a letter, which it is not: the synthetic ZIP-code
+  table (`fixtures/synthetic/cms/ZIP9_SYNTHETIC.txt`, 729,000 characters).
+- The battery of the reviews' generators and fuzzers, every call run on both readers: no text differs, nothing the
+  base refuses is sent, none newly refused. On the final reader: 101 runs of the scripts, recorded seeds and fresh
+  ones, 1,116,939 redactions and 1,045,920 checks made on both readers, none differing; the longest letter among them
+  is 20,000 characters and the dearest costs 19.0 million units.
+
+**Where item 26 hooks in.** Its wider reading and its second reading run inside the two entries (inside
+`redactedForScreen`, and inside `holdsIdentifier`'s `try`), where the helpers they call count in `checkWorkSpent`
+already; a loop of their own calls `work(WORK.<site>)`; and an entry point of their own hands the redaction's count on
+as `prepare` does, `holdsIdentifier(text, patient, claims, checkWorkOf(redacted))`. No bound of their own is needed.
+
+**Left, each recorded.**
+
+- The quadratic comparison itself is not cured: a letter under the budget still pays it (17,300 characters of CT-2's
+  shape with a joiner take 0.27 s). Curing it (an index of the matches by position) changes the first reading's code
+  and needs the redaction's reviews again: an optional follow-up.
+- `holdsIdentifier` called without the redaction's count starts from nothing, so a caller that drops the fourth
+  argument holds each half to the budget and not the two together: a time cost of at most twice the budget, never a
+  partial reading. `prepare` is the one production caller and hands it on (pinned).
+- The weights are a fit, not a proof. The dearest family found costs about 5 ns a unit (digits glued to a letter, as
+  `31日;`: the date reading and the token readings behind it are charged once per reading, not per candidate) and is
+  read in 2.1 to 2.4 s, inside the 3 s with a fifth to spare (the review's T-2). Charging those readings per candidate
+  would bring it down; one weight tried moved it by nothing, so it is left to the follow-up that cures the comparison.
+  A new family is a new row.
+- A redacted letter the reader did not return (a copy of its result) has no count, and the check then starts from
+  nothing, as it does without the fourth argument: time only, as above (the reviews' P-2 and T-3).
+- With hundreds of identifiers the time of a letter, never its count, varies with what the process read before (1.98 s
+  fresh, 3.15 s after fourteen other families, before the charge per identifier; that charge bounds it: T-4).
+- The count is the same on every machine for one version of Unicode: it follows the engine's `normalize`, `\p{}`
+  classes and case mapping. Node 22 and 24 here both carry Unicode 17.0, so no difference of data was exercised (T-5).
+- Recorded by the review of fix round 2's delta, for the queue (the status file on `claude/build-ops` names the
+  report): a call of 60,000 to 120,000 characters of identifiers is refused only after the redaction has run (0.6 to
+  0.7 s), and the check called alone with no count reads such a call (G-2); an empty identifier is charged nothing
+  (G-3); a list of identifiers that is not an array of strings (`claimNumbers` a string, `memberIds` a Set) now throws
+  a TypeError where the base read it, a crash and not a letter sent (G-4, G-5); one name of 14,000 words throws the
+  engine's "Invalid regular expression" out of the reading, in the base's own `formsOf` (G-7).
+- `someOf` answers as `Array.prototype.some` on the dense lists its five callers give it, which no test mutates; on a
+  sparse list or one that grows under the test it would not (P-4). An uncounted public function called inside a
+  counted entry would throw past the budget through itself into the entry's own refusal; no code calls one so (P-3).
+
+## Amendment (`co-001/redact-item-26`, 2026-11-12): item 26's readings on the check's work budget
+
+**What was wrong.** The amendment of 2026-11-11 bounded the work its two re-readings add by a count of characters
+(`WIDER_WORK_BOUND`), set on letters of dates. Characters do not cost alike: review C (scope time, CT-1) measured
+letters of one digit to a line that the bound still read at 3.0 to 3.8 s of the reader's 3 s, and the second reading
+of a CR LF letter that holds nothing for the wider reading met no bound at all. The amendment of 2026-11-12 above then
+gave the whole check one counter of its own work and a budget past which a letter is refused.
+
+**The decision (the orchestrator's ruling): both re-readings count on that one counter, with its weights, and the
+character bound is removed.** Nothing of the counter is changed: `CHECK_WORK_BUDGET`, every weight in `WORK`, `work`,
+`someOf` and the two entries are the base's to the character, and no test's allowance, length or row of the base was
+moved.
+
+- *The gate's reading* (`redactedForScreen`, which runs `screenAsBothRead`): the wider reading, then, where it has a
+  match to apply, the first reading's check on the text the first reading wrote, in both writings where it holds a
+  CR LF (`refusedAsFirstRead`). Each of those checks (`holdsAsFirstRead`) charges what `holdsIdentifier` charges a
+  check of its own: `WORK.character` for each character and the call's identifiers (`workOfIdentifiers`), and every
+  counted site inside it. Past the budget `work` throws into `redactLetterForScreen`, which returns the mark alone and
+  not one character of the letter, as it does for the first reading.
+- *K-1's second reading* (`holdsIdentifier`): the first reading's check and the wider reading, on the text as written
+  and, where it holds a CR LF, again with each CR LF as a line feed, all inside the entry's `try`. The second reading
+  is charged as the first is. Past the budget the entry answers that an identifier is left.
+- *The wider reading itself* counts at the base's sites for the work it does: the forms it builds (`fold`), the
+  patterns it runs over the letter (`WORK.formCharacter` for each form and character, in `ownMatchesIn`), and the
+  search for initials beside a name (`WORK.search`).
+- *`redactionSpans` and `redactLetter`* have no refusal of their own and run the first reading with no counter, as on
+  the base. What this item adds to them (the wider reading and the check before a wider match is applied) counts from
+  nothing on the same counter with the same budget; past it they return the first reading's text and spans with the
+  mark after the text (`unreadPastTheBudgetAfter`), which `holdsIdentifier` refuses at its first line. This is the one
+  `catch` of `PastCheckWorkBudget` added to the reader beside the two entries: it is this entry's own counter (set to
+  nothing before, restored after), so it can swallow no other entry's refusal.
+
+**The stores, and why the first reading's count cannot fall.** The item's construction shares the check's stores (a
+text's views and dates, a subject's forms) across the readings of one entry (`inOneReading`), so the wider reading does
+not read a letter's dates again. On the base the redaction has no store and the check has one of its own, and work is
+counted where an answer is built; a shared store alone would have counted less for the first reading than the base
+does, and a letter the base refuses by its count could have been read. So each stored answer keeps what it cost to
+build (`Stored`), and a first reading pays for it as the base's did: a check once for a view or a text's dates
+(whoever built it), the redaction's first reading every time it asks, and for the forms every time everywhere. Only the
+wider reading takes a stored answer for nothing: the work it saves is work it does not do. An answer built where no
+counter ran (the first reading of `redactionSpans`) has no known cost and is built again by a reading that counts.
+Measured: a letter with nothing for the wider reading costs the redaction what it costs on the base and about 1% more
+(lines of prose, 200,000 characters: 191 against 190 million units). Where a check reads a text the redaction's
+readings stored, a view built inside the reading of that text's dates is paid for with the dates and once more when
+asked for by itself: more than the base counts, never less.
+
+One search was taken out of the wider reading: it no longer looks for initials beside a name when it found no name
+(`initialsNextToNames` takes an initial only next to a name or to an initial taken so, so with no name it returns
+none). Without that, the base's own row of a name, a long gap and 49,000 initials (100,008 characters, read on the
+base) was refused: the search was charged a third time for nothing (468 million units against the budget's 420; now
+403, the base 339). The first reading asks as it always did.
+
+**What it costs: letters refused that were read** (the count handed on as `prepare` hands it; millions of units are
+the redaction's):
+
+| Letter | Read to | Refused from | The base |
+| --- | --- | --- | --- |
+| One digit to a line, then a name written apart | 30,000 characters | 36,000 | reads 50,000, refuses 100,000 |
+| One digit to a line, then one CR LF | 30,000 | 38,000 | reads 50,000, refuses 100,000 |
+| A digit and a CR LF, repeated, then a name written apart | 30,000 | 40,000 | reads 50,000 |
+| Dates written with spaces, a CR LF, then a name written apart | 25,000 | 30,000 | reads 100,000 |
+| Dates written with spaces, and one CR LF | 60,000 | 70,000 | reads 100,000 |
+| Dates, then a name written apart; a name written apart, then initials | 50,000 | 60,000 | reads 100,000 |
+| Prose with a name written apart | 150,000 | 200,000 | reads 200,000, refuses 300,000 |
+| The same with CR LF line endings | 100,000 | 150,000 | reads 200,000 |
+| Lines of prose with CR LF endings, nothing for the wider reading | 150,000 | 200,000 | reads 200,000, refuses 300,000 |
+
+So a letter with a name written apart is read to about half the length the base reads its like, a CR LF letter to
+about two thirds, and one with both to about a third: each added check is charged in full. No realistic letter is
+near any of these: the gate's 975,489 letters are at most 1,780 characters and the repository's prose at most 9,933.
+
+**Time, measured** (Node 24, processor time of the thread at the reference calibration, the least and most of three
+runs after a warm-up, without coverage; `scripts/dear.mts` beside the item's other scripts on `claude/build-ops`).
+CT-1's rows, each refused by the count: one digit to a line and a name written apart, 100,000 characters, 0.71 to
+0.97 s (3.2 to 3.8 s before); the same with one CR LF and no name, 0.79 to 1.00 s (3.0 to 3.6 s before); another
+script's digit with U+2028 or U+0085, 0.77 to 0.90 s; both a CR LF and the name, 49,984 characters, 0.67 to 0.80 s
+(2.8 to 2.9 s before). The dearest letters this item's readings leave read: dates with a CR LF and a name written
+apart, 25,000 characters, 0.77 to 0.87 s; dates with a CR LF, 50,000, 0.75 to 0.91 s; prose with a name written apart,
+150,000, 0.83 to 0.87 s; one digit to a line with a name written apart, 30,000, 0.49 to 0.70 s. **The dearest letter
+found that this item leaves read** (review D, D-TIME-1) is of the base's dearest family, a date glued to a letter
+(U+33FE, which NFKC writes `31日`) and `;` repeated, with one CR LF, so that the check reads it twice: 57,972
+characters, 1.66 to 2.00 s (the base 1.04 to 1.33 s on it; from about 61,000 characters it is refused). It is no dearer
+than the dearest letter the base reads (the same family with no CR LF at 93,006 characters, 1.7 to 2.3 s on the base),
+and it is a row of `denial-letter.test.ts` now. Under coverage, as `pnpm test` runs, every timed row holds its 3 s on
+its first run with no allowance (three runs of the file: no retry; the largest first runs are the base's own rows at
+2.0 to 2.3 s, this item's at most about 1.4 s).
+
+Two letters with nothing of this item's are refused where the base reads them, by the 1% to 5% the wider reading adds
+to a letter at the budget's edge (review D, D-TIME-3): U+33FE and `;` to 93,006 characters with no CR LF (read here to
+about 88,000), and the table's dates with one CR LF.
+
+**What stays as the amendment of 2026-11-11 wrote it.** The three rules of the wider reading, what it reads, the rule
+that a wider match is applied only to a letter the first reading's check does not refuse, and K-1. Under the budget the
+reader's answers are that amendment's to the character; the counter changes an answer only from sent to refused.
+
+**Tests.** `redact.leaks.test.ts`, `describe('the wider reading and the second reading on the check's work budget')`,
+in place of the tests of the character bound: a letter with a name written apart read within the budget, refused by
+the check where the redaction ended within it, and returned as the mark alone where the redaction passed it; a CR LF
+letter refused at a length its writing with line feeds is read at; K-1's second reading charged where nothing is for
+the wider reading; the path without the screen writing the first reading's text and the mark; C-PHI-1 to C-PHI-3 as
+they stand; the same answer and count on every run; a letter the first reading refuses refused within the budget and
+past it; and a property (every letter past the budget that holds a name written apart is refused). In
+`denial-letter.test.ts` the item's rows that are still read stand at lengths the budget holds, and thirteen letters,
+CT-1's among them with U+2028 and U+0085, are refused by the count within the 3 s. No row of the base was changed.
+
+**Review.** One adversarial review of this delta (review D; `designs/lane-b-redact-item-26/reviews/d` on
+`claude/build-ops`), each finding run again before it was recorded. PHI: no finding. 31,072 generated letters on both
+paths and 40 letters past the old character bound: nothing the base or the reader before this amendment replaces or
+refuses was sent; the redaction's count was never less than the base's (equal in 505, greater in 30,567) and the
+check's own work never less in about 6,000 texts; odd counts and the state after a throw behave as on the base. Time:
+no letter still sent passes 3 s (D-TIME-1 above, 26 families searched to 400,000 characters); the rows near 3 s by
+test duration under coverage (D-TIME-2) were settled by the helper's own figures, above; D-TIME-3 is recorded above.
+The gate, the base against this reader, letter for letter: 975,489 letters, 13 differ, each the recorded cost of a name
+whose letters are ordinary words apart (`in a` for INA); nothing the base redacts or refuses sent; 462,984 refused by
+both, so no letter of the gate is refused by the count. Against the reader before this amendment: 0 differ.
+
+**Left, each recorded.** The costs in the table above and C-PHI-1 to C-PHI-3 (the amendment of 2026-11-11, "Left,
+each recorded") are for Queues item 34 to weigh. The wider reading builds the call's forms once more per entry and is
+charged for it only through `fold`; the charge per identifier (`workOfIdentifiers`) is taken once per check as on the
+base, and the time of a call with thousands of identifiers stays the open residual of the amendment above (Queues
+item 39).

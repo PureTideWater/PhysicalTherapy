@@ -2,15 +2,15 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `3caf11788a83f18dc0847d9c748926e2e5d080a8` on branch `co-001/wip-ledger-function-bodies` (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
-- Migrations applied: 51; head `20261113090000_ledger_lookups.sql`
+- Generated at commit `9090c4b317f4ee0543325f0b5af37cdd6318f786` on branch `co-001/payer-response-db-rules`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Migrations applied: 52; head `20261114090000_payer_response_document_rules.sql`
 - PostgreSQL 18; schema `public`: 101 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 41 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 93 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 184 policies
 - Functions in `public`: 396 (185 SECURITY DEFINER); triggers: 283, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`, `tp_screening`; every relation is owned by `tp_owner`
-- Divergences from the Data dictionary: 23 to approve, 53 tables and 151 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
+- Divergences from the Data dictionary: 23 to approve, 53 tables and 152 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
 ## Contents
 
@@ -1089,10 +1089,10 @@ Every uploaded file, and the 835 remittance loaded from it: transaction sets, cl
 - Class: PHI (registered); registry policy `source_document_tenant`, registered by `20261016090000_documents_payers_plans`, qualifies: yes
 - Row-level security: enabled, forced; 4 policies; owner `tp_owner`
 - Dictionary: Documents and remittances (PHI): Every uploaded file
-- Created by `20261016090000_documents_payers_plans` (ADR 0013, ADR 0015, ADR 0018); its DDL, policies or trigger functions changed by `20261017090000_document_scan_gate`, `20261017120000_document_page_text`, `20261029150000_billing`, `20261102090000_era_export_intake`, `20261108090000_suspension_refusal`
+- Created by `20261016090000_documents_payers_plans` (ADR 0013, ADR 0015, ADR 0018); its DDL, policies or trigger functions changed by `20261017090000_document_scan_gate`, `20261017120000_document_page_text`, `20261029150000_billing`, `20261102090000_era_export_intake`, `20261108090000_suspension_refusal`, `20261114090000_payer_response_document_rules`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
-- Column grant: `tp_app` INSERT (`content_type`, `format_id`, `id`, `kind`, `parent_document_id`, `practice_id`, `scan_at`, `scan_status`, `sha256`, `size_bytes`, `status`, `uploaded_by`)
+- Column grant: `tp_app` INSERT (`content_type`, `filed_for_submission_id`, `format_id`, `id`, `kind`, `parent_document_id`, `practice_id`, `scan_at`, `scan_status`, `sha256`, `size_bytes`, `status`, `uploaded_by`)
 - Column grant: `tp_app` UPDATE (`page_count`, `page_text_status`, `scan_at`, `scan_status`, `sha256`, `status`)
 
 | # | Column | Type | Null | Default | References | Since | Notes |
@@ -1115,15 +1115,18 @@ Every uploaded file, and the 835 remittance loaded from it: transaction sets, cl
 | 16 | `page_text_status` | `text` | null |  |  | `20261017120000` | one of ready, unsupported_document, document_unreadable; not in the dictionary |
 | 17 | `page_count` | `integer` | null |  |  | `20261017120000` | not in the dictionary |
 | 18 | `format_id` | `text` | null |  |  | `20261102090000` | one of webpt_billing_era_v0, prompt_era_v0, spry_era_v0, raintree_era_v0; not in the dictionary |
+| 19 | `filed_for_submission_id` | `uuid` | null |  | `submission(id)` | `20261114090000` | not in the dictionary |
 
 Keys:
 - Primary: (id)
 - Unique index `source_document_first_of_its_bytes`: `USING btree (practice_id, sha256, COALESCE(format_id, ''::text)) WHERE ((sha256 IS NOT NULL) AND (status <> 'duplicate'::text))`
+- Foreign `source_document_filed_for_submission_id_fkey`: (filed_for_submission_id) -> `submission`(id), on delete no action
 - Foreign `source_document_parent_document_id_fkey`: (parent_document_id) -> `source_document`(id), on delete no action
 - Foreign `source_document_practice_id_fkey`: (practice_id) -> `practice`(id), on delete no action
 - Foreign `source_document_uploaded_by_fkey`: (uploaded_by) -> `user`(id), on delete no action
 
 Indexes:
+- `source_document_by_filed_submission`: `USING btree (practice_id, filed_for_submission_id) WHERE (filed_for_submission_id IS NOT NULL)`
 - `source_document_by_parent`: `USING btree (parent_document_id, status) WHERE (parent_document_id IS NOT NULL)`
 - `source_document_by_practice`: `USING btree (practice_id, created_at DESC, id)`
 
@@ -1163,8 +1166,14 @@ Invariants enforced by triggers:
   - "a zip entry belongs to a top-level document of the same practice"
   - "a zip entry carries its zip's uploader"
   - "a zip entry carries its zip's export format"
+  - "a zip entry carries its zip's submission"
   - "a zip entry is clean only when its zip's malware scan is"
+  - "a letter is filed for a submission as a payer letter"
+  - "a letter is filed for a submission by a person who logs submissions, in their own name"
+  - "a letter is filed for the latest submission of a case of its practice"
   - "a document is scanned or queued for parse only when its malware scan is clean"
+  - "the submission a document was filed for never changes"
+  - "the zip a document was inserted under, or none, never changes"
   - "a document's SHA-256 never changes once recorded"
   - "a scan verdict is never taken back"
   - "a malware finding is never cleared"
@@ -2841,7 +2850,7 @@ Maintains `updated_at`: `case_updated_at`.
 - Class: PHI (registered); registry policy `case_line_tenant`, registered by `20261019160000_triage_cases_and_audit_reports`, qualifies: yes
 - Row-level security: enabled, forced; 2 policies; owner `tp_owner`
 - Dictionary: Pricing, triage and cases (PHI): Membership
-- Created by `20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038); its DDL, policies or trigger functions changed by `20261024110000_case_workbench`, `20261027090000_packet_and_ledger_review`
+- Created by `20261019160000_triage_cases_and_audit_reports` (ADR 0028, ADR 0038); its DDL, policies or trigger functions changed by `20261024110000_case_workbench`, `20261027090000_packet_and_ledger_review`, `20261114090000_payer_response_document_rules`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`case_id`, `id`, `practice_id`, `priced_line_id`, `service_line_id`, `written_off_reason`)
@@ -2913,6 +2922,7 @@ Invariants enforced by triggers:
   - "a case line's case, service line and priced line never change"
   - "triage writes off only a line whose window has passed; a person writes off in their own name"
   - "a line is written off by a person who works cases, in their own name"
+  - "a person writes a line off as window passed only once its window has ended"
   - "a write-off changes nothing of the line's last reopen"
   - "a reopen clears the whole write-off"
   - "a written-off line is reopened by a person who works cases, in their own name"
@@ -3547,7 +3557,7 @@ Invariants enforced by triggers:
 - Class: PHI (registered); registry policy `payer_response_tenant`, registered by `20261023090000_packets_submissions_and_responses`, qualifies: yes
 - Row-level security: enabled, forced; 2 policies; owner `tp_owner`
 - Dictionary: Pricing, triage and cases (PHI): Response captured
-- Created by `20261023090000_packets_submissions_and_responses` (ADR 0041); its DDL, policies or trigger functions changed by `20261026090000_recovery_ledger_review`
+- Created by `20261023090000_packets_submissions_and_responses` (ADR 0041); its DDL, policies or trigger functions changed by `20261026090000_recovery_ledger_review`, `20261114090000_payer_response_document_rules`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols)
 - Column grant: `tp_app` INSERT (`amount_cents`, `denial_category`, `document_id`, `id`, `kind`, `next_window_ends_on`, `notes`, `practice_id`, `received_on`, `recorded_by`, `remittance_id`, `reopens_case`, `submission_id`)
@@ -3579,6 +3589,7 @@ Keys:
 - Foreign `payer_response_submission_id_fkey`: (submission_id) -> `submission`(id), on delete no action
 
 Indexes:
+- `payer_response_by_document`: `USING btree (practice_id, document_id) WHERE (document_id IS NOT NULL)`
 - `payer_response_by_submission`: `USING btree (practice_id, submission_id, received_on DESC)`
 
 Policies (2):
@@ -3604,11 +3615,12 @@ Invariants enforced by triggers:
 - `payer_response_belongs`: `AFTER INSERT ON payer_response FOR EACH ROW EXECUTE FUNCTION payer_response_belongs()`
   - "a payer response is recorded by a person who logs submissions, in their own name"
   - "a job records a response in no one's name"
+  - "a payer response naming a document is recorded at READ COMMITTED"
   - "a payer response is to a submission of its practice"
   - "a payer response answers its case's latest submission"
   - "a payer response is received from its submission to today"
   - "a payer response is received on or after the submission's last one"
-  - "a payer response's document is a document of its practice"
+  - "a payer response's document is a clean, stored payer letter or other document of its practice that no contract version names"
   - "a payer response's remittance is a loaded remittance of its practice"
 - `payer_response_never_deleted`: `BEFORE DELETE ON payer_response FOR EACH ROW EXECUTE FUNCTION packets_never_deleted()`
   - "% rows are never deleted: packets, submissions and responses keep what they recorded"
@@ -6877,7 +6889,7 @@ Per dictionary table, the columns the build added beyond the key fields the dict
 | [`organization`](#table-organization) | `status_reason`, `status_since` (`20261108090000_suspension_refusal` (ADR 0009, ADR 0050, ADR 0055, ADR 0080)) |
 | [`practice`](#table-practice) | `deleted_at` (`20261101090000_billing_review` (ADR 0050, ADR 0055)) |
 | [`user`](#table-user) | `failed_sign_ins`, `locked_at` (`20261015170000_identity_and_permissions` (ADR 0012, ADR 0016, ADR 0017))<br>`settings` (`20261020090000_monitoring_digests_notifications` (ADR 0039))<br>`sign_in_not_before` (`20261112090000_sign_in_not_before` (ADR 0009, ADR 0049, ADR 0081, ADR 0083, ADR 0091, ADR 0093)) |
-| [`source_document`](#table-source-document) | `page_text_status`, `page_count` (`20261017120000_document_page_text` (ADR 0033))<br>`format_id` (`20261102090000_era_export_intake` (ADR 0031, ADR 0059, ADR 0060)) |
+| [`source_document`](#table-source-document) | `page_text_status`, `page_count` (`20261017120000_document_page_text` (ADR 0033))<br>`format_id` (`20261102090000_era_export_intake` (ADR 0031, ADR 0059, ADR 0060))<br>`filed_for_submission_id` (`20261114090000_payer_response_document_rules` (ADR 0085)) |
 | [`remittance`](#table-remittance) | `trn03`, `bpr_credit_debit`, `payee_id_qualifier`, `review_reason`, `review_of_remittance_id` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027))<br>`provenance` (`20261102090000_era_export_intake` (ADR 0031, ADR 0059, ADR 0060)) |
 | [`claim`](#table-claim) | `claim_no`, `payer_claim_control_number_hash`, `filing_indicator` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027))<br>`received_on` (`20261023090000_packets_submissions_and_responses` (ADR 0041))<br>`interest_cents` (`20261023120000_recovery_ledger` (ADR 0042)) |
 | [`service_line`](#table-service-line) | `procedure_qualifier`, `service_date_to`, `observed_allowed_allocated`, `patient_share_cents` (`20261016120000_remittances` (ADR 0015, ADR 0021, ADR 0025, ADR 0027)) |
@@ -7123,7 +7135,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `case_latest_submission(uuid)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `6d8281aceebf0c78` |
 | `case_line_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `502a1f501004cfdb` |
 | `case_line_refresh_cases()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `bcffaf3b76e2a516` |
-| `case_line_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8390200e0d5563a1` |
+| `case_line_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `861c192aedb9fbc4` |
 | `case_next_dispute_window(uuid,integer,date)` | `date` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `a6d8aaca2860bcf5` |
 | `case_next_window_deadline_status(uuid,text)` | `text` | plpgsql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `c33a8d25322b362f` |
 | `case_owner_eligible(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b8dacedadc46c5e7` |
@@ -7133,7 +7145,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `compliance_record_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7f1e947036b56ec1` |
 | `compliance_workforce()` | `TABLE(user_id uuid, email text, roles text[])` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `7cc132ead4ab0ff3` |
 | `console_approve_place_of_service_split(jsonb)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `f330f4ac65a5e2e6` |
-| `console_contract_queue()` | `TABLE(practice_id uuid, name text, documents_awaiting bigint, drafts bigint, proposals_awaiting bigint, awaiting_sign_off bigint, open_questions bigint, regulations_awaiting bigint, support_grant_ends_at timestamp with time zone)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `34782bbb84bc92d2` |
+| `console_contract_queue()` | `TABLE(practice_id uuid, name text, documents_awaiting bigint, drafts bigint, proposals_awaiting bigint, awaiting_sign_off bigint, open_questions bigint, regulations_awaiting bigint, support_grant_ends_at timestamp with time zone)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app | yes | `04df91fcea74aa18` |
 | `console_grants(uuid)` | `TABLE(grant_id uuid, organization_id uuid, practice_id uuid, scope jsonb, starts_at timestamp with time zone, ends_at timestamp with time zone, agreement_id uuid, approved_by_user_id uuid, revoked_at timestamp with time zone, created_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `99b8bdc1d3dee83b` |
 | `console_mail_streams()` | `TABLE(stream text, paused_at timestamp with time zone, paused_reason text, paused_by uuid, pause_sends integer, pause_bounces integer, pause_complaints integer, window_starts_at timestamp with time zone, window_sends integer, window_bounces integer, window_complaints integer, resumed_at timestamp with time zone, confirmed_at timestamp with time zone, sending boolean, ready boolean, probe_sent_at timestamp with time zone, probe_delivered_at timestamp with time zone, probe_bounced_at timestamp with time zone, client_marks integer, account_marks integer)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `b178b66699759acf` |
 | `console_mail_undelivered(timestamp with time zone)` | `TABLE(stream text, kind text, state text, recipient_user_id uuid, practice_id uuid, subject_id uuid, undelivered_at timestamp with time zone, messages integer)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2cf128abb1f398dd` |
@@ -7154,7 +7166,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `contract_calendar_event_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9d49e01ff62b1725` |
 | `contract_question_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `8aae4f70b8112e03` |
 | `contract_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `06bbdf22fc9bd64e` |
-| `contract_version_documents_ok(contract_version)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fa43e7f02e96754b` |
+| `contract_version_documents_ok(contract_version)` | `boolean` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `bf482cd46a5a4a8b` |
 | `contract_version_retired_by(contract_version,contract_version,text)` | `boolean` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `d28cf1aa50ff68a3` |
 | `contract_version_retired_by_signed_successor()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7d19fbe631239fef` |
 | `contract_version_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `84ee4071d9947f3d` |
@@ -7289,7 +7301,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `password_notice_report_undelivered(uuid,text)` | `boolean` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b23f74d3c9743621` |
 | `payer_plan_mapping_in_force(uuid,date)` | `uuid` | sql | invoker | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `80a161b250f57333` |
 | `payer_plan_mapping_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `06a465c2d5277fc6` |
-| `payer_response_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `2031d828767ceebd` |
+| `payer_response_belongs()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7af96946dd6cb11a` |
 | `payer_response_refresh_case()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `b3c23aa01144ad5c` |
 | `payer_response_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `3d3936c48b8d9488` |
 | `payer_response_within_asked()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `cea09f8a11e093e1` |
@@ -7430,7 +7442,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `sign_in_step_began()` | `timestamp with time zone` | sql | invoker | volatile | `search_path=pg_catalog, pg_temp` | tp_app |  | `8259707bef4d9f9f` |
 | `sign_in_step_refused(uuid,timestamp with time zone,text,text)` | `text` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2f2824594601d24a` |
 | `sign_in_succeeded(uuid)` | `void` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `60e683f0dc8ba129` |
-| `source_document_rules()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `b77558b4de441f4f` |
+| `source_document_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e5f1eff58bed188f` |
 | `status_component_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `82c436362d600ad2` |
 | `status_incident_opened()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `92eec267bf1252eb` |
 | `status_incident_update_moves()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9596e1baaa844ddb` |
@@ -7531,6 +7543,7 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 49 | `20261111090000_password_changed_notice.sql` | ADR 0009, ADR 0049, ADR 0065, ADR 0081, ADR 0083, ADR 0091, ADR 0092 | `e1288b9c074ced20fc8d08b7d64001786a7d29b23ae3d1695eff551eb20ea0eb` |
 | 50 | `20261112090000_sign_in_not_before.sql` | ADR 0009, ADR 0049, ADR 0081, ADR 0083, ADR 0091, ADR 0093 | `1fe539f67b26b1edb2c22adcea8aee41b94091808488e40e0dd5f3f93a1d1e71` |
 | 51 | `20261113090000_ledger_lookups.sql` | ADR 0087 | `9f0d553046486acd37229ae24bf516ff52a21caaf3316a4ec45623a17f089165` |
+| 52 | `20261114090000_payer_response_document_rules.sql` | ADR 0085 | `2f2ef154a282abc1e455baedd0f7762f829c5c0323a8ebcae4cba3619a114b3f` |
 
 ## Cross-checks
 
@@ -7546,6 +7559,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261113090000_ledger_lookups.sql` (51 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261114090000_payer_response_document_rules.sql` (52 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: Tyler Williams  Date: 2026-11-11  Document SHA-256: `47fae5d1e01a8417244275f6c56cb603a367c90595882e89a615485964c7d10e`
+Approved by: Tyler Williams  Date: 2026-11-12  Document SHA-256: `922ff5e3f7e81884d1aaaa1937a46fe1b2ff645c889dd60dc62e8e1e086b061b`

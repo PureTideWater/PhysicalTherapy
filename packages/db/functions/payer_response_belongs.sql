@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- payer_response_belongs()
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 2031d828767ceebd
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 7af96946dd6cb11a
 -- Trigger function of: payer_response.payer_response_belongs
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.payer_response_belongs()
@@ -21,6 +21,12 @@ BEGIN
   ELSIF NEW.recorded_by IS NOT NULL THEN
     RAISE EXCEPTION 'a job records a response in no one''s name' USING ERRCODE = 'insufficient_privilege';
   END IF;
+  IF NEW.document_id IS NOT NULL THEN
+    IF current_setting('transaction_isolation') <> 'read committed' THEN
+      RAISE EXCEPTION 'a payer response naming a document is recorded at READ COMMITTED' USING ERRCODE = 'feature_not_supported';
+    END IF;
+    PERFORM pg_advisory_xact_lock(hashtextextended('document_use:' || NEW.document_id::text, 0));
+  END IF;
   SELECT s.id, s.case_id, s.submitted_on INTO sent FROM submission s WHERE s.id = NEW.submission_id AND s.practice_id = NEW.practice_id;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'a payer response is to a submission of its practice' USING ERRCODE = 'check_violation';
@@ -36,8 +42,12 @@ BEGIN
   IF previous IS NOT NULL AND NEW.received_on < previous THEN
     RAISE EXCEPTION 'a payer response is received on or after the submission''s last one' USING ERRCODE = 'check_violation';
   END IF;
-  IF NEW.document_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM source_document d WHERE d.id = NEW.document_id AND d.practice_id = NEW.practice_id) THEN
-    RAISE EXCEPTION 'a payer response''s document is a document of its practice' USING ERRCODE = 'check_violation';
+  IF NEW.document_id IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM source_document d
+        WHERE d.id = NEW.document_id AND d.practice_id = NEW.practice_id AND d.parent_document_id IS NULL
+          AND d.kind IN ('payer_letter', 'other') AND d.scan_status = 'clean' AND d.status = 'stored'
+          AND NOT EXISTS (SELECT 1 FROM contract_version v WHERE v.practice_id = d.practice_id AND d.id = ANY (v.source_document_ids))) THEN
+    RAISE EXCEPTION 'a payer response''s document is a clean, stored payer letter or other document of its practice that no contract version names' USING ERRCODE = 'check_violation';
   END IF;
   IF NEW.remittance_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM remittance m WHERE m.id = NEW.remittance_id AND m.practice_id = NEW.practice_id AND m.status = 'loaded') THEN
     RAISE EXCEPTION 'a payer response''s remittance is a loaded remittance of its practice' USING ERRCODE = 'check_violation';
