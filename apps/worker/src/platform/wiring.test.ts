@@ -8,7 +8,8 @@ import { RdsSnapshotRestorer } from './rds-restorer';
 import { LocalMailSender, SesMailSender } from '../mail/mail';
 import { LocalSupportInbox, S3SupportInbox } from '../support/inbox';
 import { LocalMailEventSource, MemoryMailControl, SesMailControl, SqsMailEventSource } from './mail-events';
-import { auditStore, mailEvents, mailSender, platformRuntime, snapshotRestorer, supportInbox } from './wiring';
+import { CognitoProviderSignOut, LocalProviderSignOut } from './cognito-sign-out';
+import { auditStore, mailEvents, mailSender, platformRuntime, providerSignOut, snapshotRestorer, supportInbox } from './wiring';
 
 const local: PlatformConfig = {
   operatorDatabaseUrl: 'postgres://operator:synthetic@localhost:5432/tp',
@@ -20,6 +21,7 @@ const local: PlatformConfig = {
   staticAssetOrigin: null,
   mailEvents: { kind: 'local', dir: '/tmp/tp-mail-events', identitiesVerified: true },
   supportEmail: 'support@synthetic.test',
+  providerSignOut: { kind: 'local' },
 };
 
 const deployed: PlatformConfig = {
@@ -39,6 +41,7 @@ const deployed: PlatformConfig = {
   staticAssetOrigin: 'https://static.synthetic.test',
   mailEvents: { kind: 'sqs', queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789012/tp-production-mail-events', identitiesVerified: false },
   supportEmail: 'support@synthetic.test',
+  providerSignOut: { kind: 'cognito', userPoolId: 'us-east-1_SYNTHETIC1' },
 };
 
 describe('platform wiring', () => {
@@ -104,17 +107,27 @@ describe('platform wiring', () => {
     expect(localInbox.verifiesSenders).toBe(false);
   });
 
+  it('asks the user pool for provider sign-outs when deployed, and no one in development (docs/adr/0095)', async () => {
+    expect(providerSignOut(deployed)).toBeInstanceOf(CognitoProviderSignOut);
+    const twin = providerSignOut(local);
+    expect(twin).toBeInstanceOf(LocalProviderSignOut);
+    expect(await twin.signOut('synthetic-subject')).toBe('signed_out');
+  });
+
   it('builds every handler over one small operator pool', async () => {
     const runtime = platformRuntime(local);
     expect(Object.keys(runtime.handlers).sort()).toEqual([
       'audit_copy',
       'billing_dunning',
       'dunning_notices',
+      // The key registry's two (docs/adr/0095).
+      'hardware_key_notices',
       'mail_events',
       'mail_expiry',
       'monitoring_schedule',
       // The password-changed notices (docs/adr/0091).
       'password_notices',
+      'provider_sign_outs',
       'restore_drill',
       // The screening's pricing is the consumer's since PR 6b-3 (jobs/screening.ts); its expiry stays here.
       'screening_expiry',

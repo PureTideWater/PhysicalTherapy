@@ -315,9 +315,9 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
     });
   });
 
-  it('counts each platform mail code, an unsent probe, a password-changed email\'s failed record and the web\'s refused validation and validation cap from the logs, by the code alone (ten filters)', () => {
+  it('counts each platform mail code, an unsent probe, a password-changed email\'s failed record and the web\'s refused validation and validation cap from the logs, by the code alone (eleven filters: the seventh platform code is a hardware-key email not delivered, docs/adr/0095)', () => {
     const filters = resourcesOf(template, 'AWS::Logs::MetricFilter').filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(MAIL_NAMESPACE));
-    expect(filters).toHaveLength(10);
+    expect(filters).toHaveLength(11);
     const platform = ref(logicalIdOf(stack, stack.monitoring.platformLogGroup));
     const web = ref(logicalIdOf(stack, stack.monitoring.webLogGroup));
     const expected = [
@@ -438,7 +438,8 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
   });
 
   it('pages on a password-changed email not delivered or not sent within 24 hours, from the platform\'s log, by the code alone (docs/adr/0091, D9)', () => {
-    expect(MAIL_PLATFORM_ALARM_CODES).toEqual(['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVERED', 'NOTICE_UNDELIVERABLE', 'INVITATION_UNDELIVERED', 'MAIL_PROBE_MISSED', 'PASSWORD_NOTICE_UNDELIVERED']);
+    expect(MAIL_PLATFORM_ALARM_CODES).toEqual(['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVERED', 'NOTICE_UNDELIVERABLE', 'INVITATION_UNDELIVERED', 'MAIL_PROBE_MISSED', 'PASSWORD_NOTICE_UNDELIVERED', 'KEY_NOTICE_UNDELIVERED']);
+    expect(source('apps/worker/src/mail/streams.ts')).toContain("keyNoticeUndelivered: 'KEY_NOTICE_UNDELIVERED'");
     expect(source('apps/worker/src/mail/streams.ts')).toContain("passwordNoticeUndelivered: 'PASSWORD_NOTICE_UNDELIVERED'");
     const metricName = mailCodeMetricName('PASSWORD_NOTICE_UNDELIVERED');
     expect(metricName).toBe('PasswordNoticeUndelivered');
@@ -506,12 +507,12 @@ describe.each(ENVIRONMENTS)('%s: mail streams', (environment) => {
     expect(alarm.OKActions).toBeUndefined();
   });
 
-  it('has nineteen mail alarms', () => {
+  it('has twenty mail alarms', () => {
     const mail = resourcesOf(template, 'AWS::CloudWatch::Alarm').filter(([, alarm]) => {
       const properties = propertiesOf(alarm);
       return properties.Namespace === MAIL_NAMESPACE || properties.Namespace === 'AWS/SES' || (properties.Namespace === 'AWS/SQS' && JSON.stringify(properties.Dimensions).includes('MailStreamsEvents'));
     });
-    expect(mail).toHaveLength(19);
+    expect(mail).toHaveLength(20);
   });
 
   it('outputs every DNS record the founder sets at the registrar, and the sets and queues', () => {

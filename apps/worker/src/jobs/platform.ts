@@ -6,8 +6,10 @@ import { recordUsageSnapshots } from '../billing/usage';
 import { copyAuditDay, previousDay } from '../platform/audit-copy';
 import type { MailSender } from '../mail/mail';
 import { type MailControl, type MailEventSource, expireMail, runMailEvents } from '../platform/mail-events';
+import { sendHardwareKeyNotices } from '../platform/hardware-key-notices';
 import { queueMonitoringSchedule } from '../platform/monitoring-schedule';
 import { sendPasswordNotices } from '../platform/password-notices';
+import { type ProviderSignOutAdapter, runProviderSignOuts } from '../platform/provider-sign-outs';
 import { type RestoreDrillResult, RestoreDrillFailedError, type SnapshotRestorer, runRestoreDrill } from '../platform/restore-drill';
 import { sendSupportGrantNotices } from '../platform/support-notices';
 import { expireScreenings } from '../screening/expiry';
@@ -38,7 +40,10 @@ import type { JobSender } from './enqueue';
  * completed reset from the outbox the database writes in the reset's own transaction, the account's address read only by
  * the claim of a pending, due notice under 24 hours old. They run on the operator connection, every
  * transaction as tp_operator (which owns nothing and cannot bypass row-level security), which the
- * worker holds only where OPERATOR_DATABASE_URL is configured; the restore drill alone uses an owner
+ * worker holds only where OPERATOR_DATABASE_URL is configured. The provider sign-outs (docs/adr/0095) are asked of the
+ * identity provider from the outbox the database writes in the cause's own transaction (an ended membership, a recorded
+ * reset, a confirmed key removal): the provider's subject is read only by the claim and lives in memory for the one
+ * call. Of all these, the restore drill alone uses an owner
  * login, and only on its scratch copy. A practice job (jobs/registry.ts) never runs this way.
  */
 export const PLATFORM_JOB_TYPES = [
@@ -54,6 +59,8 @@ export const PLATFORM_JOB_TYPES = [
   'mail_expiry',
   'dunning_notices',
   'password_notices',
+  'provider_sign_outs',
+  'hardware_key_notices',
 ] as const;
 export type PlatformJobType = (typeof PLATFORM_JOB_TYPES)[number];
 
@@ -76,6 +83,10 @@ export const PLATFORM_JOB_PAYLOADS = {
   dunning_notices: z.strictObject({}),
   /** Nothing about the person: the notice, its user and the address are read from the outbox (docs/adr/0091). */
   password_notices: z.strictObject({}),
+  /** Nothing about the person: the row, its account and the provider's subject are read from the outbox (docs/adr/0095). */
+  provider_sign_outs: z.strictObject({}),
+  /** Nothing about the person: the notice, its user and the address are read from the outbox (docs/adr/0095). */
+  hardware_key_notices: z.strictObject({}),
 } satisfies Record<PlatformJobType, z.ZodType>;
 
 export type PlatformJobPayload<T extends PlatformJobType> = z.infer<(typeof PLATFORM_JOB_PAYLOADS)[T]>;
@@ -96,7 +107,9 @@ export function parsePlatformPayload<T extends PlatformJobType>(type: T, payload
  * every minute, so a send that threw is tried again after 1, 5, 15 and 60 minutes (docs/adr/0065); and the
  * password-changed notices every minute, from the database's outbox, so the account's address is told within a minute of
  * a reset (a backlog goes out over several runs: each stops claiming once it has spent 8 seconds sending) and a refused
- * send is tried again on the same steps (docs/adr/0091).
+ * send is tried again on the same steps (docs/adr/0091); and the provider sign-outs every minute, so the provider is
+ * asked within about a minute of the cause's commit, a failed try again after 1, 5, 15 and 60 minutes (docs/adr/0095);
+ * and the hardware-key notices every minute, as the password-changed notices go.
  */
 export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   audit_copy: '20 1 * * *',
@@ -111,6 +124,8 @@ export const PLATFORM_SCHEDULES: Readonly<Record<PlatformJobType, string>> = {
   mail_expiry: '50 3 * * *',
   dunning_notices: '* * * * *',
   password_notices: '* * * * *',
+  provider_sign_outs: '* * * * *',
+  hardware_key_notices: '* * * * *',
 };
 
 export interface PlatformContext {
@@ -141,6 +156,8 @@ export interface PlatformDependencies {
   readonly inbox?: SupportInbox;
   /** The mail_events job's queue and SES control, the sets' prefix and whether probes go (docs/adr/0065). */
   readonly mailEvents?: MailEventsDependencies;
+  /** The identity provider's global sign-out, for the provider_sign_outs job (docs/adr/0095). */
+  readonly providerSignOut?: ProviderSignOutAdapter;
   readonly now?: () => Date;
 }
 
@@ -166,6 +183,11 @@ export class NoInboxError extends Error {
 /** The mail_events job ran on a worker that has no queue of SES's events to read. */
 export class NoMailEventsError extends Error {
   override readonly name = 'NoMailEventsError';
+}
+
+/** The provider sign-outs job ran on a worker that has no identity provider to ask. */
+export class NoProviderSignOutError extends Error {
+  override readonly name = 'NoProviderSignOutError';
 }
 
 async function withOperator<T>(pool: OperatorPool, use: (client: Awaited<ReturnType<OperatorPool['connect']>>) => Promise<T>): Promise<T> {
@@ -300,6 +322,25 @@ export function createPlatformHandlers(dependencies: PlatformDependencies): Plat
       );
       if (result.sent > 0) {
         context.logger.info('password notices sent', { job_id: context.jobId, record_count: result.sent });
+      }
+    },
+    provider_sign_outs: async (_payload, context) => {
+      const provider = dependencies.providerSignOut;
+      if (provider === undefined) {
+        throw new NoProviderSignOutError('the provider sign-outs job needs the identity provider');
+      }
+      // Each row done, each failed try and each LATE or GAVE_UP line is logged as it happens, by IDs and codes. The run
+      // throws at its end if a step failed, after the other steps ran.
+      await withOperator(dependencies.operator, (client) => runProviderSignOuts({ client, provider, requestId: context.jobId, logger: context.logger.child({ job_id: context.jobId }) }));
+    },
+    hardware_key_notices: async (_payload, context) => {
+      // A notice not delivered, failed for good, past its 24 hours or whose account's address changed is
+      // KEY_NOTICE_UNDELIVERED, by the notice's and the user's IDs (logged as they are found; docs/adr/0095).
+      const result = await withOperator(dependencies.operator, (client) =>
+        sendHardwareKeyNotices({ client, mail: dependencies.mail, supportEmail: dependencies.supportEmail, requestId: context.jobId, logger: context.logger.child({ job_id: context.jobId }) }),
+      );
+      if (result.sent > 0) {
+        context.logger.info('hardware key notices sent', { job_id: context.jobId, record_count: result.sent });
       }
     },
     mail_expiry: async (_payload, context) => {

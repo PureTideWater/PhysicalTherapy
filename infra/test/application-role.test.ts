@@ -29,6 +29,13 @@ describe('the application role\'s Cognito actions match what the web app sends',
     const admin = [...new Set([...source.matchAll(/new (Admin\w+)Command\(/g)].map((match) => `cognito-idp:${match[1] ?? ''}`))].sort();
     expect(admin).toEqual([...USER_POOL_ADMIN_ACTIONS].sort());
   });
+
+  it('covers the worker\'s one administrative command, the provider_sign_outs job\'s global sign-out, and the worker sends no other (docs/adr/0095)', () => {
+    const adapter = readFileSync(path.resolve(import.meta.dirname, '../../apps/worker/src/platform/cognito-sign-out.ts'), 'utf8');
+    const sent = [...new Set([...adapter.matchAll(/new (\w+)Command\(/g)].map((match) => `cognito-idp:${match[1] ?? ''}`))];
+    expect(sent).toEqual(['cognito-idp:AdminUserGlobalSignOut']);
+    expect([...USER_POOL_ADMIN_ACTIONS]).toContain('cognito-idp:AdminUserGlobalSignOut');
+  });
 });
 
 describe('the application role\'s SES actions match what the web and the worker send (docs/adr/0065)', () => {

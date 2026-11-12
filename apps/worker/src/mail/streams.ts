@@ -56,6 +56,7 @@ export const MAIL_LOG_CODES = {
   probeMissed: 'MAIL_PROBE_MISSED',
   eventUnreadable: 'MAIL_EVENT_UNREADABLE',
   passwordNoticeUndelivered: 'PASSWORD_NOTICE_UNDELIVERED',
+  keyNoticeUndelivered: 'KEY_NOTICE_UNDELIVERED',
 } as const;
 
 /**

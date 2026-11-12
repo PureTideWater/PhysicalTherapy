@@ -56,6 +56,12 @@ export const ALLOWED_LOG_FIELDS = [
   // the send threw, letters only: SES's, or the worker's own when the send never reached SES (Unrecognized for any other name).
   'password_notice_id',
   'undelivered_reason_code',
+  // The key registry's jobs (docs/adr/0095): the provider sign-out outbox row's opaque ID and what the provider answered
+  // (signed_out or no_such_user, a closed list), and the hardware-key notice row's opaque ID. Never the provider's
+  // subject, an address or a credential.
+  'sign_out_id',
+  'outcome_code',
+  'hardware_key_notice_id',
   'error_code',
 ] as const;
 

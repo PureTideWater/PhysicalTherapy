@@ -321,7 +321,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // Worker: heartbeat, final job failures, pricing engine errors, job heap peaks, model budget events. Platform:
     // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
     // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
-    // the platform's six codes (the sixth a password-changed email not delivered, docs/adr/0091, D9), an unsent probe,
+    // the platform's seven codes (the sixth a password-changed email not delivered, docs/adr/0091, D9; the seventh a
+    // hardware-key email not delivered, docs/adr/0095), an unsent probe,
     // a password-changed email SES accepted whose record failed (D9), and the web's refused validation and validation cap. Reset and enrolment (R-11; docs/adr/0088, D7): the web's
     // undelivered requests (configuration, throttle), failed requests, refused enrolments, refused client credentials,
     // the start-up probe's refusal, a completed reset whose sessions were not ended (docs/adr/0091, D15) and one whose
@@ -329,7 +330,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // (docs/adr/0094), and the four around a reset (docs/adr/0093: a step refused
     // after it, a hardware key registered across it, an unknown outcome, a crossed account). The user pool's message trigger (docs/adr/0081, the
     // code-email amendment): a message left to the pool's template, and the web's reset request answered after its floor.
-    expect(filters).toHaveLength(40);
+    expect(filters).toHaveLength(41);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,

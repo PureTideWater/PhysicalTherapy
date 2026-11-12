@@ -190,10 +190,13 @@ apps/worker/src/parse/loader.ts
 apps/worker/src/parse/plan.ts
 apps/worker/src/parse/report.ts
 apps/worker/src/platform/audit-copy.ts
+apps/worker/src/platform/cognito-sign-out.ts
+apps/worker/src/platform/hardware-key-notices.ts
 apps/worker/src/platform/mail-events.ts
 apps/worker/src/platform/monitoring-schedule.ts
 apps/worker/src/platform/password-notices.ts
 apps/worker/src/platform/pg-dump-restorer.ts
+apps/worker/src/platform/provider-sign-outs.ts
 apps/worker/src/platform/rds-restorer.ts
 apps/worker/src/platform/restore-drill.ts
 apps/worker/src/platform/support-notices.ts

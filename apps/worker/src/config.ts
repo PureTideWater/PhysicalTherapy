@@ -253,6 +253,26 @@ export interface PlatformConfig {
   readonly mailEvents: MailEventsConfig;
   /** The support address the password-changed email says to write to, and its Reply-To (SUPPORT_EMAIL; docs/adr/0091). */
   readonly supportEmail: string;
+  /** Where the provider_sign_outs job asks for a global sign-out: the user pool, or (development) nowhere (docs/adr/0095). */
+  readonly providerSignOut: ProviderSignOutConfig;
+}
+
+/** The identity provider the provider_sign_outs job asks: Cognito's user pool, or the local twin, which asks no one. */
+export type ProviderSignOutConfig = { readonly kind: 'cognito'; readonly userPoolId: string } | { readonly kind: 'local' };
+
+/**
+ * COGNITO_USER_POOL_ID, the web's own setting: required in production, where the local twin never runs; in development
+ * the twin answers every sign-out as done, since the development provider holds no tokens of its own to end.
+ */
+function readProviderSignOut(env: Env, production: boolean): ProviderSignOutConfig {
+  const userPoolId = production ? required(env, 'COGNITO_USER_POOL_ID', IN_PRODUCTION) : value(env, 'COGNITO_USER_POOL_ID');
+  if (userPoolId === undefined) {
+    return { kind: 'local' };
+  }
+  if (!/^[a-z]{2}-[a-z]+-\d_[A-Za-z0-9]+$/.test(userPoolId)) {
+    throw new WorkerConfigError('COGNITO_USER_POOL_ID is a user pool ID (region_id)');
+  }
+  return { kind: 'cognito', userPoolId };
 }
 
 const IN_PRODUCTION = 'when NODE_ENV is production';
@@ -341,7 +361,7 @@ export function readPlatformConfig(env: Env = process.env): PlatformConfig | nul
     // The platform probes every stream, the screening's from its own sender.
     throw new WorkerConfigError('SCREENING_MAIL_FROM and SCREENING_REPLY_TO are required when MAIL_FROM is set on a platform worker (its probes)');
   }
-  return { operatorDatabaseUrl, auditStore, restoreDrill, supportInbox, ...notifications, mailEvents: readMailEventsConfig(env, notifications.mail), supportEmail: readSupportEmail(env) };
+  return { operatorDatabaseUrl, auditStore, restoreDrill, supportInbox, ...notifications, mailEvents: readMailEventsConfig(env, notifications.mail), supportEmail: readSupportEmail(env), providerSignOut: readProviderSignOut(env, production) };
 }
 
 /**
