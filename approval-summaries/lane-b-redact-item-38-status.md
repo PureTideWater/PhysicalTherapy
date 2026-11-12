@@ -1,17 +1,12 @@
 # Queues item 38: MOD-15's property and fast-check seed 1596478644 (W37, acting Lane B)
 
-## RESUME-BLOCK (kept current; last written 2026-11-12, at the draft PR)
-- Branch `co-001/redact-item-38` cut from the base a97d73e4 (still the base when pushed); two commits, 1fd9fddb and
-  2fa01985 (one test file). WIP ref `co-001/wip-redact-item-38` holds 2fa01985. PR #159 is open, marked ready (head 2fa01985), subscribed; waiting for the required checks.
-- Done: reproduced; diagnosis; the oracle corrected; the seed's case pinned (fails under the old oracle, passes under
-  the new); the seed and 41 others pass at 400 runs each; the redaction suites pass (6 files, 3,192 tests); the full
-  local suite ran once: lint, lint:logs, verify-content, test (508 files, 14,351 passed, 4 skipped) and test:golden (381)
-  pass; test:db could not run here (this machine's PostgreSQL is 16 and down; the delta touches no database code; CI is
-  the record). The review: no blocker, nothing to fix, five notes; one fix round of two used (comments and a message).
-- Next: subscribe to the PR, end the turn; on green, check the base and `git ls-remote origin refs/pull/156/head`
-  (ac8500fc), merge the base in if it moved, mark ready, merge with method merge and the head SHA, verify, unsubscribe,
-  report to the orchestrator.
-- Holds: the PR subscription once made; no check-in.
+## RESUME-BLOCK (final; 2026-11-12 about 12:25 UTC)
+- **Merged as #159 (f7b777d3, 2026-11-12 ~12:24 UTC)**, method merge, expected head 2fa01985; every required check green
+  (all green, mutation, screening-capacity gate, approval-of-record); the base was still a97d73e4 and #156's head
+  ac8500fc at the merge. Verified with git ls-remote: claude/build-platform is f7b777d3 and holds 2fa01985.
+- Local record: the full suite ran once on the first commit (test:db not locally: no PostgreSQL the suite accepts on
+  this machine; CI's db jobs passed). One review, one fix round of two used.
+- Holds nothing: unsubscribed from #159, the check-in cancelled. Nothing to resume. See "For the queue" below.
 
 ## Reproduced
 On a97d73e4 (item 26 merged), `fc.assert(sendsNoSsnOrPhone, { numRuns: 400, seed: 1596478644 })` fails after 131 runs,
