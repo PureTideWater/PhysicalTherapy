@@ -1,0 +1,78 @@
+
+## prose (539 texts), glued
+L=2 | texts 237 | distinct 95 | expected for a random number 10.3200 | 20x75 00x44 55x33 12x32 31x32
+L=3 | texts 134 | distinct 241 | expected for a random number 1.0290 | 020x53 555x26 000x15 123x14 765x13
+L=4 | texts 126 | distinct 197 | expected for a random number 0.0712 | 2020x52 5550x26 1234x14 6864x7 0765x7
+L=5 | texts 83 | distinct 131 | expected for a random number 0.0043 | 55500x23 12345x14 24535x7 35085x7 93941x7
+L=6 | texts 71 | distinct 103 | expected for a random number 0.0003 | 555001x23 123456x13 245350x7 535085x7 939411x7
+L=7 | texts 48 | distinct 84 | expected for a random number 0.0000 | 1234567x10 2453508x7 4535085x7 2996299x7 6299976x7
+L=8 | texts 39 | distinct 65 | expected for a random number 0.0000 | 24535085x7 29962999x7 96299976x7 02610151x7 01561320x7
+L=9 | texts 25 | distinct 36 | expected for a random number 0.0000 | 299629997x7 996299976x7 202610151x7 101561320x7 026101547x7
+L=10 | texts 21 | distinct 26 | expected for a random number 0.0000 | 2996299976x7 6101561320x7 2026101547x7 2610151032x7 0123456789x3
+L=11 | texts 16 | distinct 17 | expected for a random number 0.0000 | 26101561320x7 02610151032x7 10120200102x2 20900123456x2 00011999990x1
+L=12 | texts 13 | distinct 10 | expected for a random number 0.0000 | 026101561320x7 202610151032x7 010120200102x2 020900123456x2 000119999901x1
+
+## prose (539 texts), whole
+L=2 | texts 209 | distinct 79 | expected for a random number 7.0300 | 01x109 00x73 02x61 12x46 11x28
+L=3 | texts 159 | distinct 79 | expected for a random number 0.2930 | 000x59 150x30 120x22 900x15 001x14
+L=4 | texts 171 | distinct 134 | expected for a random number 0.0477 | 2020x79 2026x45 0101x25 3456x21 1234x16
+L=5 | texts 73 | distinct 67 | expected for a random number 0.0019 | 97110x27 90012x15 22026x7 62001x7 32001x7
+L=6 | texts 129 | distinct 106 | expected for a random number 0.0003 | 202001x47 202601x20 123456x16 202611x13 202612x12
+L=7 | texts 55 | distinct 49 | expected for a random number 0.0000 | 2020150x15 5550123x9 1234567x8 2202601x7 6200101x7
+L=8 | texts 75 | distinct 97 | expected for a random number 0.0000 | 20260101x22 20261231x10 01012026x9 19960101x8 20261015x8
+L=9 | texts 42 | distinct 41 | expected for a random number 0.0000 | 900123456x16 220260101x7 620010101x7 320010101x7 120260101x7
+L=10 | texts 37 | distinct 48 | expected for a random number 0.0000 | 2025550123x9 0101202612x7 0120261231x7 1220260101x7 2025550124x5
+L=11 | texts 7 | distinct 11 | expected for a random number 0.0000 | 12025550123x2 18005550100x2 10012345678x2 12000000345x1 18005550199x1
+L=12 | texts 16 | distinct 15 | expected for a random number 0.0000 | 202601012026x8 010120261231x7 202001012020x3 196103041961x2 030419610304x2
+
+## gate, all (975489 texts), glued
+L=2 | texts 470306 | distinct 164 | expected for a random number 5719.4500 | 20x125077 00x61473 56x40464 90x32253 02x26449
+L=3 | texts 354136 | distinct 1096 | expected for a random number 422.2180 | 020x68682 456x34702 900x31835 202x28334 102x18643
+L=4 | texts 317170 | distinct 8630 | expected for a random number 36.5078 | 2020x72776 3456x34959 9001x20958 0102x17804 1980x16549
+L=5 | texts 219461 | distinct 15464 | expected for a random number 2.4073 | 23456x31749 90012x20431 00102x17474 50123x15003 20255x12409
+L=6 | texts 199709 | distinct 17385 | expected for a random number 0.2182 | 123456x31882 900123x20171 200102x17474 550123x15003 202555x12405
+L=7 | texts 178890 | distinct 17954 | expected for a random number 0.0193 | 0123456x25516 5550123x21912 9001234x20163 0200102x17474 7654321x13098
+L=8 | texts 144421 | distinct 17791 | expected for a random number 0.0016 | 00123456x17914 20200102x17880 90012345x17267 20255501x12405 25550123x8922
+L=9 | texts 130258 | distinct 17131 | expected for a random number 0.0001 | 900123456x32411 020200102x12226 202555012x9254 025550123x8192 120255501x4929
+L=10 | texts 94382 | distinct 10391 | expected for a random number 0.0000 | 2025550123x16036 2020200102x6544 0020200102x4867 1900123456x4750 2026000417x4671
+L=11 | texts 47042 | distinct 5654 | expected for a random number 0.0000 | 12025550123x4974 02020200102x4909 10120200102x4115 90012345601x2277 90012345615x2156
+L=12 | texts 34335 | distinct 4687 | expected for a random number 0.0000 | 202020200102x4909 010120200102x4124 900123456150x2153 202555012315x1296 202555012301x1289
+
+## gate, all (975489 texts), whole
+L=2 | texts 780669 | distinct 283 | expected for a random number 16560.1800 | 00x396586 01x251624 12x148804 02x119628 10x62424
+L=3 | texts 684196 | distinct 1514 | expected for a random number 1084.8780 | 150x188383 555x154612 000x153521 900x135074 202x44368
+L=4 | texts 661234 | distinct 10632 | expected for a random number 98.6145 | 2020x265963 3456x128242 0123x52734 1150x48646 1234x40950
+L=5 | texts 325051 | distinct 41884 | expected for a random number 4.0671 | 90012x89524 23456x24947 55501x24661 50123x11374 00120x10585
+L=6 | texts 384757 | distinct 79630 | expected for a random number 0.4908 | 123456x89097 202001x56167 202555x29112 555012x18244 345601x18205
+L=7 | texts 254590 | distinct 40761 | expected for a random number 0.0300 | 5550123x44107 0123456x26424 9001234x25744 3456150x15863 2020150x14278
+L=8 | texts 170414 | distinct 39595 | expected for a random number 0.0022 | 20200101x21351 20255501x14393 12345601x12239 20200102x10899 20202020x9097
+L=9 | texts 183439 | distinct 70323 | expected for a random number 0.0002 | 900123456x78428 123456150x11464 555012301x7317 012345601x3995 202090012x2365
+L=10 | texts 152453 | distinct 50812 | expected for a random number 0.0000 | 2025550123x33236 5550123456x13878 5550123150x7260 0101202001x6208 2020202001x6044
+L=11 | texts 53399 | distinct 17686 | expected for a random number 0.0000 | 90012345601x11274 15550123456x3454 12025550123x2319 20200101150x1560 00900123456x879
+L=12 | texts 58202 | distinct 19926 | expected for a random number 0.0000 | 900123456150x10821 202555012301x6093 202001012020x5649 202020200102x2349 010120200102x2155
+
+## gate, T3 (51510 texts), glued
+L=2 | texts 42120 | distinct 100 | expected for a random number 423.7500 | 12x4080 10x3825 11x3240 45x1020 13x765
+L=3 | texts 19605 | distinct 138 | expected for a random number 19.6050 | 110x1275 123x765 130x510 112x510 111x495
+L=4 | texts 12720 | distinct 143 | expected for a random number 1.2720 | 7110x1020 0283x255 3908x255 2020x255 4100x255
+L=5 | texts 10965 | distinct 146 | expected for a random number 0.1096 | 97110x1020 97112x255 97140x255 12345x255 12115x180
+L=6 | texts 9135 | distinct 141 | expected for a random number 0.0091 | 123456x255 121150x180 451150x120 231150x120 130115x120
+L=7 | texts 2640 | distinct 42 | expected for a random number 0.0003 | 1301150x120 1231150x120 0283115x60 3908115x60 2020115x60
+L=8 | texts 600 | distinct 10 | expected for a random number 0.0000 | 02831150x60 39081150x60 20201150x60 41001150x60 45561150x60
+L=9 | texts 60 | distinct 1 | expected for a random number 0.0000 | 123456115x60
+L=10 | texts 60 | distinct 1 | expected for a random number 0.0000 | 1234561150x60
+L=11 | texts 0 | distinct 0 | expected for a random number 0.0000 | 
+L=12 | texts 0 | distinct 0 | expected for a random number 0.0000 | 
+
+## gate, T3 (51510 texts), whole
+L=2 | texts 15630 | distinct 16 | expected for a random number 172.2000 | 00x12315 01x510 02x510 97x510 45x510
+L=3 | texts 13095 | distinct 15 | expected for a random number 14.1750 | 150x12315 561x315 651x255 604x255 234x255
+L=4 | texts 12900 | distinct 7 | expected for a random number 1.3575 | 1150x12120 2026x765 0102x255 1234x255 5611x60
+L=5 | texts 3045 | distinct 10 | expected for a random number 0.0311 | 97110x765 97140x510 97530x510 20201x510 97112x255
+L=6 | texts 1395 | distinct 18 | expected for a random number 0.0015 | 202601x255 971150x120 451150x120 591150x120 971401x60
+L=7 | texts 945 | distinct 6 | expected for a random number 0.0001 | 9711059x255 9714059x255 3456789x255 5611150x60 6511150x60
+L=8 | texts 615 | distinct 7 | expected for a random number 0.0000 | 20260102x255 20261150x120 01021150x60 97110591x60 34567891x60
+L=9 | texts 930 | distinct 9 | expected for a random number 0.0000 | 123456789x255 202011234x255 971401150x60 971121150x60 202601021x60
+L=10 | texts 375 | distinct 3 | expected for a random number 0.0000 | 1234567893x255 1234567891x60 2020112341x60
+L=11 | texts 240 | distinct 4 | expected for a random number 0.0000 | 12345678931x60 97110591150x60 34567891150x60 97140591150x60
+L=12 | texts 60 | distinct 1 | expected for a random number 0.0000 | 202601021150x60

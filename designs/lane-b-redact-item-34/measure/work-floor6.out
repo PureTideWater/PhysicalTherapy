@@ -1,0 +1,16 @@
+row | length | own patient: base | own patient: floor 6 | with digits-only numbers: base | with digits-only numbers: floor 6
+gap + initials 100k (the base row at 403M) | 100008 | 403.5M sent | 403.5M sent | 405.3M sent | 405.7M sent
+the same with CR LF line endings in the gap | 100008 | 438.3M refused | 438.3M refused | 440.1M refused | 440.5M refused
+5LF 50k (base row) | 50000 | 370.0M sent | 370.0M sent | 371.0M sent | 371.2M sent
+5LF + apart 30k | 29999 | 356.3M sent | 356.3M sent | 357.2M sent | 357.4M sent
+5LF + CRLF 30k | 30000 | 336.2M sent | 336.2M sent | 337.1M sent | 337.3M sent
+dates spaces 100k (base row) | 99995 | 410.3M sent | 410.3M sent | 412.0M sent | 412.4M sent
+dates + CRLF 60k | 59999 | 382.1M sent | 382.1M sent | 383.7M sent | 384.2M sent
+dates + CRLF + apart 25k | 25000 | 314.8M sent | 314.8M sent | 316.2M sent | 316.4M sent
+slash dates + apart 50k | 49995 | 351.4M sent | 351.4M sent | 352.8M sent | 353.0M sent
+apart + initials 50k | 50000 | 380.2M sent | 380.2M sent | 381.6M sent | 381.8M sent
+U+33FE; 93k (base dearest) | 93006 | 420.0M refused | 420.0M refused | 420.0M refused | 420.0M refused
+prose + apart 150k | 149997 | 355.1M sent | 355.1M sent | 359.8M sent | 360.4M sent
+prose lines CRLF 150k | 150000 | 283.9M sent | 283.9M sent | 288.4M sent | 289.6M sent
+prose 100k with the number glued once at its end | 99988 | 145.3M sent | 145.3M sent | 147.4M sent | 147.8M refused
+exit=0

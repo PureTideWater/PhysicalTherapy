@@ -1,0 +1,183 @@
+{
+ "floors": [
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11
+ ],
+ "total": {
+  "letters": 975489,
+  "base": {
+   "sent": 512505,
+   "refused": 462984
+  },
+  "callsWithDigitsOnly": 15282,
+  "sentWithDigitsOnly": 8060,
+  "newlyRefused": {},
+  "newlyRefusedBySource": {},
+  "census": {},
+  "censusBySource": {}
+ },
+ "surface": {
+  "all L=2": {
+   "lettersWithAny": 177380,
+   "distinctValues": 100,
+   "placed": 206956,
+   "expectedLettersForARandomNumber": 2069.56,
+   "top": "20 in 45664, 00 in 13919, 02 in 11897, 12 in 9730, 10 in 8931, 04 in 7468"
+  },
+  "all L=3": {
+   "lettersWithAny": 109314,
+   "distinctValues": 1000,
+   "placed": 123505,
+   "expectedLettersForARandomNumber": 123.505,
+   "top": "020 in 26530, 102 in 5911, 202 in 5534, 028 in 3921, 110 in 3072, 021 in 3023"
+  },
+  "all L=4": {
+   "lettersWithAny": 90280,
+   "distinctValues": 5580,
+   "placed": 99373,
+   "expectedLettersForARandomNumber": 9.9373,
+   "top": "2020 in 28586, 0102 in 5143, 0283 in 3320, 2021 in 2895, 7110 in 2785, 0204 in 2509"
+  },
+  "all L=5": {
+   "lettersWithAny": 52977,
+   "distinctValues": 7296,
+   "placed": 55506,
+   "expectedLettersForARandomNumber": 0.5551,
+   "top": "00102 in 4508, 97110 in 2784, 20204 in 2504, 20200 in 1374, 00405 in 1320, 21150 in 1205"
+  },
+  "all L=6": {
+   "lettersWithAny": 40290,
+   "distinctValues": 7560,
+   "placed": 42390,
+   "expectedLettersForARandomNumber": 0.0424,
+   "top": "200102 in 4508, 123456 in 1680, 200405 in 1320, 052020 in 1141, 555012 in 965, 202021 in 955"
+  },
+  "all L=7": {
+   "lettersWithAny": 28680,
+   "distinctValues": 7597,
+   "placed": 30365,
+   "expectedLettersForARandomNumber": 0.003,
+   "top": "0200102 in 4508, 5550123 in 1543, 0200405 in 1320, 2020010 in 858, 4052020 in 831, 1301150 in 660"
+  },
+  "all L=8": {
+   "lettersWithAny": 22767,
+   "distinctValues": 7330,
+   "placed": 24198,
+   "expectedLettersForARandomNumber": 0.0002,
+   "top": "20200102 in 4663, 20200405 in 1320, 20200101 in 845, 04052020 in 831, 01022020 in 624, 20261150 in 540"
+  },
+  "all L=9": {
+   "lettersWithAny": 16704,
+   "distinctValues": 6641,
+   "placed": 17922,
+   "expectedLettersForARandomNumber": 0,
+   "top": "020200102 in 2725, 120200102 in 1392, 020200405 in 980, 004052020 in 598, 900123456 in 448, 420200405 in 339"
+  },
+  "all L=10": {
+   "lettersWithAny": 13741,
+   "distinctValues": 4709,
+   "placed": 14418,
+   "expectedLettersForARandomNumber": 0,
+   "top": "2020200102 in 1667, 0120200102 in 1391, 0020200102 in 969, 2020200405 in 879, 2004052020 in 536, 1202555012 in 336"
+  },
+  "all L=11": {
+   "lettersWithAny": 7387,
+   "distinctValues": 1590,
+   "placed": 7617,
+   "expectedLettersForARandomNumber": 0,
+   "top": "10120200102 in 1379, 02020200102 in 1093, 02020200405 in 624, 02004052020 in 368, 12025550123 in 344, 30420200405 in 236"
+  },
+  "all L=12": {
+   "lettersWithAny": 6562,
+   "distinctValues": 1380,
+   "placed": 6753,
+   "expectedLettersForARandomNumber": 0,
+   "top": "010120200102 in 1389, 202020200102 in 1093, 202020200405 in 624, 202004052020 in 368, 030420200405 in 272, 030404052020 in 131"
+  },
+  "T3 L=2": {
+   "lettersWithAny": 42120,
+   "distinctValues": 100,
+   "placed": 42375,
+   "expectedLettersForARandomNumber": 423.75,
+   "top": "12 in 4080, 10 in 3825, 11 in 3240, 45 in 1020, 13 in 765, 02 in 510"
+  },
+  "T3 L=3": {
+   "lettersWithAny": 19605,
+   "distinctValues": 138,
+   "placed": 19605,
+   "expectedLettersForARandomNumber": 19.605,
+   "top": "110 in 1275, 123 in 765, 130 in 510, 112 in 510, 111 in 495, 121 in 435"
+  },
+  "T3 L=4": {
+   "lettersWithAny": 12720,
+   "distinctValues": 143,
+   "placed": 12720,
+   "expectedLettersForARandomNumber": 1.272,
+   "top": "7110 in 1020, 0283 in 255, 3908 in 255, 2020 in 255, 4100 in 255, 4556 in 255"
+  },
+  "T3 L=5": {
+   "lettersWithAny": 10965,
+   "distinctValues": 146,
+   "placed": 10965,
+   "expectedLettersForARandomNumber": 0.1096,
+   "top": "97110 in 1020, 97112 in 255, 97140 in 255, 12345 in 255, 12115 in 180, 11150 in 180"
+  },
+  "T3 L=6": {
+   "lettersWithAny": 9135,
+   "distinctValues": 141,
+   "placed": 9135,
+   "expectedLettersForARandomNumber": 0.0091,
+   "top": "123456 in 255, 121150 in 180, 451150 in 120, 231150 in 120, 130115 in 120, 151150 in 120"
+  },
+  "T3 L=7": {
+   "lettersWithAny": 2640,
+   "distinctValues": 42,
+   "placed": 2640,
+   "expectedLettersForARandomNumber": 0.0003,
+   "top": "1301150 in 120, 1231150 in 120, 0283115 in 60, 3908115 in 60, 2020115 in 60, 1011150 in 60"
+  },
+  "T3 L=8": {
+   "lettersWithAny": 600,
+   "distinctValues": 10,
+   "placed": 600,
+   "expectedLettersForARandomNumber": 0,
+   "top": "02831150 in 60, 39081150 in 60, 20201150 in 60, 41001150 in 60, 45561150 in 60, 33011150 in 60"
+  },
+  "T3 L=9": {
+   "lettersWithAny": 60,
+   "distinctValues": 1,
+   "placed": 60,
+   "expectedLettersForARandomNumber": 0,
+   "top": "123456115 in 60"
+  },
+  "T3 L=10": {
+   "lettersWithAny": 60,
+   "distinctValues": 1,
+   "placed": 60,
+   "expectedLettersForARandomNumber": 0,
+   "top": "1234561150 in 60"
+  },
+  "T3 L=11": {
+   "lettersWithAny": 0,
+   "distinctValues": 0,
+   "placed": 0,
+   "expectedLettersForARandomNumber": 0,
+   "top": ""
+  },
+  "T3 L=12": {
+   "lettersWithAny": 0,
+   "distinctValues": 0,
+   "placed": 0,
+   "expectedLettersForARandomNumber": 0,
+   "top": ""
+  }
+ }
+}
