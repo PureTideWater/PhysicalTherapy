@@ -20,31 +20,81 @@ Takes as the build's own: #123 (aws-sdk, 10), #124 (aws-cdk 2.1146.1 to 2.1148.0
 9. Verify with git ls-remote; close #123, #124, #135, #139 with one comment each; final state here; tell the orchestrator.
 10. A bump that breaks beyond a quick, obvious fix is held back, recorded here, and the rest ships.
 
-## Log (UTC)
-- 2026-11-12 01:40 machine OK (setup log ends OK; hook and gitleaks present). Read CLAUDE.md, STATE.md, the runbook.
-- The four PRs' non-lockfile diffs read; each holds only its group's members (10, 1, 1 action on 17 steps, 14).
-
-- 01:50 branch cut from fd14d89f; the four PRs' non-lockfile diffs applied as patches; lockfile by `pnpm install
-  --lockfile-only`, then `pnpm update -r --depth Infinity --lockfile-only` of the transitives the bots moved (@smithy/*,
-  tslib, bowser, rolldown and its bindings, @oxc-project/types, magic-string, @peculiar/*, asn1js, enhanced-resolve).
-  Compared by script: all 25 direct dependencies at the bots' versions; the lockfile adds 125 versions, exactly the union
-  of the bots' three lockfiles (none more, none fewer). No package held back.
-- **Finding on the base:** @smithy/core 3.38.0, in the base's lockfile, is deprecated on npm "due to a bug in custom
-  logger data redaction" (aws/aws-sdk-js-v3 issue 8393). Decision (safer for security): the first install kept 3.38.0
-  (in range), so the transitives were refreshed to the bots' 3.39.0; 3.38.0 is gone from the lockfile. Whether any
-  client passes a custom `logger` is checked by the SDK comparison below.
-- 02:00 `pnpm actions:check` passed (pin 73e46992 is on master, tag v6.1.1 names it, 8.48 days old; 17 steps; one
-  standing warning: buildkit v0.34.2 exists, by hand, not this item). `pnpm toolchain:check` passed, 0 errors, 1 warning
-  (125 added versions: each three days old, registry integrity, no trust downgrade). lint 0 errors; typecheck 24 of 24.
-- 02:10 WIP 721dc8a1 pushed; draft PR #151 open, subscribed. Running: `pnpm test`; a changelog subagent (report
-  `lane-b-deps-2026-11-12-changelogs.md`); the runbook's AWS comparison, base against head over local sockets and in a
-  bundle, as a subagent (report `lane-b-deps-2026-11-12-sdk-comparison.md`; base worktree /home/user/wt/base). The
-  repository has no harness for that comparison: queue item proposed (commit one under tools/).
+## Log (UTC; an earlier copy of this log carried guessed times, corrected here from the machine's clock)
+- 01:35 machine OK (setup log ends OK; hook and gitleaks present). Read CLAUDE.md, STATE.md, the runbook. The four PRs'
+  non-lockfile diffs read; each holds only its group's members (10, 1, 1 action on 17 steps, 14).
+- Branch cut from fd14d89f; the diffs applied as patches; lockfile by `pnpm install --lockfile-only`, then
+  `pnpm update -r --depth Infinity --lockfile-only` of the transitives the bots moved. By script: all 25 direct
+  dependencies at the bots' versions; the lockfile adds 125 versions, exactly the union of the bots' three lockfiles.
+  **No package held back.**
+- **Finding on the base:** @smithy/core 3.38.0, in the base's lockfile, is deprecated on npm for a bug in custom-logger
+  redaction (aws/aws-sdk-js-v3 issue 8393; affected >=3.24.0 <3.38.1). A plain regeneration kept it (in range), so the
+  transitives were refreshed: head resolves 3.39.0 only. The SDK comparison reproduced the leak on the base (Cognito
+  `UserAttributes[].Value` reaches a custom logger in clear; redacted on head) and found that no production code passes
+  a `logger` to an SDK client: latent on the base, never live. No log review or rotation is called for.
+- `pnpm actions:check` and `pnpm toolchain:check` pass (pin 73e46992: on master, tag v6.1.1 names it, 8.48 days old;
+  125 added versions each three days old, registry integrity, no trust downgrade). One standing warning, not this
+  item's: buildkit v0.34.2 exists and moves by hand.
+- First `pnpm test`: 14,227 passed, 3 failed, all in tools/stryker. Two were catalog lines quoted at their old versions
+  (manifests.test.ts; literals moved). One was the installed-tooling scan (ADR 0066 Part 7, N51): it reads typescript's
+  diagnostic text "Import emit helpers from 'tslib'" as an import, and with tslib 2.9.1 now hoisted (Stryker's packages
+  hold 2.8.x) that resolves outside the tooling's closure. Dependabot's #123 carries the same split.
+  Considered and rejected: holding tslib at one version (pnpm's resolver would not keep it; fragile on the next batch).
+- First fix (f063e54f) named tslib in TEST_TOOLING. **The review's S1 showed it wrong** (verified in affected.ts: tooling
+  names are seeded from declared dependencies only, so it held nothing and made the scan skip tslib everywhere).
+  Fix round 1 (7660a331): TEST_TOOLING back to the base's; the scan removes only that exact text from typescript's
+  files. The delta's review: no blocker, no should-fix. One fix round used of two.
+- Changelogs read (report `lane-b-deps-2026-11-12-changelogs.md`); SDK comparison, base against head over local sockets
+  and in the worker's bundle options, 44 cases (report `lane-b-deps-2026-11-12-sdk-comparison.md`): no wire difference;
+  four behaviour differences, all fixes on head, none reached by today's configuration. Review report:
+  `lane-b-deps-2026-11-12-review.md`.
+- Draft PR #151, subscribed. Events for 721dc8a1 and f063e54f were cancelled runs of superseded heads.
 - Machine note: node v22.23.4 here against engines >=24 (Queues item 30); CI is the suite of record.
 
+## Changelog lines (acceptance 3)
+- @aws-sdk/client-* and s3-request-presigner 3.1160.0 to 3.1164.0 (gateway: bedrock-runtime; auth: cognito; crypto: kms;
+  textract): 3.1161.0 corrects clock skew without the server's processing time; 3.1162.0 adds a per-service default
+  socket timeout that applies only under AWS_ENABLE_DEFAULT_SOCKET_TIMEOUT_2026, which nothing here sets;
+  bedrock-runtime and the presigner are version bumps only. No breaking note.
+- @smithy/core 3.38.0 to 3.39.0 (transitive): the redaction fix above; an abort during a retry delay now rejects at once
+  (seen: Cognito globalSignOut's 10 s bound becomes exact). @smithy/node-http-handler 4.14.0 to 4.14.2: a stalled body
+  under a configured socketTimeout raises TimeoutError; no client here sets one.
+- aws-cdk (CLI) 2.1146.1 to 2.1148.0: nothing on telemetry, notices, the version check or the schema (2.1147.x notes
+  not read); infra/test/cli-settings.test.ts and cdk:diff are the proof.
+- @opentelemetry/api 1.9.1 to 1.10.0 (gateway): `Attributes` values widened to AnyValue; typecheck passes.
+- @simplewebauthn/server 14.0.3 to 14.1.0 (auth): the verify functions throw SimpleWebAuthnError on an invalid
+  expectedRPID or expectedOrigin; android-key root checked before the chain. Transitive @peculiar/x509 2.1.0 to 2.2.0,
+  @peculiar/asn1-* 2.11.1, asn1js 3.0.10 to 3.1.0 (crypto): encoding fixes; same publishers.
+- otpauth 9.5.2 to 9.6.0 (auth): no breaking or security note found; its code diff was not read.
+- @stripe/stripe-js 10.1.0 to 10.2.1: two PaymentElement `update()` option types removed; typecheck passes.
+  @stripe/react-stripe-js 7.0.1: a patch.
+- pdfjs-dist 6.4.299 to 6.5.438 (reads contract PDFs in the worker): two api-minor changes on canvas and text layer
+  rendering, `getTextContent` reads through `getReader`, hardening on malformed input; test:golden is the proof.
+- vitest and @vitest/coverage-v8 5.0.5 to 5.1.0: no breaking section; fake timers reset after each file.
+- eslint 10.13.0 to 10.14.0, globals 17.13.0 to 17.14.0: rule fixes; which globals changed was not read; lint passes.
+- Patches: typescript-eslint 8.72.1, tailwindcss and @tailwindcss/postcss 4.3.5 (fixes that can change generated CSS;
+  e2e's baselines are the proof), postcss 8.5.32, pnpm/action-setup v6.1.1 (action.yml identical; its bundled
+  bootstrap pnpm moves 11.25.0 to 11.28.10 before it switches to the pinned 10.34.8).
+- Database driver and EDI parser: no bump touches either.
+- Sources: github.com was read only through fetched summaries, not verbatim; the report lists what was not read.
+
+## For the queue (lesser findings, none blocking)
+1. Commit a harness for the runbook's AWS SDK comparison under tools/ (this batch's lives in /home/user/wt/sdk-compare
+   on a container, described in the report); the runbook asks for it on every @aws-sdk or @smithy move.
+2. The scan's exemption: share one helper between the scan and its assertions, and fail when the exemption goes dead
+   (review N-F1, N-F2). manifests.test.ts quotes catalog versions and breaks on every vitest or typescript-eslint bump:
+   read the line by pattern (review N4).
+3. For the founder to see, no action asked: tslib 2.9.1 was published by a different publisher account of the same
+   owner than 2.8.1, without provenance before or after (trust policy passes); @opentelemetry/api gained two
+   maintainers; the Stripe packages were published by a different staff account (review N2, N3).
+4. buildkit v0.34.2: the by-hand builder move (actions:check's standing warning).
+5. ADR 0066 line 2015 and the base's lockfile history: record that 3.38.0 was carried from its merge until this PR.
+6. The SDK comparison's oddities, same on both sides: a second HTTP/2 session for a second Bedrock call on one client.
+
 ## RESUME-BLOCK
-State: branch `co-001/deps-2026-11-12` at 721dc8a1 (pushed), draft PR #151, description not yet filled.
-Done: manifests, pins, lockfile; actions:check, toolchain:check, lint, typecheck green locally.
-Next: read `pnpm test`'s result; the full local suite once (test:db, test:golden, test:e2e, verify-content, lint:logs,
-licenses:check, cdk:diff); read the two reports; one adversarial review ("supply chain and CI of this diff", report
-`lane-b-deps-2026-11-12-review.md`); fill the description; base merge; CI green; merge; close #123 #124 #135 #139.
+State: branch `co-001/deps-2026-11-12` at 7660a331 (pushed), draft PR #151, description not yet filled. Review done
+(one fix round). Full local suite running once (toolchain, actions, lint, typecheck passed; test, test:db, golden,
+verify-content, lint:logs, licenses, cdk:diff, build, e2e to come), results in the session's scratchpad.
+Next: read the suite's results; fill the description from the template; check the base (fd14d89f at 01:52) and merge it
+if it moved; CI green on the head; mark ready; merge; `git ls-remote`; close #123 #124 #135 #139 with one comment each;
+final state here; one line to the orchestrator.
