@@ -1,6 +1,34 @@
 # Lane B: the letter check's work budget (CT-2 on the merged base) — status
 
-## RESUME-BLOCK, current (W25, session_019i9ifCzDkV481emXJMM26J, 2026-11-12 about 04:00 UTC; HANDED ON AT THE TOKEN LIMIT; no PR; the full suite found two failures CI would show too)
+## RESUME-BLOCK, current (W28, session_019i9ifA6Ar89txjDEHY4oQi, 2026-11-12 about 05:30 UTC; the constant is in, its proof is running; no PR yet)
+
+- **Where it stands.** WIP `co-001/wip-check-work-budget` = **f10209a0** on 493be1b2: `WORK.comparison` 1 to 4 (the
+  orchestrator's ruling, 04:10 UTC) and MOD-24's registry entries (`packages/synth/src/cases/matrix.ts`, `registry.ts`,
+  the generated `fixtures/synthetic/MOD-24/expected.json`). Uncommitted in the checkout: the unit restated in the
+  reader's comment and in ADR 0054 (the compiled code is identical to the gate's copy; the only compiled difference from
+  493be1b2 is `comparison: 1` to `comparison: 4`). Local branch `co-001/check-work-budget`.
+- **The three failures of `pnpm test` on 493be1b2:** the registry test passes; the eight rows of "refuses a letter past
+  the check's work budget" pass WITH COVERAGE ON, by the test's own measure 1.68 to 1.74, 1.20 to 1.28, 0.64 to 0.66,
+  1.23 to 1.27, 1.26 to 1.30, 1.23 to 1.33, 1.36 to 1.48 and 1.46 to 1.53 s of processor time against 3.00 s allowed
+  (three runs; the test file is unchanged). The whole file with coverage: 1,061 of 1,061.
+- **This container was new: nothing of W25's machine was kept.** Rebuilt: `/home/user/gate` (the kept gate, with
+  `mod.checkWorkOf?.(r) ?? 0` handed to `holdsIdentifier` in gate.mts, worker.mts, prepare-check.mts);
+  `/home/user/tree-base` (58fb29e5), `/home/user/tree-r2` (493be1b2), `/home/user/headsrc` (the head's
+  `packages/redact/src`), `/home/user/headsrc-x` (the same with the check's final count left in `globalThis.__spent`);
+  the battery's layout by `designs/lane-b-redact-ssn-phone-leaks/battery/README.md` (the shim is
+  `battery/shim-head-redact.ts` at `/home/user/fix/packages/model-gateway/src/redact.ts`). Node 24 is `/opt/node24/bin`
+  (the default `node` is 22: put it first on PATH); PostgreSQL 18 on 5433.
+- **Running (05:10 UTC on):** the gate, A = 58fb29e5, B = the head, uncached (`/home/user/gate-out/run4`); behind it,
+  on the gate's lock, the battery `recorded.sh` then `fresh.sh` (`/home/user/battery-out/chain.log` ends CHAIN-DONE);
+  the fixtures (`w28/repo-w28.mts`, output beside it); the one delta review
+  (`reviews/lane-b-check-work-budget-review-comparison-delta.md`).
+- **Next, in order:** read the gate (0 differ, or read letters now refused; anything else is a blocker to the
+  orchestrator; real-shaped letters newly refused are counted and told before the PR); `w28/dearest-w28.mts` for the
+  dearest letter still read; the review's findings verified; the ADR's table and battery line; the full local suite once
+  (`suite/suite.sh`, Node 24); the base merged; the draft PR; CI by subscription; the merge; the final state here.
+- W25's block below holds the rulings and what the PR description must say; it stands but for its "Next".
+
+## RESUME-BLOCK of W25 (superseded by the block above; W25, session_019i9ifCzDkV481emXJMM26J, 2026-11-12 about 04:00 UTC; HANDED ON AT THE TOKEN LIMIT; no PR; the full suite found two failures CI would show too)
 
 - **Where it stands.** WIP `co-001/wip-check-work-budget` = **493be1b2**: W24's 33380cd5, 70b1eb0f (MOD-24 row),
   c5fc89a8 (fix round 1), 7a5a26bb, 0289304f (fix round 2, the last), b00e7cfc and a4749c87 (ADR 0054: the two
