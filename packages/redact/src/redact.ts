@@ -4918,12 +4918,41 @@ const narrativeSubject = (names: readonly string[], numbers: readonly string[]):
  * Whether the text holds any of the names (read as names) or numbers (member IDs and claim numbers, read
  * as numbers) in a form redaction reads: the narrative drafter's check of its facts, over the text with the gateway's
  * own placeholders masked. No date there is a date of birth, and no initial is looked for (a whole name or part is).
- * Every form counts here, a part of two letters too: what is checked is sent to a model. It is the narrative's reading
- * asked plainly, of every identifier; nameOrNumberMatches below is the same reading for a caller that needs where, and
- * a test holds the two to one answer (packages/redact/src/narrative.test.ts).
+ * Every form counts here, a part of two letters too: what is checked is sent to a model.
+ *
+ * It holds wherever the narrative's reading finds (nameOrNumberMatches below, the same reading for a caller that needs
+ * where; the packet verifier's), and more (Queues item 34, MOD-25, rule (d); docs/adr/0054). The first reading is
+ * asked first and stands; each further reading only adds, and the check holds on any of them:
+ *  - the numbers in the letter check's wider reading (widerMatchesIn, with no name given it): a number as the records
+ *    hold it, with the mark they hold or a run of marks there ("ZZ12345/01", "ZZ12345+01"), and each piece of one
+ *    that is a number by itself ("ZZ12345" of "ZZ12345 01");
+ *  - a number of digits alone glued to a letter (digitsGluedToLetter: "Fax X76543210");
+ *  - each name the records hold with a mark, as its words of the wider reading (nameWords: JANE and ZEPHYRA of
+ *    "JANE+ZEPHYRA"), read as the first reading reads a name: "Ms. Zephyra", "JANE".
+ * No name is read written apart (item 26's ruling: "in a" would fail every narrative of a patient INA), so the wider
+ * reading is given the numbers alone. What this adds refuses a call before it is made (identifier_in_input); the
+ * verifier keeps its reading, so no stored narrative fails for it, and a test holds the check to every match of the
+ * verifier's (packages/redact/src/narrative.test.ts). No counter runs here: a narrative's facts are code's own, a few
+ * thousand characters.
  */
 export function holdsNameOrNumber(text: string, identifiers: { readonly names: readonly string[]; readonly numbers: readonly string[] }): boolean {
-  return matchesIn(masked(text), narrativeSubject(identifiers.names, identifiers.numbers)).length > 0;
+  const normal = masked(text);
+  const subject = narrativeSubject(identifiers.names, identifiers.numbers);
+  // The stored views and the wider reading's answer on the look-alike fold are dropped with the call (inOneReading).
+  return inOneReading(() => {
+    if (matchesIn(normal, subject).length > 0) {
+      return true;
+    }
+    const numbers: Subject = { ...subject, names: [] };
+    if (widerMatchesIn(normal, numbers).length > 0 || digitsGluedToLetter(normal, numbers)) {
+      return true;
+    }
+    const words = identifiers.names.flatMap((name) => {
+      const wider = nameWords(name, true);
+      return wider.length > nameWords(name).length ? [wider.map((word) => word.join('-')).join(' ')] : [];
+    });
+    return words.length > 0 && matchesIn(normal, narrativeSubject(words, [])).length > 0;
+  });
 }
 
 /** Where a text holds a name or a number of the narrative's reading (nameOrNumberMatches). */

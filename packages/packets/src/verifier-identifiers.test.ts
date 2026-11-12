@@ -1,4 +1,4 @@
-import { BARRIER, holdsNameOrNumber } from '@tp/redact';
+import { BARRIER, holdsNameOrNumber, nameOrNumberMatches } from '@tp/redact';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
@@ -388,9 +388,10 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
 
   // The differential: the verifier's reading against the two it is made of, each asked directly. Whatever the letter
   // reader's matcher comes to read, the verifier reads, and it reads nothing neither of them does. The matcher is
-  // asked plainly here (holdsNameOrNumber, the drafter's check: every identifier, every form), while the verifier asks
-  // where, of the identifiers the text can hold; no name of these cases has a part under SHORTEST_PART letters, the
-  // one thing the verifier leaves the plain check.
+  // asked plainly here (nameOrNumberMatches of every identifier, every form), while the verifier asks where, of the
+  // identifiers the text can hold; no name of these cases has a part under SHORTEST_PART letters, the one thing the
+  // verifier leaves the plain reading. The drafter's check (holdsNameOrNumber) was this oracle until it came to read
+  // more than the matcher (Queues item 34, MOD-25, rule (d)): the verifier keeps its reading, so the matcher is asked.
   const PIECES = [
     ...['Zoe', 'ZOË', 'Zoey', 'Vann–Treeby', 'Vann', 'Treeby', 'Treebys', 'O’Quill', 'OQuill', 'Quill', 'Jo Ann', 'jo ann', 'in a'],
     ...['ZZ-123-4567', 'ZZ 1234567', 'ZZ-123-4568', 'SYN.CCN.0001', 'ICNSYNCCN0001', 'SYN.CCN.0002', '13', '1 3', '63'],
@@ -406,6 +407,8 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
   const prose = (text: string, skip: IdentifierSkip) => skip.tokens.reduce((out, token) => `${out.slice(0, token.start)}${BARRIER.repeat(token.end - token.start)}${out.slice(token.end)}`, text);
   /** The text with each token made one invisible character: an identifier written across a token is read. */
   const proseAcross = (text: string, skip: IdentifierSkip) => [...skip.tokens].sort((a, b) => b.start - a.start).reduce((out, token) => `${out.slice(0, token.start)}\u00AD${out.slice(token.end)}`, text);
+  /** The letter reader's matcher asked plainly: whether it finds any of the identifiers, in any form. */
+  const matcherHolds = (text: string, identifiers: CaseIdentifiers) => nameOrNumberMatches(text.normalize('NFKC'), identifiers).length > 0;
 
   it('flags an identifier whenever its whole-word reading or the letter reader’s matcher holds one, and never when neither does', () => {
     fc.assert(
@@ -416,12 +419,14 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
         fc.pre(skip.dated.length === 0);
         const spans = identifierReader(identifiers)(text, skip);
         const wholeWords = identifierSpans(text, [...identifiers.names, ...identifiers.numbers], skip.tokens);
-        const asWritten = wholeWords.length > 0 || holdsNameOrNumber(prose(text, skip), identifiers);
+        const asWritten = wholeWords.length > 0 || matcherHolds(prose(text, skip), identifiers);
         if (asWritten) {
           expect(spans.length, text).toBeGreaterThan(0);
         }
         if (spans.length > 0) {
-          expect(asWritten || holdsNameOrNumber(proseAcross(text, skip), identifiers), text).toBe(true);
+          expect(asWritten || matcherHolds(proseAcross(text, skip), identifiers), text).toBe(true);
+          // And the drafter's check holds wherever the matcher does: it would have refused such facts before a call.
+          expect(wholeWords.length > 0 || holdsNameOrNumber(prose(text, skip), identifiers) || holdsNameOrNumber(proseAcross(text, skip), identifiers), text).toBe(true);
         }
         // It never finds less than the whole-word reading, and no span holds a token.
         for (const word of wholeWords) {
@@ -440,9 +445,10 @@ describe('MOD-20: what a narrative is meant to say is never read as an identifie
 describe('the whole-word reading by itself (docs/adr/0047), which the matcher’s now stands beside', () => {
   it('is what reads an identifier written as the records hold it, where they hold a character the matcher joins nothing over', () => {
     // A slash, a period, a comma or a plus sign between two digits of a number that holds a letter, a plus sign in a
-    // name, and one word of a number the records hold in two. The matcher reads none of these (the drafter's check
-    // holds none); the verifier fails each, as it did before the matcher stood beside this reading. A row the matcher
-    // comes to read no longer shows that: give it another such identifier.
+    // name, and one word of a number the records hold in two. The matcher reads none of these; the verifier fails
+    // each, as it did before the matcher stood beside this reading. A row the matcher comes to read no longer shows
+    // that: give it another such identifier. The drafter's check does hold each now (Queues item 34, MOD-25, rule (d)):
+    // it reads more than the matcher, and the verifier's reading is not widened with it.
     for (const [identifiers, written] of [
       [numbers('ZZ12345/01'), 'ZZ12345/01'],
       [numbers('ZZ12345.01'), 'ZZ12345.01'],
@@ -452,7 +458,8 @@ describe('the whole-word reading by itself (docs/adr/0047), which the matcher’
       [names('QUILL+TREEBY'), 'Quill+Treeby'],
     ] as const) {
       const sentence = `The payer told ${written} so [3].`;
-      expect(holdsNameOrNumber(sentence, identifiers), written).toBe(false);
+      expect(nameOrNumberMatches(sentence, identifiers), written).toEqual([]);
+      expect(holdsNameOrNumber(sentence, identifiers), written).toBe(true);
       expect(read(sentence, identifiers), written).toEqual([written]);
     }
     // One number and the name through the verifier, end to end.
