@@ -46,13 +46,12 @@ step" items 3 to 6 are what is left) and W33's (signatures, refusals).
   failing first: the file did not load without `registration-code.ts`, then 14 failed on missing behaviour, with the
   type errors naming `webauthn`, `answerRegistrationCode`, `codeRequired` and `creation`. `registration-code.ts` (a
   pure helper the tests import) was written between those two runs; nothing else preceded its tests.
-- The web's type-check passed before the last two test-only edits.
-- **NOT known when this block was written:** `pnpm typecheck`, `pnpm lint`, `pnpm lint:logs`, the web's unit tests
-  and the web's other database tests (the route tests that sign in with a key are the likely breakage: every key
-  sign-in now needs a registry row, and a hand-made `key` pending needs `assertion`) were running in W44's background
-  when the context ran out; a later commit of this file gives the result if W44 saw it. **Until then count them as not
-  run on dde86284. `pnpm test:db` whole and the full local suite were not run by W44.** W43's whole-suite result on
-  e85c3b40 is in W43's block, if it was added.
+- **Added after the background run ended, on the tree committed as dde86284:** `pnpm typecheck` passed (24
+  projects); `pnpm lint` 1,955 files, 0 errors, 0 warnings; `pnpm lint:logs` 1,206 files, every call allowlisted; the
+  web's unit tests under `lib/auth` and `lib/routes/sign-in`: 10 files, 136 passed; **the web's database tests, all
+  of `apps/web`: 61 files, 7,656 passed, 0 failed** (the route tests that sign in with a key included).
+- **Still not run by W44:** `pnpm test:db` whole (the packages' and the worker's database tests) and the full local
+  suite. W43's whole-suite result on e85c3b40 is in W43's block, if it was added.
 - Tests restated, none skipped or loosened: the first key test's event is `hardware_key_registered:` (no purpose);
   SGN-17's "audit write fails" case is now "the registry's record fails": removed at the provider, the new line,
   `key_not_registered` (it threw before); SEC-20's hand-made key step carries an `assertion`.
@@ -65,8 +64,7 @@ else on the accepted path (the app's verification is local). A password-and-code
 hold a key: the same one read **replaces** the provider's network call. `resolveSession` is untouched.
 
 ### The exact next step
-1. See the background checks through on dde86284 (commands in W43's and W33's machine notes); fix what the route
-   tests need. Then W43's item 3: the code screen and `routes/sign-in.ts` (the register-key page shows the code form
+1. W43's item 3: the code screen and `routes/sign-in.ts` (the register-key page shows the code form
    when the sealed step has `codeRequired` and no `code`; a server action with a Zod schema calls
    `answerRegistrationCode`; the `registration_code` refusal keeps the step and the typed value is not echoed;
    `isRegistrationCodeShaped` is for the field's own message, before the database is asked).
