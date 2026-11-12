@@ -94,3 +94,14 @@ CREATE TRIGGER service_line_keeps_practice
 As the first ask said: `roi_statement_rules` refusing a new statement that does not carry the line list, so production
 never accepts an unchecked actionable figure. Its own exception and exact text, wanted before the launch tag; it also
 removes the fast way out the first ask's Risk section describes, which is yours to weigh then.
+
+## Decided
+**Answered, 2026-11-12, relayed at about 14:20 UTC.** The founder (Tyler Williams) approved Lane A's recommendations,
+relayed by the co-founder in the orchestrator's session (session_019i9ifBvWjwr3brfsKw8r8F) as "Let's do all
+recommendations for the asks"; asked whose answer that was, the co-founder answered "Tyler's, relayed by me". Recorded
+by Lane A's orchestrator as:
+- **Q1: no** (the grant does not cover the first ask's fallback; a fault comes back to him).
+- **Q2: yes**, exactly the text this ask prints for the trigger refusing a change of a service line's practice, word
+  for word, landing where "Where it lands" says; never widened.
+- **Q3: no for now** (D19's alternative is not built).
+- "Not asked yet" and "Coming the day PR 5 merges" are not answered by this.

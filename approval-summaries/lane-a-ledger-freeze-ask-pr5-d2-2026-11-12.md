@@ -262,3 +262,18 @@ BEGIN
 END;
 $function$;
 ```
+
+## Decided
+**Granted, 2026-11-12, relayed at about 14:20 UTC.** The founder (Tyler Williams) approved Lane A's recommendations,
+relayed by the co-founder in the orchestrator's session (session_019i9ifBvWjwr3brfsKw8r8F) as "Let's do all
+recommendations for the asks"; asked whose answer that was, the co-founder answered "Tyler's, relayed by me". Recorded
+by Lane A's orchestrator as:
+- **Question 1: yes. Question 2: yes. Question 3: does not arise** (Question 1 is yes; Lane A made no recommendation on
+  it, and nothing is recorded as answered on it).
+- The grant covers exactly **Appendix D2** (`roi_statement_rules`, body `ad925199131cb411`), word for word, in place of
+  Appendix D, and the one header line of Question 2, `SET plan_cache_mode TO 'force_custom_plan'`, following the
+  `SET search_path` line, as this ask prints them; for schema PR 5 only, never widened. Appendix A stands as granted on
+  2026-11-07.
+- The first ask's lapse and fault rules apply as written: a fault found in a granted text is not repaired by the build;
+  the corrected text goes back to him with its proof.
+- This is not the approval of record for the pull request: he still commits the approval line on schema PR 5 himself.
