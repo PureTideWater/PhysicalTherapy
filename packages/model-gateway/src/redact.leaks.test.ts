@@ -2378,8 +2378,9 @@ describe('MOD-25: a stored number written with other marks than the records hold
         expect(sentOrRefused('Fax 21318-5, B ext', held, claims)).toBe('Fax [MEMBER_ID], B ext');
         expect(sentOrRefused('Fax 8-852780545 ext', heldAs('8852780545'), claims)).toBe('Fax [MEMBER_ID] ext');
         expect(letterPath('Fax 21318-5 ext', held, claims)).toBe('Fax [MEMBER_ID] ext');
-        // The whole glued number under one placeholder of the call's own (the first reading's, a label word or a phone
-        // word against it) is hidden whole: replaced and sent, as on the base.
+        // The whole glued number under one placeholder of the first reading (a label word or a phone word against it, or
+        // the whole of it a pattern's) is hidden whole: replaced and sent, as on the base.
+        expect(sentOrRefused('Fax X900123456 ext', heldAs('ZZ 900123456'), claims)).toBe('Fax X[SSN] ext');
         expect(sentOrRefused('Acct21318-5 ext', held, claims)).toBe('Acct[MEMBER_ID] ext');
         expect(sentOrRefused('Fax X8852780545 ext', heldAs('8852780545'), claims)).toBe('Fax X[MEMBER_ID] ext');
         expect(sentOrRefused('Fax X8\r\n852780545 ext', heldAs('8852780545'), claims)).toBe('Fax X[MEMBER_ID] ext');

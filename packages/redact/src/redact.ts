@@ -3947,14 +3947,14 @@ function mayHoldWiderNumber(subject: Subject): boolean {
 /**
  * Rule (a) read on the letter as it is WRITTEN, before any placeholder is (Queues item 34, MOD-25; the ruling of
  * 2026-11-12 on the generated set's finding): whether one of the call's digits-only numbers stands whole and glued to a
- * letter (digitsGluedToLetter) anywhere but wholly under one placeholder of the call's own that the first reading
- * writes. The check reads rule (a) on the redacted text alone, and a placeholder for a part of the number hid the
+ * letter (digitsGluedToLetter) anywhere but wholly under one placeholder the first reading writes. The check reads rule (a) on the redacted text alone, and a placeholder for a part of the number hid the
  * number from it and left the rest in clear: for a number held "21318-5", "Fax 21318-5B ext" was sent as "Fax
  * [MEMBER_ID]-5B ext" (rule (c)'s placeholder for the piece), and for 8852780545, "Fax X8-852780545 ext" as "Fax
  * X8-[SSN] ext" (the first reading's pattern). Here no placeholder of a part hides it, whichever reading writes it: a
  * pattern's, a piece's, or the first reading's own for a shorter number held beside. The one place not counted is the
- * whole written number under a [MEMBER_ID] or [CLAIM_n] span of the first reading ("Acct12345", "Fax X8852780545 ext",
- * a label or phone word against it): nothing of it is left to send, and the base redacted and sent such letters.
+ * whole written number under one span of the first reading, whatever its placeholder ("Acct12345" and "Fax X8852780545
+ * ext", a label or phone word against it; "Fax X900123456 ext", the whole of it a pattern's): nothing of it is left to
+ * send, and the base redacted and sent such letters. Spans are the first reading's merged ones, one placeholder each.
  *
  * Read in each writing the check reads (holdsIdentifier): as written, with each CR LF as a line feed, and where a line
  * feed then stands before a CR with those as one, each place mapped back to where the letter writes it. Each reading
@@ -3965,8 +3965,7 @@ function gluedBeforeRedaction(normal: string, subject: Subject, spans: readonly 
   if (!mayHoldWiderNumber(subject)) {
     return false;
   }
-  const own = spans.filter((span) => span.placeholder === PLACEHOLDERS.member || span.placeholder.startsWith('[CLAIM_'));
-  const hidden = (range: Range) => someOf(own, (span) => span.start <= range.start && range.end <= span.end);
+  const hidden = (range: Range) => someOf(spans, (span) => span.start <= range.start && range.end <= span.end);
   if (digitsGluedToLetter(normal, subject, hidden)) {
     return true;
   }
