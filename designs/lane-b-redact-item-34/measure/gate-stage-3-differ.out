@@ -1,0 +1,11 @@
+# differ.mts: base a97d73e4 (redact.ts 8b2be7ade7ce) against the stage 3 head 6bec2b4e (a1f15736360a), all 8 shards, W49 2026-11-12
+shards 0,4: letters 243873, differ 0
+shards 1,5: letters 243872, differ 0
+shards 2,6: letters 243872, differ 1
+shards 3,7: letters 243872, differ 1
+
+# the two letters (synthetic fuzz, T5/MOD-13 letterCase): spans of A, then of B
+i 187754 names [ 'MEMBER JUNE' ] A: 11-27 "31 December 1969"=>[DATE_OF_BIRTH] | 31-37 "MÉMBER"=>[PATIENT_NAME] | 53-58 "j‘une"=>[CLAIM_1] | 63-68 "ju∙ne"=>[CLAIM_1] | 74-78 "Júne"=>[CLAIM_1] | 80-81 "M"=>[PATIENT_NAME] | 93-109 "31 December 1969"=>[DATE_OF_BIRTH] | 116-120 "June"=>[CLAIM_1] | 122-128 "member"=>[PATIENT_NAME] | 129-134 "jun;e"=>[CLAIM_1] | 138-144 "member"=>[PATIENT_NAME]
+B: 11-27 "31 December 1969"=>[DATE_OF_BIRTH] | 31-37 "MÉMBER"=>[PATIENT_NAME] | 53-58 "j‘une"=>[CLAIM_1] | 63-68 "ju∙ne"=>[CLAIM_1] | 74-78 "Júne"=>[CLAIM_1] | 80-81 "M"=>[PATIENT_NAME] | 93-109 "31 December 1969"=>[DATE_OF_BIRTH] | 116-120 "June"=>[CLAIM_1] | 122-134 "member jun;e"=>[CLAIM_1] | 138-144 "member"=>[PATIENT_NAME]
+i 187859 names [ 'KRE I FGK' ] A: 11-22 "Aug 4, 1933"=>[DATE_OF_BIRTH] | 33-34 "K"=>[PATIENT_NAME] | 35-38 "FGK"=>[CLAIM_1] | 45-46 "K"=>[PATIENT_NAME] | 47-50 "FGK"=>[CLAIM_1] | 58-61 "FGK"=>[CLAIM_1] | 63-64 "K"=>[PATIENT_NAME] | 80-83 "Fgk"=>[CLAIM_1] | 85-88 "Kre"=>[PATIENT_NAME] | 89-90 "I"=>[PATIENT_NAME]
+B: 11-22 "Aug 4, 1933"=>[DATE_OF_BIRTH] | 33-34 "K"=>[PATIENT_NAME] | 35-38 "FGK"=>[CLAIM_1] | 45-46 "K"=>[PATIENT_NAME] | 47-50 "FGK"=>[CLAIM_1] | 58-61 "FGK"=>[CLAIM_1] | 63-70 "K.😀 RE"=>[PATIENT_NAME] | 80-83 "Fgk"=>[CLAIM_1] | 85-88 "Kre"=>[PATIENT_NAME] | 89-90 "I"=>[PATIENT_NAME]
