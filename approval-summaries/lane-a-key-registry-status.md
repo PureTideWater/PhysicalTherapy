@@ -1,6 +1,151 @@
 # Status: Queues item 37, the key registry (Lane A)
 
-## RESUME-BLOCK (2026-11-12, W45, session_019i9ifCFdvWD98TKN6iy9fs): cut A is whole (the flow verified, the code SCREEN built); next is cut B, none of it started
+## RESUME-BLOCK (2026-11-12, W46, session_019i9ifBCSRKBX2qnkTHphgZ): cut B's CONSOLE is built (four routes, their screens); the provider sign-out removal and the alarm swap are NOT started
+
+**WIP `co-001/wip-key-registry` 03f0af53** (one commit on c2450a78). No PR is open. No migration was touched; every
+route was built on the functions and grants as they are. W46 stopped at its token limit (about 185k) at a clean
+boundary instead of leaving the sign-out removal half done. The successor needs this block, W45's below (the code
+screen), W44's (the flow) and W43's item 5.
+
+### What W46 built (W43's item 4; `apps/web` only)
+- `lib/routes/console-keys.ts` (new): `console.request_key_removal`, `console.confirm_key_removal`,
+  `console.cancel_key_removal`, `console.open_key_registration`. Each a `platformRoute`, action, path
+  `/console/organizations/[organizationId]`, `phi: false`, permission `organization.manage`, Zod input of opaque IDs
+  only (`organizationId` for the redirect, `userId` or `removalId`). Each passes `actor.sessionId` (this request's
+  resolved session) as `acting_session` and the request's ID. In `CONSOLE_ROUTES` through `CONSOLE_KEY_ROUTES`.
+- **Who may act, as built.** Handler: `organization.manage` against the actor's internal roles (a practice
+  administrator: `forbidden`; an internal role on a code session: `hardware_key_required`, the wrapper's). Postgres,
+  again: the four functions (`account_removes_keys`, `actor_key_session(acting_session)`, the constraints). The
+  routes add no rule of their own. Scoped transaction: the wrapper's `withActor` (no practice in scope).
+- **Audit.** The functions write the reserved actions themselves, so the wrapper must not write a second.
+  `route.ts` had no such mode; W46 added `AuditSpec.writtenBy?: 'database'` and one condition in `invoke.ts` `run`
+  (design section 6 asked for exactly this). The route still names its action, so the registry's "a mutation names an
+  audit event" holds. Tests hold exactly one event for each act and none for a refusal (a refused act rolls back:
+  **a refusal writes no audit event; the acceptance line "each with its audit event" is met as "each act has its one
+  event, each refusal has none", said plainly**).
+- **The code.** `openKeyRegistration` makes it (`newRegistrationCode`), passes `registrationCodeDigest` only, and
+  returns `{ objectId, registrationCode, openUntil }` with **no redirect**. `lib/http/next.ts` `runAction` gained
+  `options.answer` (success returns a state to the form that asked, nothing redirects), used by
+  `openKeyRegistrationAction` alone. The client component `components/console/open-registration.tsx` holds the code
+  in React state only: no URL, cookie, storage, log, job payload or error. Tested: not in the audit row, the log
+  lines or the page's data; the stored digest equals the code's.
+- **Refusals' words:** `KEY_REFUSALS` in `console-keys.ts`, by constraint name; 42501 is `not_permitted`; P0002 is
+  not found; `hardware_key_removal_open_once` (23505) mapped. `cancel` returning false is answered as decided.
+- **The list.** `organizationPage` (`console.ts`) calls `keyRemovalsByAccount` (`hardware_key_removals()` joined to
+  the requester's email) and each `MemberSummary` gains `self` and `keyRemoval` (the account's latest removal).
+- **Tests first.** `console-routes.db.test.ts`, describe "hardware key removals from the console (SGN-23, SGN-24,
+  SGN-25, SGN-27)", 5 cases, written before the routes. **Seen failing only as a file that could not load** (the
+  module did not exist: "no tests"), then 3 failed on wrong expectations of W46's own (a code session is
+  `hardware_key_required` at the wrapper, not a database refusal; two seed mistakes), then green. Covered: the same
+  person twice, the account itself (request, confirm, cancel), under seven days (3 and 6 days), a key session 16
+  minutes old while a fresh one exists elsewhere, a code session, the console's administrator with no registered
+  key, a practice administrator, no such account or removal, a second open request, an already decided removal, the
+  ended session of the closed account (turned away, nothing written; Postgres opens it no new session by key or
+  code), open before confirmation, open twice. No new SGN number was taken.
+- **Test support, said plainly:** `lib/routes/test-support/key-holders.ts` (new: `recordKey`, `keySession`,
+  `seedPlatformAdmin`, which inserts the membership with triggers off to give it an age, as W33's tests do). The
+  generated route tests' world (`route-tests/world.ts`) changed: its platform administrator is seeded eight days in
+  the role with a registered key and signs in with it, and each world gains a key holder, a second and third
+  administrator, two requested removals and one confirmed. `SampleRefs` gained four refs. `registry.test.ts` lists
+  the new module.
+
+### What is green (on 03f0af53, PostgreSQL 18, Node 24)
+All run on the committed tree 03f0af53, nothing edited while they ran, one after another.
+- `pnpm typecheck`: 24 projects passed. `pnpm lint`: 1,960 files, 0 errors, 0 warnings. `pnpm lint:logs`: 1,210
+  files, every call allowlisted.
+- The web's unit tests (`vitest run --project unit apps/web`): **126 files, 1,700 passed, 0 failed.**
+- `pnpm test:db` whole, 25 minutes: **175 files passed; 10,549 tests passed, 1 skipped, 0 failed.** The worker's
+  `reconcile.large.db.test.ts` passed this time (nothing ran beside it).
+- Within that: `console-routes.db.test.ts` 46 passed; the generated route tests of the four routes passed.
+- **Not run:** `pnpm test:e2e`, `pnpm test:golden`, the unit suite outside `apps/web`, the infra tests.
+
+### NOT done by W46
+1. **W43's item 5, whole: the web still calls the provider's sign-out.** Not started, on purpose: half of it leaves
+   `infra/test/monitoring.test.ts` red. The inventory, read on 03f0af53:
+   - calls: `lib/routes/console.ts` 16 (import) and about 799 to 801 (the `sub` read and
+     `signOutAtProviderAfterCommit`); `lib/routes/settings.ts` 30 and about 1117; `lib/auth/sign-in.ts` 1172 to 1174
+     (`endedByReset`, the call and its error line);
+   - then delete `lib/auth/provider-sign-out.ts` and `provider-sign-out.test.ts`, and the latter's line in
+     `packages/synth/src/cases/registry.ts` 1175 (matrix rows at `matrix.ts` 931 and 949 describe the old behaviour);
+   - tests that spy on `globalSignOut`: `console-routes.db.test.ts` 359 to 428 (the End membership case and the
+     SGN-19 block of two routes; W46's confirm case already asserts the web calls nothing and one outbox row exists,
+     the shape to reuse) and `sign-in.db.test.ts` 551, 586, 631 to 635, 683, 741, 935 to 940, 1438, 1486, 1512;
+   - alarms: `infra/lib/security-events.ts` 65 to 78 and 135 to 136, `infra/lib/constructs/monitoring.ts` 617 to
+     618, `infra/test/monitoring.test.ts` 65, 66, 152, 154, 178 to 194, 583 to 599; replaced by
+     `ProviderSignOutNotDelivered` on the **platform** log group (`PROVIDER_SIGN_OUT_NOT_DELIVERED`,
+     `apps/worker/src/platform/provider-sign-outs.ts` 77) and the `removed hardware key used` alarm;
+   - `AuthProvider.globalSignOut` (`provider.ts` 167, `cognito-provider.ts` 683, `dev-provider.ts` 432) would then
+     be called by nothing in the web: remove it or say why it stays;
+   - the proof asked for: `grep -rn 'globalSignOut\|signOutAtProviderAfterCommit' apps/web/src` showing no call.
+   - the runbooks name both old alarms (`incident-response.md` 13, 30, 216 to 234, 282 to 297, 537 to 539;
+     `support-mail.md` 65, 88; `deploy-and-rollback.md` 415 to 443): the runbook step's.
+2. **Nothing was seen in a browser**: W45's code screen and W46's console, at 390 px and 1,280 px, keyboard and
+   focus. The e2e journey W45 describes can now be written the honest way (request, confirm, open, the code typed).
+3. W43's item 6 and the rest of item 37: the relying-party and user-verification ties, the e2e spec, the two build
+   reviews, ADR 0095, the runbooks, the test-matrix rows, the domain model's regeneration, the PR.
+
+### For the UX and brand review: the console's screens and words (all on `/console/organizations/[organizationId]`, the Members card)
+Files: `app/console/organizations/[organizationId]/page.tsx`, `components/console/key-removal.tsx`,
+`components/console/open-registration.tsx`. No new page, no navigation change.
+- Members card description, a sentence added: "Removing an account’s hardware keys takes two platform
+  administrators, neither of them the account: one requests, another confirms within 24 hours."
+- Account column, badges added: "key removal requested" (destructive), "keys removed" (destructive),
+  "registration open" (outline).
+- Actions column, per member, one of:
+  - no removal standing: button "Request key removal" (outline). It asks for no confirmation: a request changes
+    nothing by itself.
+  - requested: "{You | requester's email} asked to remove this account’s hardware keys at {time UTC}. The request
+    ends at {time UTC}." Then, to the requester: "Another platform administrator confirms it. You cannot confirm your
+    own request." To anyone else: "Confirming removes every hardware key of {email}, ends their sessions at once and
+    closes the account to sign-in until an administrator opens registration of a new key. It cannot be undone." and
+    the button "Confirm key removal" (destructive). Both see "Cancel request" (outline).
+  - confirmed and closed, nothing open: "Keys removed at {time UTC}. Open registration only when you are speaking
+    with the person and are sure it is them: it lasts one hour and gives you a code to read to them." Button "Open
+    registration" (outline).
+  - after pressing it, in place of the form (the panel takes focus; `role="group"`, labelled "Registration code for
+    {email}"): "Registration is open for {email} until {time UTC}." / "Code: XXXX XXXX" (mono, grouped in fours) /
+    "Read it to the person by phone, on a number you already hold for them. It is shown once: PaidWhole keeps no
+    copy, and it goes when you leave or reload this page." / "Never send the code by email or chat. They enter it
+    after their password and authenticator code, then register the new key. Five wrong codes close this opening."
+  - confirmed and open (after a reload, or to another administrator): "Registration of a new key is open until
+    {time UTC}. The code was shown once to the administrator who opened it."
+  - on the reader's own row: nothing, or while a request stands: "Another administrator asked to remove your
+    hardware keys. Two others decide it."
+- Refusals, shown by the form as its error (the nine sentences of `KEY_REFUSALS`), for example: "only a platform
+  administrator who has held the role for seven days, signed in with their registered hardware key in the last 15
+  minutes, does this; sign out, sign in again with your key, then try again"; "ask another platform administrator to
+  confirm this removal; the one who requested it cannot"; "this request has expired; ask again".
+- **What a refresh keeps:** every state but the code. The code panel is memory only; a reload shows "open until".
+- **Points W46 names for that review:** (1) the Actions cell of a member under removal holds two paragraphs and two
+  buttons inside a table cell; at 390 px the table scrolls sideways (`ScrollTable`), not seen. (2) "Confirm key
+  removal" is one press with its consequence in the paragraph above, no typed confirmation. (3) The refusals are
+  lower-case rule sentences in the form's error, as the unlock's is; the first is long. (4) "by phone, on a number
+  you already hold" states the runbook before it exists (W45's point 2, the same). (5) If the code is lost (reload,
+  a duplicate post), the opening still stands for its hour and cannot be reopened until it ends; the screen says
+  "shown once" and not what to do then. (6) "It cannot be undone" on a destructive button whose effect a new
+  registration mends. (7) The requester sees their own request as "You asked".
+
+### Named points for the two reviews (W46 adds; W45's, W44's, W43's and W33's stand)
+- **Auth review:** `AuditSpec.writtenBy: 'database'` lets a route name an audit action the wrapper never writes; a
+  route that claimed it falsely would change records unaudited. Only the four key routes use it, and each has a test
+  of exactly one event; no test yet refuses the flag on any other route.
+- **Auth review:** `runAction`'s `answer` returns a server action's success state without a redirect. One caller.
+- **Auth review:** 42501 from the functions is answered `invalid` with the rule's words, not `forbidden`: it names
+  the three conditions together and so does not say which one failed.
+- **Auth review:** the lost-code case above: one administrator can hold an account closed for an hour at a time by
+  opening and discarding codes; each is on the audit log and sends the member the opening's notice.
+- **Auth review:** the page lists removals only beside an organization's members (current and ended). An account
+  with no membership row at all has no row to act on (the design's line on an account with no membership).
+- **Auth review:** `organizationId` in the inputs is used for the redirect only and is not checked against the
+  account's memberships (as `console.unlock_user` does).
+- **Security review:** the code crosses the server-action response to the administrator's browser and lives in
+  React state until the page goes; `autocomplete`, storage and the URL never see it.
+
+### Machine notes
+As W45's. `pnpm install --frozen-lockfile --offline` was needed again after checking out the WIP ref. W46 holds
+nothing else: no PR, no subagent, no scheduled task; its one background run (the suites above) has ended.
+
+## The earlier block (2026-11-12, W45, session_019i9ifCFdvWD98TKN6iy9fs): cut A is whole (the flow verified, the code SCREEN built); next is cut B, none of it started
 
 **WIP `co-001/wip-key-registry` c2450a78** (one commit on dde86284). No PR is open. No migration was touched. The
 successor needs this block, W44's below (the flow, its named points) and W43's "exact next step" items 4 to 6.
