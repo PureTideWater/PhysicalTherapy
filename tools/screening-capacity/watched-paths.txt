@@ -66,6 +66,7 @@ apps/web/src/lib/auth/dev-store.ts
 apps/web/src/lib/auth/password.ts
 apps/web/src/lib/auth/pending.ts
 apps/web/src/lib/auth/provider.ts
+apps/web/src/lib/auth/registration-code.ts
 apps/web/src/lib/auth/seal.ts
 apps/web/src/lib/auth/secret-hash.ts
 apps/web/src/lib/auth/sessions.ts
