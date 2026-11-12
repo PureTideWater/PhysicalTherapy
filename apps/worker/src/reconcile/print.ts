@@ -75,9 +75,16 @@ export function storedStatement(row: Pick<StatementRow, Exclude<keyof StatementR
   };
 }
 
+/**
+ * A statement as its readers receive it (the print job here; the web's detail page, CSV and list): of `links` only the
+ * four keys they read. The lines a statement's actionable figure counted (`actionable_open_lines`, checked by the
+ * database when the statement is written) are never sent to a reader.
+ */
 export const STATEMENT_COLUMNS = `s.id, s.period_from::text AS period_from, s.period_to::text AS period_to, s.proof_level, s.fees_cents::text AS fees_cents, s.recovered_cents::text AS recovered_cents,
   s.interest_cents::text AS interest_cents, s.approved_unposted_cents::text AS approved_unposted_cents, s.actionable_open_cents::text AS actionable_open_cents,
-  s.pursuit_hours::text AS pursuit_hours, s.links, s.document_key, s.generated_by, s.generated_at`;
+  s.pursuit_hours::text AS pursuit_hours,
+  jsonb_build_object('recovered', s.links -> 'recovered', 'interest', s.links -> 'interest', 'approved_unposted', s.links -> 'approved_unposted', 'actionable_open', s.links -> 'actionable_open') AS links,
+  s.document_key, s.generated_by, s.generated_at`;
 
 export async function printRoiStatement(context: JobContext, services: StatementPrintServices, practiceId: string, statementId: string): Promise<PrintOutcome> {
   return context.transaction(async (scope: Scope) => {

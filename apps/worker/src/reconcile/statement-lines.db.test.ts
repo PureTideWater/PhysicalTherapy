@@ -11,8 +11,11 @@ import { CAS_AS_OF, CAS_RUNS, type CasRun } from '../triage/test-support/cas-run
 import { TriageWorld } from '../triage/test-support/triage-world';
 import type { Scope } from './ledger';
 import { NO_BILLING, NO_TIME_LOG, generateRoiStatement } from './statements';
+import { attemptErrorCode } from '../worker';
+import { STATEMENT_COLUMNS, storedStatement } from './print';
 import { generateFourKeyStatement } from './test-support/four-key-writer';
 import { LedgerWorld } from './test-support/ledger-world';
+import { FOUR_KEYS, PREVIOUS_STATEMENT_COLUMNS, printWatched, recoupedLedSix, statementTwins } from './test-support/statement-twins';
 
 /**
  * An ROI statement lists the priced lines its actionable figure counted (schema PR 5; docs/adr/0082 Decision 7; the
@@ -642,5 +645,116 @@ describe('what roi_statement_rules() leans on (T15 b, c)', () => {
       '23514',
     );
     expect(other.lineIds).toHaveLength(3);
+  }, 240_000);
+});
+
+describe('the readers and the PDF record (T9, T10, T12), and what a refusal shows (T3b)', () => {
+  it('T12, T9: the print job receives four keys for a statement that lists its lines, prints what it prints for the same statement without the list, and records the PDF on both', async () => {
+    const practice = await recoupedLedSix(led, `statement readers print ${randomUUID().slice(0, 8)}`);
+    const twins = await statementTwins(led, practice, QUARTER);
+    expect(twins.lines).toBe(1);
+    const five = await printWatched(led.app, led.services, practice.practiceId, twins.five);
+    const four = await printWatched(led.app, led.services, practice.practiceId, twins.four);
+    // The list is never sent to the job: the row it reads carries today's four keys, whichever statement it is.
+    expect(five.received.map((row) => Object.keys(row.links).sort())).toEqual([[...FOUR_KEYS]]);
+    expect(four.received.map((row) => Object.keys(row.links).sort())).toEqual([[...FOUR_KEYS]]);
+    expect(five.received[0]?.links).toEqual(four.received[0]?.links);
+    // The bytes printed are the four-key statement's, but for the statement's own ID.
+    expect(five.html).toHaveLength(1);
+    expect(five.html[0]?.replaceAll(twins.five, twins.four)).toBe(four.html[0]);
+    expect(five.html[0]).not.toContain('actionable_open_lines');
+    // T9: the PDF's record (the UPDATE) passes on both, once.
+    expect([five.outcome.outcome, four.outcome.outcome]).toEqual(['printed', 'printed']);
+    const recorded = await led.rows<{ id: string; printed: boolean; keys: number }>(
+      practice,
+      'SELECT s.id, s.document_key IS NOT NULL AND s.pdf_sha256 IS NOT NULL AS printed, (SELECT count(*)::int FROM jsonb_object_keys(s.links)) AS keys FROM roi_statement s WHERE s.id = ANY($1::uuid[]) ORDER BY keys',
+      [[twins.five, twins.four]],
+    );
+    expect(recorded).toEqual([
+      { id: twins.four, printed: true, keys: 4 },
+      { id: twins.five, printed: true, keys: 5 },
+    ]);
+    expect((await printWatched(led.app, led.services, practice.practiceId, twins.five)).outcome).toEqual({ outcome: 'already_printed' });
+  }, 240_000);
+
+  it('T9: a statement whose listed lines were since written off and priced again still records its PDF, and stays as written', async () => {
+    const { practice, runId, lineIds } = await threeLines('statement readers a stored statement');
+    const quarter = { practiceId: practice.practiceId, periodFrom: '2026-01-01', periodTo: '2026-03-31' };
+    const generated = await inJob(practice, (scope) => generateRoiStatement(scope, { ...quarter, requestId: `test-${randomUUID()}` }, SOURCES));
+    const stored = () => inJob(practice, (scope) => storedRow(scope, generated?.statementId));
+    const before = await stored();
+    expect(before.links.actionable_open_lines).toEqual(lineIds);
+    const [first] = await openCaseLines(practice);
+    await writeOff(practice, first?.id ?? '');
+    await pricedAgain(practice, runId);
+    const print = await printWatched(w.app, w.pricing.parseServices, practice.practiceId, generated?.statementId ?? '');
+    expect(print.outcome.outcome).toBe('printed');
+    expect(print.received.map((row) => Object.keys(row.links).sort())).toEqual([[...FOUR_KEYS]]);
+    // The UPDATE checked nothing again and changed only the PDF's two columns.
+    const after = await stored();
+    expect({ ...after.rest, document_key: null, pdf_sha256: null }).toEqual(before.rest);
+    expect(after.links).toEqual(before.links);
+  }, 240_000);
+
+  it('T10: the previous image against this database: its writer stores four keys and its PDF is recorded, and its reader reads a statement that lists its lines as today’s reader does', async () => {
+    const { practice } = await threeLines('statement readers the previous image');
+    const quarter = { practiceId: practice.practiceId, periodFrom: '2026-01-01', periodTo: '2026-03-31' };
+    // The previous image's writer, then the PDF's record (the UPDATE is the same text in both images).
+    const old = await inJob(practice, (scope) => generateFourKeyStatement(scope, quarter, SOURCES));
+    expect(Object.keys((await inJob(practice, (scope) => storedRow(scope, old?.statementId))).links).sort()).toEqual([...FOUR_KEYS]);
+    expect((await printWatched(w.app, w.pricing.parseServices, practice.practiceId, old?.statementId ?? '')).outcome.outcome).toBe('printed');
+    // Today's writer's row, read by the previous image's select (`s.links` whole) and by today's.
+    const now = await inJob(practice, (scope) => generateRoiStatement(scope, { ...quarter, periodFrom: '2026-04-01', periodTo: '2026-06-30', requestId: `test-${randomUUID()}` }, SOURCES));
+    type Row = Parameters<typeof storedStatement>[0];
+    const read = (columns: string) => inJob(practice, async (scope) => (await scope.client.query<Row>(`SELECT ${columns} FROM roi_statement s WHERE s.id = $1`, [now?.statementId])).rows[0] as Row);
+    const previous = await read(PREVIOUS_STATEMENT_COLUMNS);
+    const today = await read(STATEMENT_COLUMNS);
+    expect(Object.keys(previous.links)).toHaveLength(5);
+    expect(Object.keys(today.links).sort()).toEqual([...FOUR_KEYS]);
+    expect(storedStatement(previous)).toEqual(storedStatement(today));
+    expect({ ...previous, links: today.links }).toEqual(today);
+    // The new writer against the unmigrated database is refused: the migration's own test holds that (T3: the old
+    // roi_links_valid answers false for five keys; packages/db/src/roi-statement-actionable-lines-migration.db.test.ts).
+  }, 240_000);
+
+  it('T3b, its last clause: a refusal that quotes a value reaches a log as its code alone, and the rule’s refusal names no value', async () => {
+    const { practice, caseId, lineIds } = await threeLines('statement readers a refusal');
+    const SENT = 'SYNTHETIC-not-an-id';
+    const refused = async (lines: unknown): Promise<{ readonly code?: string; readonly message: string }> => {
+      months += 1;
+      const year = 2100 + months;
+      const links = { recovered: [], interest: [], approved_unposted: [], actionable_open: [caseId], actionable_open_lines: lines };
+      return inJob(practice, (scope) =>
+        scope.client.query(
+          `INSERT INTO roi_statement (practice_id, period_from, period_to, proof_level, fees_cents, recovered_cents, interest_cents, approved_unposted_cents, actionable_open_cents, pursuit_hours, links, generated_by)
+           VALUES ($1, $2, $3, 'posted', 0, 0, 0, 0, 9000, '0.00', $4, NULL)`,
+          [practice.practiceId, `${String(year)}-01-01`, `${String(year)}-03-31`, JSON.stringify(links)],
+        ),
+      ).then(
+        () => {
+          throw new Error('the statement was stored');
+        },
+        (error: unknown) => error as { readonly code?: string; readonly message: string },
+      );
+    };
+    // A malformed ID is refused by the trigger's cast, and PostgreSQL's words quote it.
+    const malformed = await refused([...lineIds.slice(0, 2), SENT]);
+    expect(malformed.code).toBe('22P02');
+    expect(malformed.message).toContain(SENT);
+    // The job's log line for a failed attempt is the code, never the words (worker.ts, logFailedAttempt).
+    expect(attemptErrorCode(malformed)).toBe('DB_22P02');
+    // A value that is not a list of IDs: refused, and logged the same way.
+    const notAList = await refused(SENT);
+    expect(notAList.code).not.toBe('23514');
+    expect(attemptErrorCode(notAList)).toBe(`DB_${String(notAList.code)}`);
+    expect(attemptErrorCode(notAList)).not.toContain(SENT);
+    // A well-formed ID that is no line of the case: the rule's own words, which a person may be shown (the web's 23514
+    // branch), name no ID and no figure.
+    const stranger = randomUUID();
+    const wrong = await refused([...lineIds.slice(0, 2), stranger]);
+    expect(`${String(wrong.code)}: ${wrong.message}`).toBe(REFUSED);
+    expect(wrong.message).not.toContain(stranger);
+    expect(wrong.message).not.toMatch(/[0-9]/);
+    expect(attemptErrorCode(wrong)).toBe('DB_23514');
   }, 240_000);
 });
