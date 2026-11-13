@@ -1926,9 +1926,12 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
   const ENDS = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['ZZ7654321', '7654321']);
   const ENDS_CLAIMS = claimsOf('SYNCLAIM0001', '4455667');
   it.each([
-    sentAs('ID ZZ76543\uA6EF1\n01-02-2020', 'ID [MEMBER_ID]'),
-    sentAs('Member ID: ZZ76543\uA6EF1 \n01-02-2020', 'Member ID: [MEMBER_ID]'),
-    sentAs('Line 3. ID ZZ76543\uA6EF1\n01-02-2020 Zephyra', 'Line 3. ID [MEMBER_ID] [PATIENT_NAME]'),
+    // The look-alike digit of these rows that are sent is U+A75A, a letter. With U+A6EF, a number character that is no
+    // decimal digit, what stands after it is a pattern's number with that character beside it: refused since Queues
+    // item 40, stage 2 (the rows are in its describe, a named cost).
+    sentAs('ID ZZ76543\uA75A1\n01-02-2020', 'ID [MEMBER_ID]'),
+    sentAs('Member ID: ZZ76543\uA75A1 \n01-02-2020', 'Member ID: [MEMBER_ID]'),
+    sentAs('Line 3. ID ZZ76543\uA75A1\n01-02-2020 Zephyra', 'Line 3. ID [MEMBER_ID] [PATIENT_NAME]'),
     // The neighbours that stay, the date sent as ef3e8d20 sends it: the ID as it is stored or with the look-alike as its
     // last digit (no pattern begins inside the ID), and the look-alike with no number right after it.
     sentAs('ID ZZ7654321\n01-02-2020', 'ID [MEMBER_ID]\n01-02-2020'),
@@ -1942,7 +1945,7 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     expect(outcome(letter, ENDS, ENDS_CLAIMS), JSON.stringify(letter)).toBe(sent);
   });
   it('the withheld match: with one member ID alone the same letter is sent the same way', () => {
-    expect(outcome('ID ZZ76543\uA6EF1\n01-02-2020', patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['ZZ7654321']), claimsOf('SYNCLAIM0001'))).toBe('ID [MEMBER_ID]');
+    expect(outcome('ID ZZ76543\uA75A1\n01-02-2020', patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['ZZ7654321']), claimsOf('SYNCLAIM0001'))).toBe('ID [MEMBER_ID]');
   });
   // The same invariant as the property below, for the patient its generator does not draw: whatever the letter reader
   // leaves as written that redactLetter replaces, the check refuses.
@@ -1972,7 +1975,7 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     ['a member ID that ends another', 'Member ID: ZZ1980O314\n555-0123\nPaid in full.', ['ZZ19800314', '800314'], [['SYNCLAIM0001']], 'Member ID: [MEMBER_ID]\nPaid in full.', '5550123'],
     ['a claim number that ends another', 'Claim SYN445S667\n555-0123', ['ZZ7654321'], [['SYN4455667', '4455667']], 'Claim [CLAIM_1]', '5550123'],
     ['a member ID that begins another', '7654E210 555-0123', ['7654321', '76543210'], [['SYNCLAIM0001']], '[MEMBER_ID]', '5550123'],
-    ['the withheld match’s own letter', 'ID ZZ76543\uA6EF1\n01-02-2020', ['ZZ7654321', '7654321'], [['SYNCLAIM0001']], 'ID [MEMBER_ID]', '01022020'],
+    ['the withheld match’s own letter', 'ID ZZ76543\uA75A1\n01-02-2020', ['ZZ7654321', '7654321'], [['SYNCLAIM0001']], 'ID [MEMBER_ID]', '01022020'],
     // M-1 (the review of that fix): a piece of the hidden number that is itself a short identifier of the call's own is
     // the number's there, as it is wherever such an identifier stands inside a pattern's number (R6b).
     ['a claim number that is the number’s last piece', 'Member ID: ZZ1980O314\n555-0123\nPaid in full.', ['ZZ19800314'], [['0123']], 'Member ID: [MEMBER_ID]\nPaid in full.', '5550123'],
@@ -2977,6 +2980,17 @@ describe('MOD-25, Queues item 40, stage 2 (R1-3 with ruling 3): a number charact
     // Read once where every such character is the one the further reading writes already: rule (a)'s reading alone is added.
     expect(work(asOne)).toBeLessThan(2 * work('Ref 76543210 on file. Note 2.'));
     expect(sentOrRefused(asOne, who, numbers)).toBe('Ref [MEMBER_ID] on file. Note ↀ.');
+  });
+
+  // A named cost, rows the base sent with the number hidden (the withheld match of docs/adr/0054's reviews, pinned SENT
+  // above with U+A6EF until this stage): a look-alike digit that is such a character, written inside a member ID, with
+  // a pattern's number read from what stands right after it ("1", a line feed, "01-02-2020").
+  it.each(['ID ZZ76543\uA6EF1\n01-02-2020', 'Member ID: ZZ76543\uA6EF1 \n01-02-2020', 'Line 3. ID ZZ76543\uA6EF1\n01-02-2020 Zephyra'])('%j: refused, where the base sent it with the number hidden', (letter) => {
+    for (const memberIds of [['ZZ7654321', '7654321'], ['ZZ7654321']]) {
+      expect(sentOrRefused(letter, patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], memberIds), claimsOf('SYNCLAIM0001', '4455667'))).toBe(REFUSED);
+    }
+    // Sent as before where nothing a reading takes stands after the character.
+    expect(sentOrRefused('ID ZZ76543\uA6EF1\nPaid 01/02/2020', patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['ZZ7654321', '7654321']), claimsOf('SYNCLAIM0001', '4455667'))).toBe('ID [MEMBER_ID]\nPaid 01/02/2020');
   });
 
   // Set apart from the identifier, such a character is beside nothing: sent as the reading of the letter as given writes it.
