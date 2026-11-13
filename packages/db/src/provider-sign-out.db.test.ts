@@ -281,3 +281,108 @@ describe('JOB-07: the answers and the sweep', () => {
     expect(await row(waiting.id)).toMatchObject({ done: false });
   });
 });
+
+describe('SGN-28: a reset whose own transaction was never recorded still queues the provider sign-out (owed red until provider_sign_out_unrecorded_reset, operator_provider_sign_out_request and the widened reason are in the migration)', () => {
+  const rowsOf = async (user: string) =>
+    (
+      await owner.query<{ reason: string; actor_kind: string; actor_id: string | null; action: string; traced: boolean }>(
+        `SELECT p.reason, e.actor_kind, e.actor_id, e.action, p.request_id = e.request_id AS traced
+           FROM provider_sign_out p JOIN audit_event e ON e.id = p.source_event_id WHERE p.user_id = $1 ORDER BY p.queued_at`,
+        [user],
+      )
+    ).rows;
+  const unrecorded = (user: string) => withActor(app, user, async (scope) => (await scope.client.query<{ queued: boolean }>('SELECT provider_sign_out_unrecorded_reset($1) AS queued', [request()])).rows[0]?.queued);
+
+  it('queues one sign-out for the acting account alone, from its own audit row, with no lock on the account and no session ended', async () => {
+    const [user, other] = [await createUser(owner), await createUser(owner)];
+    // Another transaction holds the account's row as the reset's own tries do (FOR NO KEY UPDATE, docs/adr/0093 D2): the
+    // call does not wait on it.
+    const holder = await admin.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT 1 FROM "user" WHERE id = $1 FOR NO KEY UPDATE', [user]);
+      expect(await code(unrecorded(user))).toBe('accepted');
+    } finally {
+      await holder.query('ROLLBACK');
+      holder.release();
+    }
+    expect(await rowsOf(user)).toEqual([{ reason: 'password_reset_unrecorded', actor_kind: 'user', actor_id: user, action: 'password_reset_unrecorded', traced: true }]);
+    expect(await rowsOf(other)).toEqual([]);
+    // It moves no mark: the reset's own record does that, and this is not it.
+    expect((await owner.query('SELECT sign_in_not_before FROM "user" WHERE id = $1', [user])).rows[0]?.sign_in_not_before).toBeNull();
+  });
+
+  it('writes nothing more while one waits with no try in flight, and queues again once that one is claimed or done', async () => {
+    const user = await createUser(owner);
+    expect(await unrecorded(user)).toBe(true);
+    expect(await unrecorded(user)).toBe(false);
+    expect((await rowsOf(user)).length).toBe(1);
+    // A try in flight may already have asked the provider, before this reset: it does not cover it.
+    await owner.query("UPDATE provider_sign_out SET leased_until = now() + interval '2 minutes' WHERE user_id = $1", [user]);
+    expect(await unrecorded(user)).toBe(true);
+    expect((await rowsOf(user)).length).toBe(2);
+  });
+
+  it('is the account’s own act only: no actor is refused, the application role cannot write the action itself, and the operator role cannot call it', async () => {
+    const user = await createUser(owner);
+    expect(await code(operator('SELECT provider_sign_out_unrecorded_reset($1)', [request()], APP_ROLE))).toBe('42501');
+    expect(await code(operator('SELECT provider_sign_out_unrecorded_reset($1)', [request()]))).toBe('42501');
+    expect(await code(withActor(app, user, (scope) => recordAuditEvent(scope, { action: 'password_reset_unrecorded', objectType: 'user', objectId: user, requestId: request() })))).toBe('42501');
+    expect(await rowsOf(user)).toEqual([]);
+  });
+
+  it('lets the operator queue it for a named account where the database was unreachable, once while one waits, and no one else', async () => {
+    const user = await createUser(owner);
+    const first = await operator<{ id: string | null }>('SELECT operator_provider_sign_out_request($1, $2) AS id', [user, request()]);
+    expect(first[0]?.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await rowsOf(user)).toEqual([{ reason: 'password_reset_unrecorded', actor_kind: 'system', actor_id: null, action: 'password_reset_unrecorded', traced: true }]);
+    expect((await operator<{ id: string | null }>('SELECT operator_provider_sign_out_request($1, $2) AS id', [user, request()]))[0]?.id).toBeNull();
+    expect(await code(operator('SELECT operator_provider_sign_out_request($1, $2)', [randomUUID(), request()]))).toBe('P0002');
+    expect(await code(withActor(app, user, (scope) => scope.client.query('SELECT operator_provider_sign_out_request($1, $2)', [user, request()])))).toBe('42501');
+    // The job claims it like any other row.
+    await owner.query("UPDATE provider_sign_out SET next_attempt_at = now() + interval '1 day' WHERE done_at IS NULL AND gave_up_at IS NULL AND user_id <> $1", [user]);
+    expect((await claim())[0]).toMatchObject({ sign_out_id: first[0]?.id, account_id: user, try: 1 });
+  });
+});
+
+describe('JOB-09: the sweep judges late and given up by the row’s age, whatever its tries (owed red until operator_provider_sign_outs_overdue reads queued_at)', () => {
+  it('marks a row late 15 minutes after it was queued, tried or not, leased or not; and not a minute sooner', async () => {
+    const [untried, leased, young] = [await queued(), await queued(), await queued()];
+    await rewind("queued_at = now() - interval '16 minutes'", untried.id);
+    await rewind("queued_at = now() - interval '16 minutes', attempts = 1, leased_until = now() + interval '1 minute'", leased.id);
+    await rewind("queued_at = now() - interval '14 minutes'", young.id);
+    expect(await linesFor(young.id)).toEqual([]);
+    expect(await linesFor(untried.id)).toEqual(['LATE']);
+    expect(await linesFor(leased.id)).toEqual(['LATE']);
+    expect(await row(untried.id)).toMatchObject({ late: true, gave_up: false });
+    // Late is not given up: the row is still claimed.
+    await owner.query("UPDATE provider_sign_out SET next_attempt_at = now() + interval '1 day' WHERE id <> $1 AND done_at IS NULL", [untried.id]);
+    await rewind('next_attempt_at = now()', untried.id);
+    expect((await claim())[0]).toMatchObject({ sign_out_id: untried.id, try: 1 });
+  });
+
+  it('gives a row up 24 hours after it was queued with no minimum of tries, once, never under a running lease, and never a done row', async () => {
+    const [untried, inFlight, finished] = [await queued(), await queued(), await queued()];
+    await rewind("queued_at = now() - interval '25 hours'", untried.id);
+    await rewind("queued_at = now() - interval '25 hours', attempts = 1, leased_until = now() + interval '1 minute'", inFlight.id);
+    await rewind("queued_at = now() - interval '25 hours', done_at = now() - interval '24 hours'", finished.id);
+    expect(await linesFor(untried.id)).toEqual(['GAVE_UP', 'LATE']);
+    expect(await linesFor(inFlight.id)).toEqual(['LATE']);
+    expect(await linesFor(finished.id)).toEqual([]);
+    await linesFor(untried.id);
+    expect(await count("audit_event WHERE action = 'provider_sign_out_undelivered' AND actor_kind = 'system' AND object_type = 'user' AND object_id = $1", [untried.user])).toBe(1);
+    expect(await row(inFlight.id)).toMatchObject({ late: true, gave_up: false });
+    // Its lease over, the next sweep gives it up too.
+    await rewind("leased_until = now() - interval '1 second'", inFlight.id);
+    expect(await linesFor(inFlight.id)).toEqual(['GAVE_UP', 'LATE']);
+  });
+});
+
+describe('JOB-07: the claim names the cause (owed red until operator_provider_sign_out_claim returns cause_request_id)', () => {
+  it('returns the request ID of the event that queued the row', async () => {
+    const { id } = await queued();
+    const cause = (await owner.query<{ request_id: string }>('SELECT request_id FROM provider_sign_out WHERE id = $1', [id])).rows[0]?.request_id;
+    const claimed = await operator<{ sign_out_id: string; cause_request_id?: string }>('SELECT * FROM operator_provider_sign_out_claim()');
+    expect(claimed[0]).toMatchObject({ sign_out_id: id, cause_request_id: cause });
+  });
+});

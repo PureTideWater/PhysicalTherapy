@@ -922,3 +922,54 @@ describe('SGN-24: the target of a requested key removal changes no other account
     });
   });
 });
+
+describe('SGN-29: a step judged with no beginning is no guess and records no refusal (owed red until hardware_key_registration_judge returns before its security event when began is NULL)', () => {
+  const refusals = (user: string) => count("audit_event WHERE action = 'security_event' AND actor_kind = 'system' AND object_id = $1 AND purpose = 'key_registration_refused'", [user]);
+  const judge = async (user: string, codeDigest: Buffer | null, at: string | null) =>
+    (await asUser<{ verdict: string }>(user, 'SELECT hardware_key_registration_judge($1, $2::timestamptz, $3) AS verdict', [codeDigest, at, request()]))[0]?.verdict;
+
+  it('answers refused and writes no security event at the code screen, counts no try, and still records a wrong code once', async () => {
+    const target = await member();
+    const { removal } = await removed(target.id);
+    expect(await judge(target.id, null, null)).toBe('refused');
+    expect(await refusals(target.id)).toBe(0);
+    expect(await count('hardware_key_removal WHERE id = $1 AND registration_code_tries = 0', [removal])).toBe(1);
+    // A real guess (a step with its beginning and a code) is still recorded, once an hour.
+    expect(await judge(target.id, digest(), await began())).toBe('refused');
+    expect(await judge(target.id, digest(), await began())).toBe('refused');
+    expect(await refusals(target.id)).toBe(1);
+  });
+});
+
+describe('SEC-28: a refused act on a key removal leaves a security event for the acting account (owed red until hardware_key_removal_refused is in the migration)', () => {
+  const events = async (user: string) =>
+    (await owner.query<{ purpose: string; actor_id: string | null; practice_id: string | null }>("SELECT purpose, actor_id, practice_id FROM audit_event WHERE action = 'security_event' AND actor_kind = 'system' AND object_type = 'user' AND object_id = $1 AND purpose LIKE 'key\\_removal\\_refused\\_%' ORDER BY purpose", [user])).rows;
+  const refusedAct = (user: string, why: string | null) => asUser(user, 'SELECT hardware_key_removal_refused($1, $2)', [why, request()]);
+
+  it('records the refusal the requester meets when confirming their own request: one row, IDs only, once an hour a reason', async () => {
+    const [target, requester] = [await member(), await administrator()];
+    const removal = await requestRemoval(requester, target.id);
+    expect(await failure(confirmRemoval(requester, removal))).toEqual(refusedBy('hardware_key_removal_two_people'));
+    // The refusal rolled back: nothing is on the audit log until the route says so in a transaction of its own.
+    expect(await events(requester.id)).toEqual([]);
+    await refusedAct(requester.id, 'two_people');
+    await refusedAct(requester.id, 'two_people');
+    await refusedAct(requester.id, 'not_permitted');
+    expect(await events(requester.id)).toEqual([
+      { purpose: 'key_removal_refused_not_permitted', actor_id: null, practice_id: null },
+      { purpose: 'key_removal_refused_two_people', actor_id: null, practice_id: null },
+    ]);
+    // It is about the actor alone: the account of the removal and every other account have no row.
+    expect(await events(target.id)).toEqual([]);
+  });
+
+  it('takes a closed list of reasons from an account acting as itself, and from no other role', async () => {
+    const user = await createUser(owner);
+    expect(await failure(refusedAct(user, 'anything_else'))).toMatchObject({ code: '23514' });
+    expect(await failure(refusedAct(user, null))).toMatchObject({ code: '23514' });
+    expect(await code(as(APP_ROLE, 'SELECT hardware_key_removal_refused($1, $2)', ['two_people', request()]))).toBe('42501');
+    expect(await code(as(OPERATOR_ROLE, 'SELECT hardware_key_removal_refused($1, $2)', ['two_people', request()]))).toBe('42501');
+    expect(await events(user)).toEqual([]);
+    expect(await code(asUser(user, "INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, purpose) VALUES ($1, 'user', 'security_event', 'user', $1, 'key_removal_refused_two_people')", [user]))).toBe('42501');
+  });
+});
