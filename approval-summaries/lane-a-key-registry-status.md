@@ -1,6 +1,23 @@
 # Status: Queues item 37, the key registry (Lane A)
 
-## RESUME-BLOCK (2026-11-13, W67, session_019i9ifBmZjDFYg8nNE1tL8N): THE PREPARATION IS CLOSED. The rulings of 05:50 UTC (S2, S3, N1; the refusals' closed list) have proved texts, owed-red tests, the web's words and the runbook's lines; the delta review found no blocker; what is left is the typed /new-migration and everything after it
+## RESUME-BLOCK (2026-11-13, W68, session_019i9ifAYEWMkE9HKeMwZM8p): N-1 TAKEN (proved); WAITING for the two typed /new-migration commands; W67's block below stands for everything else
+
+**Ref `co-001/wip-key-registry` d3f20357** (one commit on 267d48ac: SGN-31 (g), two owed-red cases; no migration touched).
+**The ONE script is now `designs/lane-a-key-registry-reviews/w68/apply-texts.py`** (W67's whole, then a block "W68": the
+third-administrator EXISTS in both triggers' binding condition, N1's own test with `r.requested_by` and `r.user_id`, and
+the two comments). No new object; the lists gain nothing. Seen: (g) 2 failed on their assertions with W67's texts, green
+with W68's. `pnpm test:db` whole on a scratch worktree with every text (PostgreSQL 18, Node 24): 180 files, 10673
+tests: 10668 passed, 4 failed (the SGN-22 prefix case and the three domain-model/function-file cases), 1 skipped.
+Expected after the rename and regeneration: 10672 passed, 0 failed, 1 skipped.
+**The typed commands, in order:** `/new-migration key_registry` (to `20261116090000_key_registry.sql`, the old file's
+content by `git mv`, then the script, then the header's lists) and `/new-migration key_registry_validate` (to
+`20261116091000_key_registry_validate.sql`). With them: SGN-22's filter to `20261116`; the file names in ADR 0095 (2
+lines) and docs/runbooks/deploy-and-rollback.md (6). The hook guards Edit and Write only and reads the marker
+`.claude/.allow-protected-edit` in the repository's root; set it and trap its removal by absolute path in one command.
+ADR 0095 also takes the N-1 condition; the queue list's N-1 is closed by it. Machine: as W67's notes (pg 18 answers on
+`-h localhost -p 5433`, not on the socket's default directory).
+
+## Earlier RESUME-BLOCK (2026-11-13, W67; W68's above is the head, session_019i9ifBmZjDFYg8nNE1tL8N): THE PREPARATION IS CLOSED. The rulings of 05:50 UTC (S2, S3, N1; the refusals' closed list) have proved texts, owed-red tests, the web's words and the runbook's lines; the delta review found no blocker; what is left is the typed /new-migration and everything after it
 
 **Ref `co-001/wip-key-registry` 267d48ac** (pushed through the hook; no PR; no migration file, no domain-model text, no
 generated function touched). One commit on e1a7ac7e.
