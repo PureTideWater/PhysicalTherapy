@@ -1288,8 +1288,8 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
     // Keyed (review A3): the stored digest is not the code's bare SHA-256, and the sign-in flow of the same services,
     // which digests under the same key, takes the code the console's route opened with; another code it refuses.
     expect((await removalOf(member.id))?.registration_code_sha256?.equals(createHash('sha256').update(data.registrationCode, 'utf8').digest())).toBe(false);
-    const typing = { step: 'register_key' as const, email: member.email, userId: member.id, grant: 'none', began: Date.now(), codeRequired: true as const };
-    const typed = { userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/141.0', requestId: `test-${randomUUID()}` };
+    const typing = { step: 'register_key' as const, email: 'key-member@synthetic.test', userId: member.id, grant: 'none', began: Date.now(), codeRequired: true as const };
+    const typed = { deviceToken: undefined, userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/141.0', requestId: `test-${randomUUID()}` };
     expect(await services.signIn.answerRegistrationCode(typing, 'ABCD EFGH', typed)).toEqual({ kind: 'refused', reason: 'registration_code' });
     expect(await services.signIn.answerRegistrationCode(typing, data.registrationCode, typed)).toMatchObject({
       kind: 'pending',

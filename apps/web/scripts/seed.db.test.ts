@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { DevAuthProvider } from '../src/lib/auth/dev-provider';
 import { FileDevStore } from '../src/lib/auth/dev-store';
+import { registrationCodeKey } from '../src/lib/auth/registration-code';
 import { Sealer } from '../src/lib/auth/seal';
 import { SignInFlow } from '../src/lib/auth/sign-in';
 import { developmentMasterKey } from '../src/lib/server/config';
@@ -54,7 +55,7 @@ describe('pnpm db:seed', () => {
       deliverInvitation: () => Promise.resolve(),
       now: () => clock,
     });
-    const flow = new SignInFlow({ webauthn: { rpId: 'localhost', origin: 'http://localhost:3100' }, pool, provider, logger: createLogger({ sink: () => undefined }) });
+    const flow = new SignInFlow({ registrationCodeKey: registrationCodeKey(new Sealer(Buffer.alloc(32, 5))), webauthn: { rpId: 'localhost', origin: 'http://localhost:3100' }, pool, provider, logger: createLogger({ sink: () => undefined }) });
     try {
       for (const persona of SYNTHETIC_PERSONAS) {
         const context = { deviceToken: undefined, userAgent: null, requestId: `seed-${persona.key}` };
