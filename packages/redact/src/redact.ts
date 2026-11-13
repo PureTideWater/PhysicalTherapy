@@ -3636,6 +3636,17 @@ function appliedMatches(normal: string, subject: Subject, claims: number): Found
  * as written (gluedBeforeRedaction; MOD-25, rule (a)): the check refuses it whatever a placeholder took of the number.
  */
 export function redactionSpans(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
+  const read = redactionSpansAsGiven(text, patient, claims);
+  // A number character that is no decimal digit right beside a stored identifier in the letter as given (Queues item
+  // 40): the spans as they were read, and the mark the check refuses. A text that ends in the mark is refused already.
+  if (read.text.endsWith(BARRIER) || !refusedWithNumberCharactersAsOne(text, patient, claims, 0)) {
+    return read;
+  }
+  return { text: refusedByMarkAfter(read.text), spans: read.spans };
+}
+
+/** redactionSpans' reading of the letter as it is given: the whole of it before Queues item 40, not changed by it. */
+function redactionSpansAsGiven(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
   const normal = unbracketed(text);
   const subject = letterSubject(patient, claims);
   // The first reading's spans, as before; the wider reading's are added under the rule redactLetterForScreen keeps
@@ -3715,6 +3726,110 @@ export function redactLetter(text: string, patient: PatientIdentifiers, claims: 
  * from the package (index.ts), so it is no part of its public type.
  */
 export function redactLetterForScreen(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
+  const read = redactLetterForScreenAsGiven(text, patient, claims);
+  const spent = checkWorkOf(read);
+  // Past the budget the letter is refused already, and is read no further.
+  if (spent > CHECK_WORK_BUDGET || NUMBER_CHARACTER.exec(text) === null) {
+    return read;
+  }
+  // A number character that is no decimal digit right beside a stored identifier in the letter as given (Queues item
+  // 40) refuses the letter: what the reading above wrote, with the mark the check refuses. The further reading is
+  // charged in full on this letter's count whether it refuses or not, so one budget still holds for the whole check.
+  const further = { spent };
+  const refused = refusedWithNumberCharactersAsOne(text, patient, claims, spent, further, read);
+  const redacted = refused && !read.text.endsWith(BARRIER) ? { ...read, text: refusedByMarkAfter(read.text) } : read;
+  workOfRedacted.set(redacted, further.spent);
+  return redacted;
+}
+
+/**
+ * A number character that is no decimal digit (`\p{Nl}`, `\p{No}`: a Roman numeral's own character, a circled or
+ * parenthesized number, a superscript, a fraction) IN THE LETTER AS GIVEN, before NFKC writes many of them as digits
+ * and letters. Queues item 40, R1-3 with ruling 3 (the orchestrator's rulings of 2026-11-13; review 1 of Queues item
+ * 34): one that stands right beside a stored identifier refuses the letter, for every kind of identifier, and whether
+ * or not another reading replaced the identifier there.
+ */
+const NUMBER_CHARACTER = /[\p{Nl}\p{No}]/u;
+const NUMBER_CHARACTERS = /[\p{Nl}\p{No}]/gu;
+/** The one such character every other is read as: U+2180, which NFKC keeps and no fold reads as a letter or a digit. */
+const ONE_NUMBER_CHARACTER = '\u2180';
+
+/** A placeholder with that one character right against it, nothing between them but what no reader sees (marks, format characters). */
+const PLACEHOLDER_BESIDE_ONE_NUMBER_CHARACTER = /\u2180[\p{Cf}\p{Default_Ignorable_Code_Point}\p{M}]*\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|SSN|PHONE|CLAIM_[1-9]\d*)\]|\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|SSN|PHONE|CLAIM_[1-9]\d*)\][\p{Cf}\p{Default_Ignorable_Code_Point}\p{M}]*\u2180/u;
+const countOf = (text: string, character: string) => text.split(character).length - 1;
+
+/**
+ * Whether the letter as given is refused once each of its number characters that is no decimal digit is read as the
+ * one such character NFKC keeps (ONE_NUMBER_CHARACTER): the whole entry, read once more on that writing
+ * (redactLetterForScreenAsGiven). Refused where, on that reading:
+ *
+ *  - one of the call's digits-only numbers stands glued to the character, whatever a placeholder took of it (rule (a)
+ *    on the letter before any placeholder, with no place left out: digitsGluedToLetter);
+ *  - a placeholder is written right against the character ("Claim [MEMBER_ID]ↀ was denied." for a number of nine
+ *    digits a pattern takes with the character after it), or over one (fewer of them sent than the letter holds):
+ *    what a reading replaced there is an identifier with the character beside it, a pattern's number too;
+ *  - the check refuses what it wrote (holdsIdentifier, as a caller asks it): a name, a date or a number that holds a
+ *    letter left in the text, since no reading takes one with that character against it (BEFORE, AFTER).
+ *
+ * The blunt rule: beside a number NFKC would have made of it, the stored number is "another, longer number" no more,
+ * and a letter is refused here though the reading of the letter as given replaced the identifier ("(1)[MEMBER_ID]"
+ * for a parenthesized one before the number). It only refuses: nothing of the reading of the letter as given is
+ * changed by it, and the one who asks writes the mark. A letter with no such character costs one search, and one
+ * whose every such character is that one already is read once by redactLetterForScreen (`given`), the rules above
+ * asked of what that reading wrote.
+ *
+ * Charged in full: the further reading counts from nothing as a letter of its own does, and rule (a) and its check
+ * start from `spent`, the letter's count so far, and that reading's own; past the budget it refuses. `further.spent`
+ * is then the letter's count with the further reading's and rule (a)'s added, for the check that follows.
+ */
+function refusedWithNumberCharactersAsOne(
+  text: string,
+  patient: PatientIdentifiers,
+  claims: readonly LetterClaim[],
+  spent: number,
+  further?: { spent: number },
+  given?: Redacted,
+): boolean {
+  if (NUMBER_CHARACTER.exec(text) === null) {
+    return false;
+  }
+  const asOne = text.replace(NUMBER_CHARACTERS, ONE_NUMBER_CHARACTER);
+  // Where every such character is that one already, the reading of the letter as given is this reading: not read again.
+  const asGiven = asOne === text ? given : undefined;
+  const again = asGiven ?? redactLetterForScreenAsGiven(asOne, patient, claims);
+  let counted = Math.min(spent + (asGiven === undefined ? checkWorkOf(again) : 0), CHECK_WORK_BUDGET + 1);
+  let refused = counted > CHECK_WORK_BUDGET;
+  if (!refused) {
+    const before = checkWorkSpent;
+    checkWorkSpent = counted;
+    try {
+      refused = inOneReading(() => digitsGluedToLetter(unmarked(unbracketed(asOne)), letterSubject(patient, claims)));
+      counted = checkWorkSpent;
+    } catch (error) {
+      if (!(error instanceof PastCheckWorkBudget)) {
+        throw error;
+      }
+      // Past the budget rule (a) has not read the whole letter: refused, as the check answers there.
+      refused = true;
+      counted = CHECK_WORK_BUDGET + 1;
+    } finally {
+      checkWorkSpent = before;
+    }
+  }
+  if (further !== undefined) {
+    further.spent = counted;
+  }
+  return (
+    refused ||
+    PLACEHOLDER_BESIDE_ONE_NUMBER_CHARACTER.test(again.text) ||
+    countOf(again.text, ONE_NUMBER_CHARACTER) < countOf(asOne, ONE_NUMBER_CHARACTER) ||
+    // The check of the reading of the letter as given is its caller's to ask, with this count.
+    (asGiven === undefined && holdsIdentifier(again.text, patient, claims, counted))
+  );
+}
+
+/** redactLetterForScreen's reading of the letter as it is given: the whole of it before Queues item 40, not changed by it. */
+function redactLetterForScreenAsGiven(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
   const before = checkWorkSpent;
   checkWorkSpent = 0;
   let redacted: Redacted & { readonly candidates: readonly string[] };
@@ -4070,11 +4185,11 @@ function digitsGluedToLetter(normal: string, subject: Subject, hidden?: (range: 
       const view = viewOf(normal, 'join');
       const { text } = view;
       if (hidden === undefined) {
-        return [...cores].some((core) => new RegExp(`(?<=\\p{L})(?:${core})|(?:${core})(?=\\p{L})`, 'u').test(text));
+        return [...cores].some((core) => new RegExp(`(?<=[\\p{L}\\p{Nl}\\p{No}])(?:${core})|(?:${core})(?=[\\p{L}\\p{Nl}\\p{No}])`, 'u').test(text));
       }
       // Every place the number stands so, each asked for by where it is written: one that is not hidden answers.
       return [...cores].some((core) => {
-        const glued = new RegExp(`(?<=\\p{L})(?:${core})|(?:${core})(?=\\p{L})`, 'gu');
+        const glued = new RegExp(`(?<=[\\p{L}\\p{Nl}\\p{No}])(?:${core})|(?:${core})(?=[\\p{L}\\p{Nl}\\p{No}])`, 'gu');
         for (let match = glued.exec(text); match !== null; match = glued.exec(text)) {
           if (!hidden(inNormal(view, match.index, match.index + match[0].length))) {
             return true;

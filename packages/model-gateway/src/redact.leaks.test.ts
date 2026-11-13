@@ -2758,6 +2758,7 @@ describe('MOD-25: a digits-only number written with a period or a slash and glue
  * reader: the first describe is what the base (17c234d2) already does and every stage keeps; the second is OWED RED,
  * each row seen failing on its assertion on 17c234d2, and the item's stages 2, 3 and 4 turn its three groups green.
  * The rows this replaces were pinned as SENT here (R1-3, R1-4) and under ruling (A) below.
+ * Stage 2 (R1-3 with ruling 3, and the rulings of 09:55 UTC) is built: its group is a describe of its own, green.
  */
 const ITEM_40 = (() => {
   /** Every number character that is no decimal digit (Nl, No), and the unseen characters probed: controls and format characters the reader neither joins nor drops, one private-use and one unassigned code point. */
@@ -2857,51 +2858,142 @@ describe('MOD-25, Queues item 40: beside its three forms, what the base does and
   });
 });
 
-describe('OWED RED, Queues item 40 (stage 1 wrote these failing on 17c234d2; the item’s stages 2, 3 and 4 turn them green)', () => {
+describe('MOD-25, Queues item 40, stage 2 (R1-3 with ruling 3): a number character that is no decimal digit right beside a stored identifier is refused', () => {
   const asMember = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210', 'ZZ7654321']), numbers: claimsOf('ZZ99887') };
   const asClaim = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['SYNMEMBER0042', 'ZZ7654321']), numbers: claimsOf('76543210') };
   const CALLS = [
     ['a member ID', asMember],
     ['a claim number', asClaim],
   ] as const;
+  const ROWS = [
+    // One of each category on each side (Nl U+2180, No U+1369), bare and after a label.
+    'Ref ↀ76543210 on file.',
+    'Ref 76543210ↀ on file.',
+    'Ref ፩76543210 on file.',
+    'Ref 76543210፩ on file.',
+    'Member ID ↀ76543210 paid',
+    'Member ID 76543210፩ paid',
+    // Ruling 3: judged on the letter as its reader sees it, so whether or not NFKC rewrites the character. A circled
+    // or parenthesized list number before the number; a footnote's superscript, or a fraction, after it.
+    'Ref ①76543210 on file.',
+    'Ref ⑴76543210 on file.',
+    'Ref 76543210² on file.',
+    'Member ID: 76543210¹',
+    'Claim 76543210³ was denied.',
+    'Ref 76543210½ on file.',
+  ] as const;
+  const EACH = ROWS.flatMap((letter) => CALLS.map(([kind, call]) => [letter, kind, call] as const));
 
-  describe('stage 2, R1-3 with ruling 3: a number character that is no decimal digit right beside a digits-only number is refused', () => {
-    const ROWS = [
-      // One of each category on each side (Nl U+2180, No U+1369), bare and after a label.
-      'Ref ↀ76543210 on file.',
-      'Ref 76543210ↀ on file.',
-      'Ref ፩76543210 on file.',
-      'Ref 76543210፩ on file.',
-      'Member ID ↀ76543210 paid',
-      'Member ID 76543210፩ paid',
-      // Ruling 3: judged on the letter as its reader sees it, so whether or not NFKC rewrites the character. A circled
-      // or parenthesized list number before the number; a footnote's superscript, or a fraction, after it.
-      'Ref ①76543210 on file.',
-      'Ref ⑴76543210 on file.',
-      'Ref 76543210² on file.',
-      'Member ID: 76543210¹',
-      'Claim 76543210³ was denied.',
-      'Ref 76543210½ on file.',
-    ] as const;
-    const EACH = ROWS.flatMap((letter) => CALLS.map(([kind, call]) => [letter, kind, call] as const));
-
-    it.each(EACH)('%j, the number %s: refused', (letter, _kind, call) => {
-      expect(sentOrRefused(letter, call.who, call.numbers)).toBe(REFUSED);
-    });
-
-    it.each(EACH)('%j, the number %s: refused through redactLetter too', (letter, _kind, call) => {
-      expect(holdsIdentifier(redactLetter(letter, call.who, call.numbers).text, call.who, call.numbers)).toBe(true);
-    });
-
-    it('any such character on either side of any digits-only number: never sent with the number in clear', () => {
-      fc.assert(
-        fc.property(ITEM_40.held, fc.constantFrom(...ITEM_40.numberCharacters), fc.boolean(), ITEM_40.frame, ({ number, who, numbers }, character, first, [before, after]) => {
-          const letter = `${before}${first ? `${character}${number}` : `${number}${character}`}${after}`;
-          expect(ITEM_40.sentInClear(sentOrRefused(letter, who, numbers), number)).toBe(false);
-        }),
-      );
-    });
+  it.each(EACH)('%j, the number %s: refused', (letter, _kind, call) => {
+    expect(sentOrRefused(letter, call.who, call.numbers)).toBe(REFUSED);
   });
+
+  it.each(EACH)('%j, the number %s: refused through redactLetter too', (letter, _kind, call) => {
+    expect(holdsIdentifier(redactLetter(letter, call.who, call.numbers).text, call.who, call.numbers)).toBe(true);
+  });
+
+  it('any such character on either side of any digits-only number: never sent with the number in clear', () => {
+    fc.assert(
+      fc.property(ITEM_40.held, fc.constantFrom(...ITEM_40.numberCharacters), fc.boolean(), ITEM_40.frame, ({ number, who, numbers }, character, first, [before, after]) => {
+        const letter = `${before}${first ? `${character}${number}` : `${number}${character}`}${after}`;
+        expect(ITEM_40.sentInClear(sentOrRefused(letter, who, numbers), number)).toBe(false);
+      }),
+    );
+  });
+
+  /**
+   * The orchestrator's rulings of 2026-11-13 09:55 UTC, each row seen failing on its assertion on 3c856166 before the
+   * reader was changed: one rule for every kind of stored identifier (a name, a number that holds a letter, a date of
+   * birth), and refused also where the reading of the letter as given replaces the identifier, through every entry.
+   */
+  const who = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210', 'ZZ7654321', '496736367']);
+  const numbers = claimsOf('SYN99887', '2572817237');
+  const EVERY_KIND = [
+    // A name: NFKC writes the Roman numeral's own character as a letter, and the name was sent in clear.
+    'Ms. ⅧZephyra was seen.',
+    'Ms. ZephyraⅠ was seen.',
+    'Re: ⅠZephyra, Jane',
+    'Jane Q. ZephyraⅠ was seen.',
+    // A name, a number that holds a letter and a date of birth the reading of the letter as given replaces.
+    'Ms. ⑴Zephyra was seen.',
+    'Ms. Zephyra⑴ was seen.',
+    'Re: Zephyra, JaneⅠ',
+    'Ref ⑴ZZ7654321 on file.',
+    'Ref ZZ7654321⑩ on file.',
+    'Ref ⅟ZZ7654321 on file.',
+    'Claim SYN99887⑴ was denied.',
+    'DOB ⑴03/14/1980',
+    'DOB 1980-03-14⑴ on file.',
+    'born ①March 14, 1980',
+    'born ⅟March 14, 1980',
+    // A digits-only number the reading of the letter as given replaces, or takes a part of under a pattern's placeholder.
+    'Ref 76543210⑴ on file.',
+    'Ref ¼76543210 on file.',
+    // A number of nine or ten digits, which a pattern takes with the character beside it; a pattern's own number.
+    'Claim 496736367² was denied.',
+    'Claim 496736367ↀ was denied.',
+    'Ref ↀ2572817237 on file.',
+    'Claim ②2572817237 was denied.',
+    'Ref 2572817237⑴ on file.',
+    'Call 555-0123¹ today.',
+    'SSN 900-12-3456² on file.',
+  ] as const;
+
+  it.each(EVERY_KIND)('%j: refused, through redactLetterForScreen, redactLetter and redactionSpans', (letter) => {
+    expect(sentOrRefused(letter, who, numbers)).toBe(REFUSED);
+    expect(refusedByTheEntry(letter, who, numbers)).toBe(true);
+    expect(holdsIdentifier(redactLetter(letter, who, numbers).text, who, numbers)).toBe(true);
+    expect(holdsIdentifier(redactionSpans(letter, who, numbers).text, who, numbers)).toBe(true);
+  });
+
+  it.each(ROWS)('%j: refused through redactionSpans too, the spans those of the reading of the letter as given', (letter) => {
+    for (const [, call] of CALLS) {
+      const { text, spans } = redactionSpans(letter, call.who, call.numbers);
+      expect(holdsIdentifier(text, call.who, call.numbers)).toBe(true);
+      // The mark where a placeholder is written; where none is, the check refuses the letter as it is written.
+      expect(text.endsWith('\u0001') || spans.length === 0).toBe(true);
+      expect(spans.every((span) => span.end <= text.length - 1)).toBe(true);
+    }
+  });
+
+  it('any such character on either side of any kind of stored identifier: refused, through each entry', () => {
+    const value = fc.constantFrom('76543210', '496736367', '2572817237', 'ZZ7654321', 'SYN99887', 'Zephyra', 'Jane Zephyra', 'Jane Q. Zephyra', 'Zephyra, Jane', '03/14/1980', '1980-03-14', 'March 14, 1980', '14 March 1980');
+    fc.assert(
+      fc.property(value, fc.constantFrom(...ITEM_40.numberCharacters), fc.boolean(), ITEM_40.frame, fc.constantFrom(0, 1, 2), (written, character, first, [before, after], entry) => {
+        const letter = `${before}${first ? `${character}${written}` : `${written}${character}`}${after}`;
+        const refusedThere = [() => refusedByTheEntry(letter, who, numbers), () => holdsIdentifier(redactLetter(letter, who, numbers).text, who, numbers), () => holdsIdentifier(redactionSpans(letter, who, numbers).text, who, numbers)][entry];
+        expect(refusedThere?.(), JSON.stringify(letter)).toBe(true);
+      }),
+    );
+  });
+
+  it('a letter with such a character is charged its further reading in full, and one with none is charged as before', () => {
+    const plain = 'Ref 76543210 on file. Note 2.';
+    const noted = 'Ref 76543210 on file. Note ².';
+    const asOne = 'Ref 76543210 on file. Note ↀ.';
+    const work = (letter: string) => checkWorkOf(redactLetterForScreen(letter, who, numbers));
+    expect(sentOrRefused(noted, who, numbers)).toBe('Ref [MEMBER_ID] on file. Note 2.');
+    expect(work(noted)).toBe(work(plain) + work(asOne));
+    // Read once where every such character is the one the further reading writes already: rule (a)'s reading alone is added.
+    expect(work(asOne)).toBeLessThan(2 * work('Ref 76543210 on file. Note 2.'));
+    expect(sentOrRefused(asOne, who, numbers)).toBe('Ref [MEMBER_ID] on file. Note ↀ.');
+  });
+
+  // Set apart from the identifier, such a character is beside nothing: sent as the reading of the letter as given writes it.
+  it.each([
+    sentAs('Ms. Zephyra ¹ was seen.', 'Ms. [PATIENT_NAME] 1 was seen.'),
+    sentAs('① Zephyra, Jane', '1 [PATIENT_NAME], [PATIENT_NAME]'),
+    sentAs('Ref ZZ7654321 ⑴ on file.', 'Ref [MEMBER_ID] (1) on file.'),
+    sentAs('DOB 03/14/1980 ² on file.', 'DOB [DATE_OF_BIRTH] 2 on file.'),
+    sentAs('Seen 3½ weeks. Ref 76543210.', 'Seen 31⁄2 weeks. Ref [MEMBER_ID].'),
+  ])('%j %s', (letter, _outcome, sent) => {
+    expect(sentOrRefused(letter, who, numbers)).toBe(sent);
+    expect(redactLetter(letter, who, numbers).text).toBe(sent);
+  });
+});
+
+describe('OWED RED, Queues item 40 (stage 1 wrote these failing on 17c234d2; the item’s stages 2, 3 and 4 turn them green)', () => {
+  const asMember = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210', 'ZZ7654321']), numbers: claimsOf('ZZ99887') };
 
   describe('stage 3, R1-4: an unseen character inside a stored number is refused', () => {
     const FORMS = [
