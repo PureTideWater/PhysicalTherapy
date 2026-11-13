@@ -6,3 +6,46 @@
  RUN  v5.1.0 /home/user/PhysicalTherapy
       Coverage enabled with v8
 
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+contract screen over 16784913 characters (prose): 628 ms, heap 55 to 73 MiB
+contract screen over 16777393 characters (dense): 1161 ms, heap 55 to 76 MiB
+contract screen over the largest admitted U+FDFA request (30474 characters, 999978 bytes read): 48 ms, heap 39 to 44 MiB
+sha256sum: chrome-headless-shell-linux64/icudtl.dat: Input/output error
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+(node:24985) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:24985) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+tools/engine-freeze/differential.test.ts: skipped, ENGINE_FREEZE_BASE is not set; set it to the merge base to compare the engines (CI does).
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+
+ Test Files  509 passed (509)
+      Tests  14355 passed | 4 skipped (14359)
+   Start at  00:35:30
+   Duration  525.99s (tests 75%, import 23%, transform 1%, worker 1%)
+
+[34m % [39m[2mCoverage report from [22m[33mv8[39m
+
+=============================== Coverage summary ===============================
+Statements   : 68.22% ( 40402/59215 )
+Branches     : 66.87% ( 27677/41389 )
+Functions    : 62.7% ( 8959/14287 )
+Lines        : 68.33% ( 36447/53333 )
+================================================================================

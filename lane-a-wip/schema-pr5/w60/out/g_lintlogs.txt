@@ -1,0 +1,5 @@
+
+> therapy-platform@ lint:logs /home/user/PhysicalTherapy
+> tsx tools/lint-logs/index.ts
+
+lint:logs: 1205 files scanned; every log call uses allowlisted fields.

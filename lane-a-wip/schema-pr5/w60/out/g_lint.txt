@@ -1,0 +1,12 @@
+
+> therapy-platform@ lint /home/user/PhysicalTherapy
+> tsx tools/lint/run.ts
+
+lint: 3 groups, largest heap first, within a memory budget of 11,625 MB (13,673 MB less 2,048 MB reserved) and 4 processes at once
+lint apps/web: started (heap 6,144 MB)
+lint packages: started (heap 4,096 MB)
+lint apps/web: passed, 728 files, 0 errors, 0 warnings, peak RSS 3,554 MB (heap 6,144 MB), 74.0 s
+lint .: started (heap 4,096 MB)
+lint packages: passed, 601 files, 0 errors, 0 warnings, peak RSS 4,289 MB (heap 4,096 MB), 81.5 s
+lint .: passed, 625 files, 0 errors, 0 warnings, peak RSS 4,179 MB (heap 4,096 MB), 72.1 s
+lint: passed, 1,954 files in 3 groups, 0 errors, 0 warnings, 146.1 s wall

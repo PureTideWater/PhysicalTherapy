@@ -163,7 +163,21 @@ exception for it (below). This is schema PR 5 of Lane A's schema chain, the ledg
 The required checks report on this page by themselves: <!-- required-checks -->`all green`, `mutation`,
 `screening-capacity gate` and `approval-of-record`<!-- /required-checks -->.
 
-@@CHECKS@@
+Run locally on `e2a56dc3` (Node 24, PostgreSQL 18.4), every one passing:
+
+| Command | Result |
+| --- | --- |
+| `pnpm test` (unit and property, with coverage) | 509 files, 14,355 passed, 4 skipped, 0 failed (the skips include the engine-freeze differential, which CI runs with its base set) |
+| `pnpm test:db` (catalog and cross-tenant included) | 175 files, 10,373 passed, 1 skipped, 0 failed (the skip: the pg_dump restore drill, this machine's pg_dump being 16 against a PostgreSQL 18 server) |
+| `pnpm test:golden` | 381 of 381 |
+| `pnpm typecheck` | passed |
+| `pnpm lint` | 1,954 files, 0 errors, 0 warnings |
+| `pnpm lint:logs` | passed |
+| `pnpm verify-content` | every content set passes |
+| `pnpm db:domain-model --check` (freshly migrated database) | passed; `--require-approval` waits for the founder's line |
+| Engine and ledger freeze | 0 files changed under `packages/pricing`, `packages/ledger` and `content/`; the LED test files untouched |
+| The two paths of the writer compared (the design note, 4.1) | identical: the fixture worlds, generated months of 10,000 (in the suite) and 31,000 lines, and a 30,795-line month (0 rows differ) |
+| `pnpm test:e2e` | not run locally (no screen, word or figure changes; CI runs it) |
 
 ## Reviewer agents' findings
 

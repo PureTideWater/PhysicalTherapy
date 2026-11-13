@@ -1,0 +1,3 @@
+/home/user/PhysicalTherapy/docs/product/domain-model.md matches the schema at 20261115090000_roi_statement_actionable_lines.sql
+/home/user/PhysicalTherapy/packages/db/functions matches the schema's 395 function names
+101 tables, 1 views, 48 registered, 232 divergence rows (23 to approve), 0 explanation problem(s)

@@ -1,0 +1,8 @@
+test exit 0
+golden exit 0
+typecheck exit 0
+lint exit 0
+lint:logs exit 0
+verify-content exit 0
+domain-model --check exit 0
+test:db exit 0
