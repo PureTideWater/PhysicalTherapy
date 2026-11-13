@@ -17,7 +17,8 @@ import { type OpenCasePathRow, PLAIN_PATH_OPEN_CASES } from './test-support/plai
  * LED-26): in a transaction rolled back, whatever the lines' states, each case's figure is what ACTIONABLE_NOW gives
  * run as a query of its own, it is the sum of the variance of the lines listed for it (BigInt, from text), no line is
  * listed for two cases, and the plain path answers the same rows. The states: actionable now, priced again (stale),
- * written off, left at flagged or validated (moved on never reached actionable), no stage event, a line whose variance is zero, negative or null.
+ * written off, left at flagged or validated (moved on never reached actionable), no stage event, a line whose variance is zero or negative.
+ * A null variance, were one listed, is summed as nothing; no builder here makes one, so it is not counted as reached.
  * Not expressed, because no builder here makes one and no schema is invented: a case with no case_line at all.
  * The writes and the reads share one owner transaction (the app role may not write most of these rows), so the read
  * sees the world as the owner's scope does. SYNTHETIC rows only. Seed 20261113; a failure prints it and its path.
@@ -84,6 +85,10 @@ const FATES = ['actionable', 'written_off'] as const;
  */
 const JOINS = ['none', 'no_stage', 'flagged', 'validated', 'actionable'] as const;
 
+/** A priced line whose variance is null: kept apart from '0', and summed as nothing. */
+const NO_VARIANCE = 'NULL';
+/** Exact cents from text; a line the read did not return throws, so the sum cannot pass by omission. */
+const centsOf = (text: string | undefined): bigint => (text === NO_VARIANCE ? 0n : BigInt(text ?? 'MISSING'));
 const seen = { examples: 0, listed: 0, emptyCasesWithLines: 0, writtenOff: 0, movedOn: 0, noStage: 0, stale: 0, zero: 0, negative: 0, severalCases: 0 };
 
 interface Read {
@@ -145,7 +150,8 @@ async function readWorld(world: { readonly practice: Practice }, fates: readonly
           await db.query('RELEASE SAVEPOINT odd');
           joined.add(line.id);
           seen.noStage += join === 'no_stage' && line.stage === null ? 1 : 0;
-          seen.movedOn += join === 'flagged' || join === 'validated' ? 1 : 0;
+          // Counted by the stage the line ends at: a line already past the join's stage has not "moved on" short of actionable.
+          seen.movedOn += (join === 'flagged' || join === 'validated') && (line.stage === null || (order.includes(line.stage) && order.indexOf(line.stage) <= order.indexOf(join))) ? 1 : 0;
         } catch (error) {
           // The database lets no case's total go below zero (case_actionable_cents_check): that line stays out.
           if ((error as { code?: string }).code !== '23514') {
@@ -159,7 +165,7 @@ async function readWorld(world: { readonly practice: Practice }, fates: readonly
     const plain = (await db.query<OpenCasePathRow>(PLAIN_PATH_OPEN_CASES, [practiceId])).rows;
     const alone = new Map((await one<{ id: string; cents: string }>(`SELECT c.id, ${ACTIONABLE_NOW('c')}::text AS cents FROM "case" c WHERE c.practice_id = $1`, [practiceId])).map((row) => [row.id, row.cents]));
     const variance = new Map(
-      (await one<{ id: string; variance_cents: string | null }>('SELECT id, variance_cents::text FROM priced_line WHERE practice_id = $1', [practiceId])).map((row) => [row.id, row.variance_cents ?? '0']),
+      (await one<{ id: string; variance_cents: string | null }>('SELECT id, variance_cents::text FROM priced_line WHERE practice_id = $1', [practiceId])).map((row) => [row.id, row.variance_cents ?? NO_VARIANCE]),
     );
     const stale = await one<{ n: string }>(
       "SELECT count(*)::text AS n FROM case_line x WHERE x.practice_id = $1 AND priced_line_pricing_check(x.priced_line_id) IS DISTINCT FROM 'current'",
@@ -185,12 +191,12 @@ describe('the writer’s one pass over arbitrary small worlds (the note’s 4.1;
           // (1) the figure is ACTIONABLE_NOW run as its own query, as exact text.
           expect(row.actionable_cents).toBe(read.alone.get(row.id));
           // (2) it is the sum, in BigInt, of the variance of the lines listed.
-          expect(row.line_ids.reduce((sum, id) => sum + BigInt(read.variance.get(id) ?? 'MISSING'), 0n).toString()).toBe(row.actionable_cents);
+          expect(row.line_ids.reduce((sum, id) => sum + centsOf(read.variance.get(id)), 0n).toString()).toBe(row.actionable_cents);
           // (3) a line is listed once, for one case.
           for (const id of row.line_ids) {
             expect(seenLines.has(id)).toBe(false);
             seenLines.add(id);
-            const cents = read.variance.get(id) ?? '0';
+            const cents = read.variance.get(id) ?? NO_VARIANCE;
             seen.zero += cents === '0' ? 1 : 0;
             seen.negative += cents.startsWith('-') ? 1 : 0;
           }

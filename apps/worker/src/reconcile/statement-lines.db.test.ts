@@ -430,7 +430,7 @@ describe('the writer lists the lines its figure counted (T5, T11)', () => {
     await check();
     await led.load(practice, 'LED-06/recoupment.835');
     await led.reconcile(practice);
-    expect((await check()).rest.recovered_cents).not.toBe('0');
+    expect((await check()).rest.recovered_cents).toMatch(/^-?[1-9][0-9]*$/);
     // The case's line is listed while it is actionable, not once it has moved on to payer approved or recovered, and
     // again once the recoupment has reopened it.
     expect(stages).toEqual(['actionable', 'payer_approved', 'recovered', 'actionable']);
