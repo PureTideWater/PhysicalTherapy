@@ -146,10 +146,27 @@ export class NotFoundError extends Error {
   }
 }
 
-/** Thrown by a handler: input its schema accepts but the domain does not. Messages name fields, never values. */
+/**
+ * The refusals of an act on a key removal that leave a security event for the acting account: the database's own
+ * closed list (hardware_key_removal_refused; docs/adr/0095, test SEC-28). They are the refusals a person probing the
+ * two-person rule would meet.
+ */
+export const KEY_REMOVAL_REFUSALS = ['not_permitted', 'two_people', 'not_own_account', 'requester_left'] as const;
+export type KeyRemovalRefusal = (typeof KEY_REMOVAL_REFUSALS)[number];
+
+/**
+ * Thrown by a handler: input its schema accepts but the domain does not. Messages name fields, never values.
+ *
+ * `keyRemovalRefusal` names one of the closed list above when the database refused an act on a key removal. The
+ * handler's transaction is rolled back with the refusal and a handler has no second connection, so the routes'
+ * wrapper records the security event after the rollback, in a transaction of its own as the acting account.
+ */
 export class InputError extends Error {
   override readonly name = 'InputError';
-  constructor(readonly issues: readonly Issue[]) {
+  constructor(
+    readonly issues: readonly Issue[],
+    readonly keyRemovalRefusal?: KeyRemovalRefusal,
+  ) {
     super(issues.map((issue) => `${issue.field}: ${issue.message}`).join('; '));
   }
 }

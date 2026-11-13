@@ -34,6 +34,7 @@ import {
   type Actor,
   type ActorSpec,
   InputError,
+  type KeyRemovalRefusal,
   type Issue,
   type MutationResult,
   BusyError,
@@ -385,6 +386,20 @@ async function transacted<R>(
 }
 
 /**
+ * The security event of a refused act on a key removal (test SEC-28; docs/adr/0095): one row for the acting account,
+ * written by the database's own function in a transaction of its own, since the refusal rolled the request's back.
+ * The reason is one of a closed list and the function takes no account: the actor is the subject. A record that fails
+ * changes nothing the person is told; its line carries IDs and the reason's code, and is the operator's signal instead.
+ */
+async function keyRemovalRefused(services: Services, userId: string, why: KeyRemovalRefusal, requestId: string): Promise<void> {
+  try {
+    await withActor(services.pool, userId, (scope) => scope.client.query('SELECT hardware_key_removal_refused($1, $2)', [why, requestId]), BOUNDED);
+  } catch {
+    services.logger.error('security event: a refused act on a key removal was not recorded', { user_id: userId, request_id: requestId, error_code: `key_removal_refused_${why}` });
+  }
+}
+
+/**
  * Maps what a handler may throw to an outcome; anything else is a server error. The request's transaction is already
  * rolled back when this runs (the scope's own catch), so a busy refusal keeps nothing the request wrote in it.
  */
@@ -419,6 +434,9 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
     return { status: 'suspended', reason: (error as Error).message };
   }
   if (error instanceof InputError) {
+    if (error.keyRemovalRefusal !== undefined) {
+      await keyRemovalRefused(services, actor.userId, error.keyRemovalRefusal, requestId);
+    }
     return { status: 'invalid', issues: error.issues };
   }
   if (error instanceof ContractWorkflowError) {

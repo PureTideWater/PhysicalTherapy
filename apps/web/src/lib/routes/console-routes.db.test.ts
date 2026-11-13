@@ -1127,7 +1127,8 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
   async function act<R>(route: Route<R>, token: string, input: Record<string, unknown>, to: Services = services) {
     const requestId = `test-${randomUUID()}`;
     const outcome = await route.invoke({ cookies: new Jar(token), params: {}, input: { csrfToken: csrfTokenFor(services.sealer, token), requestKey: randomUUID(), ...input }, requestId, userAgent: null }, to);
-    const events = (await owner.query<{ action: string }>('SELECT action FROM audit_event WHERE request_id = $1 ORDER BY at', [requestId])).rows.map((row) => row.action);
+    // What the act itself wrote. The security event a refused act leaves for the acting account is SEC-28's, read by refusalsOf.
+    const events = (await owner.query<{ action: string }>("SELECT action FROM audit_event WHERE request_id = $1 AND action <> 'security_event' ORDER BY at", [requestId])).rows.map((row) => row.action);
     return { outcome, events, requestId };
   }
 
@@ -1196,6 +1197,81 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
     const again = await act(requestKeyRemoval, await second.token(), input);
     expect(again.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_open_once));
     expect(again.events).toEqual([]);
+  });
+
+  /** The security events a refused act on a key removal left, as the database wrote them: the account, the reason, the request. */
+  const refusalsOf = async (requestId: string) =>
+    (
+      await owner.query<{ object_id: string; purpose: string; actor_kind: string; practice_id: string | null }>(
+        "SELECT object_id, purpose, actor_kind, practice_id FROM audit_event WHERE request_id = $1 AND action = 'security_event' AND purpose LIKE 'key_removal_refused_%'",
+        [requestId],
+      )
+    ).rows;
+
+  it('SEC-28: a refused act on a key removal leaves a security event for the acting account, in a transaction of its own, and the person reads the same words (owed red until hardware_key_removal_refused is in the migration)', async () => {
+    const [requester, target, young] = [await keyAdmin(), await keyAdmin(), await keyAdmin(6)];
+    await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id });
+    const input = { organizationId: admin.internalId, removalId: (await removalOf(target.id))?.id };
+    const own = await act(confirmKeyRemoval, await requester.token(), input);
+    const self = await act(confirmKeyRemoval, await target.token(), input);
+    const early = await act(confirmKeyRemoval, await young.token(), input);
+    expect([own.outcome, self.outcome, early.outcome]).toEqual([
+      refusedWith(KEY_REFUSALS.hardware_key_removal_two_people),
+      refusedWith(KEY_REFUSALS.hardware_key_removal_not_own_account),
+      refusedWith(KEY_REFUSALS.not_permitted),
+    ]);
+    // One row each, about the one who acted, by the system, in no practice: never about the account of the removal.
+    expect(await refusalsOf(own.requestId)).toEqual([{ object_id: requester.id, purpose: 'key_removal_refused_two_people', actor_kind: 'system', practice_id: null }]);
+    expect(await refusalsOf(self.requestId)).toEqual([{ object_id: target.id, purpose: 'key_removal_refused_not_own_account', actor_kind: 'system', practice_id: null }]);
+    expect(await refusalsOf(early.requestId)).toEqual([{ object_id: young.id, purpose: 'key_removal_refused_not_permitted', actor_kind: 'system', practice_id: null }]);
+    // The same refusal again within the hour adds none; the request is still open, untouched.
+    const again = await act(confirmKeyRemoval, await requester.token(), input);
+    expect(again.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_two_people));
+    expect(await refusalsOf(again.requestId)).toEqual([]);
+    expect((await removalOf(target.id))?.state).toBe('requested');
+  });
+
+  it('SEC-28: a refusal that leaves no security event is not recorded as one, and one that cannot be recorded is still refused in the same words, with a line by IDs', async () => {
+    const [requester, target] = [await keyAdmin(), await keyAdmin()];
+    await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id });
+    const input = { organizationId: admin.internalId, removalId: (await removalOf(target.id))?.id };
+    // Not found, and a request already open: rules, not a probe of the two-person rule. Nothing is asked of the database.
+    const asked: string[] = [];
+    const lines: Record<string, unknown>[] = [];
+    const watching: Services = {
+      ...services,
+      logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }),
+      pool: {
+        connect: async () => {
+          const client = await app.connect();
+          return new Proxy(client, {
+            get(inner, property) {
+              if (property === 'query') {
+                return (text: unknown, values?: unknown[]) => {
+                  if (typeof text === 'string' && text.includes('hardware_key_removal_refused')) {
+                    asked.push(String(values?.[0]));
+                    return Promise.reject(new Error('synthetic failure'));
+                  }
+                  return inner.query(text as string, values);
+                };
+              }
+              const value = Reflect.get(inner, property, inner) as unknown;
+              return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(inner) : value;
+            },
+          });
+        },
+      } as Services['pool'],
+    };
+    expect((await act(confirmKeyRemoval, await requester.token(), { ...input, removalId: randomUUID() }, watching)).outcome).toEqual({ status: 'not_found' });
+    expect((await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id }, watching)).outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_open_once));
+    expect(asked).toEqual([]);
+    // The two-person refusal asks once, by its reason; the record fails, the person is refused all the same, and the line says so.
+    const refused = await act(confirmKeyRemoval, await requester.token(), input, watching);
+    expect(refused.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_two_people));
+    expect(asked).toEqual(['two_people']);
+    expect(lines.filter((line) => line.msg === 'security event: a refused act on a key removal was not recorded')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: requester.id, request_id: refused.requestId, error_code: 'key_removal_refused_two_people' }),
+    ]);
   });
 
   it('confirms only with a second person: the requester, the account itself, an administrator under seven days and a session other than the acting key session are refused; then the keys, the sessions and the provider’s outbox', async () => {

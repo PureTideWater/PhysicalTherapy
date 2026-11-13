@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { newRegistrationCode, registrationCodeDigest } from '../auth/registration-code';
 import { platformRoute } from '../http/invoke';
-import { InputError, type MutationResult, NotFoundError } from '../http/route';
+import { InputError, type KeyRemovalRefusal, type MutationResult, NotFoundError } from '../http/route';
 import { opaqueId } from './schemas';
 
 /**
@@ -43,17 +43,32 @@ export const KEY_REFUSALS = {
   hardware_key_registration_open_once: 'registration is already open for this account; it can be opened again once that hour has passed',
 } as const;
 
-/** The database's refusal as the route's: a rule's words, not found, or the error itself. */
+/**
+ * The refusals that leave a security event for the acting account (test SEC-28): the ones a person probing the
+ * two-person rule would meet. The others (an open request, a decided one, a closed registration) are states, not probes.
+ */
+const RECORDED_REFUSALS: Partial<Record<keyof typeof KEY_REFUSALS, KeyRemovalRefusal>> = {
+  hardware_key_removal_two_people: 'two_people',
+  hardware_key_removal_not_own_account: 'not_own_account',
+  hardware_key_removal_requester_left: 'requester_left',
+};
+
+/**
+ * The database's refusal as the route's: a rule's words, not found, or the error itself. A refusal on the list above,
+ * and the permission refusal, name their reason on the error: this transaction rolls back with the refusal, so the
+ * routes' wrapper writes the security event after it, as the acting account (hardware_key_removal_refused).
+ */
 function refused(error: unknown): never {
   const { code, constraint } = (typeof error === 'object' && error !== null ? error : {}) as { readonly code?: unknown; readonly constraint?: unknown };
   if (code === '42501') {
-    throw new InputError([{ field: 'input', message: KEY_REFUSALS.not_permitted }]);
+    throw new InputError([{ field: 'input', message: KEY_REFUSALS.not_permitted }], 'not_permitted');
   }
   if (code === 'P0002') {
     throw new NotFoundError();
   }
   if ((code === '23514' || code === '23505') && typeof constraint === 'string' && constraint in KEY_REFUSALS) {
-    throw new InputError([{ field: 'input', message: KEY_REFUSALS[constraint as keyof typeof KEY_REFUSALS] }]);
+    const rule = constraint as keyof typeof KEY_REFUSALS;
+    throw new InputError([{ field: 'input', message: KEY_REFUSALS[rule] }], RECORDED_REFUSALS[rule]);
   }
   throw error;
 }
