@@ -2559,7 +2559,8 @@ stands, every further reading only adds or refuses, and every reading counts on 
   crafted row the uncounted check let through (one `½` and one U+0085 before 80,000 characters of prose, 349,830,476
   units counted) is refused by the count. **The closed joiner list of a member ID or claim number (`NUMBER_JOINERS`) is
   amended**: U+FFFC (the object replacement character PDF text writes) and every number character that is no decimal
-  digit (`\p{Nl}`, `\p{No}`) NFKC leaves as it is join a stored number at any place, as the other joiners do. U+FFFC
+  digit (`\p{Nl}`, `\p{No}`; those NFKC writes as digits or letters are gone before this list is read, and are
+  read through R1-3's further reading) join a stored number at any place, as the other joiners do. U+FFFC
   is replaced with the number (`Member ID 7654<U+FFFC>3210` is `Member ID [MEMBER_ID]`); a number character inside
   one is read in R1-3's further reading as U+2180, which now joins, so the letter is refused as for one beside it
   (`7654ↀ3210`, `7654½3210`, `7654ⅼ3210`). This one rule changes the reading of the letter as given, and it only adds
@@ -2588,7 +2589,11 @@ stands, every further reading only adds or refuses, and every reading counts on 
 6. Fix round 1, accepted as a recorded cost (Lane B's review S-1): each further reading reads the whole letter again,
    so an ordinary letter with one fraction and one U+0085 and no identifier is refused on cost from about 77,600
    characters (the base sends it to about 254,000), under the 100,000 the reader's time budget promises; pinned at
-   100,000. Queues item 39 (the reader's time) is the cure.
+   100,000. Charged in full (S-2), the further reading's check is one more whole check, and with CR LF every check
+   reads the letter twice: a real-shaped claim letter with one footnote mark (`See note¹.`) and CR LF line endings is
+   refused from about 63,400 characters (stage 5a: about 96,500), with LF from about 98,000 (133,500); without the
+   mark it is sent to about 129,000 (Lane B's delta review C-1, reproduced by its skeptic); pinned at 64,000. Queues
+   item 39 (the reader's time) is the cure.
 
 **Left, each recorded.** A phone number by pattern that is not stored, with a number character beside it, is sent
 as on the base (11,285 rows of the item's set; stage 2's residual). On every tree, not ruling (A)'s form: a name that

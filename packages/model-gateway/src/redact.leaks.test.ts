@@ -3333,6 +3333,24 @@ describe('MOD-25, Queues item 40, fix round 1 (Lane B’s reviews S-1, S-2 and S
     expect(refusedByTheEntry(prose(100_000), BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(false);
   });
 
+  // S-1's family on a real-shaped letter (fix round 2: Lane B's delta review C-1, its skeptic's thresholds): one footnote
+  // mark and CR LF line endings. Charged in full (S-2), the further reading's check is one more whole check, and with
+  // CR LF every check reads the letter twice: refused on cost from about 63,400 characters (stage 5a: about 96,500;
+  // with LF about 98,000, stage 5a 133,500). The same letter without the mark is sent to about 129,000.
+  const claimLines = (length: number) => {
+    let lines = 'Dear Jane Zephyra, member ID 76543210. See note\u00B9.\r\n';
+    for (let i = 1; lines.length < length; i += 1) {
+      lines += `Line ${String(i)}: CPT 97110 billed USD 45.00 on 03/${String((i % 28) + 1).padStart(2, '0')}/2025, allowed 38.12, paid in part.\r\n`;
+    }
+    return lines.slice(0, length);
+  };
+  it('C-1, a recorded cost: a claim letter of 64,000 characters with one footnote mark and CR LF is refused on cost; without the mark, sent', LIMIT, () => {
+    const { who, numbers } = asMember;
+    expect(refusedByTheEntry(claimLines(64_000), who, numbers)).toBe(true);
+    expect(refusedByTheEntry(claimLines(64_000).replace('\u00B9', ''), who, numbers)).toBe(false);
+    expect(refusedByTheEntry(claimLines(62_000), who, numbers)).toBe(false);
+  });
+
   // S-4, the narrow part (ADR 0054's joiner list amended): U+FFFC (what PDF text writes for an object) and a number
   // character that is no decimal digit, inside a stored number, join it as any number joiner does. U+FFFC is replaced
   // with the number; a number character inside it refuses the letter, as one beside it does (R1-3).

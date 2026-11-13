@@ -665,10 +665,11 @@ const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC\\u02B9\\u02CA`
  * "1234•5678"), ";" and the double quotes, and since review finding G4 the primes OCR writes for a grouping apostrophe
  * (U+2032, U+2035, and U+2033 as NFKC writes it, two U+2032) and the modifier-letter primes and acute (U+02B9, U+02CA,
  * apostrophes here as U+02BC is: APOSTROPHE_LETTER), and since Lane B's review of Queues item 40 (S-4) U+FFFC, which PDF
- * text writes for an object, and every number character that is no decimal digit (\p{Nl}, \p{No}) NFKC leaves as it is
- * ("7654ↀ3210"; the further reading of R1-3 writes each such character as U+2180, so one inside a stored number is
- * read there too, and refuses the letter as one beside it does). None of these is a date separator (DATE_SEPARATOR) or
- * an amount's punctuation, so a number written with one is never read as a date or an amount.
+ * text writes for an object, and every number character that is no decimal digit (\p{Nl}, \p{No}; one NFKC writes as
+ * digits or letters is gone before the list is read: "7654ↀ3210"; the further reading of R1-3 writes each such
+ * character as U+2180, so one inside a stored number is read there too, and refuses the letter as one beside it does).
+ * None of these is a date separator (DATE_SEPARATOR) or an amount's punctuation, so a number written with one is never
+ * read as a date or an amount.
  */
 const NUMBER_JOINERS = "\\s\\p{Pd}\\u2212\\u2043\\u02D7\\u2796_|\\\\\\u00AD'\\u2018\\u2019\\u02BC\\u02B9\\u02CA\\u2032\\u2035`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022;\"\\u201C\\u201D\\uFFFC\\p{Nl}\\p{No}";
 /**
