@@ -1,0 +1,99 @@
+== base
+"Ref <U+2460>76543210 on file." | "Ref 176543210 on file." | redactLetter+check false
+"Ref 76543210<U+00B2> on file." | "Ref 765432102 on file." | redactLetter+check false
+"Member ID: 76543210<U+00B9>" | "Member ID: [SSN]" | redactLetter+check false
+"Ref <U+2474>76543210 on file." | "Ref (1)[MEMBER_ID] on file." | redactLetter+check false
+"Ref <U+2167>76543210 on file." | REFUSED | redactLetter+check true
+"Ref 76543210<U+00BD> on file." | "Ref 765432101<U+2044>2 on file." | redactLetter+check false
+"Ref <U+2460> 76543210 on file." | "Ref 1 [MEMBER_ID] on file." | redactLetter+check false
+"Ref 76543210 <U+00B2> on file." | "Ref [MEMBER_ID] 2 on file." | redactLetter+check false
+"Ref <U+2180>7654 on file." | "Ref <U+2180>7654 on file." | redactLetter+check false
+"Ref <U+2180>76543210 on file." | "Ref <U+2180>76543210 on file." | redactLetter+check false
+"Ref ZZ7654321<U+00B9> on file." | REFUSED | redactLetter+check true
+"Ms. Zephyra<U+00B9> was seen." | REFUSED | redactLetter+check true
+"Ref <U+2116>76543210 on file." | "Ref No[MEMBER_ID] on file." | redactLetter+check false
+"Member ID <U+0085>76543210 paid" | "Member ID <U+0085>[MEMBER_ID] paid" | redactLetter+check false
+"Member ID 76543210<U+0085> paid" | "Member ID [MEMBER_ID]<U+0085> paid" | redactLetter+check false
+"Member ID 76543210\u0000" | "Member ID [MEMBER_ID]\u0000" | redactLetter+check false
+"X<U+0096>76543210 paid" | "X<U+0096>[MEMBER_ID] paid" | redactLetter+check false
+"76543210<U+0096>B paid" | "[MEMBER_ID]<U+0096>B paid" | redactLetter+check false
+"Member ID 7654\ud8003210 paid" | "Member ID 7654\ud8003210 paid" | redactLetter+check false
+"Member ID 7654\udc003210 paid" | "Member ID 7654\udc003210 paid" | redactLetter+check false
+"Member ID 7654\u00013210 paid" | REFUSED | redactLetter+check true
+"ZZ/ZZZZ Z.Z.Z" | "[PATIENT_NAME].Z" | redactLetter+check false
+"AA/AAAAAA A.A.A" | "[PATIENT_NAME].A" | redactLetter+check false
+"Ann A.A." | "[PATIENT_NAME].A." | redactLetter+check false
+"Zephyr A.J.Q." | "[PATIENT_NAME].J.Q." | redactLetter+check false
+"Zephyra. I am" | "[PATIENT_NAME]. I am" | redactLetter+check false
+"Dear Zephyra. I am writing" | "Dear [PATIENT_NAME]. I am writing" | redactLetter+check false
+"Zephyr A.A." | "[PATIENT_NAME].A." | redactLetter+check false
+414M | len 57972 | redaction 126025932 | sent text len 115942 | refused false
+414M+85 end | len 57973 | redaction 126026728 | sent text len 115943 | refused false
+414M 85 for last ; | len 57972 | redaction 126026232 | sent text len 115942 | refused false
+403M+85 | len 100009 | redaction 275124444 | sent text len 100016 | refused false
+== proto-i
+"Ref <U+2460>76543210 on file." | REFUSED | redactLetter+check false
+"Ref 76543210<U+00B2> on file." | REFUSED | redactLetter+check false
+"Member ID: 76543210<U+00B9>" | REFUSED | redactLetter+check false
+"Ref <U+2474>76543210 on file." | REFUSED | redactLetter+check false
+"Ref <U+2167>76543210 on file." | REFUSED | redactLetter+check true
+"Ref 76543210<U+00BD> on file." | REFUSED | redactLetter+check false
+"Ref <U+2460> 76543210 on file." | "Ref 1 [MEMBER_ID] on file." | redactLetter+check false
+"Ref 76543210 <U+00B2> on file." | "Ref [MEMBER_ID] 2 on file." | redactLetter+check false
+"Ref <U+2180>7654 on file." | "Ref <U+2180>7654 on file." | redactLetter+check false
+"Ref <U+2180>76543210 on file." | REFUSED | redactLetter+check true
+"Ref ZZ7654321<U+00B9> on file." | REFUSED | redactLetter+check true
+"Ms. Zephyra<U+00B9> was seen." | REFUSED | redactLetter+check true
+"Ref <U+2116>76543210 on file." | "Ref No[MEMBER_ID] on file." | redactLetter+check false
+"Member ID <U+0085>76543210 paid" | "Member ID <U+0085>[MEMBER_ID] paid" | redactLetter+check false
+"Member ID 76543210<U+0085> paid" | "Member ID [MEMBER_ID]<U+0085> paid" | redactLetter+check false
+"Member ID 76543210\u0000" | "Member ID [MEMBER_ID]\u0000" | redactLetter+check false
+"X<U+0096>76543210 paid" | "X<U+0096>[MEMBER_ID] paid" | redactLetter+check false
+"76543210<U+0096>B paid" | "[MEMBER_ID]<U+0096>B paid" | redactLetter+check false
+"Member ID 7654\ud8003210 paid" | REFUSED | redactLetter+check true
+"Member ID 7654\udc003210 paid" | REFUSED | redactLetter+check true
+"Member ID 7654\u00013210 paid" | REFUSED | redactLetter+check true
+"ZZ/ZZZZ Z.Z.Z" | "[PATIENT_NAME].[PATIENT_NAME]" | redactLetter+check false
+"AA/AAAAAA A.A.A" | "[PATIENT_NAME].[PATIENT_NAME]" | redactLetter+check false
+"Ann A.A." | "[PATIENT_NAME].[PATIENT_NAME]." | redactLetter+check false
+"Zephyr A.J.Q." | "[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME]." | redactLetter+check false
+"Zephyra. I am" | "[PATIENT_NAME]. I am" | redactLetter+check false
+"Dear Zephyra. I am writing" | "Dear [PATIENT_NAME]. I am writing" | redactLetter+check false
+"Zephyr A.A." | "[PATIENT_NAME].[PATIENT_NAME]." | redactLetter+check false
+414M | len 57972 | redaction 126025932 | sent text len 115942 | refused false
+414M+85 end | len 57973 | redaction 126026728 | sent text len 115943 | refused true
+414M 85 for last ; | len 57972 | redaction 126026232 | sent text len 115942 | refused true
+403M+85 | len 100009 | redaction 275124444 | sent text len 100016 | refused false
+== proto-ii
+"Ref <U+2460>76543210 on file." | REFUSED | redactLetter+check false
+"Ref 76543210<U+00B2> on file." | REFUSED | redactLetter+check false
+"Member ID: 76543210<U+00B9>" | REFUSED | redactLetter+check false
+"Ref <U+2474>76543210 on file." | REFUSED | redactLetter+check false
+"Ref <U+2167>76543210 on file." | REFUSED | redactLetter+check true
+"Ref 76543210<U+00BD> on file." | REFUSED | redactLetter+check false
+"Ref <U+2460> 76543210 on file." | "Ref 1 [MEMBER_ID] on file." | redactLetter+check false
+"Ref 76543210 <U+00B2> on file." | "Ref [MEMBER_ID] 2 on file." | redactLetter+check false
+"Ref <U+2180>7654 on file." | "Ref <U+2180>7654 on file." | redactLetter+check false
+"Ref <U+2180>76543210 on file." | REFUSED | redactLetter+check true
+"Ref ZZ7654321<U+00B9> on file." | REFUSED | redactLetter+check true
+"Ms. Zephyra<U+00B9> was seen." | REFUSED | redactLetter+check true
+"Ref <U+2116>76543210 on file." | "Ref No[MEMBER_ID] on file." | redactLetter+check false
+"Member ID <U+0085>76543210 paid" | REFUSED | redactLetter+check true
+"Member ID 76543210<U+0085> paid" | REFUSED | redactLetter+check true
+"Member ID 76543210\u0000" | REFUSED | redactLetter+check true
+"X<U+0096>76543210 paid" | REFUSED | redactLetter+check true
+"76543210<U+0096>B paid" | REFUSED | redactLetter+check true
+"Member ID 7654\ud8003210 paid" | REFUSED | redactLetter+check true
+"Member ID 7654\udc003210 paid" | REFUSED | redactLetter+check true
+"Member ID 7654\u00013210 paid" | REFUSED | redactLetter+check true
+"ZZ/ZZZZ Z.Z.Z" | "[PATIENT_NAME].[PATIENT_NAME]" | redactLetter+check false
+"AA/AAAAAA A.A.A" | "[PATIENT_NAME].[PATIENT_NAME]" | redactLetter+check false
+"Ann A.A." | "[PATIENT_NAME].[PATIENT_NAME]." | redactLetter+check false
+"Zephyr A.J.Q." | "[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME]." | redactLetter+check false
+"Zephyra. I am" | "[PATIENT_NAME]. I am" | redactLetter+check false
+"Dear Zephyra. I am writing" | "Dear [PATIENT_NAME]. I am writing" | redactLetter+check false
+"Zephyr A.A." | "[PATIENT_NAME].[PATIENT_NAME]." | redactLetter+check false
+414M | len 57972 | redaction 126025932 | sent text len 115942 | refused false
+414M+85 end | len 57973 | redaction 126026728 | sent text len 115943 | refused true
+414M 85 for last ; | len 57972 | redaction 126026232 | sent text len 115942 | refused true
+403M+85 | len 100009 | redaction 275124444 | sent text len 100016 | refused true
