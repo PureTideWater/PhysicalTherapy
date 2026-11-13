@@ -173,11 +173,17 @@ the web's line `security event: password reset sessions not ended`.
    on `/tp/<env>/web`, from five minutes before the alarm was raised until it is back at OK:
 
    ```
-   fields @timestamp, user_id, request_id
+   fields @timestamp, user_id, request_id, outcome_code
    | filter msg = "security event: password reset sessions not ended"
    ```
 
-   Keep the user IDs and request IDs only.
+   Keep the user IDs, request IDs and outcome codes only. The `outcome_code` says what became of the sign-out at
+   Cognito, which the web asks the database to queue by itself once the reset's own transaction has failed twice
+   (`provider_sign_out_unrecorded_reset`; docs/adr/0095): `provider_sign_out_queued` (a row of reason
+   `password_reset_unrecorded` waits for the job `provider_sign_outs`), `provider_sign_out_waiting` (one for an
+   earlier unrecorded reset of the account was already waiting, untried, and covers this one), or
+   `provider_sign_out_not_queued` (the database could not be asked, or refused; step 3 queues it by hand). A line
+   with no `outcome_code` is from an image before this one: treat it as not queued.
 3. **Contain at once** (section 2, "A user or session"): end the user's sessions, which is what the failed transaction
    did not do. Find the person's own organization from the user ID (docs/runbooks/deliverability.md, 3.10, "In every
    case", step 1: its statement lists practices of the user's own organization only, never one the user reached by a
@@ -200,12 +206,24 @@ the web's line `security event: password reset sessions not ended`.
    COMMIT;
    ```
 
-   One row from the first statement, then the sessions it ended. **No sign-out at Cognito was queued for this
-   reset** (the reset recorded nothing, so the database wrote no row for the job; docs/adr/0095, "Open"): where the
-   founder's session did this repair, it also sends the provider's sign-out for the user. End membership, where it
-   was pressed, queued its own. Do not insert a `password_reset_completed` event
-   in its place: that would queue a password-changed email dated at the repair, not at the change, and step 4 tells
-   the person instead.
+   One row from the first statement, then the sessions it ended.
+
+   **The sign-out at Cognito, by the line's `outcome_code`.** `provider_sign_out_queued` or
+   `provider_sign_out_waiting`: the job sends it, and "A provider sign-out not delivered", below, pages if it is late.
+   That row ends nothing in the app and moves no mark: the repair above is still owed. `provider_sign_out_not_queued`,
+   or no code: queue it once the database answers, in a session as the operator role (`tp_operator`), with the
+   ticket's own request ID (an ID, never an address or a name):
+
+   ```sql
+   SELECT operator_provider_sign_out_request('<user_id>', '<request_id of the line>');
+   ```
+
+   It answers the new row's ID; nothing (NULL) when a sign-out for an unrecorded reset of that account already waits
+   untried, which covers this one; and `P0002` when no account has that ID. It writes one audit row by the system
+   (`password_reset_unrecorded`, purpose `operator`) and the job sends the sign-out within about a minute. It takes
+   one account at a time and no practice. End membership, where it was pressed, queued its own sign-out as well; the
+   provider answers a second one the same way. Do not insert a `password_reset_completed` event in its place: that
+   would queue a password-changed email dated at the repair, not at the change, and step 4 tells the person instead.
 4. **Tell the person another way**, through their own organization's administrator or the account contact (step 3's
    organization; with no row there, through the founder), working by user ID: their password was changed at the line's
    time. If it was not them, open the record (section 1) and follow docs/runbooks/support-mail.md's "Password changed,
@@ -224,15 +242,21 @@ provider sign-out failed" and "An ended membership whose provider sign-out faile
 provider anything, and their two alarms are gone.
 
 1. **What it means.** An ended membership, a recorded password reset (completed, or of unknown outcome) and a
-   confirmed key removal each queue one sign-out at Cognito in their own transaction. The job `provider_sign_outs`
-   sends it within about a minute and tries again after 1, 5, 15, then 60 minutes. The line is written for a sign-out
-   that is late (`error_code` `LATE`: five tries, or four and none running, about 21 minutes after the cause) and
-   again for one the job has given up (`GAVE_UP`: 30 tries, or 24 hours and four tries). A late one is still being
-   tried; a given-up one is never tried again.
+   confirmed key removal each queue one sign-out at Cognito in their own transaction; a reset whose own transaction
+   could not be recorded queues one by itself (reason `password_reset_unrecorded`; the section above). The job
+   `provider_sign_outs` sends it within about a minute and tries again after 1, 5, 15, then 60 minutes. The line is
+   written for a sign-out that is late (`error_code` `LATE`: 15 minutes after it was queued, tried or not; or five
+   tries, or four and none running) and again for one the job has given up (`GAVE_UP`: 30 tries, or 24 hours after
+   it was queued once it has had at least one try). A late one is still being tried; a given-up one is never tried
+   again. **A sign-out that was never tried is never given up**, whatever its age: after the job has been down, each
+   run tries the oldest first, and one a run does not reach stays `LATE` and is tried by a later run. `LATE` lines
+   for sign-outs with no `provider sign-out attempt failed` line before them mean the job was not running or is
+   behind: "The provider sign-out job not running", below.
 2. **What holds meanwhile.** The app's own sessions of the account ended and the account's mark moved when the cause
    committed: every sign-in step begun before it is refused by the database, a key registration included, and no
    request of the app is served on the old sessions. What a missing sign-out leaves alive is only the provider's own
-   tokens, which open nothing in the app.
+   tokens, which open nothing in the app. **Not so for a row of reason `password_reset_unrecorded`:** its cause ended
+   no session and moved no mark, so the section above's repair is owed whatever becomes of the sign-out.
 3. **Read the line**; the alarm names no user, and it pages when it goes into ALARM, not once a line:
 
    ```
@@ -241,10 +265,12 @@ provider anything, and their two alarms are gone.
    ```
 
    Keep the sign-out's ID, the user ID, the cause's request ID, the time and the code only. Each failed try before
-   it wrote `provider sign-out attempt failed` at warning with the same `sign_out_id` and the provider's error name:
+   it wrote `provider sign-out attempt failed` at warning with the same `sign_out_id`, the cause's `request_id` and
+   the provider's error name (a step of the job that the database failed writes `provider sign-out step failed` with
+   the failure's `sqlstate`, PostgreSQL's five-character code, and never its message):
 
    ```
-   fields @timestamp, sign_out_id, error_code
+   fields @timestamp, sign_out_id, request_id, error_code
    | filter msg = "provider sign-out attempt failed" and sign_out_id = "<sign_out_id>"
    ```
 
