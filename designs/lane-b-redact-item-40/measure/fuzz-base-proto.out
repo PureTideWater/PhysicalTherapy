@@ -1,0 +1,4 @@
+seed 401: {"letters":20000,"baseRefused":2190,"headRefused":2337,"baseRefusedHeadSent":0,"baseSentHeadRefused":147,"bothSentDifferent":3}
+seed 402: {"letters":20000,"baseRefused":2195,"headRefused":2349,"baseRefusedHeadSent":0,"baseSentHeadRefused":154,"bothSentDifferent":1}
+seed 403: {"letters":20000,"baseRefused":2156,"headRefused":2293,"baseRefusedHeadSent":0,"baseSentHeadRefused":137,"bothSentDifferent":2}
+all: {"letters":60000,"baseRefused":6541,"headRefused":6979,"baseRefusedHeadSent":0,"baseSentHeadRefused":438,"bothSentDifferent":6}

@@ -1,0 +1,10 @@
+letters 975489
+0 | R1-3: holds a number character that is no decimal digit (as written) | by source: 
+0 | R1-3: one right beside an ASCII digit run of 5 or more, after NFKC | by source: 
+0 | R1-3: one right beside any decimal digit, after NFKC | by source: 
+94 | R1-4: holds an unseen character (\p{C}, not default-ignorable, not white space, not U+0001-3) | by source: T5 94
+94 | R1-4: holds U+0085 | by source: T5 94
+94 | R1-4: an unseen character with a letter or digit on each side | by source: T5 94
+94 | R1-4: an unseen character with a digit on each side | by source: T5 94
+94 | R1-4: an unseen character right beside a digit | by source: T5 94
+434 | (A): a letter standing alone, a period, a letter standing alone | by source: harness 285, T5 149

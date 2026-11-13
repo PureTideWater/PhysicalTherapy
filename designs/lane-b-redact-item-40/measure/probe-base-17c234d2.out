@@ -1,0 +1,197 @@
+(A) other names | ANNA | "Ann A.A." | "[PATIENT_NAME].A."
+(A) other names | ANNA | "Ann/a A." | "[PATIENT_NAME] [PATIENT_NAME]."
+(A) other names | OTTO | "Ott O.O." | "[PATIENT_NAME].O."
+(A) other names | ELLE | "Ell E.E." | "[PATIENT_NAME].E."
+(A) other names | ANA ZEPHYRA | "Zephyr A.A." | "[PATIENT_NAME].A."
+(A) other names | ANA ZEPHYRA | "Zephyr/A A.Z." | "[PATIENT_NAME] [PATIENT_NAME].[PATIENT_NAME]."
+(A) other names | JANE Q ZEPHYRA | "Zephyr A.J.Q." | "[PATIENT_NAME].J.Q."
+(A) other names | JANE Q ZEPHYRA | "Zephyr/a J.Q." | "[PATIENT_NAME] [PATIENT_NAME].[PATIENT_NAME]."
+pinned | "Ref <U+2180>76543210 on file." | "Ref <U+2180>76543210 on file."
+pinned | "Ref 76543210<U+1369> on file." | "Ref 76543210<U+1369> on file."
+pinned | "Member ID 7654<U+0085>3210 paid" | "Member ID 7654<U+0085>3210 paid"
+pinned | "Fax X7654<U+0085>3210 ext" | "Fax X7654<U+0085>3210 ext"
+pinned | "Member ID 7654\u00003210 paid" | "Member ID 7654\u00003210 paid"
+pinned | "ZZ/ZZZZ Z.Z.Z" | "[PATIENT_NAME].Z"
+pinned | "AA/AAAAAA A.A.A" | "[PATIENT_NAME].A"
+sets: numeric not decimal 1154; unseen 261
+key | sent in clear | sent hidden | refused
+(A) | all lengths | 2736 | 39504 | 0
+(A) | length 02 | 0 | 640 | 0
+(A) | length 03 | 54 | 1226 | 0
+(A) | length 04 | 144 | 1776 | 0
+(A) | length 05 | 270 | 2290 | 0
+(A) | length 06 | 324 | 2876 | 0
+(A) | length 07 | 324 | 3516 | 0
+(A) | length 08 | 324 | 4156 | 0
+(A) | length 09 | 324 | 4796 | 0
+(A) | length 10 | 324 | 5436 | 0
+(A) | length 11 | 324 | 6076 | 0
+(A) | length 12 | 324 | 6716 | 0
+R1-3 | NFKC-changed | digits bare after | 122 | 30 | 49
+R1-3 | NFKC-changed | digits bare before | 72 | 80 | 49
+R1-3 | NFKC-changed | digits labeled after | 0 | 152 | 49
+R1-3 | NFKC-changed | digits labeled before | 12 | 140 | 49
+R1-3 | NFKC-changed | lettered number after | 0 | 82 | 119
+R1-3 | NFKC-changed | lettered number before | 0 | 62 | 139
+R1-3 | NFKC-changed | name after | 49 | 30 | 122
+R1-3 | NFKC-changed | name before | 49 | 62 | 90
+R1-3 | NFKC-same | digits bare after | 945 | 0 | 8
+R1-3 | NFKC-same | digits bare before | 945 | 0 | 8
+R1-3 | NFKC-same | digits labeled after | 945 | 0 | 8
+R1-3 | NFKC-same | digits labeled before | 945 | 0 | 8
+R1-3 | NFKC-same | lettered number after | 0 | 0 | 953
+R1-3 | NFKC-same | lettered number before | 0 | 0 | 953
+R1-3 | NFKC-same | name after | 0 | 0 | 953
+R1-3 | NFKC-same | name before | 0 | 0 | 953
+R1-3 by category | NFKC-changed Nl | digits bare after | 0 | 0 | 35
+R1-3 by category | NFKC-changed Nl | digits bare before | 0 | 0 | 35
+R1-3 by category | NFKC-changed No | digits bare after | 122 | 30 | 14
+R1-3 by category | NFKC-changed No | digits bare before | 72 | 80 | 14
+R1-3 by category | NFKC-same Nl | digits bare after | 203 | 0 | 1
+R1-3 by category | NFKC-same Nl | digits bare before | 203 | 0 | 1
+R1-3 by category | NFKC-same No | digits bare after | 742 | 0 | 7
+R1-3 by category | NFKC-same No | digits bare before | 742 | 0 | 7
+R1-4 | Cc other | after, bare | 0 | 56 | 0
+R1-4 | Cc other | before, bare | 0 | 56 | 0
+R1-4 | Cc other | between a letter and the number | 0 | 56 | 0
+R1-4 | Cc other | between the number and a letter | 0 | 56 | 0
+R1-4 | Cc other | inside a lettered number | 56 | 0 | 0
+R1-4 | Cc other | inside after a dash, labeled | 56 | 0 | 0
+R1-4 | Cc other | inside after the first digit, labeled | 56 | 0 | 0
+R1-4 | Cc other | inside before a space, bare | 56 | 0 | 0
+R1-4 | Cc other | inside twice, labeled | 56 | 0 | 0
+R1-4 | Cc other | inside, bare | 56 | 0 | 0
+R1-4 | Cc other | inside, glued to a letter | 56 | 0 | 0
+R1-4 | Cc other | inside, labeled | 56 | 0 | 0
+R1-4 | Cc the checks' own marks U+0001-3 | after, bare | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | before, bare | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | between a letter and the number | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | between the number and a letter | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | inside a lettered number | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | inside after a dash, labeled | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | inside after the first digit, labeled | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | inside before a space, bare | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | inside twice, labeled | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | inside, bare | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | inside, glued to a letter | 0 | 0 | 3
+R1-4 | Cc the checks' own marks U+0001-3 | inside, labeled | 0 | 0 | 3
+R1-4 | Cc U+0085 | after, bare | 0 | 1 | 0
+R1-4 | Cc U+0085 | before, bare | 0 | 1 | 0
+R1-4 | Cc U+0085 | between a letter and the number | 0 | 1 | 0
+R1-4 | Cc U+0085 | between the number and a letter | 0 | 1 | 0
+R1-4 | Cc U+0085 | inside a lettered number | 1 | 0 | 0
+R1-4 | Cc U+0085 | inside after a dash, labeled | 1 | 0 | 0
+R1-4 | Cc U+0085 | inside after the first digit, labeled | 1 | 0 | 0
+R1-4 | Cc U+0085 | inside before a space, bare | 1 | 0 | 0
+R1-4 | Cc U+0085 | inside twice, labeled | 1 | 0 | 0
+R1-4 | Cc U+0085 | inside, bare | 1 | 0 | 0
+R1-4 | Cc U+0085 | inside, glued to a letter | 1 | 0 | 0
+R1-4 | Cc U+0085 | inside, labeled | 1 | 0 | 0
+R1-4 | Cc white space (\s) | after, bare | 0 | 5 | 0
+R1-4 | Cc white space (\s) | before, bare | 0 | 5 | 0
+R1-4 | Cc white space (\s) | between a letter and the number | 0 | 5 | 0
+R1-4 | Cc white space (\s) | between the number and a letter | 0 | 5 | 0
+R1-4 | Cc white space (\s) | inside a lettered number | 0 | 5 | 0
+R1-4 | Cc white space (\s) | inside after a dash, labeled | 0 | 5 | 0
+R1-4 | Cc white space (\s) | inside after the first digit, labeled | 0 | 5 | 0
+R1-4 | Cc white space (\s) | inside before a space, bare | 0 | 5 | 0
+R1-4 | Cc white space (\s) | inside twice, labeled | 0 | 5 | 0
+R1-4 | Cc white space (\s) | inside, bare | 0 | 5 | 0
+R1-4 | Cc white space (\s) | inside, glued to a letter | 0 | 0 | 5
+R1-4 | Cc white space (\s) | inside, labeled | 0 | 5 | 0
+R1-4 | Cf default-ignorable | after, bare | 0 | 137 | 0
+R1-4 | Cf default-ignorable | before, bare | 0 | 137 | 0
+R1-4 | Cf default-ignorable | between a letter and the number | 0 | 137 | 0
+R1-4 | Cf default-ignorable | between the number and a letter | 0 | 137 | 0
+R1-4 | Cf default-ignorable | inside a lettered number | 0 | 137 | 0
+R1-4 | Cf default-ignorable | inside after a dash, labeled | 0 | 137 | 0
+R1-4 | Cf default-ignorable | inside after the first digit, labeled | 0 | 137 | 0
+R1-4 | Cf default-ignorable | inside before a space, bare | 0 | 137 | 0
+R1-4 | Cf default-ignorable | inside twice, labeled | 0 | 137 | 0
+R1-4 | Cf default-ignorable | inside, bare | 0 | 137 | 0
+R1-4 | Cf default-ignorable | inside, glued to a letter | 0 | 0 | 137
+R1-4 | Cf default-ignorable | inside, labeled | 0 | 137 | 0
+R1-4 | Cf other | after, bare | 0 | 32 | 0
+R1-4 | Cf other | before, bare | 0 | 32 | 0
+R1-4 | Cf other | between a letter and the number | 0 | 32 | 0
+R1-4 | Cf other | between the number and a letter | 0 | 32 | 0
+R1-4 | Cf other | inside a lettered number | 32 | 0 | 0
+R1-4 | Cf other | inside after a dash, labeled | 32 | 0 | 0
+R1-4 | Cf other | inside after the first digit, labeled | 32 | 0 | 0
+R1-4 | Cf other | inside before a space, bare | 32 | 0 | 0
+R1-4 | Cf other | inside twice, labeled | 32 | 0 | 0
+R1-4 | Cf other | inside, bare | 32 | 0 | 0
+R1-4 | Cf other | inside, glued to a letter | 32 | 0 | 0
+R1-4 | Cf other | inside, labeled | 32 | 0 | 0
+R1-4 | Cf white space (\s) | after, bare | 0 | 1 | 0
+R1-4 | Cf white space (\s) | before, bare | 0 | 1 | 0
+R1-4 | Cf white space (\s) | between a letter and the number | 0 | 1 | 0
+R1-4 | Cf white space (\s) | between the number and a letter | 0 | 1 | 0
+R1-4 | Cf white space (\s) | inside a lettered number | 0 | 1 | 0
+R1-4 | Cf white space (\s) | inside after a dash, labeled | 0 | 1 | 0
+R1-4 | Cf white space (\s) | inside after the first digit, labeled | 0 | 1 | 0
+R1-4 | Cf white space (\s) | inside before a space, bare | 0 | 1 | 0
+R1-4 | Cf white space (\s) | inside twice, labeled | 0 | 1 | 0
+R1-4 | Cf white space (\s) | inside, bare | 0 | 1 | 0
+R1-4 | Cf white space (\s) | inside, glued to a letter | 0 | 0 | 1
+R1-4 | Cf white space (\s) | inside, labeled | 0 | 1 | 0
+R1-4 | Cn other | after, bare | 0 | 4 | 0
+R1-4 | Cn other | before, bare | 0 | 4 | 0
+R1-4 | Cn other | between a letter and the number | 0 | 4 | 0
+R1-4 | Cn other | between the number and a letter | 0 | 4 | 0
+R1-4 | Cn other | inside a lettered number | 4 | 0 | 0
+R1-4 | Cn other | inside after a dash, labeled | 4 | 0 | 0
+R1-4 | Cn other | inside after the first digit, labeled | 4 | 0 | 0
+R1-4 | Cn other | inside before a space, bare | 4 | 0 | 0
+R1-4 | Cn other | inside twice, labeled | 4 | 0 | 0
+R1-4 | Cn other | inside, bare | 4 | 0 | 0
+R1-4 | Cn other | inside, glued to a letter | 4 | 0 | 0
+R1-4 | Cn other | inside, labeled | 4 | 0 | 0
+R1-4 | Co other | after, bare | 0 | 3 | 0
+R1-4 | Co other | before, bare | 0 | 3 | 0
+R1-4 | Co other | between a letter and the number | 0 | 3 | 0
+R1-4 | Co other | between the number and a letter | 0 | 3 | 0
+R1-4 | Co other | inside a lettered number | 3 | 0 | 0
+R1-4 | Co other | inside after a dash, labeled | 3 | 0 | 0
+R1-4 | Co other | inside after the first digit, labeled | 3 | 0 | 0
+R1-4 | Co other | inside before a space, bare | 3 | 0 | 0
+R1-4 | Co other | inside twice, labeled | 3 | 0 | 0
+R1-4 | Co other | inside, bare | 3 | 0 | 0
+R1-4 | Co other | inside, glued to a letter | 3 | 0 | 0
+R1-4 | Co other | inside, labeled | 3 | 0 | 0
+R1-4 | Zl white space (\s) | after, bare | 0 | 1 | 0
+R1-4 | Zl white space (\s) | before, bare | 0 | 1 | 0
+R1-4 | Zl white space (\s) | between a letter and the number | 0 | 1 | 0
+R1-4 | Zl white space (\s) | between the number and a letter | 0 | 1 | 0
+R1-4 | Zl white space (\s) | inside a lettered number | 0 | 1 | 0
+R1-4 | Zl white space (\s) | inside after a dash, labeled | 0 | 1 | 0
+R1-4 | Zl white space (\s) | inside after the first digit, labeled | 0 | 1 | 0
+R1-4 | Zl white space (\s) | inside before a space, bare | 0 | 1 | 0
+R1-4 | Zl white space (\s) | inside twice, labeled | 0 | 1 | 0
+R1-4 | Zl white space (\s) | inside, bare | 0 | 1 | 0
+R1-4 | Zl white space (\s) | inside, glued to a letter | 0 | 0 | 1
+R1-4 | Zl white space (\s) | inside, labeled | 0 | 1 | 0
+R1-4 | Zp white space (\s) | after, bare | 0 | 1 | 0
+R1-4 | Zp white space (\s) | before, bare | 0 | 1 | 0
+R1-4 | Zp white space (\s) | between a letter and the number | 0 | 1 | 0
+R1-4 | Zp white space (\s) | between the number and a letter | 0 | 1 | 0
+R1-4 | Zp white space (\s) | inside a lettered number | 0 | 1 | 0
+R1-4 | Zp white space (\s) | inside after a dash, labeled | 0 | 1 | 0
+R1-4 | Zp white space (\s) | inside after the first digit, labeled | 0 | 1 | 0
+R1-4 | Zp white space (\s) | inside before a space, bare | 0 | 1 | 0
+R1-4 | Zp white space (\s) | inside twice, labeled | 0 | 1 | 0
+R1-4 | Zp white space (\s) | inside, bare | 0 | 1 | 0
+R1-4 | Zp white space (\s) | inside, glued to a letter | 0 | 0 | 1
+R1-4 | Zp white space (\s) | inside, labeled | 0 | 1 | 0
+R1-4 | Zs white space (\s) | after, bare | 0 | 17 | 0
+R1-4 | Zs white space (\s) | before, bare | 0 | 17 | 0
+R1-4 | Zs white space (\s) | between a letter and the number | 0 | 17 | 0
+R1-4 | Zs white space (\s) | between the number and a letter | 0 | 17 | 0
+R1-4 | Zs white space (\s) | inside a lettered number | 0 | 17 | 0
+R1-4 | Zs white space (\s) | inside after a dash, labeled | 0 | 17 | 0
+R1-4 | Zs white space (\s) | inside after the first digit, labeled | 0 | 17 | 0
+R1-4 | Zs white space (\s) | inside before a space, bare | 0 | 17 | 0
+R1-4 | Zs white space (\s) | inside twice, labeled | 0 | 17 | 0
+R1-4 | Zs white space (\s) | inside, bare | 0 | 17 | 0
+R1-4 | Zs white space (\s) | inside, glued to a letter | 0 | 0 | 17
+R1-4 | Zs white space (\s) | inside, labeled | 0 | 17 | 0
