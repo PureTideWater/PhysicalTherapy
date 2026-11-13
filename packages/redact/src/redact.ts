@@ -489,14 +489,20 @@ function viewOf(normal: string, invisible: 'join' | 'drop' | 'space', digits = f
     return buildView(normal, invisible, digits, alike);
   }
   const key = `${invisible}${digits ? '#' : ''}${alike ? '~' : ''}`;
-  const at = viewsOfCheck.findIndex((each) => each.key === key && each.normal === normal);
-  const known = viewsOfCheck[at];
+  // By kind, then by the text itself: one look-up, whatever the number of views stored (G-1: a list searched from the
+  // front, asked once per identifier by numberForm, made N identifiers cost N squared over two comparisons).
+  let ofKind = viewsOfCheck.get(key);
+  if (ofKind === undefined) {
+    ofKind = new Map();
+    viewsOfCheck.set(key, ofKind);
+  }
+  const known = ofKind.get(normal);
   if (known !== undefined && takenAgain(known, true)) {
     return known.view;
   }
   const before = checkWorkSpent;
   const view = buildView(normal, invisible, digits, alike);
-  viewsOfCheck[known === undefined ? viewsOfCheck.length : at] = { normal, key, view, cost: workSince(before), paid: storeScope };
+  ofKind.set(normal, { view, cost: workSince(before), paid: storeScope });
   return view;
 }
 
@@ -544,7 +550,7 @@ function alikeReads(normal: string, subject: Subject): boolean {
  * for it (the judge's review round 2: the check built the same four views up to nine times). Null outside a check, and
  * emptied when the check returns, so no letter's text is held past it.
  */
-let viewsOfCheck: ({ readonly normal: string; readonly key: string; readonly view: View } & Stored)[] | null = null;
+let viewsOfCheck: Map<string, Map<string, { readonly view: View } & Stored>> | null = null;
 
 /**
  * What a stored answer cost to build, in the budget's units (null where it was built with no counter running), and the
@@ -1230,7 +1236,7 @@ function inOneReading<T>(read: () => T): T {
   if (viewsOfCheck !== null && datesOfCheck !== null && formsOfCheck !== null) {
     return read();
   }
-  viewsOfCheck = [];
+  viewsOfCheck = new Map();
   datesOfCheck = [];
   formsOfCheck = new Map();
   try {
