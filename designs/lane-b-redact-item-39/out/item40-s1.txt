@@ -1,0 +1,10 @@
+base both: longest sent about 306386 characters (refused from 306484) both: at 100,000 characters sent, redaction's count 84128040 of 420000000, processor 398 ms 
+base nel: longest sent about 306386 characters (refused from 306484) nel: at 100,000 characters sent, redaction's count 84124800 of 420000000, processor 391 ms 
+base half: longest sent about 306386 characters (refused from 306484) half: at 100,000 characters sent, redaction's count 84126800 of 420000000, processor 423 ms 
+head both: longest sent about 92956 characters (refused from 93053) both: at 100,000 characters REFUSED, redaction's count 398592006 of 420000000, processor 1537 ms 
+head nel: longest sent about 149845 characters (refused from 149942) nel: at 100,000 characters sent, redaction's count 227324910 of 420000000, processor 790 ms 
+head half: longest sent about 189880 characters (refused from 189978) half: at 100,000 characters sent, redaction's count 168252718 of 420000000, processor 808 ms 
+headwin both: longest sent about 305411 characters (refused from 305509) both: at 100,000 characters sent, redaction's count 85495422 of 420000000, processor 427 ms both: windows {"windows":32,"windowCharacters":6366,"letters":16} 
+headwin nel: longest sent about 305704 characters (refused from 305801) nel: at 100,000 characters sent, redaction's count 85086352 of 420000000, processor 393 ms nel: windows {"windows":16,"windowCharacters":4204,"letters":16} 
+headwin half: longest sent about 306094 characters (refused from 306191) half: at 100,000 characters sent, redaction's count 84551072 of 420000000, processor 390 ms half: windows {"windows":16,"windowCharacters":2176,"letters":0} 
+headwin R=256 both: longest sent about 304925 characters (refused from 305022) both: at 100,000 characters sent, redaction's count 86240998 of 420000000, processor 407 ms both: windows {"windows":32,"windowCharacters":12470,"letters":16} 

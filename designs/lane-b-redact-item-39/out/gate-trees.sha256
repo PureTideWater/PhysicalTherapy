@@ -1,0 +1,6 @@
+# gate-base-aclazy-nodense.report.md ran aclazy before the dense-places rule: redact.ts 779be702fefd
+3b34d2a284c959c09cf64608c7f80c5a2d5a63c9da1b763fc90fe357338df6a1  /tmp/claude-0/-home-user-PhysicalTherapy/52a9063e-bc41-5b91-af65-4380455bc645/scratchpad/gate39/base/redact.ts
+08ea36b02270e79a8123827d51118fed96c43eea1fd5ced690472384a1aa7d6f  /tmp/claude-0/-home-user-PhysicalTherapy/52a9063e-bc41-5b91-af65-4380455bc645/scratchpad/gate39/aclazy/redact.ts
+bfd54281f591cacb0d9d40d8deeb7b9cf8f3b9273dcea379a2de6aff83d6e5cc  /tmp/claude-0/-home-user-PhysicalTherapy/52a9063e-bc41-5b91-af65-4380455bc645/scratchpad/gate40/head/redact.ts
+33dcd44adbc907747175dd9ecf42cb0abd469b0d78ce3707fe937fff89bbbb32  /tmp/claude-0/-home-user-PhysicalTherapy/52a9063e-bc41-5b91-af65-4380455bc645/scratchpad/gate40/headwin/redact.ts
+bfd54281f591cacb0d9d40d8deeb7b9cf8f3b9273dcea379a2de6aff83d6e5cc  item 40 head 107c87e1 packages/redact/src/redact.ts

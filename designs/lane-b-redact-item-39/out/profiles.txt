@@ -1,0 +1,30 @@
+# Self time by function (prof.py), Node 24.22.0, this container, 2026-11-13. Synthetic identifiers (run.mts rows).
+# The tsx-bundled runs attribute by function name only; the node-direct run gives the line of the patched copy.
+
+## base, 1000x9 one tiny, whole process (--cpu-prof; 1 cold call + 4 warm; tsx)
+     2657 ms  44.0%  ownMatchesIn            (the per-form new RegExp + first exec: V8 compiles each pattern)
+      751 ms  12.4%  (anon)                  (the per-core RegExps of digitsGluedToLetter and numberGlued)
+      744 ms  12.3%  patternOf               (new RegExp of every form and its labeled writing, at form building)
+      386 ms   6.4%  (anon)
+      348 ms   5.8%  calibrationWork
+      174 ms   2.9%  numberForm
+      166 ms   2.7%  RegExp: [^\p{L}\p{N}]+
+      142 ms   2.3%  viewOf
+
+## base, 6300x9 one tiny, the 4 warm calls only (inspector Profiler started after call 1; tsx)
+     6549 ms  36.4%  numberForm              (viewOf inlined: viewsOfCheck.findIndex over every view stored so far)
+     4073 ms  22.6%  formsBuiltOf            (the same store, through numberForm for each piece)
+     1965 ms  10.9%  matchesIn
+     1846 ms  10.3%  (anon)
+     1347 ms   7.5%  patternOf
+      941 ms   5.2%  (anon)
+      392 ms   2.2%  ownMatchesIn
+
+## aclazy (before numberGlued was patched), 1000x9 one tiny, whole process (node direct)
+      855 ms  24.3%  calibrationWork time-budget.ts:56
+      781 ms  22.2%  glued redact-aclazy.ts:4886        (numberGlued: one RegExp per form per check; patched after this)
+      366 ms  10.4%  RegExp: [^\p{L}\p{N}]+
+      264 ms   7.5%  RegExp: (?<![\p{L}\p{N}])\p{Lu}[\p{L}'\s.]*?(?=[\p{N},;])
+      220 ms   6.3%  numberForm
+      171 ms   4.9%  RegExp: (?<![\p{L}\p{N}])\p{N}[\p{N}\s./-]*(?![\p{L}\p{N}])
+      117 ms   3.3%  item39SourceOf
