@@ -309,7 +309,7 @@ describe('SGN-28: a reset whose own transaction was never recorded still queues 
     expect(await rowsOf(user)).toEqual([{ reason: 'password_reset_unrecorded', actor_kind: 'user', actor_id: user, action: 'password_reset_unrecorded', traced: true }]);
     expect(await rowsOf(other)).toEqual([]);
     // It moves no mark: the reset's own record does that, and this is not it.
-    expect((await owner.query('SELECT sign_in_not_before FROM "user" WHERE id = $1', [user])).rows[0]?.sign_in_not_before).toBeNull();
+    expect((await owner.query<{ mark: Date | null }>('SELECT sign_in_not_before AS mark FROM "user" WHERE id = $1', [user])).rows[0]?.mark).toBeNull();
   });
 
   it('writes nothing more while one waits with no try in flight, and queues again once that one is claimed or done', async () => {
