@@ -628,7 +628,11 @@ milliseconds and the lock is held for about a millisecond. On synthetic rows (1,
 practices, PostgreSQL 18.4, a development machine, the table's pages cached) the read took 196 to 206 seconds and the
 lock was held 0.12 to 2.7 seconds, against a limit of five minutes for this migration. That was not measured on cold
 storage: with nothing cached the read is expected to take longer, and the read does not stop itself at five minutes.
-The deploy's own limit is the migration task's (50 minutes).
+The five minutes is a target the measurements met, not a limit anything enforces: the runner's budget bounds its lock
+waits and retries only. If the runner cancels one of this migration's lock waits (not the closing lock's refusal, which
+it does not retry), it runs the migration again from its first line, the read included, up to twenty tries. Time the
+read on cold storage before the first deploy to an environment that holds statements. The deploy's own limit is the
+migration task's (50 minutes).
 
 So, before this deploy on an environment that holds statements:
 
