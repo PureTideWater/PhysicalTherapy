@@ -1,4 +1,13 @@
-# W64: the migration texts for Queues item 37 (proved in a scratch copy; NOT applied to any migration file)
+# W64, revised by W65: the migration texts for Queues item 37 (proved in a scratch copy; NOT applied to any migration file)
+
+**W65 (session_019i9if9qjSJt3AGpHV86RSa, 2026-11-13) changed two things here: section 3 is now the REFINED ruling 3
+(the orchestrator, 03:55 UTC: a row is never given up untried), and section 5 (A4) has its text and test. The record
+is now `w65/apply-texts.py` and `w65/migration.patch` (W64's script with change 3 replaced and change 5 added; run
+the same way: `python3 w65/apply-texts.py <copy of the migration> a1-trigger.sql.txt`). `w64/` is kept as it was and
+is superseded. W65's proof, same method: the two db test files with the texts applied, 64 passed, 1 failed (the
+SGN-22 prefix case, which goes with the rename); unpatched, 45 passed, 20 failed. The old JOB-07 case's five lines
+are already reworded on the WIP ref (owed red until change 3), so nothing in a test is left to reword but the
+"(owed red ...)" parentheses.**
 
 Session session_019i9ifBKYJayza89rg9KE3j, 2026-11-13. WIP `co-001/wip-key-registry` (base 979a21b8 merged in by 04a62fed).
 **The exact text of every change is two files beside this one, and they are the record:**
@@ -57,13 +66,29 @@ membership_removal_target_holds`, its REVOKE folded into section 14. SGN-24's th
 - What it does not do, said plainly: it moves no mark and ends no app session (the reset's own record does; D15's gap for
   those stays). Tenant isolation: the subject is always `app_actor_id()`; no argument names an account for tp_app.
 
-## 3. B1: LATE and GAVE_UP by age (test JOB-09, two cases)
-Section 10, `operator_provider_sign_outs_overdue`: LATE's condition gains `OR p.queued_at <= now() - interval '15
-minutes'` (whatever tries, whatever lease); GAVE_UP's becomes `p.attempts >= 30 OR p.queued_at <= now() - interval '24
-hours'`, still only with no running lease. Its comment reworded. Locks: as before (the sweep's own row updates).
-**A consequence to tell the founder:** after the job has been down a day, every row older than 24 hours that the first
-run's 8 seconds do not reach is given up untried and paged GAVE_UP (never claimed again); a person signs those accounts
-out (the runbook's GAVE_UP step). Before, such rows were claimed late and paged nobody. This is the ruling as written.
+## 3. B1 under ruling 3 REFINED: LATE by age, GAVE_UP by age only after one try (test JOB-09, three cases; old JOB-07 case)
+Section 10, `operator_provider_sign_outs_overdue`, two conditions and the comment:
+- LATE's gains `OR p.queued_at <= now() - interval '15 minutes'` (undone, whatever its tries, whatever its lease).
+- GAVE_UP's becomes `p.attempts >= 30 OR (p.attempts >= 1 AND p.queued_at <= now() - interval '24 hours')`, still only
+  with no running lease, still `done_at IS NULL AND gave_up_at IS NULL`. (Before: `p.attempts >= 4 AND` 24 hours. W64's
+  first text had no minimum; that text is withdrawn.)
+- **A row with `attempts = 0` is never given up**, whatever its age: it is LATE and paged (once, then acknowledged) and
+  stays claimable. Why: giving up a sign-out never attempted leaves alive a provider session the product promised to end.
+- **Oldest first needs no text change, and JOB-09's third case holds it:** the claim orders by `next_attempt_at, id`;
+  a row never tried has `next_attempt_at = queued_at` (the trigger and the operator function both insert it so), and
+  every claim moves the claimed row's `next_attempt_at` to now + 2 minutes, so no later row can sort ahead of an
+  untried one and the untried rows are reached in the order they were queued. A row a run does not reach has no try
+  counted, stays LATE, and is claimed by a later run. After its own first try (failed, or its lease lapsed with no
+  answer) its age gives it up at the next sweep: one try is the ruling's minimum, not four.
+- Locks: as before (the sweep's own row updates; the claim's `FOR UPDATE SKIP LOCKED`).
+- Tests: JOB-09 case 2 (one try and 25 hours: GAVE_UP once, one audit row; in flight: LATE only until the lease is
+  over; done: nothing; never tried at 30 days: LATE on every sweep, attempts 0, no `provider_sign_out_undelivered`),
+  case 3 (three untried rows 25 to 27 hours old: the claim takes the oldest; the sweep leaves the other two LATE with
+  no try; the tried one fails and is given up; the next claims take the others in queue order at try 1), and the old
+  JOB-07 case's first lines (untried at 25 hours: `['LATE']`, not given up, claimed at try 1).
+**The consequence W64 listed for the founder is gone** (no row is given up untried after an outage). What is left to
+say: after a day's outage, a row older than 24 hours gets ONE try and, if that fails, is given up at the next sweep
+and paged GAVE_UP (not four tries as before); a person signs that account out (the runbook's GAVE_UP step).
 
 ## 4. D7: no security event for a step with no beginning (test SGN-29)
 Section 8, `hardware_key_registration_judge`: `IF began IS NULL THEN RETURN 'refused'; END IF;` directly before the
@@ -89,13 +114,49 @@ preflight's `hardware\_key\_%`); SEC-25 `'hardware_key_removal_refused(text,text
 `infra/lib/security-events.ts` for `key_refused`, `key_registration_refused` and `purpose` found nothing, so no existing
 filter counts these audit rows' kinds; none was built.
 
-## 5. A4: hardware_key_record counts its check: NOT DONE (no text, no test)
-The design reached, for the next session to judge: on a wrong code against a usable opening the function counts one try
-and returns no row instead of raising (a raise rolls the count back), so record and judge share the five tries; a NULL
-code or no usable opening still raises `hardware_key_registration_closed`. The web must then treat no row as that
-refusal (`sign-in.ts:1123`), and SGN-27's wrong-code case changes from a raise to an empty answer. Review A's other way
-(a judged-open marker on the removal row) needs a column and an exact timestamp match across the web.
+## 5. A4: hardware_key_record counts its check (test SGN-30, four cases; SGN-27 loses one line that moved there)
+Section 8, `hardware_key_record`, inside `IF closed THEN`, and the function's comment:
+- No usable opening, or no code at all (`code_sha256 IS NULL`): raises `hardware_key_registration_closed` as today.
+  Neither is a guess, and nothing is counted.
+- A code that does not match a usable opening: `UPDATE hardware_key_removal SET registration_code_tries =
+  registration_code_tries + 1` on that opening; the security event `key_registration_refused` for the actor at most
+  once an hour (the judge's own statement, same guard); then **`RETURN;` with no row** instead of a raise, so the
+  count commits (a raise rolls it back, which made this function an uncounted oracle for the code beside the judge).
+  No key row, no `hardware_key_registered` event, no notice. The fifth wrong code, from the judge or from here,
+  spends the opening (`hardware_key_opening_usable` asks `registration_code_tries < 5`); after that even the right
+  code is refused by the raise.
+- The match stays the double-hashed comparison. The function's shape (RETURNS TABLE, arguments) is unchanged, so
+  SEC-25's key is unchanged and nothing is granted or revoked.
+- Locks: none new. The function already holds the account's row FOR NO KEY UPDATE; the UPDATE takes one row lock on
+  the account's own latest confirmed removal, in the same order the judge takes them (account, then removal).
+- Tenant isolation: the opening is `hardware_key_opening_usable(actor, at)` with actor = `app_actor_id()`; no
+  argument names an account or a removal, so a caller counts against its own opening only (SGN-30's fourth case).
+- **Previous image running:** the previous web ignores the answer's rows, so a wrong code that reaches
+  `hardware_key_record` (the judge said open and the code then changed: a race, or a caller that skipped the judge)
+  would be treated as registered by the old web for that one request: the provider's key would stay with no row here,
+  which opens nothing (a session needs a live `hardware_key` row). The new web is already on the WIP ref
+  (`recorded()` in `apps/web/src/lib/auth/sign-in.ts` throws on no row and the key is removed at the provider, error
+  code `registration_code_refused`), and web and migration ship in the one PR; the runbook's deploy order (migrate,
+  then roll) leaves that one-request window only while old web tasks drain.
+- Tests: SGN-30 (counts and answers no row, one refusal on record; shares five tries with the judge and the right
+  code after a spent opening is refused; no code and no opening count nothing and the right code after one wrong
+  still registers; another account's wrong code leaves this opening untouched). SGN-27's line that offered a wrong
+  code to `hardware_key_record` and expected the raise is removed there (SGN-30 holds the rule). Web: SGN-30's half
+  in `sign-in.db.test.ts` (no row is the refusal), green today.
 
-## Not done by this session
-The adversarial review (step 4): not run. The app-side code for 2 (the web's third transaction in `endedByReset`, the
-runbook's step naming `operator_provider_sign_out_request`), 6 and 7. The header comment's lists in the migration.
+## App side, built by W65 on the WIP ref (no migration needed; each test first)
+- Change 2: `endedByReset` (`apps/web/src/lib/auth/sign-in.ts`) calls `provider_sign_out_unrecorded_reset` in a third
+  transaction after two failures; the paging line gains `outcome_code` (`provider_sign_out_queued`, `_waiting`,
+  `_not_queued`). The runbook has the step and the operator's function.
+- Change 6: the worker reads the claim whole (`SELECT *`), so the fifth column arrives with the migration; the failed
+  try's line carries `request_id` (the cause's); a failed step's line carries `sqlstate` (a new log field, five
+  upper-case letters or digits from the error's code only).
+- Change 7: **not from `refused()` with a pool, as section 7 sketched: a signed-in handler has no pool by design**
+  (`SignedInServices`). `refused()` names the reason on its `InputError` and the routes' wrapper (`refusal()` in
+  `apps/web/src/lib/http/invoke.ts`) calls `hardware_key_removal_refused` after the rollback, as the acting account,
+  bounded by the request's lock timeout; a record that fails leaves the line `security event: a refused act on a key
+  removal was not recorded` (IDs and the reason's code) and changes nothing the person reads.
+- Change 5: above.
+
+## Not done
+The header comment's lists in the migration (by hand in the typed command). Everything in the status file's "Left".
