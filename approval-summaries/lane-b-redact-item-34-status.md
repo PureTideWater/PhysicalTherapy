@@ -4,7 +4,53 @@ Design of record: `designs/lane-b-redact-item-34/design.md` (ops 163894a9). Ruli
 one constant; (d) the verifier keeps its reading; A-4's costs accepted; a digit beside the number stays recorded.
 WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. No PR is open.
 
-## RESUME-BLOCK (W58, 2026-11-13 about 00:30 UTC: 17028cfa MEASURED; ONE BLOCKER RULED (C); NO PR; A SUCCESSOR GETS ONE BOUNDED FIX)
+## RESUME-BLOCK (W63, 2026-11-13 about 06:30 UTC: (C) FIXED AND MEASURED ON 95529e85; THE PR IS THE NEXT STEP)
+
+- **State.** WIP `co-001/wip-redact-item-34`: 287c68d3 (the fix of (C), tests first), 6fc83f83 (draft records),
+  95529e85 (one further small fix, test first), then records. Base to merge before the PR's push: claude/build-platform
+  979a21b8 (schema PR 5 merged 03:19 UTC; no schema PR open). No PR is open yet.
+- **The reading that refuses letter 1, named:** the first reading's check asked of the text the BASE'S WIDER reading
+  wrote (`Fax [MEMBER_ID]:1111,7777.7`), not of the first reading's text. The fix runs the base's whole entry again
+  after the first reading (`refusedAsTheBaseRead`, flag `baseReading` switches the six MOD-25 widenings off; its own
+  counter from nothing and its own stores, so the entry's counted units do not move) at both places (redactionSpans,
+  screenAsBothRead). A base-refused letter goes back as the base wrote it; the mark only where the base's wider reading
+  alone refuses and this reader's own check does not.
+- **The further fix (95529e85).** The unit suites on 287c68d3 failed MOD-15's property, seed 1568248446: a glued name
+  (`RE: Zephyra900-12-3456.`) came back marked where the base wrote it unmarked (same verdict). Now this reader's own
+  whole check of the text is asked apart from the entry (`apartFromTheEntry`), and the mark is written only where it
+  does not refuse.
+- **Measured on 95529e85 against a97d73e4 (all hold):** generated set 0 failures of 14,356; gate `--no-cache` 975,489
+  letters, PHI none, UNPLACED none, reverse none, refused A 462,984, B 463,002 (the same 18 IDs, none real-shaped),
+  KEEP.changed.text 1 (187859); budget rows 403,548,210 and 414,023,090, both sent, both sides; fuzz.mts seeds 301,
+  302, 303: base-refused, head-sent 0 of 60,000; battery recorded and fresh: summary lines the base's, b1 one row
+  (A-4), nine scripts fail at load on both sides; unit suites (redact, packets, synth, model-gateway) 93 files, 7,652
+  passed; typecheck, lint, lint:logs, verify-content exit 0. Outputs: `designs/lane-b-redact-item-34/measure/*-287c68d3*`
+  and `reviews/gate-287c68d3-report.md` (the 95529e85 gate gave the same classes and IDs); scripts `scripts/w63/`.
+- **Reviews.** review-5-fix-c.md (287c68d3): 0 blockers, 3 lesser. review-6-further-fix.md (95529e85, ruled by the
+  orchestrator 06:10 UTC): 0 blockers, 3 lesser. Nothing built from either.
+- **For the queue (lesser, recorded, not built):**
+  - R5-1: a base refusal by work COUNT alone is not reproduced (the base's reading is re-run on a count from nothing;
+    up to 238,226 fewer units than the base on 41 of 313 sampled letters; window about 240,000 units above the budget;
+    no letter built).
+  - R5-2: the entry's counted units move on 6 of 10,500 letters, all refused on both sides (650,506 to 659,506).
+  - R5-3 and R6 L-1: time. Every letter pays the base's reading again, and the changed path one more whole check, each
+    at most one more budget a call and uncounted; no timing row covers the second. Gate run time 1,311 s base, 1,534 s
+    head (17% more); the battery's 120 s generators reach 20% to 37% fewer letters on the head.
+  - R6 L-2, L-3: the unmarked refusal rests on the caller's check; only two letters pin it, and that row would pass
+    without the base's reading. A property row is owed.
+  - k-gen-A (battery): the head refuses 3 of 20,000 letters the base sends (a break written LF CR between an SSN or
+    phone word and a number; the base refuses their LF writing). Already so on 846968af, before the fix rounds; never
+    named in stage 6 or 7 (`measure/k-gen-A-*.out`).
+  - Queues item 40 residuals: (A) `ZZ/ZZZZ Z.Z.Z` sent as `[PATIENT_NAME].Z`; R1-3 and R1-4 (a non-decimal number
+    character beside the number; U+0085 or a control character inside it). (B) is a pinned refused row (49,000).
+  - Owed before real PHI, unchanged: the count of stored member IDs and claim numbers by length.
+- **Exact next step.** PR branch `co-001/redact-item-34` from the WIP, merge claude/build-platform (check ls-remote
+  first), `pnpm test` and `pnpm test:golden` once, one hooked push, draft PR into claude/build-platform from the
+  template, subscribe, end the turn. Merge on green required checks (the brief's step 8). The base's unit job has
+  timed out once on a slow runner in redact.leaks.test.ts:1027 and denial-letter.test.ts:435, :447: red on those only
+  is re-run once and noted, never loosened.
+
+## Earlier: RESUME-BLOCK (W58, 2026-11-13 about 00:30 UTC: 17028cfa MEASURED; ONE BLOCKER RULED (C); NO PR; A SUCCESSOR GETS ONE BOUNDED FIX)
 
 - **State.** WIP head unchanged: **17028cfa** on `co-001/wip-redact-item-34` (W58 committed nothing there). No PR is
   open and none may be opened until (C) is fixed. W58 built nothing. Scripts, the gate's report and the delta review

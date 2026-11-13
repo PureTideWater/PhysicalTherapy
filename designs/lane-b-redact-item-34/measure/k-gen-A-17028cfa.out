@@ -1,0 +1,62 @@
+# A seed 5: 20000 letters in 79s
+
+## META head R, its LF writing S | before R,S | base R,S | breaks d: 9
+   "Phone Member ID\u200b)\r\ufe0f\n 900 12 3456150.00" :: H REFUSED | P REFUSED | B REFUSED
+   "SSN Provider\u00a0## #\u200b\r\u200d\n\ufeff900 12 3456150.00 Paid" :: H REFUSED | P REFUSED | B REFUSED
+   "SSN Member\r\u0301\n900 12 3456150.00" :: H REFUSED | P REFUSED | B REFUSED
+
+## META head R, its LF writing S | before R,S | base S,S | breaks d: 20
+   "SSN Account\u00a0*\u00a0\r\ufeff\n \u200b900-12-345678 Paid" :: H REFUSED | P REFUSED | B "SSN Account * \r\ufeff\n \u200b900-12-345678 Paid"
+   "SSN on file. Policy\t)\u200b\r\u200e\n\u00a0#900-12-345678\nThank you." :: H REFUSED | P REFUSED | B "SSN on file. Policy\t)\u200b\r\u200e\n #900-12-345678\nThank you."
+   "SSN Member   No:\ufeff\r\u2060\n\ufeff202-555-01234567 Paid" :: H REFUSED | P REFUSED | B same
+
+## META head R, its LF writing S | before S,S | base S,S | breaks d: 6
+   "SSN on file. Policy\t,\n\rID'\t202-555-01234567 150.00" :: H REFUSED | P same | B same
+   "Fax: File  ~~~\t\n\r\ufeff:900 12 3456150.00\nThank you." :: H REFUSED | P same | B same
+   "SSN File\ufeff|  \r\r\n##  202-555-01234567\nThank you." :: H REFUSED | P same | B same
+
+## ORACLE the rule says named (vL=0 vT=0), head R, before R, base S num=bare+date: 2
+   "ICN\u200bNumber:\u200b\"12345678901234.01\nThank you." :: H REFUSED | P REFUSED | B same
+   "AccountNo.\u00a0-  12345678901234.01" :: H REFUSED | P REFUSED | B "AccountNo. -  12345678901234.01"
+
+## ORACLE the rule says named (vL=0 vT=1), head R, before R, base S num=20260112345.01: 1
+   "Paid on 01/15/2026.\nTax IDLine /  \u2029  20260112345.01" :: H REFUSED | P REFUSED | B same
+
+## ORACLE the rule says named (vL=0 vT=1), head R, before R, base S num=bare+date: 6
+   "Group\ufeff\ufeffis\t(\n\u00a0900-12-3456150.00" :: H REFUSED | P REFUSED | B "Group\ufeff\ufeffis\t(\n 900-12-3456150.00"
+   "Dear Provider,\nClaim NumberLine\u200b___\u200b\r\n 900-12-3456150.00 150.00" :: H REFUSED | P REFUSED | B same
+   "Paid on 01/15/2026.\nPlan\ufeffNo\ufeff/\u2029\u00a0\ufeff900-12-3456150.00" :: H REFUSED | P REFUSED | B "Paid on 01/15/2026.\nPlan\ufeffNo\ufeff/\u2029 \ufeff900-12-3456150.00"
+
+## PHI-R>S crlfInLabel=false beforeSendsItsLFwriting=false vL=2 vT=0: 3
+   "Fax: Account\u200b)\u00a0\r\ufe0f\n\ufeff-Line\u00a0\t900-12-345678 Paid" :: H "Fax: Account\u200b) \r\ufe0f\n\ufeff-Line \t900-12-345678 Paid" | P REFUSED | B "Fax: Account\u200b) \r\ufe0f\n\ufeff-Line \t900-12-345678 Paid"
+   "Phone Account\t___\u00a0\r\ufe0f\nNumber\t. 900-12-345678 150.00" :: H "Phone Account\t___ \r\ufe0f\nNumber\t. 900-12-345678 150.00" | P REFUSED | B "Phone Account\t___ \r\ufe0f\nNumber\t. 900-12-345678 150.00"
+   "Phone Notice\t\u200b\r\u034f\nLine\u200b  202-555-01234567" :: H same | P REFUSED | B same
+
+## PHI-R>S crlfInLabel=true beforeSendsItsLFwriting=true vL=1 vT=0: 82
+   "Member\ufeff\"\u00a0\r\n (Number:\u200b=20260112345.01" :: H "Member\ufeff\" \r\n (Number:\u200b=20260112345.01" | P REFUSED | B "Member\ufeff\" \r\n (Number:\u200b=20260112345.01"
+   "Medicare Invoice\"  \r\n\ufeffID\u00a012345678901234.01" :: H "Medicare Invoice\"  \r\n\ufeffID 12345678901234.01" | P REFUSED | B "Medicare Invoice\"  \r\n\ufeffID 12345678901234.01"
+   "Notice\t~~~\t\r\nNo.\t(\u200b20260112345.01" :: H same | P REFUSED | B same
+
+## PHI-R>S crlfInLabel=true beforeSendsItsLFwriting=true vL=1 vT=1: 113
+   "Reference=\r\n\ufeffLine\u00a0-\u2029  -(202) 555-0123150.00" :: H "Reference=\r\n\ufeffLine -\u2029  -(202) 555-0123150.00" | P REFUSED | B "Reference=\r\n\ufeffLine -\u2029  -(202) 555-0123150.00"
+   "Phone\nTax ID  ,\r\nNumber:|\u2029\u00a012345678901234.01 Paid" :: H "Phone\nTax ID  ,\r\nNumber:|\u2029 12345678901234.01 Paid" | P REFUSED | B "Phone\nTax ID  ,\r\nNumber:|\u2029 12345678901234.01 Paid"
+   "Phone\nAccount ___\ufeff\r\nNo |\ufeff\n\u00a090012345601/02/2020 150.00" :: H "Phone\nAccount ___\ufeff\r\nNo |\ufeff\n 90012345601/02/2020 150.00" | P REFUSED | B "Phone\nAccount ___\ufeff\r\nNo |\ufeff\n 90012345601/02/2020 150.00"
+
+## STAY vL<=1 vT<=1: 2
+   "SSN on file. STATEMENT\u00a0\u200b\r\n ((202) 555-0123150.00" :: H REFUSED | P "SSN on file. STATEMENT \u200b\r\n ((202) 555-0123150.00" | B "SSN on file. STATEMENT \u200b\r\n ((202) 555-0123150.00"
+   "SSN on file. Account'\ufeffID \u2502\u200b\r\n 202-555-0123150.00" :: H REFUSED | P same | B same
+
+## STAY vL<=1 vT>1: 895
+   "Phone ICN\r\r\n  202-555-0123150.00\nThank you." :: H REFUSED | P same | B same
+   "Phone Reference\u200b\u00a0Number\t~~~\ufeff\r\u200e\n 90012345601/02/2020" :: H REFUSED | P "Phone Reference\u200b Number\t~~~\ufeff\r\u200e\n 90012345601/02/2020" | B "Phone Reference\u200b Number\t~~~\ufeff\r\u200e\n 90012345601/02/2020"
+   "Letter\t.# :\n\r\u200b:\u200b20260112345.01\nThank you." :: H REFUSED | P same | B same
+
+## STAY vL>1 vT<=1: 52
+   "ICN'\u00a0\u000b\ufeff(\n\u00a0ID No.\u200b|\t900-12-3456150.00 150.00" :: H REFUSED | P "ICN' \u000b\ufeff(\n ID No.\u200b|\t900-12-3456150.00 150.00" | B "ICN' \u000b\ufeff(\n ID No.\u200b|\t900-12-3456150.00 150.00"
+   "Account  :\u00a0\n =\u2028\ufeff*Number: /\u00a0202-555-0123150.00 Paid" :: H REFUSED | P "Account  : \n =\u2028\ufeff*Number: / 202-555-0123150.00 Paid" | B "Account  : \n =\u2028\ufeff*Number: / 202-555-0123150.00 Paid"
+   "Letter\u200b~~~\u00a0\n\t=\u2029Code\ufeff,  \r\n  *90012345601/02/2020\nThank you." :: H REFUSED | P "Letter\u200b~~~ \n\t=\u2029Code\ufeff,  \r\n  *90012345601/02/2020\nThank you." | B "Letter\u200b~~~ \n\t=\u2029Code\ufeff,  \r\n  *90012345601/02/2020\nThank you."
+
+## STAY vL>1 vT>1: 30
+   "Paid on 01/15/2026.\nFile:\t\n  .\u2028 is~~~\r\u200d\n  90012345601/02/2020 150.00" :: H REFUSED | P same | B same
+   "Remittance\nAdvice  \"\n  ,NBR)\r\u200b\n\ufeff\u200b(202) 555-0123150.00 Paid" :: H REFUSED | P same | B same
+   "SSN on file. Claim Number\t\u2028\t-\u2029\u200bNBR  (\r\u034f\n\t\u2502802-45-678901.50 150.00" :: H REFUSED | P same | B same
