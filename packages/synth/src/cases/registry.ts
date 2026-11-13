@@ -1201,9 +1201,11 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'SGN-20': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
     'packages/db/src/key-registry.db.test.ts',
     'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/e2e/key-registry.spec.ts',
   ]),
   'SGN-21': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
     'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/e2e/key-registry.spec.ts',
   ]),
   'SGN-22': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
     'packages/db/src/key-registry.db.test.ts',
@@ -1212,10 +1214,12 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
   'SGN-23': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
     'packages/db/src/key-registry.db.test.ts',
     'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/key-registry.spec.ts',
   ]),
   'SGN-24': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
     'packages/db/src/key-registry.db.test.ts',
     'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/key-registry.spec.ts',
   ]),
   'SGN-25': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
     'packages/db/src/key-registry.db.test.ts',
@@ -1229,6 +1233,7 @@ const ENTRIES: Readonly<Record<string, Entry>> = {
     'apps/web/src/lib/auth/sign-in.db.test.ts',
     'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
     'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/key-registry.spec.ts',
   ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
   // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).

@@ -5,7 +5,11 @@
   "assertion": "Refused for the requester, the account, a late confirmer, a removal already decided and a requester who has left the role, and the table holds each rule itself against a direct owner UPDATE; a confirmation removes every key of the account, ends every session, moves the mark, records a hold for a key registered across a reset as cleared, queues the provider's sign-out and the member's notice and writes its audit row, together or not at all; the console's route writes exactly one event, the database's, and asks the provider for nothing",
   "synthetic": true,
   "completesIn": 1,
-  "assertedBy": ["packages/db/src/key-registry.db.test.ts","apps/web/src/lib/routes/console-routes.db.test.ts"],
+  "assertedBy": [
+    "packages/db/src/key-registry.db.test.ts",
+    "apps/web/src/lib/routes/console-routes.db.test.ts",
+    "apps/web/e2e/key-registry.spec.ts"
+  ],
   "codeListRelease": null,
   "noFileReason": "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
   "files": [],
