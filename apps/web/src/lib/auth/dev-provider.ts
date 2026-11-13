@@ -279,6 +279,10 @@ export class DevAuthProvider implements AuthProvider {
       attestationType: 'none',
       excludeCredentials: record.credentials.map((credential) => ({ id: credential.id })),
       authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' },
+      // ES256 and RS256, the two the provider offers. The library's own list starts with ML-DSA-44, whose public key
+      // (1,312 bytes before its COSE wrapping) is longer than the registry's hardware_key_public_key allows, so a
+      // browser that holds it would register a key the registry then refuses (docs/adr/0095).
+      supportedAlgorithmIDs: [-7, -257],
     });
     return { options, challenge: this.challenge({ sub: record.sub, step: 'register', webauthn: options.challenge }) };
   }

@@ -352,6 +352,9 @@ describe('DevAuthProvider: hardware keys (real WebAuthn verification)', () => {
     expect(await setup.dev.listHardwareKeys(step.grant)).toEqual([]);
     const { options, challenge } = await setup.dev.beginKeyRegistration(step.grant);
     expect(options.authenticatorSelection?.userVerification).toBe('required');
+    // ES256 and RS256 alone, as the provider offers: a browser that also holds a post-quantum algorithm would otherwise
+    // make a public key longer than the registry's 1,024 bytes (hardware_key_public_key), and no key would register.
+    expect(options.pubKeyCredParams).toEqual([{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }]);
     expect(await setup.dev.completeKeyRegistration(step.grant, challenge, key.create(options))).toBe(true);
     expect(await setup.dev.listHardwareKeys(step.grant)).toEqual([{ credentialId: Buffer.from(key.credentialId).toString('base64url'), createdAt: expect.any(Date) }]);
     return { ...setup, key, grant: step.grant };
