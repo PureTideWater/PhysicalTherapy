@@ -82,7 +82,11 @@ the base's.
 
 ## 6. The full uncached gate, 4 workers (`gate-base-head.report.md`)
 
-See that file. Required: PHI none, UNPLACED none, reverse classes none, real-shaped newly refused 0 or each named.
+975,489 letters, **same 975,489, differ 0**, refused **463,002 on both** (as #161 left it), errors 0/0,
+spanMismatch 0, cached 0/0. **PHI none, KEEP none, UNPLACED none, reverse PHI none, reverse KEEP none.**
+**Real-shaped newly refused 0**: the gate's 94 letters with U+0085 between digits are refused on the base already,
+and no other letter of the gate holds such a character beside or inside anything a reading takes. The gate's own
+timing: max A 1,122 ms, B 1,239 ms (its run: A 1,769 s, B 1,515 s over the whole corpus).
 
 ## 7. Fuzzed letters (item 34's `w58/fuzz.mts`, seeds 301 to 303, 20,000 each)
 
@@ -97,4 +101,13 @@ each such letter is read once more and refused where the two readings differ.
 - **A letter that holds an unseen character** (the same 20,000 with U+0085 after each): base 1.3805 ms per letter,
   **head 2.6375 — 1.97x the head's own 1.3362 for the same letters without one: the check twice, as expected.**
   With U+200B after each (joined already, read once): head 1.4479.
-- The 100-letter property: see `property-100-letters.out`.
+- The **100-letter property** (`denial-letter.test.ts`, three runs each, alternating on a quiet machine,
+  `property-100-letters.out`): base 4,194 / 3,802 / 3,945 ms, **head 3,919 / 3,988 / 3,940 ms — inside the base's
+  range** (stage 2 measured base 4,463 / 3,920 / 3,974, head 3,764 / 3,625 / 3,790 on the same machine).
+
+## 9. The product's suites on the head
+
+redact 54 passed; packets 1,825 passed; synth 192 passed; model-gateway **6,018 passed, 6 failed**: the six owed-red
+tests of stage 4 alone (`gateway.db.test.ts` and `patient-records.db.test.ts` do not run for want of DATABASE_URL,
+as on the base). `redact.leaks.test.ts` on its own: 1,511 passed, 6 failed (stage 4's). eslint and tsc clean on
+`packages/redact` and `packages/model-gateway`.

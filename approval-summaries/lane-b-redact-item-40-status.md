@@ -1,5 +1,121 @@
 # Queues item 40 (letter redaction: R1-3, R1-4, ruling (A)'s initial): status
 
+## RESUME-BLOCK (W74, 2026-11-13: STAGE 3 IS BUILT AND MEASURED, GREEN AND PUSHED; NEXT IS STAGE 4)
+
+- **Head:** `co-001/wip-redact-item-40` at 943be057 (one commit over stage 2's 07670552, which is over stage 1's
+  3c856166 and the base 17c234d2): `packages/redact/src/redact.ts` (+128, -9),
+  `packages/model-gateway/src/redact.leaks.test.ts`, and two named rows elsewhere
+  (`redact.property.test.ts`, `functions/denial-letter.test.ts`). No PR.
+- **The rule, as built** (R1-4 by ONE MORE READING OF THE WHOLE CHECK; the rulings of 09:30, 09:55 and 12:58 UTC):
+  1. An **unseen character** is every `\p{C}` character that is not default-ignorable, not white space and not one
+     of the checks' own three marks (`UNSEEN_CHARACTER`, built from `BARRIER`/`NAME_MARK`/`OWN_MARK`, beside
+     `PRIVATE_MARKS`). 93 of them in this runtime, the two lone surrogates among them.
+  2. Each of the three entries, after its stage-2 reading (`redactLetterForScreenBesideNumberCharacters`,
+     `redactionSpansBesideNumberCharacters`), reads the letter ONCE MORE with every RUN of such characters written as
+     U+200B (`UNSEEN_JOINED`, which every reading joins inside a number, a date or a part of a name, and which ends a
+     word), and refuses where, on that reading: the whole check refuses what it wrote
+     (`holdsIdentifierCounted`, the caller's own check asked of the other writing), **or it wrote anything but what
+     the reading of the letter as given wrote** (the same mapping applied to that text). The second arm is what
+     catches an unseen character inside an identifier of ANY kind, and the piece beside one a wider reading took:
+     where the two readings differ, a boundary cannot be known, so the letter is refused.
+  3. **No wider replacement can hide it:** the further reading reads the letter BEFORE any placeholder, and its own
+     gates (`refusedAsFirstRead`, `refusedAsTheBaseRead`) stand in each of the two readings, untouched.
+  4. **Charged in full:** `redactLetterForScreenAsGiven` takes a `from` count, so each further reading counts all a
+     letter of its own does ON FROM the letter's count so far, and its check on from there (`holdsIdentifierCounted`
+     writes back the count it reached). The budget is never raised; past it the entry returns the mark alone.
+  5. The drafter's check (`holdsNameOrNumber`) takes both rules: the text as given, with the number characters as
+     spaces, and each of those two with the runs of unseen characters dropped; `holdsNameOrNumberAsGiven` is the base's
+     reading, unchanged. The packet verifier is untouched.
+- **Green:** the stage-3 group is a describe of its own,
+  `MOD-25, Queues item 40, stage 3 (R1-4): an unseen character inside an identifier is refused ...` (263 tests);
+  stage 4's group alone stays inside the OWED RED describe (6 tests, each still failing on its assertion).
+  redact.leaks.test.ts: 1,511 passed, 6 failed. eslint and tsc clean on both packages.
+- **Rows added before the change, each seen failing on its assertion on 07670552** (248 failed, 15 passed there):
+  the unseen character inside a date of birth (5 writings), a Social Security number (3), a phone number (4), each
+  through the entry; inside a part of a name; inside the piece beside one the wider reading replaces (4 holdings);
+  every stage-1 form through `redactLetter` and through `redactionSpans`; a property over 9 written values x 93
+  characters x 3 entries; the budget row with one U+0085 (refused by the count AND the mark alone, count past the
+  budget); and the drafter's check, 20 rows held, 5 not held, and a property over both rules.
+  The 15 that passed before the change: U+0085 inside a Social Security or phone number (the first reading joins it
+  there already, and the row asks for the whole placeholder), and 10 drafter rows the base already held.
+- **Measurements** (`designs/lane-b-redact-item-40/stage-3/`, scripts and `measure/`, with
+  `measure/stage-3.counts.md` over them). Trees: base 17c234d2 (3b34d2a284c9) against the head's file as committed
+  (24359600cc53, `measure/trees.sha256`).
+  - **Every unseen character inside every kind of identifier** (`every-unseen.mts`: 93 characters x 3 places x 7
+    frames x 18 kinds, through both entries, each with its check): base clear / hidden / refused
+    **23,337 / 8,483 / 1,939**, head **0 / 5,334 / 28,425**. **0 clear in every one of the 18 kinds.** (1,395 rows
+    counted apart: a phone number of seven digits, not stored, in a frame with no label, which is sent in clear
+    without any such character too.)
+  - **Item 40's generated set** (seed 40, 51,833 letters): **failures 0 in every family this stage builds**, PHI
+    classes none, errors 0/0. (The 2,741 failures counted are stage 4's families alone, `A.length-*` and
+    `A.other-names`, the same letters clear on both trees.) `r14.inside` 768 and `r14.surrogate.inside` 16: **all
+    refused, 0 clear**; `r14.outside` 384 and `r14.surrogate.outside` 8 hidden on both, unchanged. **The kinds W71
+    found clear on the base, all newly refused: a date of birth 288 of 288 (+6 surrogate), a Social Security number
+    190 of 192 (+4), a phone number 190 of 192 (+4)**; `probe.name` 192 hidden on both, as the base has it. Every
+    R1-3 count is stage 2's, unchanged.
+  - **Real-shaped rows newly refused: 84 of the 320 R1-4 rows, each by form** — `real.c1.code-range` 16,
+    `real.c1.no-identifier` 16, `real.nel.no-identifier` 16, `real.nul.in-number` 16,
+    `real.nul.utf16-read-as-bytes` 16 (W71's 80), and **`real.nel.number-then-date-line` 4**, the 4 the prototype did
+    not refuse (the entry's reading merges "Member ID: 30072299<U+0085>01/05/2026" into one number and writes a
+    different placeholder). **32 of the 84 were sent in clear by the base** (`real.nul.in-number`,
+    `real.nul.utf16-read-as-bytes`): a leak this stage closes. **52 are the cost** (C1 quotes and dashes 32, U+0085
+    line endings 20): prose the base redacted correctly, refused now because the joined reading reads
+    "97110<U+0096>97112" as one ten-digit number a pattern takes. Stage 2's 96 `real.r3` rows are unchanged.
+  - **Item 34's generated set** (14,356): **differ 0**, failures 0, refused 5,789 on both, notes 6.
+  - **The full uncached gate, 4 workers**: 975,489 letters, **same 975,489, differ 0**, refused **463,002 on both**,
+    errors 0/0, spanMismatch 0; **PHI none, KEEP none, UNPLACED none, reverse PHI none, reverse KEEP none; real-shaped
+    newly refused 0** (the gate's 94 letters with U+0085 between digits are refused on the base already). Gate timing:
+    max A 1,122 ms, B 1,239 ms.
+  - **The two budget rows unchanged on both trees:** 403,548,210 and 414,023,090, both sent.
+  - **The further reading's charge** (`charge.mts`, units of the budget, with nothing there / with one U+0085):
+    small letter 440,630 / **913,164** (2.07x); middling (26,000 characters) 42,441,968 / **91,027,130** (2.14x);
+    a quarter of the budget 100,253,170 / **235,927,376** (2.35x); **half the budget: REFUSED by the count**;
+    **the row nearest the budget: REFUSED, count 420,000,001, one character of text (the mark alone)**. On the base
+    each of those is sent, the character costing about 2,000 units. A letter whose only such character is U+200B is
+    read once (its count is the base's).
+  - **Fuzzed 60,000** (seeds 301 to 303): **base-refused, head-sent 0** in all three, and 0 with a letter or digit
+    outside placeholders. The head refuses **558 / 569 / 558 more** than the base (1,685, 2.8%): the fuzzer writes
+    control characters freely, and such a letter is refused wherever the two readings differ.
+  - **The drafter's check** (`drafter.mts`): R1-3 **held 80,780 of 80,780** (base 20,520), R1-4 **held 9,765 of
+    9,765** (base 1,860); and **0 of 124,785** rows beside or inside a value that is NOT the call's, on both trees.
+  - **Time:** the reader over 20,000 letters of shard 0 (two runs each): base 1.4074 and 1.3741 ms per letter,
+    **head 1.3916 and 1.3578** — at or below the base, same 6,997 refused. **A letter that holds such a character:
+    head 2.6375 ms against its own 1.3362 for the same letters without one — 1.97x, the check twice.** The
+    **100-letter property**: base 4,194 / 3,802 / 3,945 ms, **head 3,919 / 3,988 / 3,940 — inside the base's range.**
+  - **Unit suites:** redact 54 passed; packets 1,825 passed; synth 192 passed; model-gateway 6,018 passed with the
+    6 owed-red tests of stage 4 failing and the two `.db.test.ts` files not running for want of DATABASE_URL (as on
+    the base).
+- **Named costs of this stage (nothing else changed):**
+  1. The 52 real-shaped letters above that the base redacted correctly, refused now (C1 quotes and dashes between
+     two procedure codes, U+0085 line endings): the blunt rule, as the orchestrator's ruling of 09:30 UTC has it.
+  2. **Three rows outside the item's describes, rewritten in this commit and each named:**
+     `Phone<U+0085>900 77.3283150.00` was pinned SENT UNCHANGED (J-1 to J-5) and is now refused: with the character
+     joined, the label stands right before the number, as `Phone #: 900 77.3283150.00` does, which is refused.
+     Two rows pinned "refused, as the base wrote it" (finding (C)) hold U+0004 or U+0085; the text they go back with
+     is unchanged to the character, with the checks' mark after it (the test now asks for exactly that).
+     MOD-24's crafted budget row of another script's digit and U+0085 passes the budget **in the redaction** now,
+     not in the check, so the entry returns the mark alone; the row's `pastIn` is `redaction`.
+     MOD-15's property (`redact.property.test.ts`) allows that one mark for a letter that holds such a character,
+     and nothing else: it asks that every character before it be as the base wrote it.
+  3. 1,685 of 60,000 fuzzed letters (2.8%) newly refused; base-refused, head-sent 0.
+  4. **Still sent in clear, and NOT this item's** (stage 2's recorded residual, unchanged): a phone number by pattern
+     that is NOT stored, with a number character beside it (11,285 rows). The R1-3 sweep on this head is identical to
+     stage 2's: clear / hidden / refused 11,285 / 0 / 150,275 per entry.
+- **Unexplained differences: none.** Every difference between the trees in every gate is named above.
+- **Next stage, exactly: stage 4, ruling (A)** — the initial after a name whose match ends in a letter standing
+  alone is replaced, in `initialsNextToNames`; item 34's `a4.sh` again; the group `stage 4, ruling (A)` (6 tests) is
+  the only one left inside the OWED RED describe, and item 40's generated set must then show 0 failures in
+  `A.length-*` (2,736) and `A.other-names` (5) too. **Then stage 5:** the measurements whole, ADR 0054's amendment,
+  the test matrix (MOD-25) and the synth registry, two adversarial reviews, two fix rounds at most, the PR.
+- **Questions for a ruling (one line each, with the recommendation):**
+  1. The 52 real-shaped letters newly refused (C1 quotes and dashes, U+0085 line endings, each form named): recommend
+     accept as the blunt rule's cost; closing them would need the first reading to read such a character as a break,
+     which this construction forbids.
+  2. The three rows outside the item's describes, rewritten as named above: recommend accept (each is the same
+     mechanism, pinned, with its text unchanged but for the mark).
+  3. Stage 2's three questions still stand unanswered (the five pinned U+A6EF rows, the not-stored phone residual,
+     and the shape of the further reading, which this stage reused as ruled on 12:58 UTC).
+
 ## RESUME-BLOCK (W72, 2026-11-13: STAGE 2 IS BUILT AND MEASURED, GREEN AND PUSHED; NEXT IS STAGE 3)
 
 - **Head:** `co-001/wip-redact-item-40` at 07670552 (two commits over stage 1's 3c856166, which is over the base
