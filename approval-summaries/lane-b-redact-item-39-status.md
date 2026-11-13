@@ -12,12 +12,10 @@
   letter 946 ms base, 997 ms head, of 3,000, none over. `git diff 4d40557f 5af1c9a0 -- packages/redact` touches no
   CHECK_WORK_BUDGET, WORK constant or 3 s row. Report: `designs/lane-b-redact-item-39/final-gate-5af1c9a0/`.
   Earlier: all 3,616 redact unit tests pass at 5af1c9a0, typecheck and lint clean.
-- **Next, exactly:** when #163 has merged (git ls-remote and the PR's state): merge `claude/build-platform` into the
-  WIP ref, keeping both items' behaviour in redact.ts; then stage 5 per design-note.md sections 5 and 6 (lines 233 to
-  352): windows, R = 256, the first reading's spans kept, window-interior fallback to the whole re-read, all charged.
-  Tests first, failing on an assertion, including item 40's pinned S-1 and C-1 cost rows, which become sent with no
-  identifier in clear. Oracle: item 40's generated set and the full gate against item 40's merged head.
-  Not this stage: the two reviews, ADR 0054, the PR.
+- **Final gate at 5af1c9a0 (done, 23:15 UTC):** 975,489 letters, differ 0, refused 463,002 on both, errors 0, span
+  mismatches 0; max letter A 1,273 ms, B 1,255 ms, none over 3 s. Stages 1 to 4 are complete and proven.
+- **Next, exactly:** nothing in this brief. Stage 5 waits for item 40's merge (not mine); the reviews and the PR are
+  not mine. Stage 4's end reported to the orchestrator.
 <!-- /RESUME-BLOCK -->
 
 ## Rulings applied (lanes/lane-b.md 21:10 UTC)
