@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, createHmac, hkdfSync, randomBytes } from 'node:crypto';
 
 /**
  * Sealed values for state a browser carries between sign-in steps (the pending step, the identity
@@ -29,6 +29,15 @@ export class Sealer {
   /** A sealer whose key is derived from this one for another use (the dev provider's own challenges). */
   derive(label: string): Sealer {
     return new Sealer(createHash('sha256').update(this.key).update(label).digest());
+  }
+
+  /**
+   * A 32-byte key for another primitive (an HMAC's key), derived from this one by HKDF-SHA-256 with no salt under
+   * `info`, a fixed label that names the one use. The same sealing key and label give the same key in every process;
+   * the sealing key itself never leaves this class.
+   */
+  deriveKey(info: string): Buffer {
+    return Buffer.from(hkdfSync('sha256', this.key, Buffer.alloc(0), info, SEAL_KEY_BYTES));
   }
 
   /** An HMAC-SHA-256 of `message` for `purpose`: a signature only this server can make (upload tokens). */

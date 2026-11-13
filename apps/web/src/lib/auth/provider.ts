@@ -100,6 +100,22 @@ export interface EnsuredUser {
   readonly neverSignedIn: boolean;
 }
 
+export interface ProviderHardwareKey {
+  /** The credential ID, base64url, as the browser's response names it. */
+  readonly credentialId: string;
+  readonly createdAt: Date | undefined;
+}
+
+/**
+ * The signature algorithms a hardware key may register under, in the order the browser is given them: ES256 (-7) and
+ * RS256 (-257), by their COSE identifiers (docs/adr/0095; the orchestrator's ruling R2 on Queues item 37). The product
+ * offers these two whatever an identity provider lists: the sign-in flow sends the browser only these and its own
+ * verification of a registration refuses any other, and the local provider offers the same two. Others
+ * are left out because their public keys do not fit the registry (ML-DSA-44's is 1,312 bytes before its COSE wrapping,
+ * more than hardware_key_public_key allows) or no supported provider offers them. Declared once, here.
+ */
+export const KEY_REGISTRATION_ALGORITHMS = [-7, -257] as const;
+
 export interface AuthProvider {
   readonly name: 'cognito' | 'dev';
   signIn(email: string, password: string): Promise<AuthStep>;
@@ -110,7 +126,12 @@ export interface AuthProvider {
   /** WebAuthn sign-in: the request options for the browser, and the challenge to answer with. */
   beginKeySignIn(email: string): Promise<KeyChallenge<PublicKeyCredentialRequestOptionsJSON>>;
   completeKeySignIn(challenge: string, response: AuthenticationResponseJSON): Promise<AuthStep>;
-  hasHardwareKey(grant: string): Promise<boolean>;
+  /**
+   * The hardware keys the provider holds for the grant's user, each with when the provider registered it (docs/adr/0095).
+   * Read only to clean up after a refused key sign-in: whether an account holds a key is the registry's answer, never
+   * the provider's. `createdAt` absent: the provider did not say, and such a credential is never deleted as unknown.
+   */
+  listHardwareKeys(grant: string): Promise<readonly ProviderHardwareKey[]>;
   beginKeyRegistration(grant: string): Promise<KeyChallenge<PublicKeyCredentialCreationOptionsJSON>>;
   /** Whether the hardware key was verified and registered. */
   completeKeyRegistration(grant: string, challenge: string, response: RegistrationResponseJSON): Promise<boolean>;
@@ -152,6 +173,4 @@ export interface AuthProvider {
    * and read as a refused code. An answer that does not say whether the password changed is 'outcome_unknown'.
    */
   confirmPasswordReset(email: string, code: string, password: string): Promise<PasswordResetResult>;
-  /** Signs the user out of the provider everywhere (their membership ended, their sessions were revoked). */
-  globalSignOut(sub: string): Promise<void>;
 }

@@ -30,6 +30,8 @@ describe('platform job registry', () => {
       'mail_expiry',
       'dunning_notices',
       'password_notices',
+      'provider_sign_outs',
+      'hardware_key_notices',
     ]);
     // The screening's pricing is the consumer's since PR 6b-3 (jobs/screening.ts): the platform neither schedules nor works it.
     expect(PLATFORM_JOB_TYPES).not.toContain('screening_price');
@@ -69,12 +71,20 @@ describe('platform job registry', () => {
     for (const payload of [{ email: 'someone@synthetic.test' }, { user_id: JOB }, { password_notice_id: JOB }]) {
       expect(() => parsePlatformPayload('password_notices', payload)).toThrow(ZodError);
     }
+    // The key registry's two (docs/adr/0095; JOB-08): no account, subject, address, row or code rides in pg-boss.
+    for (const type of ['provider_sign_outs', 'hardware_key_notices'] as const) {
+      expect(parsePlatformPayload(type, {})).toEqual({});
+      assertNoPhi('job_payload', parsePlatformPayload(type, {}));
+      for (const payload of [{ email: 'someone@synthetic.test' }, { user_id: JOB }, { sign_out_id: JOB }, { subject: JOB }, { hardware_key_notice_id: JOB }, { code: 'ABCD2345' }]) {
+        expect(() => parsePlatformPayload(type, payload)).toThrow(ZodError);
+      }
+    }
   });
 
   it('records mail events and sends the dunning notices due again and the password-changed notices every minute, and expires the mail records nightly at 03:50 UTC', () => {
     const boss = new PgBoss('postgres://nobody@localhost:1/none');
     const from = new Date('2026-10-15T00:00:30Z');
-    for (const type of ['mail_events', 'dunning_notices', 'password_notices'] as const) {
+    for (const type of ['mail_events', 'dunning_notices', 'password_notices', 'provider_sign_outs', 'hardware_key_notices'] as const) {
       expect(boss.previewSchedule(PLATFORM_SCHEDULES[type], { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-15T00:01:00Z'), new Date('2026-10-15T00:02:00Z')]);
     }
     expect(boss.previewSchedule(PLATFORM_SCHEDULES.mail_expiry, { from, count: 2, tz: 'UTC' })).toEqual([new Date('2026-10-15T03:50:00Z'), new Date('2026-10-16T03:50:00Z')]);

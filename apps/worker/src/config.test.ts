@@ -195,6 +195,7 @@ describe('readPlatformConfig', () => {
     STATIC_ASSET_ORIGIN: 'https://static.synthetic.test',
     SUPPORT_MAIL_BUCKET: 'tp-production-support-mail',
     SUPPORT_EMAIL: 'support@synthetic.test',
+    COGNITO_USER_POOL_ID: 'us-east-1_SYNTHETIC1',
     ...RDS,
   };
 
@@ -216,6 +217,8 @@ describe('readPlatformConfig', () => {
       mailEvents: { kind: 'local', dir: null, identitiesVerified: true },
       // The web's development default (docs/adr/0091), so a local WORKER_JOBS=all worker starts.
       supportEmail: 'support@synthetic.test',
+      // No user pool in development: the provider_sign_outs job's twin asks no one (docs/adr/0095).
+      providerSignOut: { kind: 'local' },
     });
     expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', RESTORE_DRILL_ADMIN_URL: 'postgres://admin@localhost/d' })?.restoreDrill).toEqual({
       kind: 'local',
@@ -242,8 +245,16 @@ describe('readPlatformConfig', () => {
       staticAssetOrigin: 'https://static.synthetic.test',
       mailEvents: { kind: 'sqs', queueUrl: 'https://sqs.us-east-1.amazonaws.com/123456789012/tp-production-mail-events', identitiesVerified: false },
       supportEmail: 'support@synthetic.test',
+      providerSignOut: { kind: 'cognito', userPoolId: 'us-east-1_SYNTHETIC1' },
     });
     expect(readPlatformConfig({ ...PRODUCTION, AUDIT_COPY_LOCK_MODE: 'GOVERNANCE' })?.auditStore).toEqual({ kind: 's3', bucket: 'tp-production-audit-copies', lockMode: 'GOVERNANCE' });
+  });
+
+  it('asks the user pool for provider sign-outs (COGNITO_USER_POOL_ID): required in production, the twin never runs there, and a value that is no pool ID is refused (docs/adr/0095)', () => {
+    const { COGNITO_USER_POOL_ID: _pool, ...without } = PRODUCTION;
+    expect(() => readPlatformConfig(without)).toThrow(/COGNITO_USER_POOL_ID/);
+    expect(() => readPlatformConfig({ ...PRODUCTION, COGNITO_USER_POOL_ID: 'not a pool' })).toThrow(/COGNITO_USER_POOL_ID/);
+    expect(readPlatformConfig({ OPERATOR_DATABASE_URL, AUDIT_COPY_DIR: 'a', COGNITO_USER_POOL_ID: 'us-east-1_SYNTHETIC1' })?.providerSignOut).toEqual({ kind: 'cognito', userPoolId: 'us-east-1_SYNTHETIC1' });
   });
 
   it('reads support mail from SUPPORT_MAIL_BUCKET or a directory of .eml files (SUPPORT_MAIL_DIR)', () => {

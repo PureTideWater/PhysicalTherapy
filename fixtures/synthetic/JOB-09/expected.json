@@ -1,0 +1,20 @@
+{
+  "case": "JOB-09",
+  "module": "JOB",
+  "title": "The provider sign-out sweep judges late and given up by age",
+  "assertion": "The sweep marks a row late by its age since it was queued whatever its tries, and gives up by age only a row whose try was answered; it records each once, and a late success is still recorded; the claim names the request ID of the row's cause",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "packages/db/src/provider-sign-out.db.test.ts",
+    "apps/worker/src/platform/provider-sign-outs.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic accounts and a provider twin the tests make; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

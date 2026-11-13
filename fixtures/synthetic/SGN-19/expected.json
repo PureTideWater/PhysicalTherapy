@@ -2,12 +2,12 @@
   "case": "SGN-19",
   "module": "SGN",
   "title": "End membership ends in the app whatever the provider answers",
-  "assertion": "Both End membership routes (the console's and an organization's Settings) end the membership and every session of the account and write `membership_ended` in one transaction with no call to the provider inside it; the provider is asked to sign the account out once, only after the commit is confirmed, and never when End membership is refused; a sign-out that fails undoes nothing, the answer is still that the membership ended, and it is one line at error (`security event: membership end provider sign-out failed`) with the user's ID, the request's ID and the error's name only (`NO_PROVIDER_SUBJECT` when the subject could not be read), never the subject, an address or the error's text, which `MembershipEndProviderSignOutFailed` alarms on at one in five minutes; the Settings route reads the subject while the membership stands, since row-level security hides the person's row once it has ended; nothing sends the sign-out again; and while the provider's sign-out has not happened a code step begun before End membership still opens a session, which carries no role, and a key-registration step begun before it still registers a key that then signs in: both are stated by tests as they stand and stay open until the membership's end moves the account's mark (`LANES.md` Queues item 37)",
+  "assertion": "Both End membership routes (the console's and an organization's Settings) end the membership and every session of the account, move the account's mark and write `membership_ended` in one transaction, and the web asks the provider for nothing, inside it or after it: no file under apps/web holds a call to, a method for or a mention of the provider's sign-out, held by a scan; the database queues one `provider_sign_out` row on that event, tied to it and to the request, carrying IDs only, and the platform job sends it (JOB-06 to JOB-08); a refused End membership queues nothing, and one whose COMMIT the server refuses leaves no row, no audit event, the membership standing and the session active; a reset's row is queued the same way, one for a retried try, and a reset whose transaction fails twice, a refused code and an unknown outcome with no account queue none; a code step and a key-registration step begun before End membership are refused after it as after a reset (SGN-17's refusals); `ProviderSignOutNotDelivered` alarms on the platform log group for the job's line, and the web's two alarms for a failed sign-out are gone",
   "synthetic": true,
   "completesIn": 1,
   "assertedBy": [
     "apps/web/src/lib/routes/console-routes.db.test.ts",
-    "apps/web/src/lib/auth/provider-sign-out.test.ts",
+    "apps/web/src/lib/auth/no-provider-sign-out.test.ts",
     "apps/web/src/lib/auth/sign-in.db.test.ts",
     "infra/test/monitoring.test.ts"
   ],

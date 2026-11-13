@@ -38,6 +38,11 @@ export interface OpenSessionRequest {
    * release before wrote it; the sign-in flow always gives one.
    */
   readonly began: number;
+  /**
+   * A key sign-in's credential: SHA-256 of the credential ID, which the database checks under the account's lock to be
+   * a live key of this account (docs/adr/0095). Absent for a password-and-code session.
+   */
+  readonly keyCredentialSha256?: Buffer;
 }
 
 /** The name the database's refusal of a stale session carries (migration 20261112090000; docs/adr/0093, D4). */
@@ -47,6 +52,16 @@ export const STALE_SESSION_CONSTRAINT = 'user_session_sign_in_not_before';
 export function isStaleSessionRefusal(error: unknown): boolean {
   const { code, constraint } = (typeof error === 'object' && error !== null ? error : {}) as { readonly code?: unknown; readonly constraint?: unknown };
   return code === '23514' && constraint === STALE_SESSION_CONSTRAINT;
+}
+
+/** The names the database's refusals of a session carry since the key registry (migration 20261116090000; docs/adr/0095). */
+export const KEY_NOT_LIVE_CONSTRAINT = 'user_session_hardware_key_live';
+export const KEY_REGISTRATION_CLOSED_CONSTRAINT = 'user_session_key_registration_closed';
+
+/** The constraint a check or unique violation names, if the error is one. */
+export function refusedConstraint(error: unknown): string | undefined {
+  const { code, constraint } = (typeof error === 'object' && error !== null ? error : {}) as { readonly code?: unknown; readonly constraint?: unknown };
+  return (code === '23514' || code === '23505') && typeof constraint === 'string' ? constraint : undefined;
 }
 
 /**
@@ -101,8 +116,8 @@ export function openSession(pool: ScopePool<ScopeClient>, request: OpenSessionRe
     }
     const sessionToken = newToken();
     const session = await client.query<{ id: string; expires_at: Date }>(
-      'INSERT INTO user_session (user_id, device_id, token_sha256, mfa_method, sign_in_began_at) VALUES ($1, $2, $3, $4, $5) RETURNING id, expires_at',
-      [request.userId, device.id, tokenHash(sessionToken), request.method, new Date(request.began)],
+      'INSERT INTO user_session (user_id, device_id, token_sha256, mfa_method, sign_in_began_at, key_credential_sha256) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, expires_at',
+      [request.userId, device.id, tokenHash(sessionToken), request.method, new Date(request.began), request.keyCredentialSha256 ?? null],
     );
     const sessionId = session.rows[0]?.id ?? '';
     await client.query('SELECT sign_in_succeeded($1)', [request.userId]);

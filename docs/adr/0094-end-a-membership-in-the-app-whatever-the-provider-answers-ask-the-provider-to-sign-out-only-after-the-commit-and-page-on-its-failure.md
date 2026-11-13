@@ -155,3 +155,20 @@ Recorded, not fixed here:
 
 Queues item 37 lands (the retry, the mark and key removal): this record's "left open" section and the runbook's
 break-glass lines for a failed sign-out are then amended.
+
+## Amendment, 2026-11-12: the outbox, the mark and key removal landed (ADR 0095; Queues item 37)
+
+[0095](0095-remove-a-members-hardware-keys-in-the-apps-own-registry-by-two-platform-administrators-queue-every-provider-sign-out-in-the-database-and-move-the-mark-when-a-membership-ends.md) is the record this one's "Revisit when" names.
+
+- **D2, D5, D6 and D7 are superseded.** The web asks the provider nothing. The database queues one sign-out in End
+  membership's own transaction, on its `membership_ended` event, and the platform job `provider_sign_outs` sends it
+  and retries (ADR 0095, D12 to D14). `signOutAtProviderAfterCommit`, `AuthProvider.globalSignOut` and the wrapper's
+  `whenCommitUnknown` are removed: after a commit with no answer no handler work runs, and the row, if the commit
+  landed, is the database's.
+- **D3 is moot.** The Settings route no longer reads the provider subject; the trigger reads the account.
+- **D4's line and its alarm `MembershipEndProviderSignOutFailed` are gone.** `ProviderSignOutNotDelivered` (late, and
+  given up) on the platform log group replaces them, and `ProviderSignOutsNotRunning` pages when the job is silent.
+- **"What a failed or missing sign-out leaves open" is closed.** An ended membership moves the account's mark
+  (`membership_end_marks_account`), so a sign-in step or a key registration begun before it is refused as after a
+  reset; SGN-19's two in-flight tests assert the refusals.
+- **D1 and D8 stand.**

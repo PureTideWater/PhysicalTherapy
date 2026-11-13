@@ -1,0 +1,17 @@
+{
+  "case": "SGN-29",
+  "module": "SGN",
+  "title": "A step judged with no beginning is no guess",
+  "assertion": "`hardware_key_registration_judge` given no beginning returns before its security event: it counts no try and records no refusal",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["packages/db/src/key-registry.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic accounts the test inserts; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

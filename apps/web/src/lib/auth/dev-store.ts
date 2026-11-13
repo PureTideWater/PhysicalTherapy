@@ -14,6 +14,8 @@ export interface DevCredential {
   readonly publicKey: string;
   readonly counter: number;
   readonly transports?: readonly string[];
+  /** When the provider registered it, ISO 8601 (docs/adr/0095). Optional, so stores written before it existed still load. */
+  readonly createdAt?: string;
 }
 
 export interface DevUserRecord {

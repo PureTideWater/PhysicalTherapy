@@ -9,8 +9,8 @@ a real file, a key or a token into the incident record, a ticket, a chat or a se
 
 A security event alarm (failed-MFA burst, sign-in burst, WAF block surge, GuardDuty finding, a bulk export, a grant
 change or role escalation outside a ticket, a refused second-factor enrolment, a refused client credential, one
-account's reset requests reaching five in an hour, a password reset whose sessions were not ended, a password reset
-whose provider sign-out failed), a finding of the weekly sign-in review below, a customer's or a
+account's reset requests reaching five in an hour, a password reset whose sessions were not ended, a provider sign-out
+not delivered, a removed hardware key used), a finding of the weekly sign-in review below, a customer's or a
 vendor's report, a lost device, a leaked credential, or anything that suggests PHI reached someone it should not.
 
 ## 1. Open the record (within one hour)
@@ -24,11 +24,11 @@ vendor's report, a lost device, a leaked credential, or anything that suggests P
 Pick what fits; do the cheapest effective step first.
 
 - **A user or session:** press End membership beside the person on their organization's console page (Console →
-  Organizations → the organization). It ends every session of the user, signs them out at the identity provider and ends
-  their role in that organization at once. The membership, the sessions and the audit event are one transaction, and
-  the identity provider is asked to sign the person out only once it has committed: if the provider refuses or cannot be
-  reached, nothing is undone, the page still shows the membership ended, and `MembershipEndProviderSignOutFailed` pages
-  the operator ("An ended membership whose provider sign-out failed", below; docs/adr/0094). It does not disable the account or change its password, and the database refuses it for an
+  Organizations → the organization). It ends every session of the user, moves the account's mark so that sign-in steps
+  begun before it are refused, and ends their role in that organization at once, in one transaction with the audit
+  event. The same transaction queues the sign-out at the identity provider, which the platform job
+  `provider_sign_outs` sends within about a minute and retries; the web asks the provider nothing. A sign-out the job
+  cannot deliver pages the operator ("A provider sign-out not delivered", below; docs/adr/0095). It does not disable the account or change its password, and the database refuses it for an
   organization's only practice administrator. The page lists members by their sign-in email and shows no user ID, so it
   needs the person, not only an ID. When the membership must stay, when the account must be disabled at the identity
   provider, or when only a user ID is known, give the user ID to the founder, whose break-glass session ends the
@@ -173,11 +173,17 @@ the web's line `security event: password reset sessions not ended`.
    on `/tp/<env>/web`, from five minutes before the alarm was raised until it is back at OK:
 
    ```
-   fields @timestamp, user_id, request_id
+   fields @timestamp, user_id, request_id, outcome_code
    | filter msg = "security event: password reset sessions not ended"
    ```
 
-   Keep the user IDs and request IDs only.
+   Keep the user IDs, request IDs and outcome codes only. The `outcome_code` says what became of the sign-out at
+   Cognito, which the web asks the database to queue by itself once the reset's own transaction has failed twice
+   (`provider_sign_out_unrecorded_reset`; docs/adr/0095): `provider_sign_out_queued` (a row of reason
+   `password_reset_unrecorded` waits for the job `provider_sign_outs`), `provider_sign_out_waiting` (one for an
+   earlier unrecorded reset of the account was already waiting, untried, and covers this one), or
+   `provider_sign_out_not_queued` (the database could not be asked, or refused; step 3 queues it by hand). A line
+   with no `outcome_code` is from an image before this one: treat it as not queued.
 3. **Contain at once** (section 2, "A user or session"): end the user's sessions, which is what the failed transaction
    did not do. Find the person's own organization from the user ID (docs/runbooks/deliverability.md, 3.10, "In every
    case", step 1: its statement lists practices of the user's own organization only, never one the user reached by a
@@ -200,9 +206,24 @@ the web's line `security event: password reset sessions not ended`.
    COMMIT;
    ```
 
-   One row from the first statement, then the sessions it ended. Do not insert a `password_reset_completed` event
-   in its place: that would queue a password-changed email dated at the repair, not at the change, and step 4 tells
-   the person instead.
+   One row from the first statement, then the sessions it ended.
+
+   **The sign-out at Cognito, by the line's `outcome_code`.** `provider_sign_out_queued` or
+   `provider_sign_out_waiting`: the job sends it, and "A provider sign-out not delivered", below, pages if it is late.
+   That row ends nothing in the app and moves no mark: the repair above is still owed. `provider_sign_out_not_queued`,
+   or no code: queue it once the database answers, in a session as the operator role (`tp_operator`), with the
+   ticket's own request ID (an ID, never an address or a name):
+
+   ```sql
+   SELECT operator_provider_sign_out_request('<user_id>', '<request_id of the line>');
+   ```
+
+   It answers the new row's ID; nothing (NULL) when a sign-out for an unrecorded reset of that account already waits
+   untried, which covers this one; and `P0002` when no account has that ID. It writes one audit row by the system
+   (`password_reset_unrecorded`, purpose `operator`) and the job sends the sign-out within about a minute. It takes
+   one account at a time and no practice. End membership, where it was pressed, queued its own sign-out as well; the
+   provider answers a second one the same way. Do not insert a `password_reset_completed` event in its place: that
+   would queue a password-changed email dated at the repair, not at the change, and step 4 tells the person instead.
 4. **Tell the person another way**, through their own organization's administrator or the account contact (step 3's
    organization; with no row there, through the founder), working by user ID: their password was changed at the line's
    time. If it was not them, open the record (section 1) and follow docs/runbooks/support-mail.md's "Password changed,
@@ -213,122 +234,244 @@ the web's line `security event: password reset sessions not ended`.
    errors and alarms in the same minutes (the database's connections, above, for example).
 6. **Record it** in a ticket by user ID and request ID, never an address or a name.
 
-## A password reset whose provider sign-out failed (`PasswordResetProviderSignOutFailed`; docs/adr/0091, D10)
+## A provider sign-out not delivered (`ProviderSignOutNotDelivered`; docs/adr/0095)
 
-A security event alarm as well. It fires (on the operator topic, at one in five minutes) on the web's line `security
-event: password reset provider sign-out failed`.
+A security event alarm as well. It fires (on the operator topic, at one in five minutes) on the platform jobs' line
+`security event: provider sign-out not delivered`, in `/tp/<env>/platform`. It replaces "A password reset whose
+provider sign-out failed" and "An ended membership whose provider sign-out failed": the web no longer asks the
+provider anything, and their two alarms are gone.
 
-1. **What it means.** A reset was completed, and the sign-out at Cognito that follows every completed reset failed.
-   Unless `PasswordResetSessionsNotEnded` is raised for the same request, the app's sessions of the account ended and
-   the reset was recorded as usual, and its password-changed email is queued. What the failed sign-out leaves open is a
-   sign-in step begun before the reset that had passed the password and the code and stopped at registering a hardware
-   key: its grant from Cognito still works for up to 15 minutes, so a key can be registered after the reset, and that
-   key then signs in without the password (docs/adr/0091, D10). Only an account that must sign in with a hardware key
-   and has none can be in that step: one of PaidWhole's own platform administrators, contract specialists, reimbursement
-   reviewers or support engineers, never a customer's account.
-2. **Read the line**; the alarm names no user, and it pages when it goes into ALARM, not once a line. In Logs Insights
-   on `/tp/<env>/web`, from five minutes before the alarm was raised until it is back at OK:
+1. **What it means.** An ended membership, a recorded password reset (completed, or of unknown outcome) and a
+   confirmed key removal each queue one sign-out at Cognito in their own transaction; a reset whose own transaction
+   could not be recorded queues one by itself (reason `password_reset_unrecorded`; the section above). The job
+   `provider_sign_outs` sends it within about a minute and tries again after 1, 5, 15, then 60 minutes. The line is
+   written for a sign-out that is late (`error_code` `LATE`: 15 minutes after it was queued, tried or not; or five
+   tries, or four and none running) and again for one the job has given up (`GAVE_UP`: 30 tries, or 24 hours after
+   it was queued once the provider has failed at least one try). A late one is still being tried; a given-up one is
+   never tried again. **A sign-out that was never tried is never given up**, whatever its age: after the job has been
+   down, each run tries the oldest first, and one a run does not reach stays `LATE` and is tried by a later run. A
+   sign-out still waiting a day after its `LATE` line is paged `LATE` again, every day until it is done or given up. `LATE` lines
+   for sign-outs with no `provider sign-out attempt failed` line before them mean the job was not running or is
+   behind: "The provider sign-out job not running", below.
+2. **What holds meanwhile.** The app's own sessions of the account ended and the account's mark moved when the cause
+   committed: every sign-in step begun before it is refused by the database, a key registration included, and no
+   request of the app is served on the old sessions. What a missing sign-out leaves alive is only the provider's own
+   tokens, which open nothing in the app. **Not so for a row of reason `password_reset_unrecorded`:** its cause ended
+   no session and moved no mark, so the section above's repair is owed whatever becomes of the sign-out.
+3. **Read the line**; the alarm names no user, and it pages when it goes into ALARM, not once a line:
 
    ```
-   fields @timestamp, user_id, request_id, error_code
-   | filter msg = "security event: password reset provider sign-out failed"
+   fields @timestamp, sign_out_id, user_id, request_id, error_code
+   | filter msg = "security event: provider sign-out not delivered"
    ```
 
-   Keep the user IDs, the request IDs and each line's time only. `error_code` is the name of the provider's error.
-3. **Look for a key registered since the reset**, in a session as the operator role (`tp_operator`), with the line's
-   user ID and request ID:
+   Keep the sign-out's ID, the user ID, the cause's request ID, the time and the code only. Each failed try before
+   it wrote `provider sign-out attempt failed` at warning with the same `sign_out_id`, the cause's `request_id` and
+   the provider's error name (a step of the job that the database failed writes `provider sign-out step failed` with
+   the failure's `sqlstate_code`, PostgreSQL's five-character SQLSTATE, and never its message):
+
+   ```
+   fields @timestamp, sign_out_id, request_id, error_code
+   | filter msg = "provider sign-out attempt failed" and sign_out_id = "<sign_out_id>"
+   ```
+
+4. **Find the cause** from that error name and Cognito's service health in the same minutes: a throttle, an outage at
+   Cognito, or the task role without `cognito-idp:AdminUserGlobalSignOut` (`infra/lib/constructs/application-role.ts`).
+5. **`LATE`:** mend the cause and watch for the job's `provider sign-out done` line with that `sign_out_id` (its
+   `outcome_code` is `signed_out`, or `no_such_user` when the provider no longer holds the user), or read the audit
+   log in a session as the operator role:
 
    ```sql
-   SELECT action, purpose, at, request_id FROM audit_event
-   WHERE actor_id = '<user_id>' AND action IN ('hardware_key_registered', 'sign_in')
-     AND at >= (SELECT min(at) FROM audit_event
-                WHERE action = 'password_reset_completed' AND request_id = '<request_id>')
-   ORDER BY at;
+   SELECT at, action, purpose FROM audit_event
+    WHERE object_type = 'user' AND object_id = '<user_id>'
+      AND action IN ('provider_signed_out', 'provider_sign_out_undelivered') ORDER BY at;
    ```
 
-   It starts from the reset's own row, which carries the line's request ID: the line's time is the web task's clock,
-   written after the sign-out had failed. If `PasswordResetSessionsNotEnded` is raised for the same request, the reset
-   has no row and this returns nothing: follow that section, which contains first. Run it again when 15 minutes have
-   passed since the line.
-4. **Read each row.**
-   - A `hardware_key_registered` row is what the failed sign-out makes possible: treat it as a takeover until the
-     person says otherwise. Open the record (section 1) and contain (section 2, "A user or session"). If End
-     membership answers with an error, the provider is still refusing the sign-out and nothing was ended: give the
-     user ID to the founder. The key is one that neither a reset nor End membership removes, and that signs in without
-     the password: tell the founder of it in every case, and do not add the person back until the founder has dealt
-     with that key. The account is one of PaidWhole's own (step 1), so the person is told, and asked whether the key
-     was theirs, through the founder, never through a customer's organization.
-   - A `sign_in` of purpose `webauthn` by a user with no `sign_in` of that purpose before the reset is treated the
-     same. How many the audit log holds from before it:
-
-     ```sql
-     SELECT count(*) FROM audit_event
-     WHERE actor_id = '<user_id>' AND action = 'sign_in' AND purpose = 'webauthn'
-       AND at < (SELECT min(at) FROM audit_event
-                 WHERE action = 'password_reset_completed' AND request_id = '<request_id>');
-     ```
-
-   - A `sign_in` of purpose `totp` is not a sign of it: it is what a person does after their own reset, and an
-     account that signs in with an authenticator code is never in a key-registration step. End no membership for it;
-     record and close.
-5. **If there is no such row after 15 minutes**, record it and close: a ticket by user ID and request ID, never an
-   address or a name. Until the client is confidential (ADR 0088's release N+1) a token taken at Cognito directly
-   outlives the 15 minutes: ask the founder to make the sign-out again for that user, and read `sign_in` rows of
-   purpose `webauthn` for that user in the week's review (step 3's statement, run again there).
-6. **Find the cause** from the line's `error_code` and Cognito's service health in the same minutes: a throttle, an
-   outage at Cognito, or the application role without `cognito-idp:AdminUserGlobalSignOut`
-   (`infra/lib/constructs/application-role.ts`).
-
-## An ended membership whose provider sign-out failed (`MembershipEndProviderSignOutFailed`; docs/adr/0094)
-
-End membership (the console's, or an organization's Settings, Users) ended a membership, the account's sessions and
-wrote `membership_ended` in one transaction, and the sign-out at the identity provider that follows the commit did not
-happen. Nothing was undone: the person has no role in that organization and no session. The account itself is not
-disabled, as End membership never disables it. What the missing sign-out leaves alive is the provider's own tokens:
-a hardware-key registration step begun before the membership ended can still be completed for up to 15 minutes, and
-nothing sends the sign-out again until `LANES.md` Queues item 37 lands (a database outbox the membership's end writes,
-claimed by a scheduled job): until then a failed provider sign-out is sent again only through the founder's
-break-glass (step 4).
-
-1. **Read the line**, in the web's log group:
-
-   ```
-   fields @timestamp, user_id, request_id, error_code
-   | filter msg = "security event: membership end provider sign-out failed"
-   ```
-
-   Keep the user ID, the request ID, the time and the `error_code`: the provider's error name (`AbortError` when the
-   provider did not answer within ten seconds, `unknown` for an error with no usable name), `NO_PROVIDER_SUBJECT`
-   (the account's provider subject could not be read, so the provider was not asked), or `COMMIT_OUTCOME_UNKNOWN`
-   (the database did not say whether End membership saved; the provider was asked all the same, and a second line
-   beside this one means it failed too).
-2. **Confirm what ended**, in a session as the operator role, by the line's request ID:
+   A `provider_signed_out` row after the line's cause closes the page.
+6. **`GAVE_UP`:** the audit log holds `provider_sign_out_undelivered` for the user, and nothing sends it again. The
+   one manual resend left is the founder's: give the user ID and the sign-out's ID to the founder, whose break-glass
+   session sends the provider's sign-out for that user and reads the row as the owner (the runtime roles hold no
+   privilege on the table):
 
    ```sql
-   SELECT at, action, object_id FROM audit_event
-    WHERE request_id = '<request_id>' AND action = 'membership_ended';
+   SELECT id, reason, queued_at, attempts, late_at, gave_up_at, last_error_code
+     FROM provider_sign_out WHERE id = '<sign_out_id>';
    ```
 
-   One `membership_ended` row. With none and `COMMIT_OUTCOME_UNKNOWN`, End membership did not save: the person who
-   pressed it saw an error, so tell them, through the organization's administrator or the platform administrator
-   who pressed, to press it again, and close the page. With none and any other code, the request did not commit and
-   this line is not its own: stop and open the record (section 1).
-3. **Look for a key registered since**, for 15 minutes after the line's time:
+   Where the cause was an account thought to be in another's hands, do this at `LATE`, without waiting for `GAVE_UP`.
+7. **Record it** in a ticket by user ID, sign-out ID and request ID, never an address or a name.
 
-   ```sql
-   SELECT at, request_id FROM audit_event
-    WHERE action = 'hardware_key_registered' AND object_type = 'user' AND object_id = '<user_id>' AND at >= '<the line's time>';
-   ```
+**The job's tries failing (`ProviderSignOutAttemptsFailing`).** An operational alarm, on the operator topic, at three
+`provider sign-out attempt failed` lines in fifteen minutes on `/tp/<env>/platform`. It is the early word of the
+alarm above. "About 21 minutes" in step 1 is a sign-out alone in the queue: when Cognito is slow each run makes
+about one try a minute and stops at its first timeout, rows never tried go first, and with many queued a row's
+fourth try, so its `LATE` line, can be hours away. What holds meanwhile is step 2. Read the lines' `error_code`
+(the second query of step 3, without the `sign_out_id`) and find the cause as in step 4: `AbortError` is Cognito not
+answering in 10 seconds, `AccessDeniedException` the task role, `ResourceNotFoundException` the pool ID or the
+region. Mend it and watch the `provider sign-out done` lines return; the queue drains by itself. Where a queued
+sign-out is for an account thought to be in another's hands, do not wait: step 6's founder's resend.
 
-   No row after those 15 minutes: nothing the missing sign-out could do in the app happened. Close the page in the
-   ticket. A row: a key was registered on the account after its membership ended. Open the record (section 1) and
-   give the user ID to the founder: nothing an operator holds removes a key until `LANES.md` Queues item 37's key
-   removal lands.
-4. **Where the membership was ended because the account is thought to be in another's hands**, the provider's tokens
-   matter beyond the app: give the user ID to the founder now, whose break-glass session sends the provider's
-   sign-out again and can disable the account there. Otherwise the tokens lapse on their own and open nothing here.
-5. **`NO_PROVIDER_SUBJECT`** is a fault of the app, not of the provider: record it for engineering with the request ID.
-6. **Record it** in a ticket by user ID and request ID, never an address or a name.
+**The provider answering "no such user" (`ProviderSignOutNoSuchUser`).** An operational alarm with a security
+consequence, on the operator topic, at three `provider sign-out done` lines with `outcome_code` `no_such_user` in
+fifteen minutes. The job counts that answer as done, and one is ordinary (the user was deleted at Cognito). Three
+together are not: a wrong pool ID turns every sign-out into this answer, so every row is marked done, the audit log
+says `provider_signed_out`, and nobody was signed out. Check the worker's pool ID against the stack's: the platform
+task definition's `COGNITO_USER_POOL_ID` beside the web's and the user pool's own ID. If they agree, confirm each
+user on the lines is gone at Cognito and close it. If they do not, mend it with a deploy, then list the accounts
+answered that way since the wrong ID went in and give each to the founder, whose break-glass session sends the
+sign-out (step 6); the job does not send a done row again.
+
+```
+fields @timestamp, sign_out_id, user_id
+| filter msg = "provider sign-out done" and outcome_code = "no_such_user"
+```
+
+## The provider sign-out job not running (`ProviderSignOutsNotRunning`; docs/adr/0095, D16)
+
+An operational alarm with a security consequence. The job `provider_sign_outs` writes `provider sign-outs run` to
+`/tp/<env>/platform` once a run, every minute, with counts only. The alarm fires when ten minutes hold no such line
+(missing data counts as missed), and tells the operator when the line returns.
+
+1. **What it means.** No provider sign-out is being sent, no removal request past its 24 hours is being expired, and
+   **no sign-out can become late**, so `ProviderSignOutNotDelivered` stays silent however long this lasts. The causes
+   queue their rows all the same, and the app's own sessions and the mark are not the job's: they moved at each
+   commit (the section above, step 2).
+2. **Is the platform service alive?** `PlatformHeartbeatMissed` raised as well: the service is down; follow that.
+   Not raised: the process beats and this one job is not being scheduled or not finishing. Read
+   `JobFailedOnLastAttempt` and the group's lines for `provider sign-out step failed`.
+3. **During a deploy** that replaces the web before the platform service, or after a rollback of the platform
+   service to an image from before the job, this alarm is the expected signal: the rows wait, untried, and are
+   claimed when a platform task with the job runs (a row never tried is never given up). Finish the deploy or roll
+   forward (docs/runbooks/deploy-and-rollback.md, "The key registry").
+4. **Record it** in a ticket with the minutes it lasted. A run of the job after it sends what waited; watch for
+   `ProviderSignOutNotDelivered` in the hour after.
+
+## The hardware key section: removing a member's hardware keys (docs/adr/0095)
+
+Key removal has left the founder's break-glass. Two platform administrators remove every hardware key of an account
+in the console; nobody removes one key and leaves another. Break-glass stays only for the case with fewer than two
+eligible administrators who are not the account.
+
+**Who may act.** A platform administrator of PaidWhole's own organization, more than seven days in that role with no
+role change in the last seven, signed in with their own hardware key in the last fifteen minutes. Never the account
+itself, and the one who requests cannot confirm. The database refuses anyone else, whatever the page shows.
+
+**Before the request.** Reach the member on a channel PaidWhole already holds for them, **never one given in the
+message that asks for the removal**, and ask whether they want their keys removed. A "lost my key" message is exactly
+what someone holding a stolen password and authenticator code would send.
+
+**Where the account is thought to be in another's hands, End membership comes first** (section 2, "A user or
+session"): it ends the sessions and moves the mark at once, and an account with no membership can no longer act in
+the console. Then the removal.
+
+1. Both administrators sign in again with their keys just before they act.
+2. The first presses **Request key removal** beside the member (Console → Organizations → the organization, Members).
+   The request stands 24 hours, then expires.
+3. The second checks with the requester **by voice** that the request is theirs and why, then presses **Confirm key
+   removal**. That removes every key, ends every session of the account, moves its mark, queues the sign-out at the
+   provider and emails the member that their keys were removed. From then the account can open no session at all, by
+   key or by code, until a new key is registered (step 5).
+4. If the account was locked for a key registered across a reset ("A hardware key registered across a password
+   reset", below), the confirmation records that hold as cleared; a platform administrator then presses Unlock.
+5. **Opening registration.** Only while speaking with the member, by phone, on a number PaidWhole already holds: an
+   eligible administrator presses **Open key registration**. The console shows a one-time code once; read it to the
+   member. It is good for one hour and five tries. The member signs in with password and authenticator code, types
+   the code, and registers one key. The member is emailed when registration is opened and again when the key is
+   registered. A lost code is not shown again, and the database gives no second code while the first is good: wait out its
+   hour, then open again.
+   Never send the code by email or message.
+
+**While a request stands, the account it names changes no other account.** From the request until it is confirmed,
+cancelled or 24 hours old, the account whose keys are to be removed cannot disable another account or change another
+account's hardware-key rule in the console, cannot change a membership of PaidWhole's own organization, and cannot
+itself request a key removal, against the requester or anyone. That keeps it from disabling the requester or the one
+who would confirm, and from holding the requester with a request of its own. All of it ends by the clock at 24 hours,
+whether or not the expiry job has run, and at once if the requester is disabled or leaves the role: a request that
+can no longer be confirmed holds no one.
+
+**A request against a platform administrator is limited, because it holds that administrator.** One requester has
+at most one such request open at a time, and cannot ask again against the same administrator for seven days after
+their request there expired or was cancelled; the console says so and names who can act. Another eligible
+administrator can still request it at once. A request against any other account is not limited. So one administrator
+can hold another for 24 hours at most, once in eight days, and one at a time: of a requester's open requests against
+platform administrators only the earliest holds its account.
+
+**A request against a platform administrator needs a third who could confirm it.** With no platform administrator
+other than the requester and the account who is eligible now (seven days in the role, not disabled), the console
+refuses the request and says so: nobody could confirm it, so it would only hold the account. With exactly two
+platform administrators neither can request against the other; one stops the other by End membership or by disabling
+it, and the keys are then removed by break-glass. PaidWhole keeps three eligible platform administrators from launch
+on, so that a removal between administrators always has a requester, a confirmer and the account.
+
+**Where a platform administrator's account is thought to be in another's hands, disable it or end its membership
+first, and request the removal of its keys second.** Whoever requests first holds the other: an account named in a
+request that can still be confirmed is refused a request of its own, so if that account asked first, the
+administrator it named can neither disable it nor request against it, and the steps below apply.
+
+**A platform administrator thought to be in another's hands, who has requested the removal of another
+administrator's keys.** The administrator named in the request cannot disable them while it stands. In this order:
+
+1. Any **other** eligible platform administrator, one the request does not name, presses End membership on the
+   requester's account, or disables it (section 2, "A user or session"). From that moment the request holds no one
+   and can no longer be confirmed.
+2. With no such third administrator (the console accepts the request only while one exists; one may since have
+   been disabled or left the role), **the founder's break-glass, at once: do not wait out the 24 hours.** Give the
+   founder the requester's user ID. The founder's session acts as the owner, with no acting account; the rule binds
+   only an acting account, so the owner is never held by it (test SGN-31). As for any account in another's hands
+   (section 2, "A user or session"), it ends the account's sessions by user ID and disables the account, in the
+   database and at the identity provider. From the moment the account is disabled the request holds no one. The
+   founder records in the incident record who asked, the user ID, the time and why. Nobody else uses the owner path,
+   and it is used for this only when no third eligible administrator can act.
+3. Then cancel the request (any eligible administrator but the account it names), and treat every act of the
+   requester's account since it was last known good as an incident (section 1).
+
+**Refused acts are counted in the web's log, not in the security events.** Each refused act on a key removal that
+probes the two-person rule (the requester confirming, the account acting on its own keys, a request whose requester
+has left, an administrator not yet eligible) or meets a limit on requests (a second request against a platform
+administrator, a repeat inside seven days, a request by an account whose own keys are asked for, a request no third
+administrator could confirm; reasons `one_administrator_request`, `asked_again_too_soon`, `target_asks`,
+`no_third_administrator`) writes the web's line `a refused act on a key removal` in
+`/tp/<env>/web`, with the user ID, the request ID and `error_code` `key_removal_refused_<reason>`: one line for
+every refused act. The security event `key_removal_refused_<reason>` on the audit log is written at most once an hour
+for an account and a reason, so it shows that an account was refused, never how often. To learn whether an account
+tried once or five hundred times, count the lines for its user ID.
+
+**Each of these is an incident** (section 1):
+
+- a **platform administrator who requests the removal of another administrator's keys and is then refused a second
+  request or a repeat** (the console's two refusals above), unless both administrators confirm by voice why;
+- an **account whose own keys are asked for that then requests a removal** (the security event
+  `key_removal_refused_target_asks`), unless its holder confirms by voice that the try was theirs and why;
+- a **cancelled removal** of an account thought to be in another's hands;
+- **a removed hardware key used** (`RemovedHardwareKeyUsed`: the web's line `security event: removed hardware key
+  used`, with the user ID and request ID). Someone still holds a key two administrators removed, and tried it. The
+  sign-in was refused. Read the line in `/tp/<env>/web`, tell the member another way, and ask whether it was them;
+- a **`key_registered_after_removal`** event, or its email, that the member does not recognise: someone holding the
+  password, the authenticator code and the one-time code registered a key. Contain at once (End membership), then
+  remove the keys again.
+
+**The relying-party ID not the provider's** (`RelyingPartyMismatch`: the web's line with `error_code`
+`RELYING_PARTY_MISMATCH` and the request ID, in `/tp/<env>/web`; one pages). It is a configuration fault, not an
+attack, and it fails closed: every hardware-key step is refused, sign-in and registration alike, so no member with a
+key signs in, the console included, and each sees a plain refusal. It stays so until `WEBAUTHN_RP_ID`, the host of
+`APP_ORIGIN` and the pool's relying-party ID agree. Compare the three (the web task definition's two, and the user
+pool's), correct the wrong one in the stack's configuration, and deploy: mending it is a deploy
+(docs/runbooks/deploy-and-rollback.md). Nothing at the database or at Cognito is edited by hand to let anyone in.
+The line is written on every refused key step, so the alarm stays raised while the fault lasts and clears once it is
+mended.
+
+**The provider offering neither registration algorithm** (`KeyAlgorithmsNotOffered`: the web's line with `error_code`
+`KEY_ALGORITHMS_NOT_OFFERED`, the user ID and the request ID, in `/tp/<env>/web`; one pages). The pool's registration
+options list neither ES256 nor RS256, the only two the product registers a key under, so no hardware key can be
+registered and each person sees a plain refusal; it fails closed, and keys already registered still sign in. Check
+the user pool's WebAuthn settings and restore one of the two. The web is not changed to take another algorithm.
+
+**A key notice not delivered** (`KEY_NOTICE_UNDELIVERED`, on the platform group): the member was not told of a
+removal, an opening or a registration within 24 hours, or their address changed after the request. Tell them another
+way, by user ID, as for a password notice (docs/runbooks/deliverability.md, 3.10).
+
+**Fewer than two eligible administrators who are not the account:** give the user ID to the founder. The founder's
+break-glass removes the keys at the provider and records why in the incident record.
 
 ## A sign-in step refused after a password reset (`SignInStepRefusedAfterReset`; docs/adr/0093, D5)
 
@@ -400,33 +543,23 @@ event: hardware key registered across a password reset`.
    Keep the user IDs, the request IDs, each line's time and its `error_code`: `removed`, `not_removed` or
    `not_removed_not_locked`.
 3. **`not_removed`: the key is still on the account, and the account is locked.** A locked account is refused before
-   any credential is tried, so the key opens nothing while the lock stays. Open the record (section 1). Give the
-   user ID to the founder: nothing an operator holds removes a key (not a reset, not End membership), so the
-   founder's break-glass removes it, until `LANES.md` Queues item 29 gives the operator an action. The account
+   any credential is tried, so the key opens nothing while the lock stays. Open the record (section 1). Two
+   platform administrators remove the account's keys in the console ("The hardware key section", above); a reset
+   and End membership do not remove a key. The account
    cannot be unlocked meanwhile: the database holds it, and the console's Unlock answers "this account is locked
    because a hardware key was registered across its password reset; it stays locked until the key is removed and the
    removal is recorded (incident runbook, the hardware key section); then unlock it again". An unlock before the key is gone would hand the account to whoever holds the key. The audit
    log holds `hardware_key_registered` and a `security_event` with the purpose `account_locked_key_across_reset`
    for the user at the line's time. The person cannot sign in meanwhile; step 5 tells them why. Then, in order:
-   1. The founder's break-glass removes the key at the provider and confirms that the user has no key left.
-   2. Only then, the founder's break-glass session records the clear, as the owner (the application role cannot
-      write this row), in one transaction that holds the account's row, so a lock for another key that is being
-      recorded at that moment is waited for and is not cleared unseen. After the first statement, check at the
-      provider once more that the user has no key, then record and commit:
-
-      ```sql
-      BEGIN;
-      SELECT 1 FROM "user" WHERE id = '<user id>' FOR UPDATE;
-      INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose)
-      VALUES (clock_timestamp(), 'system', 'security_event', 'user', '<user id>', 'key_across_reset_cleared');
-      COMMIT;
-      ```
-
-   3. A platform administrator unlocks the account in the console. If the account is locked for a key again
+   1. One platform administrator requests the removal and a second confirms it. The confirmation removes every key
+      and records the clear itself (`key_across_reset_cleared`), under the account's row lock.
+   2. A platform administrator unlocks the account in the console. If the account is locked for a key again
       later, the hold returns and this step is done again.
+   3. The member registers a new key after an administrator opens registration (the hardware key section, step 5).
 3a. **`not_removed_not_locked`: the key is still on the account and the lock failed too.** This is the urgent case:
-   a hardware key signs in without the password. Contain at once (section 2, "A user or session"), give the user ID
-   to the founder for the break-glass now, and do not add the person back until the founder has dealt with the key.
+   a hardware key signs in without the password. Contain at once (section 2, "A user or session": End membership first), then two
+   platform administrators remove the account's keys ("The hardware key section", above). Do not add the person back
+   until the removal is confirmed. With fewer than two eligible administrators, give the user ID to the founder now.
 4. **`removed`: the key is gone.** Look in the audit log for a `sign_in` by that user after the line, in a session as
    the operator role:
 
@@ -437,8 +570,8 @@ event: hardware key registered across a password reset`.
    ORDER BY at;
    ```
 
-   A row is treated as a takeover until the person says otherwise ("A password reset whose provider sign-out
-   failed", step 4).
+   A row is treated as a takeover until the person says otherwise: open the record (section 1) and contain
+   (section 2, "A user or session").
 5. **Tell the person another way** in both cases, by user ID: a hardware key was registered on their account at the
    moment of their password reset, and was removed, or is being removed with their account locked until it is.
    Whoever registered it had passed the password and the code, so their second factor may be known too. Ask whether it was theirs; a person who wanted
@@ -483,7 +616,7 @@ event: password reset outcome unknown`.
    that never reached Cognito is not this: nothing changed, and the person saw the platform's failure.) The confirm
    is sent once and never repeated. The app
    took the safer reading: it ended the account's sessions, moved the account's mark so that sign-in steps begun
-   before it are refused, recorded `password_reset_outcome_unknown`, and signed the user out at Cognito. It queued
+   before it are refused, recorded `password_reset_outcome_unknown`, and queued the sign-out at Cognito for the platform job. It queued
    **no** password-changed email, since nobody has proved a change. The person was answered "Sign-in could not
    continue. Start again.", not that the code was wrong.
 2. **Read the line**, as above:
@@ -534,11 +667,13 @@ accounts, in a session as the operator role (`tp_operator`), which reads `audit_
 4. Read the week's history of the other reset and enrolment alarms (`PasswordResetNotDeliveredConfig`,
    `PasswordResetNotDeliveredThrottled`, `PasswordResetRequestFailed`, `SecondFactorEnrolmentRefused`,
    `ClientCredentialRefused`, `ClientCredentialProbeRefused`, `PasswordResetRequestOverFloor`,
-   `PasswordResetSessionsNotEnded`, `PasswordResetProviderSignOutFailed`, `SignInStepRefusedAfterReset`,
+   `PasswordResetSessionsNotEnded`, `ProviderSignOutNotDelivered`, `ProviderSignOutsNotRunning`,
+   `ProviderSignOutAttemptsFailing`, `ProviderSignOutNoSuchUser`, `RelyingPartyMismatch`, `KeyAlgorithmsNotOffered`,
+   `RemovedHardwareKeyUsed`, `SignInStepRefusedAfterReset`,
    `HardwareKeyRegisteredAcrossReset`, `PasswordResetOutcomeUnknown`, `SignInRefusedCrossedAccount`): each one raised
-   that no ticket or incident record already explains gets one. For each `PasswordResetProviderSignOutFailed` of the week, run its section's step 3
-   again for that user: a `sign_in` of purpose `webauthn` since the reset, by a user with none before it, is a finding,
-   since a token taken at Cognito directly outlives that section's 15 minutes until the client is confidential.
+   that no ticket or incident record already explains gets one. For each `ProviderSignOutNotDelivered` of the week, confirm its sign-out
+   ended as `provider_signed_out` or went to the founder, and read the week's `hardware_key_removal_*` and
+   `hardware_key_registration_opened` audit rows against the tickets: a removal or an opening with no ticket is a finding.
 5. Check that no undelivered password-changed email was missed (docs/adr/0091, D9). Its page is a log line, and
    several can share one page; the audit log keeps one `password_notice_undelivered` a notice whether or not its line
    was read:

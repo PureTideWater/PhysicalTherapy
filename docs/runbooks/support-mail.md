@@ -52,9 +52,23 @@ account's name. Work from the ticket ID and the user ID only, never the message'
 - **Lost authenticator app.** No second-factor reset exists yet. Tell the person it is not yet possible from the console
   and that we will write when it is; promise no date. Record the ticket ID, so that UX PR 65, which adds the console
   reset, can work through those tickets.
-- **Lost hardware key, with no second key.** There is no administrator path (Cognito passkeys), and a new invitation is
-  refused for an invitation already accepted (`resend_invitation`, from Settings or the console), so do not describe or attempt it as a re-invitation. Escalate the ticket
-  ID to the founder.
+- **Lost hardware key.** An account holds one hardware key, and only PaidWhole's own staff accounts hold one. Two
+  platform administrators remove the account's keys in the console, and one then opens registration of a new key with
+  a one-time code read to the person by phone (docs/runbooks/incident-response.md, "The hardware key section";
+  docs/adr/0095). Support does not do this from a ticket: a "lost my key" message is what someone holding a stolen
+  password and authenticator code would send. Escalate the ticket ID to a platform administrator, who reaches the
+  person on a number PaidWhole already holds, never one given in the message. A new invitation is refused for an
+  invitation already accepted (`resend_invitation`), so do not describe or attempt it as a re-invitation. The founder's
+  break-glass is only for the case with fewer than two eligible administrators who are not the account.
+- **A hardware-key email, "I did not expect this".** The account's address is told when its keys were removed ("Your
+  hardware keys were removed"), when registration is opened for an hour ("Registration of a new hardware key is
+  open") and when a key is registered after a removal ("A new hardware key was registered"). Each asks the person to
+  write to support at once if they did not expect it, and goes with Reply-To the support address. Treat every such
+  message as an incident until a platform administrator has spoken with the person: escalate the ticket ID at once
+  (docs/runbooks/incident-response.md, section 1 and "The hardware key section"). Answer the person only that the
+  message reached PaidWhole and that someone will call them on the number PaidWhole holds; never give, confirm or ask
+  for a code, and never say whether a removal is under way. For an unexpected "registration is open" the
+  administrator ends the membership first; for an unexpected "a new key was registered" the keys are removed again.
 - **Mail from an address that is not the account's own.** Never act on it. The job already refuses it as
   `unknown_sender` (above); ask the person to write from the address they sign in with.
 - **Password changed, not by me.** The password-changed email (docs/adr/0091) tells an account's address that a reset
@@ -62,7 +76,7 @@ account's name. Work from the ticket ID and the user ID only, never the message'
   sign in with, and to tell their organization's administrator, who may be the one who writes. The email goes with
   Reply-To the support address, so a plain reply to it comes here too. The operator also brings a person here after
   telling them another way (docs/runbooks/deliverability.md, 3.10; docs/runbooks/incident-response.md, "A password
-  reset whose sessions were not ended" and "A password reset whose provider sign-out failed").
+  reset whose sessions were not ended" and "A provider sign-out not delivered").
 
   What arrives is not always readable:
 
@@ -84,8 +98,9 @@ account's name. Work from the ticket ID and the user ID only, never the message'
   2. With the organization's administrator, end the account's sessions: End membership beside the person, pressed by the
      administrator in Settings, Users, or by a platform administrator on the organization's console page
      (`/console/organizations/<id>`). It ends every session of the user and their role in that organization at once,
-     and asks the identity provider to sign them out once that has committed; a failure there undoes nothing and pages
-     the operator (docs/runbooks/incident-response.md, "An ended membership whose provider sign-out failed"). It does not disable the account or change its password, and the
+     and queues the sign-out at the identity provider in the same transaction, which a platform job sends within about
+     a minute and retries; one it cannot deliver undoes nothing and pages the operator
+     (docs/runbooks/incident-response.md, "A provider sign-out not delivered"). It does not disable the account or change its password, and the
      database refuses it for an organization's only practice administrator. When the membership must stay, or the
      account must be disabled, give the user ID to the founder, whose break-glass session ends the sessions by user ID
      and disables the account at the identity provider. A disable at the provider ends no session of the app, and for an

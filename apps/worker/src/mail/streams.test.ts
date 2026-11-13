@@ -48,6 +48,7 @@ describe('the mail streams', () => {
       eventUnreadable: 'MAIL_EVENT_UNREADABLE',
       // A password-changed email not delivered, or not sent within 24 hours (docs/adr/0091, D9): it pages.
       passwordNoticeUndelivered: 'PASSWORD_NOTICE_UNDELIVERED',
+      keyNoticeUndelivered: 'KEY_NOTICE_UNDELIVERED',
     });
   });
 

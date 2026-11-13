@@ -381,3 +381,17 @@ None blocks this decision. Each is for the orchestrator's queue.
   lock becomes the rare case; if it never can, the removal call can go.
 - No image before this release can run: handed-on item 3.
 - `SignInStepRefusedAfterReset` pages mostly for people's own second devices: weigh the page against the signal.
+
+## Amendment, 2026-11-12: the key registry (ADR 0095; Queues item 37)
+
+[0095](0095-remove-a-members-hardware-keys-in-the-apps-own-registry-by-two-platform-administrators-queue-every-provider-sign-out-in-the-database-and-move-the-mark-when-a-membership-ends.md) changes three things here.
+
+- **D4.** D4 left a session insert that carries no start unchecked and unlocked on purpose, for the previous image.
+  From the key registry's migration every session insert takes the account's row lock, the previous image's
+  included: the trigger `user_session_hardware_key` reads the registry under it. D4's own check is unchanged.
+- **D6.** A key the provider could not remove no longer goes to the founder's break-glass: two platform
+  administrators remove the account's keys in the console, and the confirmation records the hold as cleared
+  (`key_across_reset_cleared`) under the account's row lock; an administrator then unlocks the account. Break-glass
+  stays for the case with fewer than two eligible administrators who are not the account.
+- **"Not covered" 5** is closed by ADR 0095. "Not covered" 6 (a job that records a completed reset whose transaction
+  failed twice) stays open, and with ADR 0095 such a reset also queues no provider sign-out: ADR 0095, "Open".

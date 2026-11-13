@@ -406,9 +406,9 @@ describe('CognitoAuthProvider: passkeys', () => {
       CompleteWebAuthnRegistrationCommand: [{}, named('WebAuthnClientMismatchException'), named('InternalErrorException')],
       RevokeTokenCommand: {},
     });
-    expect(await provider.hasHardwareKey(grant)).toBe(false);
-    expect(await provider.hasHardwareKey(grant)).toBe(true);
-    expect(await provider.hasHardwareKey(grant)).toBe(false);
+    expect(await provider.listHardwareKeys(grant)).toHaveLength(0);
+    expect(await provider.listHardwareKeys(grant)).toHaveLength(1);
+    expect(await provider.listHardwareKeys(grant)).toHaveLength(0);
     const begun = await provider.beginKeyRegistration(grant);
     expect(begun.options).toMatchObject({ challenge: 'r' });
     await expect(provider.beginKeyRegistration(grant)).rejects.toThrow('no registration options');
@@ -423,7 +423,7 @@ describe('CognitoAuthProvider: passkeys', () => {
     expect(sent.filter((call) => call.command !== 'RevokeTokenCommand').every((call) => !carriesCredential(call.input))).toBe(true);
     await provider.release(JSON.stringify({ a: 'only-access' }));
     expect(sent.filter((call) => call.command === 'RevokeTokenCommand')).toHaveLength(1);
-    await expect(provider.hasHardwareKey('{}')).rejects.toThrow('access token');
+    await expect(provider.listHardwareKeys('{}')).rejects.toThrow('access token');
   });
 });
 
@@ -484,28 +484,6 @@ describe('CognitoAuthProvider: administration', () => {
     for (const name of lambdaErrors) {
       await expect(provider.resendInvitation('invited@synthetic.test')).rejects.toThrow(name);
     }
-  });
-
-  it('signs a user out everywhere by subject', async () => {
-    const { provider, sent } = make({ AdminUserGlobalSignOutCommand: {} });
-    await provider.globalSignOut('sub-1');
-    expect(sent).toEqual([{ command: 'AdminUserGlobalSignOutCommand', input: { UserPoolId: 'us-east-1_Synthetic', Username: 'sub-1' } }]);
-  });
-
-  it('gives up a sign-out Cognito never answers: the request is aborted at the bound and the caller is told (docs/adr/0094, D7)', async () => {
-    const aborted: boolean[] = [];
-    const hanging = {
-      send: (_command: unknown, options?: { readonly abortSignal?: AbortSignal }) =>
-        new Promise((_resolve, reject) => {
-          options?.abortSignal?.addEventListener('abort', () => {
-            aborted.push(true);
-            reject(Object.assign(new Error('SYNTHETIC request aborted'), { name: 'AbortError' }));
-          });
-        }),
-    } as unknown as CognitoClient;
-    const provider = new CognitoAuthProvider({ client: hanging, confirmClient: attempts(hanging), userPoolId: 'us-east-1_Synthetic', clientId: CLIENT_ID, verifier, signOutTimeoutMs: 20 });
-    await expect(provider.globalSignOut('sub-1')).rejects.toMatchObject({ name: 'AbortError' });
-    expect(aborted).toEqual([true]);
   });
 });
 

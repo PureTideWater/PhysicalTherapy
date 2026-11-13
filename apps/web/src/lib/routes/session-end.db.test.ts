@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, TransactionNotCommittedError, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
-import { type ScopeClient, type ScopePool, withResolvedActor } from '@tp/db/runtime';
+import { type ScopeClient, type ScopePool, withActor, withResolvedActor } from '@tp/db/runtime';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -445,4 +445,60 @@ describe('a session a person ends: the route’s audit event is in the transacti
       expect(await events(action, objectId)).toHaveLength(1);
     });
   }
+});
+
+/**
+ * SGN-22's count (docs/adr/0095; the key registry's design, section 5): the registry costs a request nothing. A live
+ * session's key is never looked up again, so resolving a session issues exactly the statements it issued before the
+ * registry: the transaction's BEGIN, the one resolving statement, COMMIT. The statement's text is written out here,
+ * not read from the constant, so a change to either is seen. (That the database's side of it is untouched is in
+ * packages/db/src/key-registry.db.test.ts, SGN-22: the registry's migrations do not name resolve_session.)
+ */
+describe('SGN-22: resolving a session issues the statements it issued before the key registry', () => {
+  const RESOLVING = "SELECT r.* FROM set_config('idle_in_transaction_session_timeout', $2, true) AS bound, resolve_session($1) AS r";
+
+  /** The application's pool, every statement's text kept in the order it was sent. */
+  function recording(): { pool: ScopePool<ScopeClient>; sent: string[] } {
+    const sent: string[] = [];
+    const pool: ScopePool<ScopeClient> = {
+      connect: async () => {
+        const client = await app.connect();
+        return new Proxy(client, {
+          get(target, property) {
+            if (property === 'query') {
+              return (text: unknown, values?: unknown[]) => {
+                sent.push(typeof text === 'string' ? text : 'not a text statement');
+                return target.query(text as string, values);
+              };
+            }
+            const value = Reflect.get(target, property, target) as unknown;
+            return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+          },
+        });
+      },
+    };
+    return { pool, sent };
+  }
+
+  it('a live session, a key session of the registry among them, costs three statements and one read; an unknown cookie the same; no cookie none', async () => {
+    // A key session as the flow opens it since the registry: a recorded key, and the session naming its digest.
+    const staff = await createUser(owner, { hardwareKeyRequired: true });
+    const credential = randomBytes(32);
+    const { rows } = await app.query<{ at: string }>('SELECT sign_in_step_began()::text AS at');
+    await withActor(app, staff, (scope) => scope.client.query('SELECT * FROM hardware_key_record($1, $2, $3, $4::timestamptz, $5)', [credential, randomBytes(77), null, rows[0]?.at, 'test']));
+    const keyed = await openSessionNow(app, { userId: staff, method: 'webauthn', keyCredentialSha256: credential, deviceToken: undefined, userAgent: null, requestId: 'test' });
+    const coded = await sessionFor(await createUser(owner));
+    for (const opened of [keyed, coded]) {
+      const { pool, sent } = recording();
+      expect(await resolveSession(pool, opened.sessionToken, 'test')).toMatchObject({ state: 'active', session: { sessionId: opened.sessionId } });
+      expect(sent).toEqual(['BEGIN', RESOLVING, 'COMMIT']);
+    }
+    const unknown = recording();
+    expect(await resolveSession(unknown.pool, randomBytes(32).toString('base64url'), 'test')).toEqual({ state: 'none' });
+    expect(unknown.sent).toEqual(['BEGIN', RESOLVING, 'COMMIT']);
+    const none = recording();
+    expect(await resolveSession(none.pool, undefined, 'test')).toEqual({ state: 'none' });
+    expect(none.sent).toEqual([]);
+    expect(RESOLVE_SESSION).toBe(RESOLVING);
+  });
 });

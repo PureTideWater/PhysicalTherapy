@@ -224,18 +224,15 @@ describe('a COMMIT that fails is reported as not saved', () => {
         return { query: query as ScopeClient['query'], release: (destroy?: boolean | Error) => client.release(destroy) };
       },
     };
-    let unknown = 0;
     work = async ({ services: mine, afterCommit }) => {
       await mine.queue.enqueue('reconcile', DAILY());
-      afterCommit(() => Promise.resolve((after += 1)), { whenCommitUnknown: () => Promise.resolve((unknown += 1)) });
-      afterCommit(() => Promise.resolve((after += 1)), { whenCommitUnknown: () => Promise.reject(new Error('SYNTHETIC words of the work')) });
+      afterCommit(() => Promise.resolve((after += 1)));
     };
     const sent = await press(servicesWith({ pool: losing }));
     expect((sent.outcome as { thrown: unknown }).thrown).toBeInstanceOf(CommitOutcomeUnknownError);
     expect(await saved(sent)).toEqual({ audit: 1, key: 1 });
     expect([queue.jobs, queue.open, after]).toEqual([[{ type: 'reconcile', payload: DAILY() }], 0, 0]);
-    // Work a handler left for exactly this case runs (docs/adr/0094, D6), and its own failure changes nothing.
-    expect(unknown).toBe(1);
+    // No after-commit work runs for a commit that is not known (after stays 0): what must follow is a job's, from the row.
     expect(lines.filter((line) => line.error_code === 'COMMIT_OUTCOME_UNKNOWN').map((line) => [line.level, line.request_id])).toEqual([['error', sent.requestId]]);
     expect(JSON.stringify(lines)).not.toContain('SYNTHETIC');
   });

@@ -1,0 +1,17 @@
+{
+  "case": "SEC-28",
+  "module": "SEC",
+  "title": "A refused act on a key removal leaves a security event",
+  "assertion": "Each refusal of the closed list of eight reasons (`not_permitted`, `two_people`, `not_own_account`, `requester_left`, `one_administrator_request`, `asked_again_too_soon`, `target_asks`, `no_third_administrator`) writes one security event for the acting account in a transaction of its own, by IDs only, once an hour for an account and a reason; any other reason is refused; the web writes its line for every refused act, and the person reads the same words whether or not the event could be recorded",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["packages/db/src/key-registry.db.test.ts","apps/web/src/lib/routes/console-routes.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic accounts the tests insert; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

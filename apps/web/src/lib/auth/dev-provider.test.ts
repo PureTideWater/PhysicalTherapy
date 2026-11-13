@@ -150,7 +150,7 @@ describe('DevAuthProvider: password and TOTP', () => {
       scryptCost: CHEAP,
     });
     expect(await orphan.setNewPassword(challenge, 'Chosen-Pass-2026')).toEqual({ kind: 'expired' });
-    expect(await orphan.hasHardwareKey('nothing')).toBe(false);
+    expect(await orphan.listHardwareKeys('nothing')).toEqual([]);
   });
 });
 
@@ -165,7 +165,6 @@ describe('DevAuthProvider: invitations and sign-out', () => {
     const password = invitations[0]?.password ?? '';
     expect(passwordProblems(password)).toEqual([]);
     expect((await dev.signIn('new@synthetic.test', password)).kind).toBe('new_password_required');
-    await expect(dev.globalSignOut()).resolves.toBeUndefined();
     await expect(dev.release()).resolves.toBeUndefined();
     expect(passwordProblems(temporaryPassword())).toEqual([]);
   });
@@ -350,11 +349,14 @@ describe('DevAuthProvider: hardware keys (real WebAuthn verification)', () => {
       throw new Error('expected a sign-in');
     }
     const key = new SoftAuthenticator(ORIGIN);
-    expect(await setup.dev.hasHardwareKey(step.grant)).toBe(false);
+    expect(await setup.dev.listHardwareKeys(step.grant)).toEqual([]);
     const { options, challenge } = await setup.dev.beginKeyRegistration(step.grant);
     expect(options.authenticatorSelection?.userVerification).toBe('required');
+    // ES256 and RS256 alone, as the provider offers: a browser that also holds a post-quantum algorithm would otherwise
+    // make a public key longer than the registry's 1,024 bytes (hardware_key_public_key), and no key would register.
+    expect(options.pubKeyCredParams).toEqual([{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }]);
     expect(await setup.dev.completeKeyRegistration(step.grant, challenge, key.create(options))).toBe(true);
-    expect(await setup.dev.hasHardwareKey(step.grant)).toBe(true);
+    expect(await setup.dev.listHardwareKeys(step.grant)).toEqual([{ credentialId: Buffer.from(key.credentialId).toString('base64url'), createdAt: expect.any(Date) }]);
     return { ...setup, key, grant: step.grant };
   }
 
@@ -378,7 +380,7 @@ describe('DevAuthProvider: hardware keys (real WebAuthn verification)', () => {
     const { options, challenge } = await dev.beginKeySignIn('person@synthetic.test');
     expect(await dev.removeHardwareKey(grant, id)).toBe(true);
     expect((await store.bySub('sub-1'))?.credentials).toEqual([]);
-    expect(await dev.hasHardwareKey(grant)).toBe(false);
+    expect(await dev.listHardwareKeys(grant)).toEqual([]);
     expect(await dev.completeKeySignIn(challenge, key.get(options))).toEqual({ kind: 'rejected', stage: 'hardware_key' });
   });
 

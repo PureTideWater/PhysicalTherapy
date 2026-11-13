@@ -1,3 +1,4 @@
+import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { RDSClient } from '@aws-sdk/client-rds';
 import { S3Client } from '@aws-sdk/client-s3';
 import { SESv2Client } from '@aws-sdk/client-sesv2';
@@ -13,9 +14,11 @@ import { LocalObjectStore } from '../storage/local-object-store';
 import type { ObjectStore } from '../storage/object-store';
 import { S3ObjectLockStore } from '../storage/s3-object-lock-store';
 import { LocalSupportInbox, S3SupportInbox, type SupportInbox } from '../support/inbox';
+import { CognitoProviderSignOut, LocalProviderSignOut } from './cognito-sign-out';
 import { LocalMailEventSource, MemoryMailControl, SesMailControl, SqsMailEventSource } from './mail-events';
 import { PgDumpRestorer } from './pg-dump-restorer';
 import { RdsSnapshotRestorer } from './rds-restorer';
+import type { ProviderSignOutAdapter } from './provider-sign-outs';
 import type { SnapshotRestorer } from './restore-drill';
 
 export function auditStore(config: PlatformConfig): ObjectStore {
@@ -67,6 +70,12 @@ export function mailEvents(config: Pick<PlatformConfig, 'mail' | 'mailEvents'>):
     : { source: new LocalMailEventSource(events.dir), control: new MemoryMailControl(), streamPrefix, probes: events.identitiesVerified };
 }
 
+/** The provider_sign_outs job's provider (docs/adr/0095): the user pool, or development's twin, which asks no one. */
+export function providerSignOut(config: Pick<PlatformConfig, 'providerSignOut'>): ProviderSignOutAdapter {
+  const provider = config.providerSignOut;
+  return provider.kind === 'cognito' ? new CognitoProviderSignOut({ client: new CognitoIdentityProviderClient({}), userPoolId: provider.userPoolId }) : new LocalProviderSignOut();
+}
+
 /** The platform handlers and the operator pool they use (closed by the caller on shutdown); the queue takes the monitoring schedule's jobs. */
 export function platformRuntime(config: PlatformConfig, queue?: JobSender): { handlers: PlatformHandlers; operator: DatabasePool } {
   const operator = openPool(config.operatorDatabaseUrl, OPERATOR_POOL_CONNECTIONS);
@@ -81,6 +90,7 @@ export function platformRuntime(config: PlatformConfig, queue?: JobSender): { ha
       mailEvents: mailEvents(config),
       appOrigin: config.appOrigin,
       supportEmail: config.supportEmail,
+      providerSignOut: providerSignOut(config),
       ...(queue === undefined ? {} : { queue }),
     }),
   };

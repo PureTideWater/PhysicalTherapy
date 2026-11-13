@@ -23,7 +23,7 @@ import { cookieToken } from '../auth/tokens';
 import { listed } from '../copy/words';
 import { publicRoute } from '../http/invoke';
 import type { Issue, PublicContext, Route, RouteRequest } from '../http/route';
-import { emailAddress, sixDigitCode } from './schemas';
+import { emailAddress, registrationCode, sixDigitCode } from './schemas';
 
 /**
  * Sign-in and MFA (PRD 7): email and password, a new password on first sign-in, TOTP enrollment and
@@ -76,6 +76,8 @@ const MESSAGES = {
   credentials: 'That did not match. Check the email, the password or the code, and try again.',
   no_account: 'That did not match. Check the email, the password or the code, and try again.',
   key_not_registered: 'The hardware key was not registered. Try again with the key connected.',
+  // One answer whether no registration is open or the code is wrong (docs/adr/0095).
+  registration_code: 'That code did not open registration. Check the code PaidWhole gave you and try again.',
   invitation_expired: 'This invitation has expired. Ask your organization’s administrator to send it again.',
 } as const;
 
@@ -242,6 +244,9 @@ async function settle(context: PublicContext<unknown, unknown>, result: FlowResu
           return { error: MESSAGES.no_account };
         case 'key_not_registered':
           return { error: MESSAGES.key_not_registered };
+        case 'registration_code':
+          // The step stays: the person may try the code again, and the database counts the tries.
+          return { error: MESSAGES.registration_code };
         case 'enrolment_not_open':
           // No press of this form can enrol the account: the attempt ends, and the kept email with it.
           clearSignIn(cookies);
@@ -561,7 +566,40 @@ export const registerKeyPage = publicRoute({
   handle: (context) => {
     const now = context.services.now();
     const pending = pendingOf(context, 'register_key', now);
-    return Promise.resolve(pending === undefined ? RESTART : { email: pending.email, ...stepPage(pending, now) });
+    // After a removal the step first asks for the one-time code (docs/adr/0095): the same screen whether or not an
+    // administrator has opened registration, read from the sealed step alone, so showing it asks the database nothing
+    // and counts no try. The support address is for the screen's line on having no code.
+    // `codeAccepted`: the step holds a code the database took, so the screen says so (a state of the step, kept on a
+    // refresh; the code itself is never returned).
+    const code: { readonly codeRequired?: true; readonly codeAccepted?: true; readonly supportEmail?: string } =
+      pending?.codeRequired !== true ? {} : pending.code === undefined ? { codeRequired: true, supportEmail: context.services.supportEmail } : { codeAccepted: true };
+    return Promise.resolve(pending === undefined ? RESTART : { email: pending.email, ...stepPage(pending, now), ...code });
+  },
+});
+
+/**
+ * The one-time code an administrator read to the member (docs/adr/0095). The sealed step proves the password and the
+ * authenticator code, and names the account; the database judges the code for that account alone, under its lock,
+ * counts a wrong one and records the refusal. No opening and a wrong code are one answer (settle's
+ * `registration_code`), and the step stays. Only the code's SHA-256 leaves the flow; a right code's digest is sealed
+ * into the step, never the code. Counted in `mfa` by the step, like every answer after the password.
+ */
+export const answerRegistrationCode = publicRoute({
+  id: 'sign_in.registration_code',
+  kind: 'action',
+  path: '/sign-in/register-key',
+  rateLimit: 'mfa',
+  rateAccount: pendingAccount,
+  phi: false,
+  params: noParams,
+  input: z.object({ code: registrationCode }),
+  handle: async (context) => {
+    const pending = pendingOf(context, 'register_key');
+    if (pending === undefined) {
+      await releaseUnstartedKeyStep(context);
+      return RESTART;
+    }
+    return advance(context, pending, () => context.services.signIn.answerRegistrationCode(pending, context.input.code, contextOf(context)));
   },
 });
 
@@ -794,6 +832,7 @@ export const SIGN_IN_ROUTES = [
   hardwareKeyOptions,
   verifyHardwareKey,
   registerKeyPage,
+  answerRegistrationCode,
   hardwareKeyRegistrationOptions,
   registerHardwareKey,
   forgotPasswordPage,
