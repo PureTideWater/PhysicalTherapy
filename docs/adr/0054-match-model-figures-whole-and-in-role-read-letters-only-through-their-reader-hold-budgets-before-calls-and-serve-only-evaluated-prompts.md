@@ -2494,4 +2494,5 @@ under R1-2, none real-shaped; one letter's text changed (187859, A-4, as recorde
 refuses 3,477 and every one is refused here. The battery, on its recorded and fresh seeds: every summary line is the
 base's (no withheld number sent, no departure, no base flag), one reproduction row differs as recorded (A-4), and nine
 of its scripts fail at load on both sides. The redaction, packets, synth and model-gateway unit suites pass (93 files,
-7,652 tests), and `pnpm test:db` passes.
+7,652 tests). With claude/build-platform 979a21b8 merged in, `pnpm test` (509 files, 14,789 tests), `pnpm test:golden`
+(381 tests) and `pnpm test:db` (176 files, 10,375 tests) pass.
