@@ -71,7 +71,7 @@ Every table, its purpose, its key fields and its policy. Conventions: `id uuid` 
 | `posting_row` | From the practice's posting export | `practice_id`, `source_document_id`, `check_or_trace`, `posted_on`, `amount_cents`, `claim_reference` (enc), `raw jsonb` |
 | `eft_row` | From the EFT or bank export | `practice_id`, `source_document_id`, `trace`, `deposited_on`, `amount_cents`, `batch_reference` |
 | `ledger_entry` | Signed, append-only | `practice_id`, `case_id`, `service_line_id` (nullable), `stage` (approved, posted, deposited, recouped, reversed, adjusted, interest), `amount_cents` (signed), `evidence_kind`, `evidence_id`, `allocated` (bool), `created_by` (user or system), `reason`; triggers reject update and delete |
-| `roi_statement` | Generated statement | `practice_id`, `period_from`, `period_to`, `fees_cents`, `recovered_cents`, `interest_cents`, `approved_unposted_cents`, `actionable_open_cents`, `pursuit_hours numeric(9,2)`, `generated_at`, `document_key` |
+| `roi_statement` | Generated statement | `practice_id`, `period_from`, `period_to`, `fees_cents`, `recovered_cents`, `interest_cents`, `approved_unposted_cents`, `actionable_open_cents`, `pursuit_hours numeric(9,2)`, `generated_at`, `document_key`, `links jsonb` (opaque IDs only: the ledger entries `recovered`, `interest` and `approved_unposted` sum, the cases `actionable_open` sums and, on a statement written from schema PR 5 on, `actionable_open_lines`, the priced lines the actionable figure counted; Postgres refuses a statement carrying that list unless the figure is those lines' variance, each once and each a line of a listed case; a statement without the list keeps the rule it was written under; docs/adr/0082) |
 
 ## Model gateway (PHI references only)
 

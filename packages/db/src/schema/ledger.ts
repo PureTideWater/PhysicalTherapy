@@ -163,12 +163,17 @@ export const ledgerEntry = pgTable(
   ],
 );
 
-/** tp-roi-links/1: the entries each figure sums, and the open cases of actionable. */
+/**
+ * tp-roi-links/1: the entries each figure sums, the open cases of actionable and, on a statement written since
+ * 20261115090000, the priced lines the actionable figure counted (the database checks the figure against them:
+ * roi_statement_rules(); docs/adr/0082, Decision 7). A statement stored before keeps its four keys.
+ */
 export interface RoiLinks {
   readonly recovered: readonly string[];
   readonly interest: readonly string[];
   readonly approved_unposted: readonly string[];
   readonly actionable_open: readonly string[];
+  readonly actionable_open_lines?: readonly string[];
 }
 
 export const roiStatement = pgTable(

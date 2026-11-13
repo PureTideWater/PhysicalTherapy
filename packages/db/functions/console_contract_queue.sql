@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- console_contract_queue()
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 34782bbb84bc92d2
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 04df91fcea74aa18
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.console_contract_queue()
@@ -23,6 +23,8 @@ BEGIN
     SELECT p.id, p.name,
            (SELECT count(*) FROM source_document d
              WHERE d.practice_id = p.id AND d.kind IN ('contract', 'exhibit', 'payer_letter') AND d.scan_status = 'clean' AND d.status = 'stored'
+               AND d.filed_for_submission_id IS NULL
+               AND NOT EXISTS (SELECT 1 FROM payer_response r WHERE r.practice_id = d.practice_id AND r.document_id = d.id)
                AND NOT EXISTS (SELECT 1 FROM contract_version v
                                 WHERE v.practice_id = d.practice_id AND d.id = ANY (v.source_document_ids) AND v.status IN ('approved', 'signed_off', 'superseded'))),
            (SELECT count(*) FROM contract_version v WHERE v.practice_id = p.id AND v.status = 'draft'),

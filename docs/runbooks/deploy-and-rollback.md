@@ -531,6 +531,160 @@ reset's confirm with the SDK's repeats, so a lost answer can again read as a ref
 with the stack and count nothing while the previous web runs, since it writes none of their lines. Roll forward with
 a fix rather than staying back. The schema is never rolled back.
 
+## A payer's answer and a contract's source, in Postgres (ADR 0085's amendment of 2026-11-11; Schema PR 4)
+
+**The migration's lock loop.** `20261114090000_payer_response_document_rules.sql` takes `source_document`'s ACCESS
+EXCLUSIVE lock, `submission`'s SHARE ROW EXCLUSIVE lock and SHARE locks on `payer_response` and `contract_version`
+together with `NOWAIT`, once a second, up to 300 tries, before anything else. A refused try holds and queues nothing.
+As in the two sections above, the first of the four is the hard one: a try is refused by any open transaction that
+has touched `source_document` in any way, a read or a foreign-key check included. The other three are refused only by
+a transaction that has written the table (a submission logged, a response recorded, a contract version saved or
+signed off). An autovacuum or autoanalyze of any of the four refuses a try too. An upload, a scan verdict, a parse, a
+contract screen and the console's contract queue each hold `source_document` for milliseconds; a job that reads a
+document and then works in the same transaction holds it to its commit.
+
+So, before this deploy:
+
+- deploy outside the practices' working hours;
+- have no long job queued or running that reads documents or writes one of the four tables: no parse or abstraction
+  of an upload, no triage, pricing run, reconcile, audit report or packet export (the daily monitoring schedule
+  queues every practice's monitoring at 05:10 UTC), and not at 01:20 UTC, when the audit copy reads;
+- check that no vacuum runs, as the sections above show.
+
+Once the migration holds the four, it reads every practice's responses and versions once (the preflight, below), adds
+one nullable column with its foreign key (no scan: every row is NULL), builds two partial indexes and
+replaces five functions. No table is rewritten and no ledger table is locked. The index on `source_document` is the
+whole of the hold: the column and its key took milliseconds on two million synthetic rows and the index about a
+second per million documents on a development machine, so once an environment holds more than about two million
+documents, expect signed-in requests that touch a document to be refused as busy for those seconds. The preflight's read is quick while
+practices are few; it reads every practice's responses and versions under the tenant policies, and on synthetic rows
+for 2,000 practices, 100,000 responses and 20,000 versions it took over a minute and a half. This migration applies
+once to each environment, before launch, when those tables are small; an environment restored from a later copy
+already has it. While the loop
+waits (up to five minutes) the migration's session holds a snapshot, which holds back vacuum's cleanup for that long
+and nothing else. Until its commit every request and job
+that touches a document waits or, for a signed-in request, is refused as busy after its three-second lock timeout
+with nothing saved (ADR 0092).
+
+If no moment with the four free comes in five minutes, the deploy fails: cdk reports that the migration task stopped
+without migrating, and `/tp/<env>/migration` ends with
+
+> db:migrate: 20261114090000_payer_response_document_rules.sql failed: source_document, submission, payer_response or contract_version stayed in use for five minutes; run the deploy again (docs/adr/0085)
+
+(`lock_not_available`, 55P03). This migration runs in one transaction, so it changed nothing, and no service moved
+(step 4). Run the deploy again at a quieter moment. Never take the locks by hand, and never end another session's
+transaction, or cancel a job or a vacuum, to make room.
+
+**When the preflight refuses.** Holding the locks, and before it changes anything, the migration counts the documents
+that a payer response names and a contract version also names, in every practice. From this migration on the database
+refuses to make such a pair, and a version holding one could never be edited or amended again, so the migration does
+not apply over one. If the count is not zero the deploy fails the same way, and the log ends with
+
+> db:migrate: 20261114090000_payer_response_document_rules.sql failed: N document(s) are named by a payer response and by a contract version; nothing was changed (docs/runbooks/deploy-and-rollback.md)
+
+(`check_violation`, 23514; a count only, never an id or a text). Nothing was changed and no service moved. The web's
+handlers have refused both halves of such a pair since the payer-response pull request, so none is expected in any
+environment: a count above zero means a row was written around the handlers, or two requests crossed before this
+lock existed in the database. Treat it as a finding, not as a deploy to retry:
+
+- do not run the deploy again, and do not change or delete a row by hand to make the count zero: a response is
+  recorded for good, and a signed-off version's documents are what its expected amounts trace to;
+- open an incident (docs/runbooks/incident-response.md) and find the pairs in the founder’s break-glass session, by ID only:
+  the practice, the document, the response and the version, and the version's status;
+- bring them to the founder. Which record is wrong is a person's ruling for each pair (the letter is a payer's
+  answer, so the version should never have named it, or it is a payer's terms letter, so the response should name
+  another document), and the correction is a reviewed, forward migration that says so in its audit events;
+- deploy again once that migration has applied before this one, in the same release.
+
+**The forward deploy and both images.** Every new refusal mirrors a check the previous web image already makes
+before it writes, so nothing a person sees changes while both images serve or after. The new column is NULL
+everywhere until the web half writes it. One thing is new for a caller that goes around the handlers: a response
+naming a document, and a contract version naming documents, are refused above READ COMMITTED. No mutating route runs
+there.
+
+**Rollback across this migration** (to an earlier image, below) keeps the migration: the column, the two indexes and
+the five functions stay, and it sets no rollback floor of its own. The previous web image runs on it unchanged. The
+schema is never rolled back.
+
+## An ROI statement's listed lines (ADR 0082's amendment of 2026-11-13; Schema PR 5)
+
+**What the migration does.** `20261115090000_roi_statement_actionable_lines.sql` replaces two functions under the
+founder's ledger freeze exception for schema PR 5 (`roi_links_valid` and `roi_statement_rules`, each the granted
+text) and changes no table, column, index, policy, trigger definition or stored row. Before it replaces the second it
+reads every stored ROI statement once through the new `roi_links_valid` (the preflight), one practice at a time under
+the tenant policy, because PostgreSQL does not check stored rows again when a function a CHECK calls is replaced.
+
+**Its locks.** Through the preflight's read it holds ACCESS SHARE on `roi_statement`, `practice` and their indexes,
+the lock every SELECT takes: nobody waits for it, and it holds back vacuum's cleanup for as long as the read runs.
+It does not take only reading locks. For its closing count it takes `roi_statement`'s SHARE lock with `NOWAIT`, once a
+second, up to 30 tries, and holds it to its commit. A refused try holds and queues nothing. A try is refused by a
+transaction that has written `roi_statement` and is still open (the reconcile job storing a statement, the print job
+recording a statement's PDF, a person generating a statement on demand) and by a vacuum or analyze of the table,
+autovacuum's included. A transaction that only reads the table never refuses it. While the lock is held a new
+statement, the record of a statement's PDF and a vacuum or analyze of the table wait; readers do not.
+
+**How long.** On an empty `roi_statement`, which is every environment before launch, the whole migration takes
+milliseconds and the lock is held for about a millisecond. On synthetic rows (1,000,000 statements of 40 IDs in 1,000
+practices, PostgreSQL 18.4, a development machine, the table's pages cached) the read took 196 to 206 seconds and the
+lock was held 0.12 to 2.7 seconds, against a target of five minutes for this migration. That was not measured on cold
+storage: with nothing cached the read is expected to take longer, and the read does not stop itself at five minutes.
+The five minutes is a target the measurements met, not a limit anything enforces: the runner's budget bounds its lock
+waits and retries only. If the runner cancels one of this migration's lock waits (not the closing lock's refusal,
+which it does not retry), it runs the migration again from its first line, the read included, up to twenty tries and
+no new try after thirty minutes; a try under way is not stopped. Time the read on cold storage before the first deploy
+to an environment that holds statements. The deploy's own limit is the migration task's (50 minutes).
+
+So, before this deploy on an environment that holds statements:
+
+- deploy outside the practices' working hours, and not while the daily reconcile runs or statements are printing;
+- check that no vacuum or analyze of `roi_statement` runs, as the sections above show.
+
+If the table stays in use across all 30 tries, the deploy fails: cdk reports that the migration task stopped without
+migrating, and `/tp/<env>/migration` ends with
+
+> db:migrate: 20261115090000_roi_statement_actionable_lines.sql failed: roi_statement stayed in use for 30 seconds at the preflight's closing count; run the deploy again
+
+(`lock_not_available`, 55P03). The runner does not try this one again by itself. This migration runs in one
+transaction, so it changed nothing, and no service moved (step 4). Run the deploy again at a quieter moment; the read
+starts over. Never take the lock by hand, and never end another session's transaction, or cancel a job or a vacuum, to
+make room.
+
+**When the preflight refuses.** If a stored statement does not pass the new `roi_links_valid`, the deploy fails the
+same way, and the log ends with
+
+> db:migrate: 20261115090000_roi_statement_actionable_lines.sql failed: R of N stored ROI statements, in H of P practices, fail the new roi_links_valid; nothing is changed
+
+(`check_violation`, 23514; the four letters stand for counts, and counts are all it prints: never an ID, a links
+text or a figure). Nothing was changed and no service
+moved. By the two function bodies the only stored statements this can be are ones whose `links` is the empty object,
+which no code writes, so a count above zero means a row was written around the application. Treat it as a finding,
+not as a deploy to retry:
+
+- do not run the deploy again, and do not change or delete a statement by hand: a statement keeps its figures, and
+  the table refuses UPDATE of them and DELETE;
+- open an incident (docs/runbooks/incident-response.md) and list the statements in the founder's break-glass
+  session, by ID only, with the query the migration's header gives;
+- bring them to the founder. The correction is a reviewed, forward migration under a ledger freeze exception of its
+  own, applied before this one in the same release.
+
+Two other refusals name their own cause and change nothing: either function's stored body is not the one the
+exception was granted on (a migration that sorts before this one changed it: the founder's question again, never a
+rebase), or the preflight read a number of statements that the table's emptiness contradicts (the role or the scope
+it ran under read nothing: a finding for the build, not a retry).
+
+**The forward deploy and both images: this order only.** The migration first, then the image, as every release runs:
+no service moves until the migration task has finished. After the migration and before the new image, the previous worker stores four-key statements
+and records PDFs as before. After the new image, statements carry five keys (the fifth lists the priced lines the
+actionable figure counted) and the database refuses a statement whose actionable figure is not the variance of the
+lines it lists; the previous image, in a rollback or as the other task during a deploy, reads `links` by key name and
+ignores the fifth. The new worker against a database without this migration would have every statement refused by
+the old CHECK, which the release order never produces. Nothing a person sees changes: the statements list, a
+statement's page, its CSV and its PDF read the same four keys.
+
+**Rollback across this migration** (to an earlier image, below) keeps the migration and needs no data change: the
+two functions stay, and the previous image runs on them unchanged. It sets no rollback floor of its own. This
+migration is never rolled back; a fix is a new forward migration under a new exception.
+
 ## Rollback
 
 Redeploy the previous image, without migrating:

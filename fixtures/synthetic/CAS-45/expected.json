@@ -8,7 +8,8 @@
   "assertedBy": [
     "apps/web/src/lib/cases/write-off.test.ts",
     "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-    "apps/web/e2e/triage.spec.ts"
+    "apps/web/e2e/triage.spec.ts",
+    "packages/db/src/payer-response-db-mirrors.db.test.ts"
   ],
   "codeListRelease": null,
   "noFileReason": "A case line on a synthetic practice the test creates, written off: no file.",

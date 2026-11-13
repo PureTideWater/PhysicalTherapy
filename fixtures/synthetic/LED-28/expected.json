@@ -1,0 +1,22 @@
+{
+  "case": "LED-28",
+  "module": "LED",
+  "title": "The migration that replaces the two ROI statement functions",
+  "assertion": "Refuses, changing nothing, unless the bodies it replaces are the ones the exception was granted on and the bodies it stores are the granted ones; reads every stored statement through the new links check, a practice at a time, with a closing count under a SHARE lock, and refuses with counts only; the previous image's writer, readers and PDF record work against the migrated database",
+  "synthetic": true,
+  "completesIn": 9,
+  "assertedBy": [
+    "apps/worker/src/reconcile/statement-lines.db.test.ts",
+    "packages/db/src/catalog.db.test.ts",
+    "packages/db/src/migrate.test.ts",
+    "packages/db/src/roi-statement-actionable-lines-migration.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "database tests",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -43,7 +43,7 @@ interface Figures {
   readonly of: { readonly cents: string; readonly lines: string; readonly open_lines: string; readonly moved_on: string; readonly stale: string };
   readonly stored: string;
   readonly digest: { readonly cases: number; readonly cents: string };
-  readonly statement: { readonly cents: string; readonly cases: readonly string[]; readonly matches: boolean };
+  readonly statement: { readonly cents: string; readonly cases: readonly string[]; readonly lines: readonly string[] | undefined; readonly matches: boolean };
 }
 
 /** The case's figure and counts, its stored total, the digest's nearing-deadline figure, and a statement of `period` generated now by the job. */
@@ -67,12 +67,14 @@ async function figures(practice: Practice, caseId: string, period: { readonly fr
       throw new Error('the statement was not written');
     }
     const row = (await scope.client.query<StatementRow>(`SELECT ${STATEMENT_COLUMNS} FROM roi_statement s WHERE s.id = $1`, [generated.statementId])).rows[0] as StatementRow;
+    // The stored list itself, never through a reader's columns (the readers ship four keys).
+    const listed = await scope.client.query<{ lines: string[] | null }>(`SELECT s.links -> 'actionable_open_lines' AS lines FROM roi_statement s WHERE s.id = $1`, [generated.statementId]);
     const check = recomputeStatement(storedStatement(row), entriesById(await ledgerEntries(scope, practice.practiceId)));
     return {
       of: counts,
       stored,
       digest,
-      statement: { cents: generated.statement.actionableOpenCents.toString(), cases: generated.statement.links.actionableOpen, matches: check.matches },
+      statement: { cents: generated.statement.actionableOpenCents.toString(), cases: generated.statement.links.actionableOpen, lines: listed.rows[0]?.lines ?? undefined, matches: check.matches },
     };
   });
 }
@@ -87,12 +89,14 @@ describe('the ROI statement and the digest read the line predicate (HOM-01)', ()
     await w.pricing.execute(practice, runId);
     await w.triage(practice, runId);
     const caseId = (await asOwner(w.owner, [practice.practiceId], () => w.owner.query<{ id: string }>('SELECT id FROM "case" WHERE practice_id = $1', [practice.practiceId]))).rows[0]?.id ?? '';
+    const lineIds = (await asOwner(w.owner, [practice.practiceId], () => w.owner.query<{ id: string }>('SELECT priced_line_id AS id FROM case_line WHERE case_id = $1 ORDER BY priced_line_id', [caseId]))).rows.map((line) => line.id);
+    expect(lineIds).toHaveLength(3);
 
     expect(await figures(practice, caseId, { from: '2026-01-01', to: '2026-03-31' })).toEqual({
       of: { cents: '9000', lines: '3', open_lines: '3', moved_on: '0', stale: '0' },
       stored: '9000',
       digest: { cases: 1, cents: '9000' },
-      statement: { cents: '9000', cases: [caseId], matches: true },
+      statement: { cents: '9000', cases: [caseId], lines: lineIds, matches: true },
     });
 
     const { pricingRunId } = await w.as(practice, practice.manager, ({ scope }) => createRerun(scope, { practiceId: practice.practiceId, pricingRunId: runId, releaseNo: RELEASE, requestId: `test-${randomUUID()}` }));
@@ -105,7 +109,22 @@ describe('the ROI statement and the digest read the line predicate (HOM-01)', ()
       of: { cents: '0', lines: '0', open_lines: '3', moved_on: '0', stale: '3' },
       stored: '9000',
       digest: { cases: 1, cents: '0' },
-      statement: { cents: '0', cases: [caseId], matches: true },
+      statement: { cents: '0', cases: [caseId], lines: [], matches: true },
     });
+
+    // The case now counts 0.00, and the first statement's 90.00 is still explained: rebuilt, by one query, from the
+    // priced lines it stored (schema PR 5; docs/adr/0082, Decision 7).
+    const statements = await asOwner(w.owner, [practice.practiceId], () =>
+      w.owner.query<{ cents: string; lines: number; rebuilt: string | null }>(
+        `SELECT s.actionable_open_cents::text AS cents, jsonb_array_length(s.links -> 'actionable_open_lines') AS lines,
+                (SELECT sum(p.variance_cents) FROM priced_line p WHERE p.id IN (SELECT x::uuid FROM jsonb_array_elements_text(s.links -> 'actionable_open_lines') x))::text AS rebuilt
+           FROM roi_statement s WHERE s.practice_id = $1 ORDER BY s.period_from`,
+        [practice.practiceId],
+      ),
+    );
+    expect(statements.rows).toEqual([
+      { cents: '9000', lines: 3, rebuilt: '9000' },
+      { cents: '0', lines: 0, rebuilt: null },
+    ]);
   }, 180_000);
 });
