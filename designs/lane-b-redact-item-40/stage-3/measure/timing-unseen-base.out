@@ -1,0 +1,4 @@
+as it is: 20000 letters, 1.3253 ms per letter, refused 6997
+with U+200B after it: 20000 letters, 1.4988 ms per letter, refused 6997
+with U+0085 after it: 20000 letters, 1.3805 ms per letter, refused 6997
+as it is, again: 20000 letters, 1.4096 ms per letter, refused 6997
