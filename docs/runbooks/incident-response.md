@@ -267,7 +267,7 @@ provider anything, and their two alarms are gone.
    Keep the sign-out's ID, the user ID, the cause's request ID, the time and the code only. Each failed try before
    it wrote `provider sign-out attempt failed` at warning with the same `sign_out_id`, the cause's `request_id` and
    the provider's error name (a step of the job that the database failed writes `provider sign-out step failed` with
-   the failure's `sqlstate`, PostgreSQL's five-character code, and never its message):
+   the failure's `sqlstate_code`, PostgreSQL's five-character SQLSTATE, and never its message):
 
    ```
    fields @timestamp, sign_out_id, request_id, error_code

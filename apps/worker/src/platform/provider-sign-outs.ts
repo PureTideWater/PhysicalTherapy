@@ -207,12 +207,12 @@ export async function runProviderSignOuts(options: ProviderSignOutOptions): Prom
       return await run();
     } catch (error) {
       failedSteps.push(name);
-      // A database failure adds its SQLSTATE; the two calls list their fields, since the log lint reads no spread.
+      // A database failure adds its SQLSTATE (sqlstate_code); the two calls list their fields, since the log lint reads no spread.
       const sqlstate = databaseErrorState(error);
       if (sqlstate === undefined) {
         logger.error('provider sign-out step failed', { error_code: `${name}:${providerErrorName(error)}` });
       } else {
-        logger.error('provider sign-out step failed', { error_code: `${name}:${providerErrorName(error)}`, sqlstate });
+        logger.error('provider sign-out step failed', { error_code: `${name}:${providerErrorName(error)}`, sqlstate_code: sqlstate });
       }
       return fallback;
     }

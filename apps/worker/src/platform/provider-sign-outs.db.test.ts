@@ -230,7 +230,7 @@ describe('the provider_sign_outs job (JOB-08; docs/adr/0095)', () => {
     const database = capture();
     const deadlock = Object.assign(new Error('synthetic: deadlock detected while reading a private row'), { name: 'DatabaseError', code: '40P01' });
     await expect(runProviderSignOuts({ withClient: refusing(deadlock), provider: provider().adapter, requestId: `job-${randomUUID()}`, logger: database.logger })).rejects.toBeInstanceOf(ProviderSignOutRunFailed);
-    expect(database.lines.filter((line) => line.msg === 'provider sign-out step failed')).toEqual([expect.objectContaining({ level: 'error', error_code: 'sign_outs:DatabaseError', sqlstate: '40P01' })]);
+    expect(database.lines.filter((line) => line.msg === 'provider sign-out step failed')).toEqual([expect.objectContaining({ level: 'error', error_code: 'sign_outs:DatabaseError', sqlstate_code: '40P01' })]);
     expect(JSON.stringify(database.lines)).not.toContain('synthetic');
     // A code that is not a SQLSTATE (a socket's, or anything longer or lower-case) is not passed off as one.
     for (const code of ['ECONNREFUSED', '40p01', 'a private row', 42601]) {
@@ -239,7 +239,7 @@ describe('the provider_sign_outs job (JOB-08; docs/adr/0095)', () => {
       await expect(runProviderSignOuts({ withClient: refusing(failure), provider: provider().adapter, requestId: `job-${randomUUID()}`, logger: other.logger })).rejects.toBeInstanceOf(ProviderSignOutRunFailed);
       const [line] = other.lines.filter((entry) => entry.msg === 'provider sign-out step failed');
       expect(line).toMatchObject({ error_code: 'sign_outs:Crash' });
-      expect(line).not.toHaveProperty('sqlstate');
+      expect(line).not.toHaveProperty('sqlstate_code');
     }
   });
 

@@ -45,15 +45,17 @@ describe('a signed-in request’s lock waits are bounded (CAS-57)', () => {
     expect(WEB_LOCK_TIMEOUT_MS).toBe(3_000);
   });
 
-  it('carries the bound on every transaction the routes’ wrapper opens: each of a person’s, a practice’s and an organization’s routes, and a refused page’s frame', () => {
+  it('carries the bound on every transaction the routes’ wrapper opens: each of a person’s, a practice’s and an organization’s routes, a refused page’s frame, and the record of a refused act on a key removal', () => {
     const invoke = code(path.join(SRC, 'lib/http/invoke.ts'));
     expect(invoke).toContain('const BOUNDED = { lockTimeoutMs: WEB_LOCK_TIMEOUT_MS } as const;');
     // Every transaction opened on the application pool here, by the scope it opens.
     const opened = [...invoke.matchAll(/\b(withActor|withPracticeScope|withClient|withJobScope|withPublicSnapshot)\(services\.pool\b/g)].map((match) => String(match[1]));
-    expect(opened).toEqual(['withActor', 'withActor', 'withPracticeScope', 'withActor']);
+    // The first is the security event of a refused act on a key removal (test SEC-28), written after the request's own
+    // transaction rolled back, so one connection at a time still.
+    expect(opened).toEqual(['withActor', 'withActor', 'withActor', 'withPracticeScope', 'withActor']);
     // And each carries the bound: as the practice scope's request, or as a person's scope's last argument.
     expect([...invoke.matchAll(/withPracticeScope\(services\.pool, \{[^\n]*\.\.\.BOUNDED \}/g)]).toHaveLength(1);
-    expect([...invoke.matchAll(/withActor\(services\.pool,[^\n]*, BOUNDED\)/g)]).toHaveLength(1);
+    expect([...invoke.matchAll(/withActor\(services\.pool,[^\n]*, BOUNDED\)/g)]).toHaveLength(2);
     expect([...invoke.matchAll(/^ {10}\}, BOUNDED\),$/gm)]).toHaveLength(2);
     expect([...invoke.matchAll(/\bBOUNDED\b/g)]).toHaveLength(1 + opened.length);
   });
@@ -69,12 +71,13 @@ describe('a signed-in request’s lock waits are bounded (CAS-57)', () => {
     );
     expect(found).toEqual({
       // Sign-in: it commits in steps (a failed attempt's count, a session after the provider's grant), and none may be given up.
-      // Two of the seven are the key registry's (docs/adr/0095), both before any session: the judgement of a
-      // registration after a removal, whose counted try must commit, and the record of a registered key.
-      'lib/auth/sign-in.ts': 7,
-      // The wrapper: the four transactions above, bounded, and before them the session's read and the rate limit's
+      // Two of the eight are the key registry's (docs/adr/0095), both before any session: the judgement of a
+      // registration after a removal, whose counted try must commit, and the record of a registered key. One is the
+      // sign-out an unrecorded reset queues by itself, after the reset's own transaction failed twice (test SGN-28).
+      'lib/auth/sign-in.ts': 8,
+      // The wrapper: the five transactions above, bounded, and before them the session's read and the rate limit's
       // count, which are not (a session's end and its audit event are two steps).
-      'lib/http/invoke.ts': 6,
+      'lib/http/invoke.ts': 7,
       // The public forms, pages and webhooks, which open no scope.
       'lib/routes/onboarding.ts': 1,
       'lib/routes/support.ts': 3,

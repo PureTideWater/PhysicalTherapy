@@ -190,8 +190,9 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
     expect(flow).toContain(`this.deps.logger.warn('${ENROLMENT_REFUSED_MESSAGE}', {`);
     expect(flow).toContain(`this.deps.logger.error('${CLIENT_CREDENTIAL_REFUSED_MESSAGE}', {`);
     expect(source('apps/web/src/lib/auth/credential-probe.ts')).toContain(`logger?.error('${CREDENTIAL_PROBE_REFUSED_MESSAGE}', { error_code: code });`);
-    // The completed reset that queues no password-changed email (docs/adr/0091, D15): the user's ID and the request's alone.
-    expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId });`);
+    // The completed reset that queues no password-changed email (docs/adr/0091, D15): the user's ID, the request's, and
+    // what became of the provider's sign-out the web asks the database to queue by itself (a closed code; test SGN-28).
+    expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId, outcome_code: outcome });`);
     // A hardware key two administrators removed, used at sign-in (docs/adr/0095): the user's ID and the request's alone.
     expect(flow).toContain(`this.deps.logger.error('${REMOVED_HARDWARE_KEY_USED_MESSAGE}', { user_id: userId, request_id: context.requestId });`);
     // The web asks the provider for no sign-out and writes no line about one (docs/adr/0095): neither the reset's nor End membership's.
@@ -727,10 +728,11 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       expect(alarm.Dimensions).toBeUndefined();
       expect(alarm.OKActions).toBeUndefined();
       expect(filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))).toHaveLength(1);
-      // The line is the job's own: the words declared once there and written out at warn, with IDs and the error's name.
+      // The line is the job's own: the words declared once there and written out at warn, with IDs, the request of the
+      // event that queued the row, and the error's name.
       const job = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/platform/provider-sign-outs.ts'), 'utf8');
       expect(job).toContain(`export const PROVIDER_SIGN_OUT_ATTEMPT_FAILED = '${message}';`);
-      expect(job).toContain(`logger.warn('${message}', { sign_out_id: claimed.sign_out_id, user_id: claimed.account_id, error_code: failure });`);
+      expect(job).toContain(`logger.warn('${message}', { sign_out_id: claimed.sign_out_id, user_id: claimed.account_id, request_id: claimed.cause_request_id ?? null, error_code: failure });`);
       const words = String(alarm.AlarmDescription);
       expect(words).toContain(`The ${environment} provider_sign_outs job's tries at Cognito have failed three times in fifteen minutes`);
       expect(words).toContain('ProviderSignOutNotDelivered');
