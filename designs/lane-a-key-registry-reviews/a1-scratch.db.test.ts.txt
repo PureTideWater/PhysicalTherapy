@@ -1,0 +1,125 @@
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+
+import pg from 'pg';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+import { withActor } from './authz';
+import { readDatabaseUrl } from './config';
+import { type MigratedDatabase, createMigratedDatabase, createOrganization, createUser, endPool } from './testing';
+
+/**
+ * SCRATCH, never committed: review finding A1 (lane A key registry). With a removal of T requested by B, T (a platform
+ * administrator, as the application role) changes B's "user" row; then C confirms. Passes only when the attack is refused.
+ * Helpers copied from key-registry.db.test.ts. Synthetic data only.
+ */
+
+let database: MigratedDatabase;
+let owner: pg.Client;
+let app: pg.Pool;
+let internal: string;
+
+interface Failure {
+  readonly code: string;
+  readonly constraint: string | undefined;
+  readonly message?: string;
+}
+const failure = (attempt: Promise<unknown>): Promise<'accepted' | Failure> =>
+  attempt.then(
+    () => 'accepted' as const,
+    (error: unknown) => {
+      const { code: given, constraint, message } = error as { code?: string; constraint?: string; message?: string };
+      return { code: given ?? 'error', constraint, message };
+    },
+  );
+const request = () => `test-${randomUUID()}`;
+const digest = () => randomBytes(32);
+const tokenHash = () => createHash('sha256').update(randomUUID()).digest('hex');
+
+async function asUser<T extends pg.QueryResultRow = pg.QueryResultRow>(user: string, sql: string, values: unknown[] = []): Promise<T[]> {
+  return withActor(app, user, async (scope) => (await scope.client.query<T>(sql, values)).rows);
+}
+async function seeded(sql: string, values: unknown[] = []): Promise<void> {
+  await owner.query('BEGIN');
+  try {
+    await owner.query("SET LOCAL session_replication_role = 'replica'");
+    await owner.query(sql, values);
+    await owner.query('COMMIT');
+  } catch (error) {
+    await owner.query('ROLLBACK');
+    throw error;
+  }
+}
+async function began(): Promise<string> {
+  return (await app.query<{ at: string }>('SELECT sign_in_step_began()::text AS at')).rows[0]?.at ?? '';
+}
+async function device(user: string): Promise<string> {
+  return (await asUser<{ id: string }>(user, "INSERT INTO user_device (user_id, token_sha256, label) VALUES ($1, $2, 'Test browser') RETURNING id", [user, tokenHash()]))[0]?.id ?? '';
+}
+function recordKey(user: string, credential: Buffer): Promise<unknown[]> {
+  return began().then((at) => asUser(user, 'SELECT * FROM hardware_key_record($1, $2, $3, $4::timestamptz, $5)', [credential, randomBytes(77), null, at, request()]));
+}
+async function openSession(user: string, credential: Buffer): Promise<string> {
+  const at = await began();
+  const on = await device(user);
+  const rows = await asUser<{ id: string }>(
+    user,
+    "INSERT INTO user_session (user_id, device_id, token_sha256, mfa_method, sign_in_began_at, key_credential_sha256) VALUES ($1, $2, $3, 'webauthn', $4::timestamptz, $5) RETURNING id",
+    [user, on, tokenHash(), at, credential],
+  );
+  return rows[0]?.id ?? '';
+}
+interface Administrator {
+  readonly id: string;
+  session(): Promise<string>;
+}
+async function administrator(days = 8): Promise<Administrator> {
+  const id = await createUser(owner, { hardwareKeyRequired: true });
+  await seeded(`INSERT INTO membership (id, organization_id, user_id, role, created_at) VALUES ($1, $2, $3, 'platform_admin', now() - make_interval(days => $4))`, [randomUUID(), internal, id, days]);
+  const credential = digest();
+  await recordKey(id, credential);
+  return { id, session: () => openSession(id, credential) };
+}
+
+beforeAll(async () => {
+  database = await createMigratedDatabase(readDatabaseUrl());
+  owner = new pg.Client({ connectionString: database.url });
+  await owner.connect();
+  app = new pg.Pool({ connectionString: database.appUrl, max: 6 });
+  internal = await createOrganization(owner, 'internal');
+}, 120_000);
+
+afterAll(async () => {
+  await owner?.end();
+  if (app !== undefined) await endPool(app);
+  await database?.drop();
+});
+
+async function attack(label: string, set: string): Promise<{ update: unknown; confirm: unknown }> {
+  const [t, b, c] = [await administrator(), await administrator(), await administrator()];
+  const removal = (await asUser<{ id: string }>(b.id, 'SELECT hardware_key_removal_request($1, $2, $3) AS id', [t.id, await b.session(), request()]))[0]?.id ?? '';
+  const row = async () => (await owner.query<{ status: string; mfa_enrolled: boolean }>('SELECT status, mfa_enrolled FROM "user" WHERE id = $1', [b.id])).rows[0];
+  const state = async () => (await owner.query<{ state: string }>('SELECT state FROM hardware_key_removal WHERE id = $1', [removal])).rows[0]?.state;
+  const before = await row();
+  const stateBefore = await state();
+  const update = await failure(asUser(t.id, `UPDATE "user" SET ${set} WHERE id = $1 RETURNING id`, [b.id]).then((rows) => ({ rows: rows.length })));
+  const updatedRows = update === 'accepted' ? (await asUser(t.id, `UPDATE "user" SET ${set} WHERE id = $1 RETURNING id`, [b.id])).length : null;
+  const after = await row();
+  const confirm = await failure(asUser(c.id, 'SELECT * FROM hardware_key_removal_confirm($1, $2, $3)', [removal, await c.session(), request()]));
+  const stateAfter = await state();
+  console.log(`A1 ${label}: ${JSON.stringify({ removalMade: removal !== '', stateBefore, before, update, updatedRows, after, confirm, stateAfter })}`);
+  return { update, confirm };
+}
+
+describe('A1 scratch: the target of an open removal cannot void it through "user"', () => {
+  it('case 1: T sets the requester’s mfa_enrolled to false', async () => {
+    const { update, confirm } = await attack('case1 mfa_enrolled=false', 'mfa_enrolled = false');
+    expect(update).toMatchObject({ code: '23514', constraint: 'hardware_key_removal_target_acts' });
+    expect(confirm).toBe('accepted');
+  });
+
+  it('case 2: T sets the requester’s status to disabled', async () => {
+    const { update, confirm } = await attack('case2 status=disabled', "status = 'disabled'");
+    expect(update).toMatchObject({ code: '23514', constraint: 'hardware_key_removal_target_acts' });
+    expect(confirm).toBe('accepted');
+  });
+});

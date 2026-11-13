@@ -1,0 +1,87 @@
+-- A1 (lane A key registry review): the trigger the red SGN-24 describe in packages/db/src/key-registry.db.test.ts is owed.
+-- Everything from "BEGIN SQL" to "END SQL" is the exact text proved in a scratch database (see PROOF below).
+-- Not applied by the session that wrote it; it lands through the migration (/new-migration), never by hand.
+--
+-- WHERE IT BELONGS in packages/db/migrations/20261115090000_key_registry.sql: section 6, directly after the statement
+--   CREATE TRIGGER membership_removal_target_holds BEFORE UPDATE ON membership FOR EACH ROW EXECUTE FUNCTION membership_removal_target_holds();
+-- and before the "-- 7. What queues a provider sign-out" banner. The migration runs as tp_owner (migrate.ts SET LOCAL
+-- ROLE), so the function is owned by tp_owner with no ALTER ... OWNER line, as every other function of the migration.
+-- The migration has no COMMENT ON statement anywhere (grep: none); its comments are the "--" prose above each
+-- function, so the comment below is in that form.
+--
+-- ALSO IN THE SAME MIGRATION when it lands (the REVOKE below is then folded in, not repeated):
+--   * the header list, "-- - Triggers: ..." (about line 24): name user_removal_target_holds;
+--   * the preflight's proname IN (...) list (about line 80-81): add 'user_removal_target_holds';
+--   * section 14's single REVOKE ALL ON FUNCTION ... FROM PUBLIC list (about line 1537): add user_removal_target_holds().
+--
+-- BEGIN SQL
+
+-- While a removal of an account's keys is requested, that account changes the status and the hardware-key rule of no
+-- other account: as a platform administrator it could otherwise disable the requester, which voids the request
+-- (hardware_key_removal_requester_left), or any administrator who could confirm it. Its own row it may still change,
+-- and once the request is decided (confirmed, cancelled or marked expired) the rules that stood before decide alone.
+-- It takes no lock. By name it fires after user_guarded_columns and before user_updated_at; the order changes no
+-- outcome, since only a platform administrator reaches another account's row and user_guarded_columns passes one.
+CREATE FUNCTION user_removal_target_holds() RETURNS trigger
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF app_actor_id() IS NOT NULL
+     AND OLD.id <> app_actor_id()
+     AND EXISTS (SELECT 1 FROM hardware_key_removal r WHERE r.user_id = app_actor_id() AND r.state = 'requested') THEN
+    RAISE EXCEPTION 'an account whose key removal is requested changes no other account''s status or hardware-key rule until the request is decided'
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_removal_target_acts';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION user_removal_target_holds() FROM PUBLIC;
+CREATE TRIGGER user_removal_target_holds BEFORE UPDATE ON "user" FOR EACH ROW
+  WHEN (NEW.status IS DISTINCT FROM OLD.status OR NEW.hardware_key_required IS DISTINCT FROM OLD.hardware_key_required)
+  EXECUTE FUNCTION user_removal_target_holds();
+
+-- END SQL
+--
+-- CONVENTIONS FOLLOWED (as membership_removal_target_holds, same section): plpgsql VOLATILE SECURITY DEFINER (it must
+-- be DEFINER: tp_app holds nothing on hardware_key_removal, which is FORCE RLS and revoked), SET search_path =
+-- pg_catalog, public, pg_temp, owner tp_owner, EXECUTE revoked from PUBLIC and granted to no one (forNone), RAISE ...
+-- USING ERRCODE = 'check_violation' (23514), CONSTRAINT = 'hardware_key_removal_target_acts'. Same constraint name as
+-- the membership trigger, by the ruling: one name for "the target of a requested removal acts".
+-- The WHEN clause compares values, so an UPDATE that names status but does not change it is not refused, and an UPDATE
+-- of other columns (sign_in_not_before by the confirmation and by membership_end_marks_account, locked_at, settings,
+-- email) never enters the function. app_actor_id() IS NULL (the owner, the platform jobs) is never bound.
+--
+-- LOCKS. The trigger takes none: no FOR UPDATE/SHARE, no LOCK TABLE, no advisory lock; its EXISTS is a plain read of
+-- hardware_key_removal under the statement's READ COMMITTED snapshot. The only lock in play is the one the UPDATE
+-- itself already holds on the "user" row being changed (taken before any BEFORE ROW trigger runs). The confirmation,
+-- the cancel and the request take the ACCOUNT's (the target's) "user" row FOR NO KEY UPDATE and then the removal row
+-- FOR UPDATE (docs/adr/0093 D2's order); the confirmation reads the requester through account_removes_keys() without
+-- a lock. The bound actor's statement holds another account's row and waits on nothing the trigger adds, so the
+-- trigger adds no edge to any wait graph and cannot deadlock with them. (A plain row-lock wait is still possible as
+-- before: the target's UPDATE of B's row waits if B's row is locked, e.g. B is itself the account of a removal being
+-- confirmed; that wait exists today without the trigger.)
+-- RESIDUAL, by taking no lock (the same as membership_removal_target_holds): a request not yet COMMITTED when the
+-- target's UPDATE statement takes its snapshot does not bind it. The target cannot know of an uncommitted request, and
+-- a platform administrator disabling another before any request stands is the standing rule, so this was left; it
+-- would be closed only by the trigger taking the actor's own "user" row (the request holds it), at the price of a
+-- second row lock in the other order (B's row, then T's own), which CAN deadlock against two accounts acting on each
+-- other. Not proposed.
+--
+-- LISTS THAT NEED THE NEW NAME when it lands:
+--   * packages/db/src/key-registry.db.test.ts, SEC-25: the functions map ('user_removal_target_holds()': forNone, about
+--     line 230), and 'puts the triggers where the design says' (the name array about line 260 and the expected list:
+--     '"user":user_removal_target_holds' as regclass prints it, sorted by ORDER BY 1, 2);
+--   * packages/db/functions/user_removal_target_holds.sql: written by `pnpm db:domain-model --out`, never by hand
+--     (docs/adr/0068; CI fails when it differs);
+--   * docs/product/domain-model.md: regenerated in the same pull request (the "user" trigger list near line 497 and
+--     Appendix C's function table), with the founder's approval line (CO-02);
+--   * NOT needed: packages/db/src/hardening.db.test.ts and packages/db/domain-model/areas.json do not name
+--     membership_removal_target_holds or user_guarded_columns (grep: no hit), so they list no trigger functions by name.
+--   * docs/adr/0095 names membership_removal_target_holds twice (lines 78 and 239); the "user" trigger deserves the
+--     same sentence there. The describe's title in the test ("owed red until ...") should lose its parenthesis then.
+--
+-- PROOF (2026-11-13, scratch database of a temporary copy of the describe, packages/db/src/zz-a1-proof.db.test.ts,
+-- since deleted): its beforeAll read this file, took the text between the two markers and ran it as tp_owner
+-- (SET LOCAL ROLE) after the migrations. Without the trigger: 3 failed, 5 passed (cases a, b, c red, each on
+-- `expected { rows: 1 } to deeply equal { code: '23514', constraint: 'hardware_key_removal_target_acts' }`).
+-- With it: 8 passed. Not seen: the catalog shape (prosecdef, owner, ACL, trigger order) by query; the proof's
+-- console line was swallowed by the runner, so SEC-25's catalog test is what will assert it when the names are listed.
