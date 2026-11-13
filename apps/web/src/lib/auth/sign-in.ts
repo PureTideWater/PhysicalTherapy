@@ -212,6 +212,9 @@ const className = (error: unknown): string => (error instanceof Error && /^[A-Za
 
 class KeyNotVerified extends Error {}
 
+/** The registry answered no row: a wrong one-time code against an open registration, which it counted (docs/adr/0095). */
+class KeyCodeRefused extends Error {}
+
 interface Account {
   readonly user_id: string;
   readonly cognito_sub: string;
@@ -1041,7 +1044,7 @@ export class SignInFlow {
         await this.recorded(pending, response, context);
         return { kind: 'key_registered' };
       } catch (error) {
-        failure = refusedConstraint(error) ?? (error instanceof KeyNotVerified ? 'not_verified' : className(error));
+        failure = refusedConstraint(error) ?? (error instanceof KeyNotVerified ? 'not_verified' : error instanceof KeyCodeRefused ? 'registration_code_refused' : className(error));
       }
       let gone = false;
       try {
@@ -1119,7 +1122,7 @@ export class SignInFlow {
       throw new KeyNotVerified();
     }
     const began = new Date(pending.began);
-    await withActor(this.deps.pool, pending.userId, (scope) =>
+    const recorded = await withActor(this.deps.pool, pending.userId, (scope) =>
       scope.client.query('SELECT key_id FROM hardware_key_record($1, $2, $3, $4, $5)', [
         sha256(bytes),
         Buffer.from(publicKey),
@@ -1128,6 +1131,11 @@ export class SignInFlow {
         context.requestId,
       ]),
     );
+    // No row is a refusal, never a registration: the registry counted a wrong one-time code and returned nothing so
+    // that the count commits. The caller removes the key at the provider, as for every other failure here.
+    if (recorded.rows.length !== 1) {
+      throw new KeyCodeRefused();
+    }
   }
 
   /**
@@ -1233,6 +1241,12 @@ export class SignInFlow {
    * job `provider_sign_outs` sends it; nothing here asks the provider, so a reset never waits on it and a try that
    * rolls back queues nothing); retried once, a second failure logged (review R-3). Answers whether the sessions
    * ended and the event was recorded.
+   *
+   * After the second failure the provider may hold a new password while nothing here was recorded, so a third
+   * transaction asks for the one thing that needs neither the account's lock nor the session update: the provider's
+   * own sign-out, queued by `provider_sign_out_unrecorded_reset` for the acting account alone (test SGN-28). It ends no
+   * app session and moves no mark; the error line still pages, and says whether the sign-out was queued, was already
+   * waiting, or could not be queued (the runbook's step for each).
    */
   private async endedByReset(account: Account, action: 'password_reset_completed' | 'password_reset_outcome_unknown', purpose: string, context: SignInContext): Promise<boolean> {
     let ended = false;
@@ -1249,7 +1263,16 @@ export class SignInFlow {
       }
     }
     if (!ended) {
-      this.deps.logger.error('security event: password reset sessions not ended', { user_id: account.user_id, request_id: context.requestId });
+      let outcome: 'provider_sign_out_queued' | 'provider_sign_out_waiting' | 'provider_sign_out_not_queued' = 'provider_sign_out_not_queued';
+      try {
+        const answer = await withActor(this.deps.pool, account.user_id, (scope) =>
+          scope.client.query<{ queued: boolean }>('SELECT provider_sign_out_unrecorded_reset($1) AS queued', [context.requestId]),
+        );
+        outcome = answer.rows[0]?.queued === true ? 'provider_sign_out_queued' : 'provider_sign_out_waiting';
+      } catch {
+        // Said by the line below: the operator queues it (docs/runbooks, the unrecorded reset).
+      }
+      this.deps.logger.error('security event: password reset sessions not ended', { user_id: account.user_id, request_id: context.requestId, outcome_code: outcome });
     }
     return ended;
   }

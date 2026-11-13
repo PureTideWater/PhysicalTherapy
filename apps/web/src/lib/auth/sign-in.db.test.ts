@@ -366,6 +366,25 @@ function failing(match: RegExp, times: number, when: () => boolean = () => true)
   };
 }
 
+/** The application's pool, except that queries matching `match` are not sent and are answered with no row (a function that returns none). */
+function answeringNoRow(match: RegExp): ScopePool<ScopeClient> {
+  return {
+    connect: async () => {
+      const client = await app.connect();
+      return new Proxy(client, {
+        get(target, property) {
+          if (property === 'query') {
+            return (text: unknown, values?: unknown[]) =>
+              typeof text === 'string' && match.test(text) ? Promise.resolve({ rows: [], rowCount: 0 }) : target.query(text as string, values);
+          }
+          const value = Reflect.get(target, property, target) as unknown;
+          return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+        },
+      });
+    },
+  };
+}
+
 /** What a database that cannot be reached answers a connection with (a synthetic failure). */
 const UNREACHABLE = 'synthetic: the database is unreachable';
 
@@ -688,8 +707,9 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     await failed.flow.requestPasswordReset(twice.email, context());
     const request = context();
     expect(await failed.flow.confirmPasswordReset(twice.email, codeFor(twice.email), CHOSEN, request)).toEqual({ kind: 'sessions_not_ended' });
-    // Both tries rolled back, so neither left a row: the line below is what reaches the operator.
-    expect(await signOutsQueued(twice.id)).toEqual([]);
+    // Both tries rolled back, so neither left a row for a recorded reset: the line below is what reaches the operator
+    // (the sign-out the unrecorded reset queues on its own is SGN-28's).
+    expect((await signOutsQueued(twice.id)).filter((row) => row.reason !== 'password_reset_unrecorded')).toEqual([]);
     expect(await openSessions(twice.id)).toBe(1);
     expect(logged(failed.lines, 'security event: password reset sessions not ended')).toEqual([expect.objectContaining({ level: 'error', user_id: twice.id, request_id: request.requestId })]);
     // Neither try recorded the reset, so no password-changed email is queued: this line, which pages the operator
@@ -730,6 +750,38 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(logged(outage.lines, 'security event: password reset completed')).toEqual([expect.objectContaining({ level: 'warn', user_id: user.id, request_id: request.requestId })]);
   });
 
+  it('SGN-28: a reset whose own transaction fails twice still queues the provider sign-out, alone, and the line says it did (owed red until provider_sign_out_unrecorded_reset exists)', async () => {
+    const user = await person();
+    await signedIn(user.email);
+    const failed = paced(failing(/revoke_user_sessions/, 2));
+    await failed.flow.requestPasswordReset(user.email, context());
+    const request = context();
+    expect(await failed.flow.confirmPasswordReset(user.email, codeFor(user.email), CHOSEN, request)).toEqual({ kind: 'sessions_not_ended' });
+    // The third transaction queued the provider's sign-out under this request, and did nothing else: no session ended,
+    // no reset recorded, no password-changed email (docs/adr/0091, D15's gap stays for those; the line still pages).
+    expect(await signOutsQueued(user.id)).toEqual([{ reason: 'password_reset_unrecorded', request_id: request.requestId }]);
+    expect(await openSessions(user.id)).toBe(1);
+    expect((await events(user.id)).filter((event) => event.startsWith('password_reset_completed'))).toEqual([]);
+    expect(await notices(user.id)).toEqual([]);
+    expect(logged(failed.lines, 'security event: password reset sessions not ended')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: user.id, request_id: request.requestId, outcome_code: 'provider_sign_out_queued' }),
+    ]);
+    expect(failed.lines.join('\n')).not.toContain(user.email);
+  });
+
+  it('SGN-28: where the sign-out cannot be queued either, the reset answers as before and the line says not queued', async () => {
+    const user = await person();
+    await signedIn(user.email);
+    const failed = paced(failing(/revoke_user_sessions|provider_sign_out_unrecorded_reset/, 3));
+    await failed.flow.requestPasswordReset(user.email, context());
+    const request = context();
+    expect(await failed.flow.confirmPasswordReset(user.email, codeFor(user.email), CHOSEN, request)).toEqual({ kind: 'sessions_not_ended' });
+    expect(await signOutsQueued(user.id)).toEqual([]);
+    expect(logged(failed.lines, 'security event: password reset sessions not ended')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: user.id, request_id: request.requestId, outcome_code: 'provider_sign_out_not_queued' }),
+    ]);
+  });
+
   it('SGN-16: a reset the provider completes as the database becomes unreachable is logged as sessions not ended by the user’s ID, queues no sign-out and answers the generic failure (docs/adr/0091, D15; review SEC-02 of 2026-11-11)', async () => {
     const user = await person();
     await signedIn(user.email);
@@ -748,7 +800,10 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     confirmed.mockRestore();
     expect(answered).toEqual({ kind: 'sessions_not_ended' });
     expect(await signOutsQueued(user.id)).toEqual([]);
-    expect(logged(outage.lines, 'security event: password reset sessions not ended')).toEqual([expect.objectContaining({ level: 'error', user_id: user.id, request_id: request.requestId })]);
+    // The third transaction, which would queue the provider's sign-out alone (SGN-28), met the same outage: the line says so.
+    expect(logged(outage.lines, 'security event: password reset sessions not ended')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: user.id, request_id: request.requestId, outcome_code: 'provider_sign_out_not_queued' }),
+    ]);
     expect(outage.lines.join('\n')).not.toContain(user.email);
     // The provider holds the new password; the app ended no session and recorded no reset, so no password-changed email
     // is queued: the line above, which pages the operator (PasswordResetSessionsNotEnded), is this reset's signal.
@@ -1294,6 +1349,17 @@ describe('SGN-17: a sign-in step begun before a password reset is refused after 
     ]);
     expect(logged(broken.lines, KEY_ACROSS_RESET_LINE)).toEqual([]);
     expect((await store.bySub(clean.staff.sub))?.credentials).toEqual([]);
+
+    // SGN-30: the registry answers no row for a wrong one-time code (it counted the try; a raise would have rolled the
+    // count back). No row is that refusal, never a registration: the key is removed at the provider and nothing opens.
+    const guessed = await registrationBegun();
+    const unanswered = paced(answeringNoRow(/hardware_key_record/));
+    const fourth = context();
+    expect(await unanswered.flow.completeKeyRegistration(guessed.begun.pending, guessed.key.create(guessed.begun.options), fourth)).toEqual({ kind: 'refused', reason: 'key_not_registered' });
+    expect(logged(unanswered.lines, 'hardware key registered at the provider but not recorded')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: guessed.staff.id, request_id: fourth.requestId, error_code: 'registration_code_refused', outcome_code: 'removed' }),
+    ]);
+    expect((await store.bySub(guessed.staff.sub))?.credentials).toEqual([]);
     expect((await events(clean.staff.id)).filter((event) => event.startsWith('hardware_key_registered'))).toEqual([]);
 
     // A step sealed before the crossed state was refused outright carries the address's account (review S4 of the fix
@@ -1508,7 +1574,7 @@ describe('SGN-18: a reset whose outcome at the provider is unknown is never repo
     await failed.flow.requestPasswordReset(twice.email, context());
     const request = context();
     expect(await lost('after', failed.flow, twice.email, codeFor(twice.email), request)).toEqual({ kind: 'outcome_unknown' });
-    expect(await signOutsQueued(twice.id)).toEqual([]);
+    expect((await signOutsQueued(twice.id)).filter((row) => row.reason !== 'password_reset_unrecorded')).toEqual([]);
     expect(await openSessions(twice.id)).toBe(1);
     expect(await markOf(twice.id)).toBeNull();
     expect((await events(twice.id)).filter((event) => event.startsWith('password_reset_outcome_unknown'))).toEqual([]);
