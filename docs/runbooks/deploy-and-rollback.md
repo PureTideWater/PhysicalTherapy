@@ -596,10 +596,24 @@ minute, which sends the queued sign-outs, and the hardware-key notices. **One `c
 they are ever deployed apart, the platform service goes first**: a new web with no job asks the provider nothing
 until the job exists. The same deploy removes the alarms `PasswordResetProviderSignOutFailed` and
 `MembershipEndProviderSignOutFailed` and adds `ProviderSignOutNotDelivered`, `ProviderSignOutsNotRunning`,
-`RemovedHardwareKeyUsed` and `KEY_NOTICE_UNDELIVERED` (docs/runbooks/incident-response.md).
-`ProviderSignOutsNotRunning` counts a missing line as missed, so it can raise once in this deploy, between the alarm's
-creation and the new platform task's first run; it returns to OK on the job's first line. If it has not within
-fifteen minutes of the platform service settling, follow its section.
+`ProviderSignOutAttemptsFailing`, `ProviderSignOutNoSuchUser`, `RelyingPartyMismatch`, `RemovedHardwareKeyUsed` and
+`KEY_NOTICE_UNDELIVERED` (docs/runbooks/incident-response.md).
+
+**Expect `ProviderSignOutsNotRunning` to page twice in the deploy that creates it**: once when it raises, and once
+more when it returns to OK (it tells the operator both). Its metric filter counts only from its own creation and a
+missing line counts as missed, so unless the new platform task's first run line lands inside the alarm's first
+evaluated window it goes to ALARM. Before dismissing either page, check that the job is in fact running: the run
+line appears each minute on the platform group, from the new task's start on.
+
+```
+fields @timestamp, record_count
+| filter msg = "provider sign-outs run"
+| sort @timestamp desc | limit 15
+```
+
+A line a minute and the OK page: dismiss both. No line within fifteen minutes of the platform service settling, or
+no OK page: it is not the deploy's; follow its section (docs/runbooks/incident-response.md, "The provider sign-out
+job not running"). A later deploy that changes neither the filter nor the alarm does not page this way.
 
 **While the previous images serve** (the minutes of the rolling deploy):
 
@@ -652,7 +666,19 @@ back in. Under the previous images:
 - the sign-outs still queue (the database writes them) and wait for a platform task that has the job. With the new
   infrastructure kept, `ProviderSignOutsNotRunning` pages for as long as the previous platform image runs; that is
   the signal, not a fault;
-- key removal and its console screens are not there: a lost or stolen key goes to the founder's break-glass again.
+- key removal and its console screens are not there: a lost or stolen key goes to the founder's break-glass again;
+- **removal requests stop expiring.** Only the new platform image's job marks a request past its 24 hours expired,
+  so a request open at the rollback stays open, and its target's internal memberships stay held (they cannot be
+  ended or changed, and the previous web answers that with a plain error) until the image rolls forward;
+- **hardware-key notices queue and go out late.** The database still writes each notice, and no previous job sends
+  it. On roll-forward the job sends those still inside their 24 hours and reports the rest as
+  `KEY_NOTICE_UNDELIVERED`, which pages: expect that page, and tell each person on it another way
+  (docs/runbooks/incident-response.md, the hardware key section);
+- **the previous web's failed provider call pages nobody by name.** With the new infrastructure kept, its two old
+  alarms are gone and no job delivers the queued row, so a sign-out Cognito refused is heard only as the general
+  `ProviderSignOutsNotRunning`. "Nothing is lost" above holds for the minutes of a rolling deploy, not for a
+  rollback: while rolled back, read the web group for the previous image's sign-out failure lines after every ended
+  membership and reset, and have the founder's break-glass sign that user out at Cognito.
 
 ## A payer's answer and a contract's source, in Postgres (ADR 0085's amendment of 2026-11-11; Schema PR 4)
 

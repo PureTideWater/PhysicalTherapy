@@ -62,8 +62,11 @@ import {
   PASSWORD_RESET_NOT_DELIVERED_MESSAGE,
   PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES,
   PASSWORD_RESET_OUTCOME_UNKNOWN_MESSAGE,
+  PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM,
+  PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM,
   PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM,
   PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM,
+  RELYING_PARTY_MISMATCH_ALARM,
   PASSWORD_RESET_REQUESTED_MESSAGE,
   PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE,
   REMOVED_HARDWARE_KEY_USED_MESSAGE,
@@ -333,7 +336,9 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // job's provider sign-out not delivered (docs/adr/0095), in place of the web's two lines about the provider's sign-out, and the
     // job's own run line, whose absence alarms (docs/adr/0095, D16). The user pool's message trigger (docs/adr/0081, the
     // code-email amendment): a message left to the pool's template, and the web's reset request answered after its floor.
-    expect(filters).toHaveLength(42);
+    // The round-1 review of docs/adr/0095: the platform's failed sign-out tries (B1) and its "no such user" answers (B4),
+    // and the web's relying-party mismatch (A6).
+    expect(filters).toHaveLength(45);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -360,6 +365,9 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       ...Object.values(stack.monitoring.resetAndEnrolmentAlarms),
       stack.monitoring.providerSignOutNotDeliveredAlarm,
       stack.monitoring.providerSignOutsNotRunningAlarm,
+      stack.monitoring.providerSignOutAttemptsFailingAlarm,
+      stack.monitoring.providerSignOutNoSuchUserAlarm,
+      stack.monitoring.relyingPartyMismatchAlarm,
       stack.monitoring.resetRequestsPerUserAlarm,
       stack.mailStreams.accountBounceWarningAlarm,
       stack.mailStreams.accountBounceHighAlarm,
@@ -688,6 +696,113 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       expect(words).toContain('none can become late, so ProviderSignOutNotDelivered stays silent');
       expect(words).toContain('docs/runbooks/incident-response.md, "The provider sign-out job not running"');
       expect(words).toContain('docs/adr/0095, D16');
+      expect(words.length).toBeLessThanOrEqual(1024);
+    });
+
+    // The round-1 review, B1: with the provider slow and rows queued, a row's fourth try (what makes it late) is hours
+    // away, and only the job's warnings say so. Three failed tries in fifteen minutes page.
+    it('counts the job\'s failed sign-out tries on the platform log group, by its words, and alarms at three in fifteen minutes', () => {
+      const platform = stack.monitoring.platformLogGroup;
+      expect(PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM).toEqual({ metricName: 'ProviderSignOutAttemptsFailing', message: 'provider sign-out attempt failed', threshold: 3, periodSeconds: 900 });
+      const { metricName, message } = PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM;
+      expect(propertiesOf(filterFor(metricName, platform))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, platform)),
+        FilterPattern: `{ $.msg = "${message}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Worker', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.providerSignOutAttemptsFailingAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Worker',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 900,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 3,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      expect(alarm.OKActions).toBeUndefined();
+      expect(filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))).toHaveLength(1);
+      // The line is the job's own: the words declared once there and written out at warn, with IDs and the error's name.
+      const job = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/platform/provider-sign-outs.ts'), 'utf8');
+      expect(job).toContain(`export const PROVIDER_SIGN_OUT_ATTEMPT_FAILED = '${message}';`);
+      expect(job).toContain(`logger.warn('${message}', { sign_out_id: claimed.sign_out_id, user_id: claimed.account_id, error_code: failure });`);
+      const words = String(alarm.AlarmDescription);
+      expect(words).toContain(`The ${environment} provider_sign_outs job's tries at Cognito have failed three times in fifteen minutes`);
+      expect(words).toContain('ProviderSignOutNotDelivered');
+      expect(words).toContain('docs/runbooks/incident-response.md, "A provider sign-out not delivered"');
+      expect(words).toContain('docs/adr/0095');
+      expect(words.length).toBeLessThanOrEqual(1024);
+    });
+
+    // The round-1 review, B4: "no such user" counts as done, and a worker given another pool's ID gets it for every row.
+    it('counts the job\'s "no such user" answers on the platform log group, by the done line\'s outcome code, and alarms at three in fifteen minutes', () => {
+      const platform = stack.monitoring.platformLogGroup;
+      expect(PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM).toEqual({ metricName: 'ProviderSignOutNoSuchUser', outcomeCode: 'no_such_user', threshold: 3, periodSeconds: 900 });
+      const { metricName, outcomeCode } = PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM;
+      expect(propertiesOf(filterFor(metricName, platform))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, platform)),
+        FilterPattern: `{ $.outcome_code = "${outcomeCode}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Worker', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.providerSignOutNoSuchUserAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Worker',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 900,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 3,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      expect(filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))).toHaveLength(1);
+      // The field and the value are the ones the job and its adapter write.
+      const job = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/platform/provider-sign-outs.ts'), 'utf8');
+      expect(job).toContain(`export type ProviderSignOutOutcome = 'signed_out' | '${outcomeCode}';`);
+      expect(job).toContain("logger.info('provider sign-out done', { sign_out_id: claimed.sign_out_id, user_id: claimed.account_id, outcome_code: answered });");
+      const adapter = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/platform/cognito-sign-out.ts'), 'utf8');
+      expect(adapter).toContain(`return '${outcomeCode}';`);
+      const words = String(alarm.AlarmDescription);
+      expect(words).toContain(`Cognito has answered three ${environment} provider sign-outs in fifteen minutes with no such user`);
+      expect(words).toContain('a wrong pool ID turns every sign-out into this answer');
+      expect(words).toContain("check the worker's pool ID against the stack's");
+      expect(words).toContain('docs/adr/0095');
+      expect(words.length).toBeLessThanOrEqual(1024);
+    });
+
+    // The round-1 review, A6: the mismatch fails closed, and until now it paged nobody.
+    it('counts the web\'s relying-party mismatch on the web log group, by its code, and alarms on the first', () => {
+      expect(RELYING_PARTY_MISMATCH_ALARM).toEqual({ metricName: 'RelyingPartyMismatch', errorCode: 'RELYING_PARTY_MISMATCH', threshold: 1, periodSeconds: 300 });
+      const { metricName, errorCode } = RELYING_PARTY_MISMATCH_ALARM;
+      expect(propertiesOf(filterFor(metricName, web))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, web)),
+        FilterPattern: `{ $.error_code = "${errorCode}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Web', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.relyingPartyMismatchAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Web',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 300,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 1,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      expect(filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))).toHaveLength(1);
+      const words = String(alarm.AlarmDescription);
+      expect(words).toContain(`Every ${environment} hardware-key step is refused`);
+      expect(words).toContain("until WEBAUTHN_RP_ID, the host of APP_ORIGIN and the pool's relying-party ID agree");
+      expect(words).toContain('mending it is a deploy');
+      expect(words).toContain('docs/adr/0095');
       expect(words.length).toBeLessThanOrEqual(1024);
     });
 

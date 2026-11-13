@@ -330,8 +330,10 @@ export function createPlatformHandlers(dependencies: PlatformDependencies): Plat
         throw new NoProviderSignOutError('the provider sign-outs job needs the identity provider');
       }
       // Each row done, each failed try and each LATE or GAVE_UP line is logged as it happens, by IDs and codes. The run
-      // throws at its end if a step failed, after the other steps ran.
-      await withOperator(dependencies.operator, (client) => runProviderSignOuts({ client, provider, requestId: context.jobId, logger: context.logger.child({ job_id: context.jobId }) }));
+      // throws at its end if a step failed, after the other steps ran. A connection is taken for each step's database
+      // work and given back before the provider is called: the pool is two for every platform job (pools.ts), and the
+      // provider may take 10 seconds to answer.
+      await runProviderSignOuts({ withClient: (use) => withOperator(dependencies.operator, use), provider, requestId: context.jobId, logger: context.logger.child({ job_id: context.jobId }) });
     },
     hardware_key_notices: async (_payload, context) => {
       // A notice not delivered, failed for good, past its 24 hours or whose account's address changed is

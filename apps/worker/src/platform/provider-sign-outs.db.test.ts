@@ -125,24 +125,29 @@ class Crash extends Error {
   override readonly name = 'Crash';
 }
 
-/** One run on an operator connection; `refuse` names a statement the connection refuses once, as a crash there would. */
-async function run(adapter: ProviderSignOutAdapter, logger: Logger, options: { readonly requestId?: string; readonly refuse?: string; readonly now?: () => number } = {}) {
-  const client = await operator.connect();
-  let refused = false;
-  const faulty: NoticeClient = {
-    query: (text, values) => {
-      if (options.refuse !== undefined && !refused && text.includes(options.refuse)) {
-        refused = true;
-        return Promise.reject(new Crash('stopped here'));
-      }
-      return client.query(text, values);
-    },
+/** An operator connection for one step of a run, given back when the step settles, every statement through `query`. */
+function stepClient(query: (client: NoticeClient, text: string, values?: unknown[]) => Promise<{ rows: unknown[] }>) {
+  return async <T>(use: (client: NoticeClient) => Promise<T>): Promise<T> => {
+    const client = await operator.connect();
+    try {
+      return await use({ query: (text, values) => query(client, text, values) });
+    } finally {
+      client.release();
+    }
   };
-  try {
-    return await runProviderSignOuts({ client: faulty, provider: adapter, requestId: options.requestId ?? `job-${randomUUID()}`, logger, ...(options.now === undefined ? {} : { now: options.now }) });
-  } finally {
-    client.release();
-  }
+}
+
+/** One run, a connection a step as the job takes them; `refuse` names a statement refused once, as a crash there would. */
+async function run(adapter: ProviderSignOutAdapter, logger: Logger, options: { readonly requestId?: string; readonly refuse?: string; readonly now?: () => number } = {}) {
+  let refused = false;
+  const withClient = stepClient((client, text, values) => {
+    if (options.refuse !== undefined && !refused && text.includes(options.refuse)) {
+      refused = true;
+      return Promise.reject(new Crash('stopped here'));
+    }
+    return client.query(text, values);
+  });
+  return await runProviderSignOuts({ withClient, provider: adapter, requestId: options.requestId ?? `job-${randomUUID()}`, logger, ...(options.now === undefined ? {} : { now: options.now }) });
 }
 
 /** Every key is allowlisted, and neither a subject nor an address is in any line. */
@@ -354,25 +359,18 @@ describe('the provider_sign_outs job (JOB-08; docs/adr/0095)', () => {
     const one = await queued();
     const twin = provider();
     const { lines, logger } = capture();
-    const client = await operator.connect();
     const texts: string[] = [];
-    try {
-      await expect(
-        runProviderSignOuts({
-          client: {
-            query: (text, values) => {
-              texts.push(text);
-              return text.includes('operator_key_removals_expire') ? Promise.reject(new Crash('stopped')) : client.query(text, values);
-            },
-          },
-          provider: twin.adapter,
-          requestId: `job-${randomUUID()}`,
-          logger,
+    await expect(
+      runProviderSignOuts({
+        withClient: stepClient((client, text, values) => {
+          texts.push(text);
+          return text.includes('operator_key_removals_expire') ? Promise.reject(new Crash('stopped')) : client.query(text, values);
         }),
-      ).rejects.toEqual(new ProviderSignOutRunFailed(['removals_expire']));
-    } finally {
-      client.release();
-    }
+        provider: twin.adapter,
+        requestId: `job-${randomUUID()}`,
+        logger,
+      }),
+    ).rejects.toEqual(new ProviderSignOutRunFailed(['removals_expire']));
     expect(await row(one.id)).toMatchObject({ done: true });
     expect(texts.some((text) => text.includes('operator_provider_sign_outs_expire'))).toBe(true);
     expect(lines.map((line) => line.msg)).toEqual(['provider sign-out done', 'provider sign-out step failed']);
@@ -390,6 +388,91 @@ describe('the provider_sign_outs job (JOB-08; docs/adr/0095)', () => {
     expect(states.filter((state) => state?.done === true)).toHaveLength(1);
     expect(states.filter((state) => state?.attempts === 0)).toHaveLength(2);
     expect(await run(twin.adapter, logger)).toMatchObject({ done: 2 });
+  });
+
+  // The round-1 review, B3: the operator pool is two connections for every platform job, and the provider may take 10
+  // seconds to answer. The run holds none of them while it waits.
+  it('holds no operator connection while the provider is being called, and gives every one back at its end', async () => {
+    const rows = [await queued(), await queued()];
+    let held = 0;
+    const counting = {
+      connect: async () => {
+        const client = await operator.connect();
+        held += 1;
+        return {
+          query: (text: string, values?: unknown[]) => client.query(text, values),
+          release: (destroy?: boolean) => {
+            held -= 1;
+            client.release(destroy);
+          },
+        };
+      },
+    };
+    const heldDuringCall: number[] = [];
+    const twin = provider(() => {
+      heldDuringCall.push(held);
+      return 'signed_out';
+    });
+    const handlers = createPlatformHandlers({
+      operator: counting,
+      store: { putImmutable: () => Promise.reject(new Error('unused')), head: () => Promise.resolve(null) },
+      restorer: { restoreLatest: () => Promise.reject(new Error('unused')) },
+      mail: new MemoryMailSender(),
+      appOrigin: 'http://localhost:3000',
+      supportEmail: 'support@synthetic.test',
+      providerSignOut: twin.adapter,
+    });
+    const { runs, logger } = capture();
+    await handlers.provider_sign_outs({}, { jobId: randomUUID(), logger });
+    expect(heldDuringCall).toEqual([0, 0]);
+    expect(held).toBe(0);
+    expect(await Promise.all(rows.map(async (queuedRow) => (await row(queuedRow.id))?.done))).toEqual([true, true]);
+    expect(runs).toHaveLength(1);
+  });
+
+  it('writes its run line, and fails naming every step, when no operator connection can be had', async () => {
+    class PoolTimeout extends Error {
+      override readonly name = 'PoolTimeout';
+    }
+    const handlers = createPlatformHandlers({
+      operator: { connect: () => Promise.reject(new PoolTimeout('no connection')) },
+      store: { putImmutable: () => Promise.reject(new Error('unused')), head: () => Promise.resolve(null) },
+      restorer: { restoreLatest: () => Promise.reject(new Error('unused')) },
+      mail: new MemoryMailSender(),
+      appOrigin: 'http://localhost:3000',
+      supportEmail: 'support@synthetic.test',
+      providerSignOut: provider().adapter,
+    });
+    const { runs, lines, logger } = capture();
+    await expect(handlers.provider_sign_outs({}, { jobId: randomUUID(), logger })).rejects.toEqual(new ProviderSignOutRunFailed(['sign_outs', 'overdue', 'removals_expire', 'sign_outs_expire']));
+    expect(runs).toHaveLength(1);
+    expect(lines.map((line) => line.error_code)).toEqual(['sign_outs:PoolTimeout', 'overdue:PoolTimeout', 'removals_expire:PoolTimeout', 'sign_outs_expire:PoolTimeout']);
+  });
+
+  // The round-1 review, B1: a provider that hangs costs the run its 10 seconds once, not once a row.
+  it('stops asking after the provider’s first timeout: the try is recorded failed, and the rows it did not reach have no try counted', async () => {
+    const rows = [await queued(), await queued(), await queued()];
+    class Aborted extends Error {
+      override readonly name = 'AbortError';
+    }
+    const twin = provider(() => Promise.reject(new Aborted('the request was aborted')));
+    const { lines, runs, logger } = capture();
+    expect(await run(twin.adapter, logger)).toMatchObject({ done: 0, failed: 1 });
+    expect(twin.asked).toHaveLength(1);
+    const states = await Promise.all(rows.map((queuedRow) => row(queuedRow.id)));
+    expect(states.filter((state) => state?.attempts === 1 && state.last_error_code === 'AbortError')).toHaveLength(1);
+    expect(states.filter((state) => state?.attempts === 0)).toHaveLength(2);
+    expect(lines.map((line) => line.msg)).toEqual(['provider sign-out attempt failed']);
+    expect(runs).toHaveLength(1);
+    // Any other failure is the row's own, and the run goes on to the next row.
+    await owner.query('DELETE FROM provider_sign_out');
+    await queued();
+    await queued();
+    class Refused extends Error {
+      override readonly name = 'TooManyRequestsException';
+    }
+    const other = provider(() => Promise.reject(new Refused('slow down')));
+    expect(await run(other.adapter, capture().logger)).toMatchObject({ failed: 2 });
   });
 
   it('claims each row for one worker when two runs overlap', async () => {

@@ -87,6 +87,46 @@ export const PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM = {
 } as const;
 
 /**
+ * The provider's sign-out failing try after try (docs/adr/0095; the round-1 review, B1). With the provider slow and
+ * rows queued, each run makes about one try a minute and fresh rows are tried first, so a row's fourth try, which is
+ * what makes it late, can be hours away, and the alarm on an undelivered sign-out stays silent all that time. The job
+ * writes this line at warn for every failed try, with the sign-out's ID, the user's ID and the error's name only
+ * (apps/worker/src/platform/provider-sign-outs.ts). Three in fifteen minutes alarm, on the **platform** log group.
+ */
+export const PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM = {
+  metricName: 'ProviderSignOutAttemptsFailing',
+  message: 'provider sign-out attempt failed',
+  threshold: 3,
+  periodSeconds: 900,
+} as const;
+
+/**
+ * The provider answering "no such user" (docs/adr/0095; the round-1 review, B4). That answer counts as done: nothing
+ * is left to sign out. A worker given another pool's ID gets it for every row, so every sign-out is recorded done and
+ * none was made. The job's done line carries the answer in `outcome_code`
+ * (apps/worker/src/platform/provider-sign-outs.ts). Three in fifteen minutes alarm, on the **platform** log group.
+ */
+export const PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM = {
+  metricName: 'ProviderSignOutNoSuchUser',
+  outcomeCode: 'no_such_user',
+  threshold: 3,
+  periodSeconds: 900,
+} as const;
+
+/**
+ * The relying-party ID the web was given is not the provider's (docs/adr/0095; the round-1 review, A6). The web
+ * refuses every hardware-key step and logs a line at error with this code in `error_code` and the request's ID only
+ * (apps/web/src/lib/auth/sign-in.ts). It fails closed, and nobody with a key signs in until a deploy mends it: one
+ * alarms, on the **web** log group.
+ */
+export const RELYING_PARTY_MISMATCH_ALARM = {
+  metricName: 'RelyingPartyMismatch',
+  errorCode: 'RELYING_PARTY_MISMATCH',
+  threshold: 1,
+  periodSeconds: SECURITY_ALARM_PERIOD_SECONDS,
+} as const;
+
+/**
  * A removed hardware key used (docs/adr/0095): a sign-in answered with a key that two platform administrators removed
  * from the account. The web refuses it and logs the line at error with the user's ID and the request's ID only
  * (apps/web/src/lib/auth/sign-in.ts). Someone still holds the removed key: one alarms.

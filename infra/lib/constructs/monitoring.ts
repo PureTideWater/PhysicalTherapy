@@ -73,8 +73,11 @@ import {
 } from '../screening';
 import {
   PASSWORD_RESET_REQUESTED_MESSAGE,
+  PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM,
+  PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM,
   PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM,
   PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM,
+  RELYING_PARTY_MISMATCH_ALARM,
   RESET_AND_ENROLMENT_COUNTS,
   RESET_REQUESTS_PER_USER,
   type ResetAndEnrolmentMetricName,
@@ -217,6 +220,12 @@ export class Monitoring extends Construct {
   readonly providerSignOutNotDeliveredAlarm: cloudwatch.Alarm;
   /** The provider_sign_outs job silent for ten minutes (PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM; docs/adr/0095, D16). */
   readonly providerSignOutsNotRunningAlarm: cloudwatch.Alarm;
+  /** The job's tries at the provider failing, three in fifteen minutes (PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM; docs/adr/0095). */
+  readonly providerSignOutAttemptsFailingAlarm: cloudwatch.Alarm;
+  /** The provider answering "no such user", three in fifteen minutes (PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM; docs/adr/0095). */
+  readonly providerSignOutNoSuchUserAlarm: cloudwatch.Alarm;
+  /** The web's relying-party ID not the provider's: every hardware-key step refused (RELYING_PARTY_MISMATCH_ALARM; docs/adr/0095). */
+  readonly relyingPartyMismatchAlarm: cloudwatch.Alarm;
   /** One alarm per reset or enrolment line counted (RESET_AND_ENROLMENT_COUNTS). */
   readonly resetAndEnrolmentAlarms: Readonly<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>>;
   /** Counts each account's reset requests by its user ID (PASSWORD_RESET_REQUESTED_MESSAGE). */
@@ -662,6 +671,60 @@ export class Monitoring extends Construct {
     });
     this.providerSignOutsNotRunningAlarm.addAlarmAction(notify);
     this.providerSignOutsNotRunningAlarm.addOkAction(notify);
+
+    // A row is late only at its fourth try, and with the provider slow and rows queued that is hours away: the job's
+    // failed tries are counted themselves, so the operator hears in fifteen minutes (the round-1 review, B1).
+    const signOutAttemptsFailed = counted(
+      this.platformLogGroup,
+      PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM.metricName,
+      { namespace: JOB_FAILED_METRIC.namespace, metricName: PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM.metricName },
+      logs.FilterPattern.stringValue('$.msg', '=', PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM.message),
+    );
+    this.providerSignOutAttemptsFailingAlarm = new cloudwatch.Alarm(this, PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM.metricName, {
+      alarmDescription: `The ${props.environmentName} provider_sign_outs job's tries at Cognito have failed three times in fifteen minutes, so sign-outs for ended memberships, password resets and key removals are queuing; with many queued, ProviderSignOutNotDelivered can stay silent for hours, since a row is late only at its fourth try. Nothing is undone: the app's own sessions ended and its sign-in mark moved when each cause committed, so only Cognito's own tokens are still good. Read the warnings (provider sign-out attempt failed) for the error's name: AbortError is Cognito not answering in 10 seconds, AccessDeniedException the task role, ResourceNotFoundException the pool ID or region. Mend that and watch the job's done lines return (docs/runbooks/incident-response.md, "A provider sign-out not delivered"; docs/adr/0095).`,
+      metric: signOutAttemptsFailed.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM.periodSeconds) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM.threshold,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.providerSignOutAttemptsFailingAlarm.addAlarmAction(notify);
+
+    // "No such user" counts as done, and the audit row does not say which answer it was: the done line's outcome code
+    // is counted, so a worker asking the wrong pool is heard (the round-1 review, B4).
+    const signOutNoSuchUser = counted(
+      this.platformLogGroup,
+      PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM.metricName,
+      { namespace: JOB_FAILED_METRIC.namespace, metricName: PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM.metricName },
+      logs.FilterPattern.stringValue('$.outcome_code', '=', PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM.outcomeCode),
+    );
+    this.providerSignOutNoSuchUserAlarm = new cloudwatch.Alarm(this, PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM.metricName, {
+      alarmDescription: `Cognito has answered three ${props.environmentName} provider sign-outs in fifteen minutes with no such user, and the provider_sign_outs job records each as done. One is ordinary (the user was deleted at Cognito); three together are not: a wrong pool ID turns every sign-out into this answer, so every row is marked done and no one is signed out. Read the task definition's COGNITO_USER_POOL_ID and check the worker's pool ID against the stack's. If it is wrong, mend it with a deploy, then have each account on the done lines with outcome_code no_such_user since the change signed out at Cognito through the founder's break-glass (docs/runbooks/incident-response.md, "A provider sign-out not delivered"; docs/adr/0095).`,
+      metric: signOutNoSuchUser.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM.periodSeconds) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM.threshold,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.providerSignOutNoSuchUserAlarm.addAlarmAction(notify);
+
+    // The web's line when its relying-party ID is not the provider's, by its code, beside RemovedHardwareKeyUsed: it
+    // fails closed, and until it is mended nobody with a hardware key signs in (the round-1 review, A6).
+    const relyingPartyMismatch = counted(
+      this.webLogGroup,
+      RELYING_PARTY_MISMATCH_ALARM.metricName,
+      { namespace: SIGN_IN_BURST_METRIC.namespace, metricName: RELYING_PARTY_MISMATCH_ALARM.metricName },
+      logs.FilterPattern.stringValue('$.error_code', '=', RELYING_PARTY_MISMATCH_ALARM.errorCode),
+    );
+    this.relyingPartyMismatchAlarm = new cloudwatch.Alarm(this, RELYING_PARTY_MISMATCH_ALARM.metricName, {
+      alarmDescription: `Every ${props.environmentName} hardware-key step is refused until WEBAUTHN_RP_ID, the host of APP_ORIGIN and the pool's relying-party ID agree: the web found the relying-party ID it was given is not Cognito's, so no one with a hardware key can sign in or register one, and each sees a plain refusal. Nothing is exposed: it fails closed. Compare the three values (the web task definition's two and the user pool's), correct the one that is wrong in the stack's configuration; mending it is a deploy (docs/runbooks/incident-response.md, the hardware key section; docs/adr/0095).`,
+      metric: relyingPartyMismatch.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(RELYING_PARTY_MISMATCH_ALARM.periodSeconds) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: RELYING_PARTY_MISMATCH_ALARM.threshold,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.relyingPartyMismatchAlarm.addAlarmAction(notify);
 
     const resetAndEnrolmentAlarms: Partial<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>> = {};
     for (const count of RESET_AND_ENROLMENT_COUNTS) {

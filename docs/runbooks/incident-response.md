@@ -274,6 +274,31 @@ provider anything, and their two alarms are gone.
    Where the cause was an account thought to be in another's hands, do this at `LATE`, without waiting for `GAVE_UP`.
 7. **Record it** in a ticket by user ID, sign-out ID and request ID, never an address or a name.
 
+**The job's tries failing (`ProviderSignOutAttemptsFailing`).** An operational alarm, on the operator topic, at three
+`provider sign-out attempt failed` lines in fifteen minutes on `/tp/<env>/platform`. It is the early word of the
+alarm above. "About 21 minutes" in step 1 is a sign-out alone in the queue: when Cognito is slow each run makes
+about one try a minute and stops at its first timeout, rows never tried go first, and with many queued a row's
+fourth try, so its `LATE` line, can be hours away. What holds meanwhile is step 2. Read the lines' `error_code`
+(the second query of step 3, without the `sign_out_id`) and find the cause as in step 4: `AbortError` is Cognito not
+answering in 10 seconds, `AccessDeniedException` the task role, `ResourceNotFoundException` the pool ID or the
+region. Mend it and watch the `provider sign-out done` lines return; the queue drains by itself. Where a queued
+sign-out is for an account thought to be in another's hands, do not wait: step 6's founder's resend.
+
+**The provider answering "no such user" (`ProviderSignOutNoSuchUser`).** An operational alarm with a security
+consequence, on the operator topic, at three `provider sign-out done` lines with `outcome_code` `no_such_user` in
+fifteen minutes. The job counts that answer as done, and one is ordinary (the user was deleted at Cognito). Three
+together are not: a wrong pool ID turns every sign-out into this answer, so every row is marked done, the audit log
+says `provider_signed_out`, and nobody was signed out. Check the worker's pool ID against the stack's: the platform
+task definition's `COGNITO_USER_POOL_ID` beside the web's and the user pool's own ID. If they agree, confirm each
+user on the lines is gone at Cognito and close it. If they do not, mend it with a deploy, then list the accounts
+answered that way since the wrong ID went in and give each to the founder, whose break-glass session sends the
+sign-out (step 6); the job does not send a done row again.
+
+```
+fields @timestamp, sign_out_id, user_id
+| filter msg = "provider sign-out done" and outcome_code = "no_such_user"
+```
+
 ## The provider sign-out job not running (`ProviderSignOutsNotRunning`; docs/adr/0095, D16)
 
 An operational alarm with a security consequence. The job `provider_sign_outs` writes `provider sign-outs run` to
@@ -338,6 +363,14 @@ the console. Then the removal.
 - a **`key_registered_after_removal`** event, or its email, that the member does not recognise: someone holding the
   password, the authenticator code and the one-time code registered a key. Contain at once (End membership), then
   remove the keys again.
+
+**The relying-party ID not the provider's** (`RelyingPartyMismatch`: the web's line with `error_code`
+`RELYING_PARTY_MISMATCH` and the request ID, in `/tp/<env>/web`; one pages). It is a configuration fault, not an
+attack, and it fails closed: every hardware-key step is refused, sign-in and registration alike, so no member with a
+key signs in, the console included, and each sees a plain refusal. It stays so until `WEBAUTHN_RP_ID`, the host of
+`APP_ORIGIN` and the pool's relying-party ID agree. Compare the three (the web task definition's two, and the user
+pool's), correct the wrong one in the stack's configuration, and deploy: mending it is a deploy
+(docs/runbooks/deploy-and-rollback.md). Nothing at the database or at Cognito is edited by hand to let anyone in.
 
 **A key notice not delivered** (`KEY_NOTICE_UNDELIVERED`, on the platform group): the member was not told of a
 removal, an opening or a registration within 24 hours, or their address changed after the request. Tell them another
@@ -541,6 +574,7 @@ accounts, in a session as the operator role (`tp_operator`), which reads `audit_
    `PasswordResetNotDeliveredThrottled`, `PasswordResetRequestFailed`, `SecondFactorEnrolmentRefused`,
    `ClientCredentialRefused`, `ClientCredentialProbeRefused`, `PasswordResetRequestOverFloor`,
    `PasswordResetSessionsNotEnded`, `ProviderSignOutNotDelivered`, `ProviderSignOutsNotRunning`,
+   `ProviderSignOutAttemptsFailing`, `ProviderSignOutNoSuchUser`, `RelyingPartyMismatch`,
    `RemovedHardwareKeyUsed`, `SignInStepRefusedAfterReset`,
    `HardwareKeyRegisteredAcrossReset`, `PasswordResetOutcomeUnknown`, `SignInRefusedCrossedAccount`): each one raised
    that no ticket or incident record already explains gets one. For each `ProviderSignOutNotDelivered` of the week, confirm its sign-out
