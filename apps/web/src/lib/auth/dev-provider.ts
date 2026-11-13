@@ -13,7 +13,8 @@ import {
 
 import type { DevCredentialStore, DevUserRecord } from './dev-store';
 import { DEFAULT_SCRYPT_COST, type ScryptCost, hashPassword, passwordProblems, verifyPassword } from './password';
-import type { AuthProvider, AuthStep, EnsuredUser, KeyChallenge, NewPasswordStep, PasswordResetResult, TotpSetup } from './provider';
+import { KEY_REGISTRATION_ALGORITHMS } from './provider';
+import type { AuthProvider, AuthStep, EnsuredUser, KeyChallenge, NewPasswordStep, PasswordResetResult, ProviderHardwareKey, TotpSetup } from './provider';
 import type { Sealer } from './seal';
 import { PASSWORD_RESET_CODE_SECONDS, PROVIDER_CHALLENGE_SECONDS, PROVIDER_GRANT_SECONDS } from './step-limits';
 import { newTotpSecret, totpUri, verifyTotp } from './totp';
@@ -261,8 +262,9 @@ export class DevAuthProvider implements AuthProvider {
     return updated === undefined ? { kind: 'expired' } : this.authenticated(updated, 'webauthn');
   }
 
-  async hasHardwareKey(grant: string): Promise<boolean> {
-    return ((await this.granted(grant))?.credentials.length ?? 0) > 0;
+  async listHardwareKeys(grant: string): Promise<readonly ProviderHardwareKey[]> {
+    // A credential stored before the time was kept reads as old: it has had its fifteen minutes.
+    return ((await this.granted(grant))?.credentials ?? []).map((credential) => ({ credentialId: credential.id, createdAt: new Date(credential.createdAt ?? 0) }));
   }
 
   async beginKeyRegistration(grant: string): Promise<KeyChallenge<PublicKeyCredentialCreationOptionsJSON>> {
@@ -278,6 +280,10 @@ export class DevAuthProvider implements AuthProvider {
       attestationType: 'none',
       excludeCredentials: record.credentials.map((credential) => ({ id: credential.id })),
       authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' },
+      // ES256 and RS256, the two the provider offers. The library's own list starts with ML-DSA-44, whose public key
+      // (1,312 bytes before its COSE wrapping) is longer than the registry's hardware_key_public_key allows, so a
+      // browser that holds it would register a key the registry then refuses (docs/adr/0095).
+      supportedAlgorithmIDs: [...KEY_REGISTRATION_ALGORITHMS],
     });
     return { options, challenge: this.challenge({ sub: record.sub, step: 'register', webauthn: options.challenge }) };
   }
@@ -308,7 +314,7 @@ export class DevAuthProvider implements AuthProvider {
       ...current,
       credentials: [
         ...current.credentials,
-        { id: credential.id, publicKey: Buffer.from(credential.publicKey).toString('base64url'), counter: credential.counter, transports: credential.transports },
+        { id: credential.id, publicKey: Buffer.from(credential.publicKey).toString('base64url'), counter: credential.counter, transports: credential.transports, createdAt: this.now().toISOString() },
       ],
     }));
     return true;
@@ -426,9 +432,5 @@ export class DevAuthProvider implements AuthProvider {
       current.reset?.codeHash === kept.codeHash && live(current.reset) ? { ...withoutReset(current), passwordHash } : current,
     );
     return updated?.passwordHash === passwordHash ? { kind: 'reset' } : REJECTED;
-  }
-
-  globalSignOut(): Promise<void> {
-    return Promise.resolve();
   }
 }

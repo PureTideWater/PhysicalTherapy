@@ -3,7 +3,7 @@
 import { redirect } from 'next/navigation';
 
 import { type ActionState, runSignInStep } from '../../lib/http/next';
-import { RESTARTED, answerMfa, chooseNewPassword, enrollTotp, resetConfirm, resetRequest, restartSignIn, signInWithPassword } from '../../lib/routes/sign-in';
+import { RESTARTED, answerMfa, answerRegistrationCode, chooseNewPassword, enrollTotp, resetConfirm, resetRequest, restartSignIn, signInWithPassword } from '../../lib/routes/sign-in';
 
 /** Server actions for the sign-in steps; each runs its registered route (src/lib/routes/sign-in.ts). */
 
@@ -21,6 +21,11 @@ export async function enrollStep(_state: ActionState, form: FormData): Promise<A
 
 export async function mfaStep(_state: ActionState, form: FormData): Promise<ActionState> {
   return runSignInStep(answerMfa, form);
+}
+
+/** The one-time code that opens key registration after a removal (docs/adr/0095). */
+export async function registrationCodeStep(_state: ActionState, form: FormData): Promise<ActionState> {
+  return runSignInStep(answerRegistrationCode, form);
 }
 
 /**

@@ -54,28 +54,97 @@ export const CREDENTIAL_PROBE_REFUSED_MESSAGE = 'cognito probe refused';
  */
 export const PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE = 'security event: password reset sessions not ended';
 /**
- * A completed reset whose sign-out at the provider failed (docs/adr/0091, D10; review SEC-01 of 2026-11-11): the web
- * calls the provider's global sign-out after every completed reset of an account, whether or not the app's sessions
- * ended, and logs its failure at error with the user's ID, the request's ID and the error's name only
- * (apps/web/src/lib/auth/sign-in.ts, confirmPasswordReset); the reset still lands. The provider's grant of a
- * key-registration step begun before the reset then still works for the step's 15 minutes, so a hardware key can be
- * registered after the reset. Only an account that must sign in with a hardware key and has none is ever in that step:
- * one of PaidWhole's own, never a customer's. One alarms: the operator reads the audit log for a key registered by that
- * user since the reset, the one row the failed sign-out makes possible; a sign-in by authenticator code after it is the
- * person's own (docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed").
+ * A provider sign-out that was not delivered (docs/adr/0095; test matrix SGN-19). The web asks the provider for no
+ * sign-out: an ended membership, a completed reset (or one whose outcome is unknown) and a hardware key removal each
+ * write their audit event, the database queues one `provider_sign_out` row in that transaction, and the platform job
+ * `provider_sign_outs` sends it and retries (apps/worker/src/platform/provider-sign-outs.ts). The app's own sessions
+ * end and the account's sign-in mark moves at the commit, so what a late sign-out leaves open is only what the
+ * provider's own tokens can do. The job writes this line at error for a row that is late (`error_code` LATE) and for
+ * one it has given up (GAVE_UP), with the sign-out's ID, the user's ID and the cause's request ID only, at least once
+ * each. One alarms, on the **platform** log group: it replaces the web's two alarms for the lines the web no longer
+ * writes (a reset's failed sign-out, docs/adr/0091, D10; an ended membership's, docs/adr/0094).
  */
-export const PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE = 'security event: password reset provider sign-out failed';
+export const PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM = {
+  metricName: 'ProviderSignOutNotDelivered',
+  message: 'security event: provider sign-out not delivered',
+  threshold: 1,
+  periodSeconds: SECURITY_ALARM_PERIOD_SECONDS,
+} as const;
 
 /**
- * An ended membership whose sign-out at the provider did not happen (docs/adr/0094; test matrix SGN-19). End membership
- * ends the membership and the app's sessions in one transaction and asks the provider only once it has committed
- * (apps/web/src/lib/auth/provider-sign-out.ts); a failure undoes nothing and is logged at error with the user's ID, the
- * request's ID and the error's name only (`NO_PROVIDER_SUBJECT` when the subject could not be read and the provider was
- * not asked). The provider's grant of a key-registration step begun before it then still works for the step's 15
- * minutes, and nothing retries the sign-out. One alarms (docs/runbooks/incident-response.md, "An ended membership whose
- * provider sign-out failed").
+ * The provider_sign_outs job not running (docs/adr/0095, D16). The platform heartbeat says the process is alive and
+ * the final-failure filter says a run failed; neither hears a schedule that stops firing this one job, and then no
+ * sign-out is sent and none becomes late, so the alarm above stays silent. The job writes this line once a run, every
+ * minute, with a count only (apps/worker/src/platform/provider-sign-outs.ts). The alarm is on the line's absence:
+ * `missedPeriods` consecutive periods with none, a period with no data counting as missed.
  */
-export const MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE = 'security event: membership end provider sign-out failed';
+export const PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM = {
+  alarmName: 'ProviderSignOutsNotRunning',
+  metricName: 'ProviderSignOutsRun',
+  message: 'provider sign-outs run',
+  periodSeconds: 300,
+  missedPeriods: 2,
+} as const;
+
+/**
+ * The provider's sign-out failing try after try (docs/adr/0095; the round-1 review, B1). With the provider slow and
+ * rows queued, each run makes about one try a minute and fresh rows are tried first, so a row's fourth try, which is
+ * what makes it late, can be hours away, and the alarm on an undelivered sign-out stays silent all that time. The job
+ * writes this line at warn for every failed try, with the sign-out's ID, the user's ID and the error's name only
+ * (apps/worker/src/platform/provider-sign-outs.ts). Three in fifteen minutes alarm, on the **platform** log group.
+ */
+export const PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM = {
+  metricName: 'ProviderSignOutAttemptsFailing',
+  message: 'provider sign-out attempt failed',
+  threshold: 3,
+  periodSeconds: 900,
+} as const;
+
+/**
+ * The provider answering "no such user" (docs/adr/0095; the round-1 review, B4). That answer counts as done: nothing
+ * is left to sign out. A worker given another pool's ID gets it for every row, so every sign-out is recorded done and
+ * none was made. The job's done line carries the answer in `outcome_code`
+ * (apps/worker/src/platform/provider-sign-outs.ts). Three in fifteen minutes alarm, on the **platform** log group.
+ */
+export const PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM = {
+  metricName: 'ProviderSignOutNoSuchUser',
+  outcomeCode: 'no_such_user',
+  threshold: 3,
+  periodSeconds: 900,
+} as const;
+
+/**
+ * The relying-party ID the web was given is not the provider's (docs/adr/0095; the round-1 review, A6). The web
+ * refuses every hardware-key step and logs a line at error with this code in `error_code` and the request's ID only
+ * (apps/web/src/lib/auth/sign-in.ts). It fails closed, and nobody with a key signs in until a deploy mends it: one
+ * alarms, on the **web** log group.
+ */
+export const RELYING_PARTY_MISMATCH_ALARM = {
+  metricName: 'RelyingPartyMismatch',
+  errorCode: 'RELYING_PARTY_MISMATCH',
+  threshold: 1,
+  periodSeconds: SECURITY_ALARM_PERIOD_SECONDS,
+} as const;
+
+/**
+ * The provider offers neither algorithm the product registers a hardware key under, ES256 or RS256 (ruling R2;
+ * docs/adr/0095; the delta review, D2). The web refuses the registration step and logs a line at error with this code
+ * in `error_code` and the user's and the request's IDs only (apps/web/src/lib/auth/sign-in.ts). It fails closed, and
+ * no hardware key is registered until the pool's settings are mended: one alarms, on the **web** log group.
+ */
+export const KEY_ALGORITHMS_NOT_OFFERED_ALARM = {
+  metricName: 'KeyAlgorithmsNotOffered',
+  errorCode: 'KEY_ALGORITHMS_NOT_OFFERED',
+  threshold: 1,
+  periodSeconds: SECURITY_ALARM_PERIOD_SECONDS,
+} as const;
+
+/**
+ * A removed hardware key used (docs/adr/0095): a sign-in answered with a key that two platform administrators removed
+ * from the account. The web refuses it and logs the line at error with the user's ID and the request's ID only
+ * (apps/web/src/lib/auth/sign-in.ts). Someone still holds the removed key: one alarms.
+ */
+export const REMOVED_HARDWARE_KEY_USED_MESSAGE = 'security event: removed hardware key used';
 
 /**
  * The four lines of a sign-in around a password reset (docs/adr/0093; test matrix SGN-17 and SGN-18). The web logs each
@@ -132,12 +201,11 @@ export const RESET_AND_ENROLMENT_COUNTS = [
   { metricName: 'ClientCredentialProbeRefused', message: CREDENTIAL_PROBE_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'PasswordResetRequestOverFloor', message: PASSWORD_RESET_OVER_FLOOR_MESSAGE, errorCodes: [], threshold: 3, periodSeconds: 3600 },
   { metricName: 'PasswordResetSessionsNotEnded', message: PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
-  { metricName: 'PasswordResetProviderSignOutFailed', message: PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
-  { metricName: 'MembershipEndProviderSignOutFailed', message: MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'SignInStepRefusedAfterReset', message: STEP_REFUSED_AFTER_RESET_MESSAGE, errorCodes: STEP_REFUSED_AFTER_RESET_COUNTED_STEPS, threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'HardwareKeyRegisteredAcrossReset', message: KEY_REGISTERED_ACROSS_RESET_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'PasswordResetOutcomeUnknown', message: PASSWORD_RESET_OUTCOME_UNKNOWN_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
   { metricName: 'SignInRefusedCrossedAccount', message: CROSSED_ACCOUNT_REFUSED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
+  { metricName: 'RemovedHardwareKeyUsed', message: REMOVED_HARDWARE_KEY_USED_MESSAGE, errorCodes: [], threshold: 1, periodSeconds: SECURITY_ALARM_PERIOD_SECONDS },
 ] as const satisfies readonly SecurityEventCount[];
 
 export type ResetAndEnrolmentMetricName = (typeof RESET_AND_ENROLMENT_COUNTS)[number]['metricName'];

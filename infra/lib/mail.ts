@@ -95,7 +95,7 @@ export const MAIL_EVENTS_QUEUE_PERIOD_SECONDS = 300;
  * a password-changed email not delivered, not sent within 24 hours, or sent with its record still failing at its fifth
  * try (docs/adr/0091, D9).
  */
-export const MAIL_PLATFORM_ALARM_CODES = ['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVERED', 'NOTICE_UNDELIVERABLE', 'INVITATION_UNDELIVERED', 'MAIL_PROBE_MISSED', 'PASSWORD_NOTICE_UNDELIVERED'] as const;
+export const MAIL_PLATFORM_ALARM_CODES = ['MAIL_STREAM_PAUSED', 'NOTICE_UNDELIVERED', 'NOTICE_UNDELIVERABLE', 'INVITATION_UNDELIVERED', 'MAIL_PROBE_MISSED', 'PASSWORD_NOTICE_UNDELIVERED', 'KEY_NOTICE_UNDELIVERED'] as const;
 export type MailPlatformAlarmCode = (typeof MAIL_PLATFORM_ALARM_CODES)[number];
 export const MAIL_PLATFORM_ALARM_PERIOD_SECONDS = 300;
 

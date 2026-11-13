@@ -1,0 +1,21 @@
+{
+  "case": "SGN-31",
+  "module": "SGN",
+  "title": "A requested key removal binds its target only while it can still be confirmed",
+  "assertion": "The target of a request changes no other account's status or hardware-key rule and no internal membership only while the request is not decided, is not past its 24 hours by the clock whatever the expiry job has marked, its requester still passes `account_removes_keys`, it is that requester's earliest such request against a platform administrator, and a third administrator could still confirm it; one requester holds one open request against a platform administrator and asks again against the same one only after seven days; the target of such a request requests no removal; a request against a platform administrator that no third could confirm is refused; two accounts asking against each other at once are taken one after the other and the second is refused; the owner, acting as no account, is not bound",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "packages/db/src/key-registry.db.test.ts",
+    "apps/web/src/lib/routes/console-routes.db.test.ts",
+    "apps/web/src/lib/routes/console-keys.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic accounts the tests insert; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

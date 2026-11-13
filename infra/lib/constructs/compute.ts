@@ -346,6 +346,8 @@ export class Compute extends Construct {
         STATIC_ASSET_ORIGIN: staticAssetOrigin,
         // The support address the password-changed email names (docs/adr/0091), the web's own.
         SUPPORT_EMAIL: parameters.supportEmail,
+        // The provider_sign_outs job asks this pool for each queued global sign-out (docs/adr/0095), the web's own.
+        COGNITO_USER_POOL_ID: props.identity.userPool.userPoolId,
       },
       stopTimeout: WORKER_STOP_TIMEOUT,
     });

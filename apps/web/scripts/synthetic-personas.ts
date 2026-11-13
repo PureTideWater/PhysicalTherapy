@@ -195,6 +195,12 @@ export const SYNTHETIC_PERSONAS: readonly SyntheticPersona[] = [
   // page, and a platform administrator on the console.
   { key: 'skip-practice-admin', organization: 'group', role: 'practice_admin' },
   { key: 'skip-admin', organization: 'internal', role: 'platform_admin' },
+  // The key registry's journey (docs/adr/0095; Queues item 37), each persona in that one spec only, since a removal
+  // ends the member's sessions and closes the account while the specs run in parallel: two platform administrators
+  // (one requests, the other confirms and opens registration) and the support engineer whose keys they remove.
+  { key: 'key-removal-requester', organization: 'internal', role: 'platform_admin' },
+  { key: 'key-removal-confirmer', organization: 'internal', role: 'platform_admin' },
+  { key: 'key-removal-member', organization: 'internal', role: 'support' },
 ];
 
 /** The group the seed holds suspended by PaidWhole (BIL-06): no practice, one administrator, never reinstated. */

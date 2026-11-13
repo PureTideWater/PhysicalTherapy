@@ -18,6 +18,7 @@
 -- Trigger function of: dunning_notice_recipient.dunning_notice_recipient_updated_at
 -- Trigger function of: feature_flag.feature_flag_updated_at
 -- Trigger function of: grant.grant_updated_at
+-- Trigger function of: hardware_key_notice.hardware_key_notice_updated_at
 -- Trigger function of: invitation.invitation_updated_at
 -- Trigger function of: invoice.invoice_updated_at
 -- Trigger function of: job_run.job_run_updated_at

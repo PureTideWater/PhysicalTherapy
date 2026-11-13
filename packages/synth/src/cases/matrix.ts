@@ -433,6 +433,30 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
       "Each contract, exhibit or payer letter is read in a child process of its own, one at a time in a worker process, with an empty environment, an argv of its flags and entry only, Node's permission model reading only its own code (no file written, no process, thread or addon), no core file written (a core limit of 0, soft and hard, it cannot raise, its working directory `/`, every container's core ulimit 0; a host core_pattern that pipes to a program is the host's) and a heap of its own, 240 MiB under any parent's heap flag (measured under the worker command with `heapFlag('worker')`); past its memory cap over its ready baseline, its deadline, its page or character caps or the reply's total byte bound, or on a V8 heap out of memory it is killed and the document is unsupported_document, never read in part; a reply frame whose header claims more than the bound leaves is refused before its body is read as the reader's own failure (PageReadError); the bounds hold until it closes, and one that does not exit within 1 s of its last frame is killed; any other failure is PageReadError, naming only an exit code or signal; a container of the worker image carries a V8 heap flag only while `PAGE_READER_ISOLATION` is `'process'`; the bundled reader reads SYNTHETIC documents under the image's argv",
   },
   {
+    id: 'SEC-25',
+    title: "The key registry's catalog",
+    assertion:
+      "`hardware_key`, `hardware_key_removal`, `hardware_key_notice` and `provider_sign_out` have row-level security enabled and forced, exactly one policy each, for the owner, and no privilege for the application role or the operator role; every function of the registry is SECURITY DEFINER, owned by the owner, with search_path pg_catalog, public, pg_temp, revoked from PUBLIC and granted only to the role its list names; the helpers granted to no role are granted to none",
+  },
+  {
+    id: 'SEC-26',
+    title: "No tenant, no administrator and no job reads or writes the key registry's tables",
+    assertion:
+      "With rows for accounts of two practices: an actor of either practice, a platform administrator and the operator role read no row of the four tables and write none; each reaches them only through its granted functions, which answer for the caller's own account or by the removal rule",
+  },
+  {
+    id: 'SEC-27',
+    title: "The key registry's reserved audit actions",
+    assertion:
+      "The application role cannot insert any reserved action of the registry (the removal's request, confirmation, cancellation and expiry, the opening, the notices' two, the provider sign-out's two); `membership_ended` is recorded only for a membership the same transaction ended and did not create; `hardware_key_registered` is not yet reserved, for the previous image",
+  },
+  {
+    id: 'SEC-28',
+    title: "A refused act on a key removal leaves a security event",
+    assertion:
+      "Each refusal of the closed list of eight reasons (`not_permitted`, `two_people`, `not_own_account`, `requester_left`, `one_administrator_request`, `asked_again_too_soon`, `target_asks`, `no_third_administrator`) writes one security event for the acting account in a transaction of its own, by IDs only, once an hour for an account and a reason; any other reason is refused; the web writes its line for every refused act, and the person reads the same words whether or not the event could be recorded",
+  },
+  {
     id: 'SCR-01',
     title: 'Screening upload with a date-of-service or member-ID column',
     assertion: 'Rejected with the column named by position and kind; only the row count and reasons stored, no hash',
@@ -561,6 +585,30 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     title: 'A mail event delivered twice, late or out of order (audit #76)',
     assertion:
       "The platform's mail_events job records each SES event once per message and event, in any order (a bounce before its send makes the message's row with SES's own send time; a delay after a delivery and a delivery after a complaint change nothing), and deletes it from the queue only after its record commits; an unreadable event is left on the queue and reaches the dead-letter queue, which alarms, as does a queue whose oldest event is 15 minutes old; the queue admits only the stack's two rules and is encrypted with the environment's key; each stream is probed at SES's simulator alone, at once after a resume, daily, and hourly while missed, never while paused, unconfirmed or before the identities are verified; a stream whose probes are not back logs MAIL_PROBE_MISSED on every run until both are, 26 hours after the older of its proofs since the last resume or an hour after the first probe sent since then, however often it goes again; and each probe event recorded is logged by its message ID and codes, no address",
+  },
+  {
+    id: 'JOB-06',
+    title: "What queues a provider sign-out",
+    assertion:
+      "The database writes one `provider_sign_out` row for each ended membership, recorded reset (completed, or of unknown outcome) and confirmed key removal, in the cause's own transaction, once an event, and none for a rolled-back cause or any other action; the row carries the account, the reason, the event and the request ID, never an address or a provider subject",
+  },
+  {
+    id: 'JOB-07',
+    title: "The provider sign-out's answers and its sweep",
+    assertion:
+      "A claim counts the try and leases the row; done records `provider_signed_out`; a failed try waits 1, 5, 15, then 60 minutes; a row is late once at five tries, or four with no running lease, and given up at 30 tries or at 24 hours with four tries, never while a lease runs and never untried; `provider_sign_out_undelivered` is written once under overlapping runs; a late or given-up row is returned on every run until its line is acknowledged; rows done 90 days ago and given-up rows 90 days after their line are deleted, never an undone row",
+  },
+  {
+    id: 'JOB-08',
+    title: "The provider_sign_outs job",
+    assertion:
+      "Every minute the platform job claims each due row, asks the provider for one global sign-out by the account's subject, and marks it done (`signed_out`, or `no_such_user`) or failed with the error's name; stopped between its transactions at each point it sends at most one more sign-out and loses none; its lines carry IDs and codes only, `security event: provider sign-out not delivered` at error for LATE and GAVE_UP with the cause's request ID, on which `ProviderSignOutNotDelivered` alarms, and `provider sign-outs run` once a run, whose absence for ten minutes alarms (`ProviderSignOutsNotRunning`); a step that fails does not stop the others; no account, subject, address or code rides in the job's payload",
+  },
+  {
+    id: 'JOB-09',
+    title: "The provider sign-out sweep judges late and given up by age",
+    assertion:
+      "The sweep marks a row late by its age since it was queued whatever its tries, and gives up by age only a row whose try was answered; it records each once, and a late success is still recorded; the claim names the request ID of the row's cause",
   },
   { id: 'MOD-01', title: 'Contract proposal quotes verify', assertion: 'All quotes are substrings of the page' },
   { id: 'MOD-02', title: 'Proposal with a date not in its quote', assertion: 'Field rejected' },
@@ -938,7 +986,7 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SGN-16',
     title: "A password change is told to the account's address",
     assertion:
-      "A completed reset writes one pending notice in its own transaction, by the database, only for the account's own `password_reset_completed` (the actor a person and the object that person), and a refused, invalid or rolled-back reset, the invitation's first password or any other action none; a confirmation made while the database cannot be reached fails at the account's lookup, before the provider is asked, so the password is unchanged; a completed reset whose sessions could not be ended queues none and its line pages the operator (`PasswordResetSessionsNotEnded`); the platform job sends one message on the transactional stream (kind `password_changed`, subject the notice, recipient the user) to the account's address, once however many runs race, read only by the claim of a pending, due notice under 24 hours old, with the change's time in UTC, the four lines, the second naming the second factor only to an account the claim returns as enrolled and ending at the sessions for one that is not, the support route, Reply-To the support address, the account footer in both alternatives and no link, from MailFromAddress through the operator role's transactional statement alone, and records `password_notice_sent`; it retries after 1, 5, 15 and 60 minutes, counts a record that fails after SES accepted the message as a try (`RecordFailed`), fails at the fifth try or at once on a permanent error, stops claiming once a run has spent 8 seconds sending, and fails a notice not sent within 24 hours as `NoticeStale`; a bounce, suppression or rejection of its own `password_changed` message, recorded before or after the send, makes it undelivered, reported once (`password_notice_undelivered`, and `PASSWORD_NOTICE_UNDELIVERED` by IDs, logged before the event leaves the queue, which pages), a complaint changes nothing, and the end state is the same in any order of the send and its events, concurrent ones included; no payload, log or error holds the address; the reset is never blocked or undone by the notice, and a provider sign-out that fails still sends the same lines and pages the operator (`PasswordResetProviderSignOutFailed`); the two cases this row first recorded as open (a step that proved the old password before a reset opening a session when its code is answered after it, and a key-registration step begun before a reset registering a key after it when the provider's sign-out had no effect) are closed by SGN-17, where they are asserted refused",
+      "A completed reset writes one pending notice in its own transaction, by the database, only for the account's own `password_reset_completed` (the actor a person and the object that person), and a refused, invalid or rolled-back reset, the invitation's first password or any other action none; a confirmation made while the database cannot be reached fails at the account's lookup, before the provider is asked, so the password is unchanged; a completed reset whose sessions could not be ended queues none and its line pages the operator (`PasswordResetSessionsNotEnded`); the platform job sends one message on the transactional stream (kind `password_changed`, subject the notice, recipient the user) to the account's address, once however many runs race, read only by the claim of a pending, due notice under 24 hours old, with the change's time in UTC, the four lines, the second naming the second factor only to an account the claim returns as enrolled and ending at the sessions for one that is not, the support route, Reply-To the support address, the account footer in both alternatives and no link, from MailFromAddress through the operator role's transactional statement alone, and records `password_notice_sent`; it retries after 1, 5, 15 and 60 minutes, counts a record that fails after SES accepted the message as a try (`RecordFailed`), fails at the fifth try or at once on a permanent error, stops claiming once a run has spent 8 seconds sending, and fails a notice not sent within 24 hours as `NoticeStale`; a bounce, suppression or rejection of its own `password_changed` message, recorded before or after the send, makes it undelivered, reported once (`password_notice_undelivered`, and `PASSWORD_NOTICE_UNDELIVERED` by IDs, logged before the event leaves the queue, which pages), a complaint changes nothing, and the end state is the same in any order of the send and its events, concurrent ones included; no payload, log or error holds the address; the reset is never blocked or undone by the notice, and the provider's sign-out is no part of the request: the reset's own transaction queues it for the platform job (JOB-06), so a provider that fails changes no line the reset sends; the two cases this row first recorded as open (a step that proved the old password before a reset opening a session when its code is answered after it, and a key-registration step begun before a reset registering a key after it when the provider's sign-out had no effect) are closed by SGN-17, where they are asserted refused",
   },
   {
     id: 'SGN-17',
@@ -956,7 +1004,79 @@ export const TEST_MATRIX: readonly MatrixRow[] = [
     id: 'SGN-19',
     title: "End membership ends in the app whatever the provider answers",
     assertion:
-      "Both End membership routes (the console's and an organization's Settings) end the membership and every session of the account and write `membership_ended` in one transaction with no call to the provider inside it; the provider is asked to sign the account out once, only after the commit is confirmed, and never when End membership is refused; a sign-out that fails undoes nothing, the answer is still that the membership ended, and it is one line at error (`security event: membership end provider sign-out failed`) with the user's ID, the request's ID and the error's name only (`NO_PROVIDER_SUBJECT` when the subject could not be read), never the subject, an address or the error's text, which `MembershipEndProviderSignOutFailed` alarms on at one in five minutes; the Settings route reads the subject while the membership stands, since row-level security hides the person's row once it has ended; nothing sends the sign-out again; and while the provider's sign-out has not happened a code step begun before End membership still opens a session, which carries no role, and a key-registration step begun before it still registers a key that then signs in: both are stated by tests as they stand and stay open until the membership's end moves the account's mark (`LANES.md` Queues item 37)",
+      "Both End membership routes (the console's and an organization's Settings) end the membership and every session of the account, move the account's mark and write `membership_ended` in one transaction, and the web asks the provider for nothing, inside it or after it: no file under apps/web holds a call to, a method for or a mention of the provider's sign-out, held by a scan; the database queues one `provider_sign_out` row on that event, tied to it and to the request, carrying IDs only, and the platform job sends it (JOB-06 to JOB-08); a refused End membership queues nothing, and one whose COMMIT the server refuses leaves no row, no audit event, the membership standing and the session active; a reset's row is queued the same way, one for a retried try, and a reset whose transaction fails twice, a refused code and an unknown outcome with no account queue none; a code step and a key-registration step begun before End membership are refused after it as after a reset (SGN-17's refusals); `ProviderSignOutNotDelivered` alarms on the platform log group for the job's line, and the web's two alarms for a failed sign-out are gone",
+  },
+  {
+    id: 'SGN-20',
+    title: "A session opens only for a live registered key, and never by code for a closed account",
+    assertion:
+      "In Postgres, on every session insert and under the account's row lock: a key session opens with the digest of a live key of its account and is refused, each by name, with no row, another account's digest, a removed key and a malformed digest; the previous image's key session, which carries no digest, is let through only for an account the registry never touched; a password-and-code session for an account whose registration is closed after a removal is refused whatever its hardware-key rule, and for no other account; the web answers that refusal as a key being required",
+  },
+  {
+    id: 'SGN-21',
+    title: "A key sign-in is checked by the app itself against the registry",
+    assertion:
+      "After the provider has verified the assertion: a key the provider holds and the registry does not is refused in the words of a wrong credential, recorded, and counts no failure; a removed key is refused, recorded and pages with IDs only (`security event: removed hardware key used`); an assertion the provider accepts but the registered public key did not sign is refused and logged by the error's class name alone, and a response whose id is not its rawId is refused as malformed; the cleaning deletes at the provider, with the member's own grant, a removed credential and an unknown one older than fifteen minutes, never a live key or a young unknown one",
+  },
+  {
+    id: 'SGN-22',
+    title: "The invariant: no live session without a live key, none begun at or before the mark",
+    assertion:
+      "Over a sign-in, a removal's confirmation, End membership and a reset on one account, on two connections in each order of the account's lock, the second seen waiting on the first: a sign-in that holds the lock first is ended by whichever of the three waited for it; a sign-in begun before one of them and waiting on it is refused when it commits (user_session_hardware_key_live after a confirmation, user_session_sign_in_not_before after the other two); a sign-in begun after its clock and before its commit is refused after a confirmation and opens after the other two only because its key is live; any two of the three in either order leave no session, and a step begun before them opens none; after each, no live session of the account has a digest that is not a live key of it and none began at or before the mark. Resolving a session issues the statements it issued before the registry (BEGIN, the one resolving statement, COMMIT: three, one read), for a key session and a code session alike, and the registry's migrations do not name resolve_session",
+  },
+  {
+    id: 'SGN-23',
+    title: "Who may request a key removal",
+    assertion:
+      "Refused, each by its constraint name, for everyone but a platform administrator of an internal organization more than seven days in the role with no role change in the last seven, acting from their own live session opened with a registered key in the last fifteen minutes, who is not the account; an administrator whose own key was registered within 24 hours of a removal of their own keys is refused too; through the console's route a refusal is answered with the rule's words and writes exactly no event",
+  },
+  {
+    id: 'SGN-24',
+    title: "A second administrator confirms a key removal",
+    assertion:
+      "Refused for the requester, the account, a late confirmer, a removal already decided and a requester who has left the role, and the table holds each rule itself against a direct owner UPDATE; a confirmation removes every key of the account, ends every session, moves the mark, records a hold for a key registered across a reset as cleared, queues the provider's sign-out and the member's notice and writes its audit row, together or not at all; the console's route writes exactly one event, the database's, and asks the provider for nothing",
+  },
+  {
+    id: 'SGN-25',
+    title: "A key removal cancelled or expired",
+    assertion:
+      "Any eligible administrator but the account cancels a request, once, on the audit log; a request past its 24 hours is marked expired once, by the job's step, and an expired request confirms nothing",
+  },
+  {
+    id: 'SGN-26',
+    title: "A removal's confirmation beside a sign-in in flight",
+    assertion:
+      "A key step and a code step begun before a confirmation open nothing after it; a key registration begun before it registers nothing and the provider is not asked; a confirmation that commits after the app read the registry and before the session's insert is refused by the database under the account's lock, answered as a stale session and recorded; after a registration with the code the removed key opens nothing",
+  },
+  {
+    id: 'SGN-27',
+    title: "Registration, and registration after a removal with a one-time code",
+    assertion:
+      "A registration records the key's digest and public key with `hardware_key_registered` and the session carries the digest; one the app's own verification refuses, and a second key beside a live one, record nothing and are removed at the provider; after a removal registration is closed: the account is asked for the code before the provider is asked for anything, no opening and a wrong code answer alike and keep the step, a code of the wrong shape is an issue on its field and counts no try, the right code (typed in lower case with a space) registers one key, consumes the opening and leaves `key_registered_after_removal` and the notice; the fifth wrong code spends the opening; an opening made before a later confirmation, End membership or reset is dead; the account cannot open its own, an account that is not closed cannot be opened, and an open registration is not opened again; the code is in no cookie, result or log line; the console shows it once",
+  },
+  {
+    id: 'SGN-28',
+    title: "A password reset the application could not record still signs the account out at the provider",
+    assertion:
+      "A reset whose own transaction fails twice queues the provider sign-out alone, through `provider_sign_out_unrecorded_reset` (reason `password_reset_unrecorded`, a reserved action that only this function and the operator's request write), and the line says it did; where the sign-out cannot be queued either, the reset answers as before and the line says not queued",
+  },
+  {
+    id: 'SGN-29',
+    title: "A step judged with no beginning is no guess",
+    assertion:
+      "`hardware_key_registration_judge` given no beginning returns before its security event: it counts no try and records no refusal",
+  },
+  {
+    id: 'SGN-30',
+    title: "A wrong one-time code offered at the registry's row is a counted guess",
+    assertion:
+      "A wrong code offered to `hardware_key_record` is counted and the count is committed (the function answers no row; a raise would roll the count back); the web then refuses, the refusal is on record once and the key is removed at the provider",
+  },
+  {
+    id: 'SGN-31',
+    title: "A requested key removal binds its target only while it can still be confirmed",
+    assertion:
+      "The target of a request changes no other account's status or hardware-key rule and no internal membership only while the request is not decided, is not past its 24 hours by the clock whatever the expiry job has marked, its requester still passes `account_removes_keys`, it is that requester's earliest such request against a platform administrator, and a third administrator could still confirm it; one requester holds one open request against a platform administrator and asks again against the same one only after seven days; the target of such a request requests no removal; a request against a platform administrator that no third could confirm is refused; two accounts asking against each other at once are taken one after the other and the second is refused; the owner, acting as no account, is not bound",
   },
   {
     id: 'HOM-01',

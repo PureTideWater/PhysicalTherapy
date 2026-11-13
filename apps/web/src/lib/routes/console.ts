@@ -13,10 +13,10 @@ import {
 } from '@tp/db/runtime';
 import { z } from 'zod';
 
-import { signOutAtProviderAfterCommit } from '../auth/provider-sign-out';
 import { revokeUserSessions } from '../auth/sessions';
 import { PracticeSettingsError, type PracticeSettingsForm, practiceSettingsInput, settingsDocument, settingsForm } from '../console/practice-settings';
 import { platformRoute } from '../http/invoke';
+import { CONSOLE_KEY_ROUTES, type KeyRemovalSummary, keyRemovalsByAccount } from './console-keys';
 import { InputError, type MutationResult, NotFoundError } from '../http/route';
 import { localityReading, releaseInForce } from '../pricing/location';
 import type { NoticeDelivery } from './practice';
@@ -204,6 +204,10 @@ export interface MemberSummary {
   readonly locked: boolean;
   readonly endsAt: Date | null;
   readonly current: boolean;
+  /** Whether this is the administrator reading the page, who acts on no key of their own account. */
+  readonly self: boolean;
+  /** The account's latest hardware-key removal, open or decided in the last 30 days (docs/adr/0095). */
+  readonly keyRemoval: KeyRemovalSummary | null;
 }
 
 export interface InvitationSummary {
@@ -359,7 +363,7 @@ export const organizationPage = platformRoute({
   permission: 'organization.manage',
   // created: the practice just created, shown with its location as it stands.
   params: z.object({ organizationId: opaqueId, created: optionalText(opaqueId).catch(undefined) }),
-  handle: async ({ scope, params }) => {
+  handle: async ({ scope, params, actor }) => {
     const id = params.organizationId;
     const row = (await scope.client.query<OrganizationRow & { status_since_text: string | null }>(`SELECT ${ORGANIZATION_COLUMNS}, status_since::text AS status_since_text FROM organization WHERE id = $1`, [id])).rows[0];
     if (row === undefined) {
@@ -404,6 +408,7 @@ export const organizationPage = platformRoute({
         ORDER BY (m.ends_at IS NULL OR m.ends_at > now()) DESC, u.email, m.id`,
       [id],
     );
+    const keyRemovals = await keyRemovalsByAccount(scope.client, actor.userId);
     const agreements = await scope.client.query<{ id: string; kind: string; version: string; signer: string; signed_at: Date; sha256: string; document_ref: string; practice_id: string | null }>(
       `SELECT id, kind, version, signer, signed_at, sha256, document_ref, practice_id FROM agreement
         WHERE organization_id = $1 OR practice_id IN (SELECT practice_id FROM console_practices($1))
@@ -453,6 +458,8 @@ export const organizationPage = platformRoute({
       created: params.created !== undefined && practices.rows.some((row) => row.practice_id === params.created) ? await consoleLocation(scope.client, params.created) : null,
       members: members.rows.map(
         (row): MemberSummary => ({
+          self: row.user_id === actor.userId,
+          keyRemoval: keyRemovals.get(row.user_id) ?? null,
           membershipId: row.id,
           userId: row.user_id,
           email: row.email,
@@ -776,7 +783,7 @@ export const endMembership = platformRoute({
   params: z.object({}),
   input: z.object({ membershipId: opaqueId }),
   audit: { action: 'membership_ended', objectType: 'membership' },
-  handle: async ({ scope, input, request, services, afterCommit }): Promise<MutationResult> => {
+  handle: async ({ scope, input }): Promise<MutationResult> => {
     const ended = (
       await scope.client.query<{ user_id: string; organization_id: string }>(
         'UPDATE membership SET ends_at = now() WHERE id = $1 AND (ends_at IS NULL OR ends_at > now()) RETURNING user_id, organization_id',
@@ -788,9 +795,9 @@ export const endMembership = platformRoute({
     }
     // PRD 3, Lifecycle events: a user who leaves an organization has their sessions revoked.
     await revokeUserSessions(scope, ended.user_id);
-    const sub = (await scope.client.query<{ cognito_sub: string }>('SELECT cognito_sub FROM "user" WHERE id = $1', [ended.user_id])).rows[0]?.cognito_sub;
-    // The provider is asked once this has committed, and its failure undoes nothing (docs/adr/0094).
-    signOutAtProviderAfterCommit(afterCommit, services, { userId: ended.user_id, requestId: request.requestId }, sub);
+    // The provider's own sign-out is not asked for here (docs/adr/0095): this route's `membership_ended` event, written
+    // in this transaction, queues it in the database (audit_event_provider_sign_out), so it is queued if and only if
+    // this commits, and the worker's job `provider_sign_outs` sends it.
     return { objectId: input.membershipId, redirect: `/console/organizations/${ended.organization_id}` };
   },
   sample: { params: () => ({}), input: (refs) => ({ membershipId: refs.membershipId }) },
@@ -1128,4 +1135,5 @@ export const CONSOLE_ROUTES = [
   createSupportGrant,
   endSupportGrant,
   specialistQueuePage,
+  ...CONSOLE_KEY_ROUTES,
 ] as const;

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
@@ -62,10 +62,15 @@ import {
   PASSWORD_RESET_NOT_DELIVERED_MESSAGE,
   PASSWORD_RESET_NOT_DELIVERED_THROTTLE_CODES,
   PASSWORD_RESET_OUTCOME_UNKNOWN_MESSAGE,
-  MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE,
-  PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE,
+  PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM,
+  PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM,
+  PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM,
+  PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM,
+  KEY_ALGORITHMS_NOT_OFFERED_ALARM,
+  RELYING_PARTY_MISMATCH_ALARM,
   PASSWORD_RESET_REQUESTED_MESSAGE,
   PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE,
+  REMOVED_HARDWARE_KEY_USED_MESSAGE,
   RESET_AND_ENROLMENT_COUNTS,
   RESET_REQUESTS_PER_USER,
   SECURITY_ALARM_PERIOD_SECONDS,
@@ -128,7 +133,7 @@ describe('the failed sign-in burst contract with the web app (PRD 19: failed sig
 describe('the reset and enrolment signal contract with the web app (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
   const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, '../..', file), 'utf8');
 
-  it('pins the fourteen counted lines, their codes and thresholds, and the per-user line, as literals', () => {
+  it('pins the thirteen counted lines, their codes and thresholds, and the per-user line, as literals', () => {
     // Literals, so an edit to the constants cannot pass by changing both sides.
     expect(RESET_AND_ENROLMENT_COUNTS).toEqual([
       {
@@ -148,10 +153,6 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
       { metricName: 'PasswordResetRequestOverFloor', message: 'password reset request over floor', errorCodes: [], threshold: 3, periodSeconds: 3600 },
       // A completed reset whose sessions were not ended queues no password-changed email, so its line pages (docs/adr/0091, D15).
       { metricName: 'PasswordResetSessionsNotEnded', message: 'security event: password reset sessions not ended', errorCodes: [], threshold: 1, periodSeconds: 300 },
-      // A completed reset whose sign-out at the provider failed: a key-registration step begun before it can still register a key (docs/adr/0091, D10).
-      { metricName: 'PasswordResetProviderSignOutFailed', message: 'security event: password reset provider sign-out failed', errorCodes: [], threshold: 1, periodSeconds: 300 },
-      // An ended membership whose sign-out at the provider did not happen: the membership and the sessions stay ended (docs/adr/0094).
-      { metricName: 'MembershipEndProviderSignOutFailed', message: 'security event: membership end provider sign-out failed', errorCodes: [], threshold: 1, periodSeconds: 300 },
       // A sign-in step begun before a reset and refused after it (docs/adr/0093, D5): every step but the hardware-key sign-in's, where no password was proved.
       {
         metricName: 'SignInStepRefusedAfterReset',
@@ -166,7 +167,12 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
       { metricName: 'PasswordResetOutcomeUnknown', message: 'security event: password reset outcome unknown', errorCodes: [], threshold: 1, periodSeconds: 300 },
       // A sign-in whose typed address and provider subject name two accounts (docs/adr/0093, D5): refused outright, and it pages.
       { metricName: 'SignInRefusedCrossedAccount', message: 'security event: sign-in refused for a crossed account', errorCodes: [], threshold: 1, periodSeconds: 300 },
+      // A sign-in answered with a hardware key that two administrators removed (docs/adr/0095): refused, and it pages.
+      { metricName: 'RemovedHardwareKeyUsed', message: 'security event: removed hardware key used', errorCodes: [], threshold: 1, periodSeconds: 300 },
     ]);
+    // The provider's sign-out is the platform job's, so its one alarm is not among the web's (docs/adr/0095): the two the web had are gone.
+    expect(RESET_AND_ENROLMENT_COUNTS.map((count) => count.metricName as string).filter((name) => /ProviderSignOut/.test(name))).toEqual([]);
+    expect(PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM).toEqual({ metricName: 'ProviderSignOutNotDelivered', message: 'security event: provider sign-out not delivered', threshold: 1, periodSeconds: 300 });
     expect(STEP_REFUSED_AFTER_RESET_UNCOUNTED_STEP).toBe('key');
     expect(KEY_REGISTERED_ACROSS_RESET_CODES).toEqual(['removed', 'not_removed', 'not_removed_not_locked']);
     expect(STEP_START_AHEAD_OF_CLOCK_MESSAGE).toBe('sign-in step start is ahead of the database clock');
@@ -175,7 +181,7 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
     expect(SECURITY_ALARM_PERIOD_SECONDS).toBe(300);
   });
 
-  it('matches the lines apps/web logs: the provider\'s undelivered request, the flow\'s failed request, refused enrolment, refused credential, the probe\'s refusal, a reset whose sessions were not ended, a reset whose provider sign-out failed and each account\'s request', () => {
+  it('matches the lines apps/web logs: the provider\'s undelivered request, the flow\'s failed request, refused enrolment, refused credential, the probe\'s refusal, a reset whose sessions were not ended, a removed key used and each account\'s request; and no line about the provider\'s sign-out, which the web no longer asks for', () => {
     const provider = source('apps/web/src/lib/auth/cognito-provider.ts');
     const flow = source('apps/web/src/lib/auth/sign-in.ts');
     expect(provider).toContain(`this.logger.warn('${PASSWORD_RESET_NOT_DELIVERED_MESSAGE}', { error_code: code, request_id: requestId ?? null });`);
@@ -184,15 +190,16 @@ describe('the reset and enrolment signal contract with the web app (R-11; docs/a
     expect(flow).toContain(`this.deps.logger.warn('${ENROLMENT_REFUSED_MESSAGE}', {`);
     expect(flow).toContain(`this.deps.logger.error('${CLIENT_CREDENTIAL_REFUSED_MESSAGE}', {`);
     expect(source('apps/web/src/lib/auth/credential-probe.ts')).toContain(`logger?.error('${CREDENTIAL_PROBE_REFUSED_MESSAGE}', { error_code: code });`);
-    // The completed reset that queues no password-changed email (docs/adr/0091, D15): the user's ID and the request's alone.
-    expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId });`);
-    // The completed reset whose sign-out at the provider failed (docs/adr/0091, D10): the user's ID, the request's and the error's name alone.
-    expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_PROVIDER_SIGN_OUT_FAILED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId, error_code: errorCode(error) });`);
-    // The ended membership whose sign-out at the provider did not happen (docs/adr/0094): all three of the web's lines (no subject, the provider's failure, a commit with no answer) hold these words
-    // and carry the user's ID, the request's ID and a code alone.
-    const signOut = source('apps/web/src/lib/auth/provider-sign-out.ts');
-    expect(signOut.split(`deps.logger.error('${MEMBERSHIP_END_PROVIDER_SIGN_OUT_FAILED_MESSAGE}', { user_id: ids.userId, request_id: ids.requestId, error_code: `)).toHaveLength(4);
-    expect(signOut.match(/deps\.logger\./g)).toHaveLength(3);
+    // The completed reset that queues no password-changed email (docs/adr/0091, D15): the user's ID, the request's, and
+    // what became of the provider's sign-out the web asks the database to queue by itself (a closed code; test SGN-28).
+    expect(flow).toContain(`this.deps.logger.error('${PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE}', { user_id: account.user_id, request_id: context.requestId, outcome_code: outcome });`);
+    // A hardware key two administrators removed, used at sign-in (docs/adr/0095): the user's ID and the request's alone.
+    expect(flow).toContain(`this.deps.logger.error('${REMOVED_HARDWARE_KEY_USED_MESSAGE}', { user_id: userId, request_id: context.requestId });`);
+    // The web asks the provider for no sign-out and writes no line about one (docs/adr/0095): neither the reset's nor End membership's.
+    for (const file of ['apps/web/src/lib/auth/sign-in.ts', 'apps/web/src/lib/routes/console.ts', 'apps/web/src/lib/routes/settings.ts']) {
+      expect(source(file), file).not.toMatch(/provider sign-out/);
+    }
+    expect(existsSync(path.resolve(import.meta.dirname, '../..', 'apps/web/src/lib/auth/provider-sign-out.ts'))).toBe(false);
     // The user's ID and the request's alone: the address is never in it (the rule keys on $.user_id).
     expect(flow).toContain(`this.deps.logger.info('${PASSWORD_RESET_REQUESTED_MESSAGE}', { user_id: userId, request_id: context.requestId });`);
   });
@@ -321,15 +328,19 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // Worker: heartbeat, final job failures, pricing engine errors, job heap peaks, model budget events. Platform:
     // heartbeat, final job failures. Screening: heartbeat, final job failures, the time to email, the oldest queued run,
     // failed runs. Web: failed sign-in bursts, model budget events, screening uploads sent to wait. Mail (docs/adr/0065):
-    // the platform's six codes (the sixth a password-changed email not delivered, docs/adr/0091, D9), an unsent probe,
+    // the platform's seven codes (the sixth a password-changed email not delivered, docs/adr/0091, D9; the seventh a
+    // hardware-key email not delivered, docs/adr/0095), an unsent probe,
     // a password-changed email SES accepted whose record failed (D9), and the web's refused validation and validation cap. Reset and enrolment (R-11; docs/adr/0088, D7): the web's
     // undelivered requests (configuration, throttle), failed requests, refused enrolments, refused client credentials,
-    // the start-up probe's refusal, a completed reset whose sessions were not ended (docs/adr/0091, D15) and one whose
-    // sign-out at the provider failed (docs/adr/0091, D10), an ended membership whose sign-out there did not happen
-    // (docs/adr/0094), and the four around a reset (docs/adr/0093: a step refused
-    // after it, a hardware key registered across it, an unknown outcome, a crossed account). The user pool's message trigger (docs/adr/0081, the
+    // the start-up probe's refusal, a completed reset whose sessions were not ended (docs/adr/0091, D15), a removed
+    // hardware key used (docs/adr/0095), and the four around a reset (docs/adr/0093: a step refused
+    // after it, a hardware key registered across it, an unknown outcome, a crossed account). Platform again: the
+    // job's provider sign-out not delivered (docs/adr/0095), in place of the web's two lines about the provider's sign-out, and the
+    // job's own run line, whose absence alarms (docs/adr/0095, D16). The user pool's message trigger (docs/adr/0081, the
     // code-email amendment): a message left to the pool's template, and the web's reset request answered after its floor.
-    expect(filters).toHaveLength(40);
+    // The round-1 review of docs/adr/0095: the platform's failed sign-out tries (B1) and its "no such user" answers (B4),
+    // and the web's relying-party mismatch (A6). The delta review, D2: the provider offering neither registration algorithm.
+    expect(filters).toHaveLength(46);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -354,6 +365,12 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.monitoring.mailValidationRefusedAlarm,
       stack.monitoring.mailValidationCapAlarm,
       ...Object.values(stack.monitoring.resetAndEnrolmentAlarms),
+      stack.monitoring.providerSignOutNotDeliveredAlarm,
+      stack.monitoring.providerSignOutsNotRunningAlarm,
+      stack.monitoring.providerSignOutAttemptsFailingAlarm,
+      stack.monitoring.providerSignOutNoSuchUserAlarm,
+      stack.monitoring.relyingPartyMismatchAlarm,
+      stack.monitoring.keyAlgorithmsNotOfferedAlarm,
       stack.monitoring.resetRequestsPerUserAlarm,
       stack.mailStreams.accountBounceWarningAlarm,
       stack.mailStreams.accountBounceHighAlarm,
@@ -547,7 +564,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
   describe('reset and enrolment signals reach the operator (R-11; docs/adr/0088, D7; test matrix SEC-23)', () => {
     const web = stack.monitoring.webLogGroup;
 
-    it('counts each of the fourteen lines on the web log group alone, by message and, for undelivered requests and a refused step, by code, and alarms at its threshold', () => {
+    it('counts each of the thirteen lines on the web log group alone, by message and, for undelivered requests and a refused step, by code, and alarms at its threshold', () => {
       for (const count of RESET_AND_ENROLMENT_COUNTS) {
         const codes = count.errorCodes as readonly string[];
         const pattern =
@@ -575,29 +592,253 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       }
       const counted = filters.filter(([, filter]) => RESET_AND_ENROLMENT_COUNTS.some((count) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${count.metricName}"`)));
       expect(counted).toHaveLength(RESET_AND_ENROLMENT_COUNTS.length);
-      expect(counted).toHaveLength(14);
+      expect(counted).toHaveLength(13);
     });
 
-    it('says, for each of the two completed resets that page (docs/adr/0091, D10 and D15), what happened, what to do and which runbook section', () => {
-      const description = (metricName: 'PasswordResetSessionsNotEnded' | 'PasswordResetProviderSignOutFailed') =>
-        String(propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.resetAndEnrolmentAlarms[metricName]))).AlarmDescription);
-      const notEnded = description('PasswordResetSessionsNotEnded');
+    it('says, for the completed reset that pages (docs/adr/0091, D15), what happened, what to do and which runbook section', () => {
+      const notEnded = String(propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.resetAndEnrolmentAlarms.PasswordResetSessionsNotEnded))).AlarmDescription);
       expect(notEnded).toContain('the app could not end the account\'s sessions or record the reset');
       // What to do names what the runbook's control does (End membership, or the founder's break-glass session): it ends the sessions.
       expect(notEnded).toContain('read the user ID from the line, end the account\'s sessions and tell the person another way');
       expect(notEnded).toContain('docs/runbooks/incident-response.md, "A password reset whose sessions were not ended"');
-      const signOut = description('PasswordResetProviderSignOutFailed');
-      // What happened, and what it leaves open: a key-registration step begun before the reset, for its 15 minutes.
-      expect(signOut).toContain(`A ${environment} password reset was completed, but the sign-out at Cognito that follows it failed`);
-      expect(signOut).toContain('a hardware-key registration begun before the reset can still be completed for up to 15 minutes');
-      // What to do: the audit log by the line's user ID, for the one row the failed sign-out makes possible, a key
-      // registered since the reset; the person's own next sign-in by authenticator code is no sign of it and ends no
-      // membership (the delta review of 2026-11-11, DS-01).
-      expect(signOut).toContain('read the user ID from the line');
-      expect(signOut).toContain('look in the audit log for hardware_key_registered by that user since the reset, and if there is one treat it as a takeover, end the account\'s sessions and tell the founder; a sign_in by authenticator code is the person\'s own');
-      expect(signOut).toContain('docs/runbooks/incident-response.md, "A password reset whose provider sign-out failed"');
-      expect(signOut).toContain('docs/adr/0091, D10');
-      expect(signOut.length).toBeLessThanOrEqual(1024);
+      // Such a reset recorded nothing, so no provider sign-out was queued for it either (docs/adr/0095): the words say so.
+      expect(notEnded).toContain('no sign-out at Cognito was queued');
+      expect(notEnded.length).toBeLessThanOrEqual(1024);
+    });
+
+    it('says, for a removed hardware key used at sign-in (docs/adr/0095), what happened and what to do', () => {
+      const used = String(propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.resetAndEnrolmentAlarms.RemovedHardwareKeyUsed))).AlarmDescription);
+      expect(used).toContain(`Someone answered a ${environment} hardware-key sign-in with a key that two platform administrators removed from the account; the sign-in was refused`);
+      expect(used).toContain('read the user ID from the line');
+      expect(used).toContain('treat anything else as an attempted takeover');
+      expect(used).toContain('docs/adr/0095');
+      expect(used.length).toBeLessThanOrEqual(1024);
+    });
+
+    // docs/adr/0095 (Queues item 37): the provider's sign-out after an ended membership, a reset and a key removal is
+    // the platform job's (provider_sign_outs), so the alarm for one that does not arrive reads the platform log group.
+    it('counts the job\'s undelivered provider sign-out on the platform log group alone, by its words, and alarms on the first', () => {
+      const platform = stack.monitoring.platformLogGroup;
+      const { metricName, message } = PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM;
+      expect(propertiesOf(filterFor(metricName, platform))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, platform)),
+        FilterPattern: `{ $.msg = "${message}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Worker', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.providerSignOutNotDeliveredAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Worker',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 300,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 1,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      // One filter holds the metric, and it is not on the web's group: the web writes no such line.
+      const holding = filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`));
+      expect(holding).toHaveLength(1);
+      // Neither of the web's two old alarms is in the template.
+      expect(JSON.stringify(template.toJSON())).not.toMatch(/PasswordResetProviderSignOutFailed|MembershipEndProviderSignOutFailed/);
+    });
+
+    it('matches the line the job writes, and says what happened, what each code means and what to do', () => {
+      const job = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/platform/provider-sign-outs.ts'), 'utf8');
+      expect(job).toContain(`export const PROVIDER_SIGN_OUT_NOT_DELIVERED = '${PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM.message}';`);
+      // IDs and a code alone: the sign-out's, the account's, the cause's request.
+      expect(job).toContain(`logger.error('${PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM.message}', { sign_out_id: line.sign_out_id, user_id: line.account_id, request_id: line.cause_request_id, error_code: `);
+      const words = String(propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.providerSignOutNotDeliveredAlarm))).AlarmDescription);
+      expect(words).toContain(`A ${environment} account whose membership ended, whose password was reset or whose hardware keys were removed has not been signed out at Cognito by the provider_sign_outs job`);
+      expect(words).toContain('the app\'s own sessions ended and its sign-in mark moved when the cause committed');
+      expect(words).toContain('LATE:');
+      expect(words).toContain('GAVE_UP:');
+      expect(words).toContain('docs/adr/0095');
+      expect(words.length).toBeLessThanOrEqual(1024);
+    });
+
+    // docs/adr/0095, D16: the heartbeat says the platform process is alive and the final-failure filter says a run
+    // failed; neither hears a schedule that stops firing this one job, after which no sign-out is sent and none is late.
+    it('alarms when the provider_sign_outs job writes no run line for ten minutes, missing data breaching, and says when it returns', () => {
+      const platform = stack.monitoring.platformLogGroup;
+      expect(PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM).toEqual({ alarmName: 'ProviderSignOutsNotRunning', metricName: 'ProviderSignOutsRun', message: 'provider sign-outs run', periodSeconds: 300, missedPeriods: 2 });
+      const { metricName, message } = PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM;
+      expect(propertiesOf(filterFor(metricName, platform))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, platform)),
+        FilterPattern: `{ $.msg = "${message}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Worker', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.providerSignOutsNotRunningAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Worker',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 300,
+        EvaluationPeriods: 2,
+        ComparisonOperator: 'LessThanThreshold',
+        Threshold: 1,
+        TreatMissingData: 'breaching',
+        AlarmActions: [topic],
+        OKActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      const holding = filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`));
+      expect(holding).toHaveLength(1);
+      // The line is the job's own, written once a run whether or not a step failed, with a count and no ID.
+      const job = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/platform/provider-sign-outs.ts'), 'utf8');
+      expect(job).toContain(`export const PROVIDER_SIGN_OUTS_RUN = '${message}';`);
+      expect(job).toContain(`logger.info('${message}', { record_count: done + failed });`);
+      // The job runs every minute, so ten minutes hold ten lines when it is scheduled.
+      const jobs = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/jobs/platform.ts'), 'utf8');
+      expect(jobs).toContain("provider_sign_outs: '* * * * *',");
+      const words = String(alarm.AlarmDescription);
+      expect(words).toContain(`The ${environment} provider_sign_outs job has written no run line for ten minutes`);
+      expect(words).toContain('no sign-out is being sent at Cognito');
+      expect(words).toContain('none can become late, so ProviderSignOutNotDelivered stays silent');
+      expect(words).toContain('docs/runbooks/incident-response.md, "The provider sign-out job not running"');
+      expect(words).toContain('docs/adr/0095, D16');
+      expect(words.length).toBeLessThanOrEqual(1024);
+    });
+
+    // The round-1 review, B1: with the provider slow and rows queued, a row's fourth try (what makes it late) is hours
+    // away, and only the job's warnings say so. Three failed tries in fifteen minutes page.
+    it('counts the job\'s failed sign-out tries on the platform log group, by its words, and alarms at three in fifteen minutes', () => {
+      const platform = stack.monitoring.platformLogGroup;
+      expect(PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM).toEqual({ metricName: 'ProviderSignOutAttemptsFailing', message: 'provider sign-out attempt failed', threshold: 3, periodSeconds: 900 });
+      const { metricName, message } = PROVIDER_SIGN_OUT_ATTEMPTS_FAILING_ALARM;
+      expect(propertiesOf(filterFor(metricName, platform))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, platform)),
+        FilterPattern: `{ $.msg = "${message}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Worker', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.providerSignOutAttemptsFailingAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Worker',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 900,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 3,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      expect(alarm.OKActions).toBeUndefined();
+      expect(filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))).toHaveLength(1);
+      // The line is the job's own: the words declared once there and written out at warn, with IDs, the request of the
+      // event that queued the row, and the error's name.
+      const job = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/platform/provider-sign-outs.ts'), 'utf8');
+      expect(job).toContain(`export const PROVIDER_SIGN_OUT_ATTEMPT_FAILED = '${message}';`);
+      expect(job).toContain(`logger.warn('${message}', { sign_out_id: claimed.sign_out_id, user_id: claimed.account_id, request_id: claimed.cause_request_id ?? null, error_code: failure });`);
+      const words = String(alarm.AlarmDescription);
+      expect(words).toContain(`The ${environment} provider_sign_outs job's tries at Cognito have failed three times in fifteen minutes`);
+      expect(words).toContain('ProviderSignOutNotDelivered');
+      expect(words).toContain('docs/runbooks/incident-response.md, "A provider sign-out not delivered"');
+      expect(words).toContain('docs/adr/0095');
+      expect(words.length).toBeLessThanOrEqual(1024);
+    });
+
+    // The round-1 review, B4: "no such user" counts as done, and a worker given another pool's ID gets it for every row.
+    it('counts the job\'s "no such user" answers on the platform log group, by the done line\'s outcome code, and alarms at three in fifteen minutes', () => {
+      const platform = stack.monitoring.platformLogGroup;
+      expect(PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM).toEqual({ metricName: 'ProviderSignOutNoSuchUser', outcomeCode: 'no_such_user', threshold: 3, periodSeconds: 900 });
+      const { metricName, outcomeCode } = PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM;
+      expect(propertiesOf(filterFor(metricName, platform))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, platform)),
+        FilterPattern: `{ $.outcome_code = "${outcomeCode}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Worker', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.providerSignOutNoSuchUserAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Worker',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 900,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 3,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      expect(filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))).toHaveLength(1);
+      // The field and the value are the ones the job and its adapter write.
+      const job = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/platform/provider-sign-outs.ts'), 'utf8');
+      expect(job).toContain(`export type ProviderSignOutOutcome = 'signed_out' | '${outcomeCode}';`);
+      expect(job).toContain("logger.info('provider sign-out done', { sign_out_id: claimed.sign_out_id, user_id: claimed.account_id, outcome_code: answered });");
+      const adapter = readFileSync(path.resolve(import.meta.dirname, '../..', 'apps/worker/src/platform/cognito-sign-out.ts'), 'utf8');
+      expect(adapter).toContain(`return '${outcomeCode}';`);
+      const words = String(alarm.AlarmDescription);
+      expect(words).toContain(`Cognito has answered three ${environment} provider sign-outs in fifteen minutes with no such user`);
+      expect(words).toContain('a wrong pool ID turns every sign-out into this answer');
+      expect(words).toContain("check the worker's pool ID against the stack's");
+      expect(words).toContain('docs/adr/0095');
+      expect(words.length).toBeLessThanOrEqual(1024);
+    });
+
+    // The delta review, D2: the same impact as the mismatch below for registration, and it paged nobody.
+    it('counts the web\'s "neither algorithm offered" line on the web log group, by its code, and alarms on the first', () => {
+      expect(KEY_ALGORITHMS_NOT_OFFERED_ALARM).toEqual({ metricName: 'KeyAlgorithmsNotOffered', errorCode: 'KEY_ALGORITHMS_NOT_OFFERED', threshold: 1, periodSeconds: 300 });
+      const { metricName, errorCode } = KEY_ALGORITHMS_NOT_OFFERED_ALARM;
+      expect(propertiesOf(filterFor(metricName, web))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, web)),
+        FilterPattern: `{ $.error_code = "${errorCode}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Web', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.keyAlgorithmsNotOfferedAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Web',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 300,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 1,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      expect(filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))).toHaveLength(1);
+      const words = String(alarm.AlarmDescription);
+      expect(words).toContain(`No ${environment} hardware key can be registered`);
+      expect(words).toContain('offers neither ES256 nor RS256');
+      expect(words).toContain("Check the user pool's WebAuthn settings");
+      expect(words).toContain('docs/adr/0095');
+      expect(words.length).toBeLessThanOrEqual(1024);
+    });
+
+    // The round-1 review, A6: the mismatch fails closed, and until now it paged nobody.
+    it('counts the web\'s relying-party mismatch on the web log group, by its code, and alarms on the first', () => {
+      expect(RELYING_PARTY_MISMATCH_ALARM).toEqual({ metricName: 'RelyingPartyMismatch', errorCode: 'RELYING_PARTY_MISMATCH', threshold: 1, periodSeconds: 300 });
+      const { metricName, errorCode } = RELYING_PARTY_MISMATCH_ALARM;
+      expect(propertiesOf(filterFor(metricName, web))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, web)),
+        FilterPattern: `{ $.error_code = "${errorCode}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Web', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.relyingPartyMismatchAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Web',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 300,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 1,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      expect(filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))).toHaveLength(1);
+      const words = String(alarm.AlarmDescription);
+      expect(words).toContain(`Every ${environment} hardware-key step is refused`);
+      expect(words).toContain("until WEBAUTHN_RP_ID, the host of APP_ORIGIN and the pool's relying-party ID agree");
+      expect(words).toContain('mending it is a deploy');
+      expect(words).toContain('docs/adr/0095');
+      expect(words.length).toBeLessThanOrEqual(1024);
     });
 
     it('says, for each of the three lines around a password reset (docs/adr/0093), what happened, what to do and which runbook section', () => {
@@ -609,8 +850,10 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       expect(refused).toContain('docs/runbooks/incident-response.md, "A sign-in step refused after a password reset"');
       expect(refused).toContain('docs/adr/0093, D5');
       const key = description('HardwareKeyRegisteredAcrossReset');
-      expect(key).toContain('not_removed: the key is still on the account and the account is locked, so have the key removed through the founder\'s break-glass before anyone unlocks it');
-      expect(key).toContain('not_removed_not_locked: the key signs in, so go to the break-glass now');
+      // The console's two-person removal, not the founder's break-glass (docs/adr/0095).
+      expect(key).toContain('not_removed: the key is still on the account and the account is locked, so two platform administrators remove the account\'s keys in the console before anyone unlocks it');
+      expect(key).toContain('not_removed_not_locked: the key signs in, so end the membership now, then remove the keys');
+      expect(key).not.toContain('break-glass');
       expect(key).toContain('docs/runbooks/incident-response.md, "A hardware key registered across a password reset"');
       expect(key).toContain('docs/adr/0093, D6');
       const unknown = description('PasswordResetOutcomeUnknown');

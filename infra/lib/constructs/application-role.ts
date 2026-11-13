@@ -7,9 +7,11 @@ import { bedrockModelArns, pinnedBedrockModels } from '../models';
 export const PRACTICE_CONTEXT_KEY = 'practice_id';
 
 /**
- * The Cognito calls the web app makes with its own AWS credentials (apps/web/src/lib/auth/
- * cognito-provider.ts): inviting a user, reading one, and signing one out everywhere. Every other
- * call it makes (sign-in, MFA, passkeys, token revocation) is authorized by the user's own tokens.
+ * The Cognito calls the application makes with its own AWS credentials, on the one task role the web and the worker
+ * share: the web's (apps/web/src/lib/auth/cognito-provider.ts), inviting a user and reading one; and the worker's
+ * (apps/worker/src/platform/cognito-sign-out.ts), signing one out everywhere, which the platform job
+ * `provider_sign_outs` sends and the web never does (docs/adr/0095). Every other call the web makes (sign-in, MFA,
+ * passkeys, token revocation) is authorized by the user's own tokens.
  */
 export const USER_POOL_ADMIN_ACTIONS = ['cognito-idp:AdminCreateUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminUserGlobalSignOut'] as const;
 

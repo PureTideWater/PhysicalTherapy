@@ -20,6 +20,7 @@ import {
   uploadAgreementAction,
 } from '../../actions';
 import { FormKeys } from '../../../../components/form-keys';
+import { KeyRemovalActions, KeyRemovalState } from '../../../../components/console/key-removal';
 import { SuspensionCard, SuspensionHistory } from '../../../../components/console/suspension-card';
 import { grantState } from '../../../../components/console/suspension-text';
 
@@ -111,7 +112,9 @@ export default async function OrganizationPage(props: { readonly params: Promise
       <Card>
         <CardHeader>
           <CardTitle>Members</CardTitle>
-          <CardDescription>One role per membership. Ending a membership revokes the user’s sessions at once.</CardDescription>
+          <CardDescription>
+            One role per membership. Ending a membership revokes the user’s sessions at once. Removing an account’s hardware keys takes two platform administrators, neither of them the account: one requests, another confirms within 24 hours.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {members.length === 0 ? (
@@ -130,34 +133,52 @@ export default async function OrganizationPage(props: { readonly params: Promise
                 <tbody>
                   {members.map((member) => (
                     <tr key={member.membershipId} className="border-t align-top" data-member={member.email}>
-                      <td className="py-1 pr-3">
-                        <span className="block min-w-40 wrap-anywhere">{member.email}</span>
-                      </td>
+                      {/* The email is the row's header, so a screen reader names the row in each of its cells (WCAG 1.3.1). */}
+                      <th scope="row" className="py-1 pr-3 text-left font-normal">
+                        <span className="block min-w-40 wrap-break-word">{member.email}</span>
+                      </th>
                       <td className="py-1 pr-3">{roleName(member.role)}</td>
                       {/* The flex boxes sit inside the cells: a td that is itself a flex box is no longer a table cell. */}
-                      <td className="py-1 pr-3">
+                      <td className="py-1 pr-3" data-cell="account">
                         <div className="flex flex-wrap gap-1">
                           <Badge variant="outline">{member.userStatus}</Badge>
                           {member.mfaEnrolled ? null : <Badge variant="outline">no MFA yet</Badge>}
                           {member.locked ? <Badge variant="destructive">locked</Badge> : null}
                           {member.current ? null : <Badge variant="secondary">ended {utcDate(member.endsAt ?? new Date())}</Badge>}
+                          <KeyRemovalState member={member} now={now} />
                         </div>
                       </td>
                       <td className="py-1">
-                        <div className="flex flex-wrap gap-2">
+                        {/* A floor below `sm`, where the table scrolls sideways: without it the cell is a column some 12rem wide, a state's words run to a screen's height and its buttons leave the account behind. */}
+                        <div className="flex min-w-72 flex-wrap gap-2 sm:min-w-0">
+                          {/* At a phone's width the Email and Account columns are scrolled away when the buttons are in view, so the row's account and key state stand above them here; from `sm` up the columns say it. Seen, not heard: the row's header and each button's name already say the account, and nothing here takes the focus. */}
+                          <div data-narrow-account aria-hidden="true" className="flex basis-full flex-wrap items-center gap-1 text-sm font-medium sm:hidden">
+                            <span className="wrap-break-word">{member.email}</span>
+                            <KeyRemovalState member={member} now={now} />
+                          </div>
                           {member.locked ? (
-                            <ActionForm action={unlockUserAction} submit="Unlock" variant="outline" className="flex flex-col gap-1">
+                            <ActionForm action={unlockUserAction} submit={<>Unlock<span className="sr-only"> {member.email}</span></>} variant="outline" className="flex flex-col gap-1">
                               <FormKeys />
                               <input type="hidden" name="organizationId" value={organization.id} />
                               <input type="hidden" name="userId" value={member.userId} />
                             </ActionForm>
                           ) : null}
                           {member.current ? (
-                            <ActionForm action={endMembershipAction} submit="End membership" variant="outline" className="flex flex-col gap-1">
+                            <ActionForm
+                              action={endMembershipAction}
+                              submit={
+                                <>
+                                  End membership<span className="sr-only"> of {member.email}</span>
+                                </>
+                              }
+                              variant="outline"
+                              className="flex flex-col gap-1"
+                            >
                               <FormKeys />
                               <input type="hidden" name="membershipId" value={member.membershipId} />
                             </ActionForm>
                           ) : null}
+                          <KeyRemovalActions member={member} organizationId={organization.id} now={now} />
                         </div>
                       </td>
                     </tr>

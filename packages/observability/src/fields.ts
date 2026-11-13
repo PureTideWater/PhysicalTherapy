@@ -56,6 +56,16 @@ export const ALLOWED_LOG_FIELDS = [
   // the send threw, letters only: SES's, or the worker's own when the send never reached SES (Unrecognized for any other name).
   'password_notice_id',
   'undelivered_reason_code',
+  // The key registry's jobs (docs/adr/0095): the provider sign-out outbox row's opaque ID and what the provider answered
+  // (signed_out or no_such_user, a closed list), and the hardware-key notice row's opaque ID. Never the provider's
+  // subject, an address or a credential.
+  'sign_out_id',
+  'outcome_code',
+  'hardware_key_notice_id',
+  // A database failure's five-character SQLSTATE (PostgreSQL's error code, such as 40P01), read by the worker from the
+  // error's code only when it has that exact shape. A code from a closed standard list; never the error's message,
+  // detail, a constraint's values or a statement.
+  'sqlstate_code',
   'error_code',
 ] as const;
 

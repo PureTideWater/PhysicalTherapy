@@ -1,6 +1,6 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
-import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl } from '@tp/db';
+import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPool, readDatabaseUrl, withActor } from '@tp/db';
 import type { ScopeClient, ScopePool } from '@tp/db/runtime';
 import { type MigratedDatabase, addMembership, asOwner, createMigratedDatabase, createOrganization, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
 import { hashPassword } from '../auth/password';
+import { newRegistrationCode, registrationCodeDigest } from '../auth/registration-code';
 import { Sealer } from '../auth/seal';
 import { DEVICE_COOKIE, KEPT_EMAIL_COOKIE, SESSION_COOKIE, SIGN_IN_COOKIE } from '../auth/sessions';
 import { SoftAuthenticator } from '../auth/test-support/soft-authenticator';
@@ -21,6 +22,7 @@ import { type Services, createServices } from '../server/services';
 import { homePage } from './index';
 import {
   answerMfa,
+  answerRegistrationCode,
   chooseNewPassword,
   enrollPage,
   enrollTotp,
@@ -1205,5 +1207,157 @@ describe('SGN-17 and SGN-18: a step begun before a password reset, and a reset w
     expect(loggedSince(from, 'security event: password reset outcome unknown')).toEqual([expect.objectContaining({ level: 'error', user_id: user.id, error_code: 'InternalErrorException' })]);
     expect(loggedSince(from, 'password reset code refused')).toEqual([]);
     expect((await owner.query('SELECT 1 FROM password_notice WHERE user_id = $1', [user.id])).rowCount).toBe(0);
+  });
+});
+
+describe('SGN-27: the code screen of key registration after a removal (docs/adr/0095)', () => {
+  /** One answer whether no registration is open or the code is wrong: nothing in it says which, or that the account exists. */
+  const REFUSED = { status: 'ok', data: { error: 'That code did not open registration. Check the code PaidWhole gave you and try again.' } };
+  const CODE_SCREEN = { redirect: '/sign-in/register-key' };
+  const sha = (value: Uint8Array | string): Buffer => createHash('sha256').update(value).digest();
+  const requestId = (): string => `test-${randomUUID()}`;
+  const tries = async (removal: string): Promise<number | undefined> =>
+    (await owner.query<{ tries: number }>('SELECT registration_code_tries AS tries FROM hardware_key_removal WHERE id = $1', [removal])).rows[0]?.tries;
+
+  async function seededWithTriggersOff(sql: string, values: unknown[]): Promise<void> {
+    await owner.query('BEGIN');
+    try {
+      await owner.query("SET LOCAL session_replication_role = 'replica'");
+      await owner.query(sql, values);
+      await owner.query('COMMIT');
+    } catch (error) {
+      await owner.query('ROLLBACK');
+      throw error;
+    }
+  }
+
+  /** A platform administrator eight days in the role, with a recorded key; `session` opens a key session just now. */
+  async function administrator(): Promise<{ readonly id: string; session(): Promise<string> }> {
+    const { id } = await person();
+    await seededWithTriggersOff("INSERT INTO membership (id, organization_id, user_id, role, created_at) VALUES ($1, $2, $3, 'platform_admin', now() - interval '8 days')", [
+      randomUUID(),
+      await createOrganization(owner, 'internal'),
+      id,
+    ]);
+    await seededWithTriggersOff('UPDATE "user" SET hardware_key_required = true WHERE id = $1', [id]);
+    const credential = sha(randomBytes(16));
+    const began = async (): Promise<string> => (await app.query<{ at: string }>('SELECT sign_in_step_began()::text AS at')).rows[0]?.at ?? '';
+    const at = await began();
+    await withActor(app, id, (scope) => scope.client.query('SELECT * FROM hardware_key_record($1, $2, $3, $4::timestamptz, $5)', [credential, randomBytes(77), null, at, requestId()]));
+    return {
+      id,
+      session: async () => {
+        const start = await began();
+        return withActor(app, id, async (scope) => {
+          const device = await scope.client.query<{ id: string }>("INSERT INTO user_device (user_id, token_sha256, label) VALUES ($1, $2, 'Test browser') RETURNING id", [id, sha(randomBytes(32)).toString('hex')]);
+          const session = await scope.client.query<{ id: string }>(
+            "INSERT INTO user_session (user_id, device_id, token_sha256, mfa_method, sign_in_began_at, key_credential_sha256) VALUES ($1, $2, $3, 'webauthn', $4::timestamptz, $5) RETURNING id",
+            [id, device.rows[0]?.id, sha(randomBytes(32)).toString('hex'), start, credential],
+          );
+          return session.rows[0]?.id ?? '';
+        });
+      },
+    };
+  }
+
+  /** A staff member whose key two administrators removed: registration is closed. `open` opens it with a new code. */
+  async function closedStaff() {
+    const staff = await person({ internal: true });
+    const first = new Browser();
+    await step(signInWithPassword, first, { email: staff.email, password: PASSWORD });
+    await step(answerMfa, first, { code: nextCode() });
+    const options = await json(hardwareKeyRegistrationOptions, first, {});
+    await json(registerHardwareKey, first, { response: JSON.stringify(new SoftAuthenticator(ORIGIN).create(options.body.options as never)) });
+    const [requester, confirmer] = [await administrator(), await administrator()];
+    const asked = await requester.session();
+    const removal = await withActor(app, requester.id, async (scope) => (await scope.client.query<{ id: string }>('SELECT hardware_key_removal_request($1, $2, $3) AS id', [staff.id, asked, requestId()])).rows[0]?.id ?? '');
+    const confirming = await confirmer.session();
+    await withActor(app, confirmer.id, (scope) => scope.client.query('SELECT * FROM hardware_key_removal_confirm($1, $2, $3)', [removal, confirming, requestId()]));
+    // Past the mark the confirmation wrote: the next sign-in begins after it.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 5);
+    });
+    const open = async (): Promise<string> => {
+      const code = newRegistrationCode();
+      const session = await confirmer.session();
+      await withActor(app, confirmer.id, (scope) => scope.client.query('SELECT hardware_key_registration_open($1, $2, $3, $4)', [removal, session, registrationCodeDigest(services.registrationCodeKey, code), requestId()]));
+      return code;
+    };
+    return { staff, removal, open };
+  }
+
+  /** The password and the authenticator code, up to the key-registration step. */
+  async function atRegistration(email: string): Promise<Browser> {
+    const browser = new Browser();
+    await step(signInWithPassword, browser, { email, password: PASSWORD });
+    expect(await step(answerMfa, browser, { code: nextCode() })).toEqual({ status: 'ok', data: CODE_SCREEN });
+    return browser;
+  }
+
+  it('SGN-27: a closed account’s step shows the code screen, alike with and without an opening; the key routes ask the provider for nothing and count no try', async () => {
+    const { staff, removal, open } = await closedStaff();
+    const browser = await atRegistration(staff.email);
+    const asks = vi.spyOn(services.provider, 'beginKeyRegistration');
+    const shown = await step(registerKeyPage, browser);
+    expect(shown).toMatchObject({ status: 'ok', data: { email: staff.email, codeRequired: true } });
+    expect(await json(hardwareKeyRegistrationOptions, browser, {})).toEqual({ status: 200, body: CODE_SCREEN });
+    await open();
+    // The same screen, to the last field, once an opening stands: there is nothing to poll.
+    expect(await step(registerKeyPage, browser)).toEqual(shown);
+    expect(await json(hardwareKeyRegistrationOptions, browser, {})).toEqual({ status: 200, body: CODE_SCREEN });
+    expect(await tries(removal)).toBe(0);
+    expect(asks.mock.calls).toHaveLength(0);
+    asks.mockRestore();
+  });
+
+  it('SGN-27: no opening and a wrong code are refused in the same words and keep the step; a code of the wrong shape is an issue on its field and counts no try', async () => {
+    const { staff, removal, open } = await closedStaff();
+    const browser = await atRegistration(staff.email);
+    expect(await step(answerRegistrationCode, browser, { code: newRegistrationCode() })).toEqual(REFUSED);
+    expect(await tries(removal)).toBe(0);
+    await open();
+    for (const misshapen of ['', 'ABC', '2345678', '234567890', 'ABCDEFG1', 'ABCDEFGO']) {
+      expect(await step(answerRegistrationCode, browser, { code: misshapen })).toMatchObject({
+        status: 'invalid',
+        issues: [{ field: 'code', message: misshapen === '' ? 'fill this in' : 'enter the eight letters and digits of the code PaidWhole gave you' }],
+      });
+    }
+    expect(await tries(removal)).toBe(0);
+    expect(await step(answerRegistrationCode, browser, { code: newRegistrationCode() })).toEqual(REFUSED);
+    expect(await tries(removal)).toBe(1);
+    // The step stays, still asking for the code.
+    expect(browser.get(SIGN_IN_COOKIE)).toMatch(/^v1\./);
+    expect(await step(registerKeyPage, browser)).toMatchObject({ status: 'ok', data: { codeRequired: true } });
+  });
+
+  it('SGN-27: the right code, typed in lower case with a space, opens the key step; the code is in no cookie, result or log line, and the key then registers', async () => {
+    const { staff, open } = await closedStaff();
+    const browser = await atRegistration(staff.email);
+    const code = await open();
+    logLines.length = 0;
+    const answered = await step(answerRegistrationCode, browser, { code: `${code.slice(0, 4).toLowerCase()} ${code.slice(4).toLowerCase()}` });
+    expect(answered).toEqual({ status: 'ok', data: CODE_SCREEN });
+    // What a refresh keeps: the step, now past the code, and never the code.
+    const page = await step(registerKeyPage, browser);
+    expect(page).toMatchObject({ status: 'ok', data: { email: staff.email } });
+    expect((page as { data: Record<string, unknown> }).data.codeRequired).toBeUndefined();
+    const options = await json(hardwareKeyRegistrationOptions, browser, {});
+    expect(options.body.options).toBeDefined();
+    const everything = [JSON.stringify(answered), JSON.stringify(page), JSON.stringify(options.body), browser.header(), ...logLines].join('\n');
+    expect(everything).not.toContain(code);
+    expect(everything.toLowerCase()).not.toContain(code.toLowerCase());
+    expect(await json(registerHardwareKey, browser, { response: JSON.stringify(new SoftAuthenticator(ORIGIN).create(options.body.options as never)) })).toEqual({
+      status: 200,
+      body: { redirect: '/sign-in/hardware-key?reason=key_registered' },
+    });
+  });
+
+  it('SGN-27: a code with no step starts again, and a code for an account that needs none goes on to the key step', async () => {
+    expect(await step(answerRegistrationCode, new Browser(), { code: newRegistrationCode() })).toEqual({ status: 'ok', data: { redirect: '/sign-in?reason=step_expired' } });
+    const staff = await person({ internal: true });
+    const browser = await atRegistration(staff.email);
+    expect((await step(registerKeyPage, browser) as { data: Record<string, unknown> }).data.codeRequired).toBeUndefined();
+    expect(await step(answerRegistrationCode, browser, { code: newRegistrationCode() })).toEqual({ status: 'ok', data: CODE_SCREEN });
+    expect((await json(hardwareKeyRegistrationOptions, browser, {})).body.options).toBeDefined();
   });
 });

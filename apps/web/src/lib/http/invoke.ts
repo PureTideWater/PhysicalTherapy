@@ -34,6 +34,7 @@ import {
   type Actor,
   type ActorSpec,
   InputError,
+  type KeyRemovalRefusal,
   type Issue,
   type MutationResult,
   BusyError,
@@ -300,7 +301,8 @@ async function run<R>(running: Running, handle: () => Promise<R>): Promise<Outco
     return { status: 'duplicate' };
   }
   const data = await handle();
-  if (route.audit !== undefined) {
+  // An event the database's own function wrote in handle() is not written a second time (AuditSpec.writtenBy).
+  if (route.audit !== undefined && route.audit.writtenBy !== 'database') {
     const objectId = (data as MutationResult | undefined)?.objectId;
     await recordAuditEvent(scope, {
       action: route.audit.action,
@@ -346,7 +348,9 @@ interface Request {
  * - not committed (anything thrown; a COMMIT the server answered with ROLLBACK): the jobs are rolled back with it,
  *   no after-commit work runs, and the outcome is the refusal, or the error is thrown on. Never `ok`;
  * - not known (the commit ended without an answer): the jobs are committed (request-sends.ts says why), nothing
- *   else runs but the work a handler left for this case (AfterCommitOptions.whenCommitUnknown), and the error is thrown on: the person is told neither that it saved nor that it did not.
+ *   else runs, and the error is thrown on: the person is told neither that it saved nor that it did not. What must
+ *   follow a request that may have saved is written in its transaction and taken up by a job (the provider's
+ *   sign-out: docs/adr/0095), never left as work for this case.
  */
 async function transacted<R>(
   services: Services,
@@ -355,18 +359,14 @@ async function transacted<R>(
   refuse: (error: unknown) => Promise<Outcome<never>>,
 ): Promise<Outcome<R>> {
   const committed: (() => Promise<unknown>)[] = [];
-  const unknown: (() => Promise<unknown>)[] = [];
   const sends = new RequestSends(services.queue, services.logger, requestId);
   let outcome: Outcome<R>;
   try {
     outcome = await transact({
       // The handler's queue is the request's sends by their one door: it can queue with the request, and cannot hold or settle them.
       services: signedInServices(services, sends.door()),
-      afterCommit: (work, options) => {
+      afterCommit: (work) => {
         committed.push(work);
-        if (options?.whenCommitUnknown !== undefined) {
-          unknown.push(options.whenCommitUnknown);
-        }
       },
       hold: () => sends.hold(),
     });
@@ -377,14 +377,29 @@ async function transacted<R>(
       services.logger.error('a request’s transaction was rolled back at its commit; nothing was saved', { error_code: 'COMMIT_NOT_APPLIED', request_id: requestId });
     } else if (error instanceof CommitOutcomeUnknownError) {
       services.logger.error('a request’s commit ended without an answer; whether it saved is not known', { error_code: 'COMMIT_OUTCOME_UNKNOWN', request_id: requestId });
-      // Only the work a handler left for exactly this case runs (docs/adr/0094, D6).
-      await runCommitted(unknown, services);
     }
     return refuse(error);
   }
   await sends.settle(undefined);
   await runCommitted(committed, services);
   return outcome;
+}
+
+/**
+ * The security event of a refused act on a key removal (test SEC-28; docs/adr/0095): one row for the acting account,
+ * written by the database's own function in a transaction of its own, since the refusal rolled the request's back.
+ * The reason is one of a closed list and the function takes no account: the actor is the subject. A record that fails
+ * changes nothing the person is told; its line carries IDs and the reason's code, and is the operator's signal instead.
+ */
+async function keyRemovalRefused(services: Services, userId: string, why: KeyRemovalRefusal, requestId: string): Promise<void> {
+  // Every refused act writes this line; the security event is at most one an hour for an account and a reason, so the
+  // event says that an account was refused and these lines say how often (review W65 N3). IDs and the reason's code.
+  services.logger.warn('a refused act on a key removal', { user_id: userId, request_id: requestId, error_code: `key_removal_refused_${why}` });
+  try {
+    await withActor(services.pool, userId, (scope) => scope.client.query('SELECT hardware_key_removal_refused($1, $2)', [why, requestId]), BOUNDED);
+  } catch {
+    services.logger.error('security event: a refused act on a key removal was not recorded', { user_id: userId, request_id: requestId, error_code: `key_removal_refused_${why}` });
+  }
 }
 
 /**
@@ -422,6 +437,9 @@ async function refusal(error: unknown, kind: Route['kind'], services: Services, 
     return { status: 'suspended', reason: (error as Error).message };
   }
   if (error instanceof InputError) {
+    if (error.keyRemovalRefusal !== undefined) {
+      await keyRemovalRefused(services, actor.userId, error.keyRemovalRefusal, requestId);
+    }
     return { status: 'invalid', issues: error.issues };
   }
   if (error instanceof ContractWorkflowError) {

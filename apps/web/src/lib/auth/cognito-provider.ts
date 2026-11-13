@@ -1,7 +1,6 @@
 import {
   AdminCreateUserCommand,
   AdminGetUserCommand,
-  AdminUserGlobalSignOutCommand,
   AssociateSoftwareTokenCommand,
   type AuthenticationResultType,
   CognitoIdentityProviderClient,
@@ -34,6 +33,7 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
   type RegistrationResponseJSON,
   type TotpSetup,
+  type ProviderHardwareKey,
 } from './provider';
 import { type ClientSecret, clientSecretValue, secretHash } from './secret-hash';
 import { totpUri } from './totp';
@@ -106,17 +106,7 @@ export interface CognitoProviderOptions {
   readonly clientSecret?: ClientSecret;
   /** Where a swallowed reset refusal or revoke failure is logged, by its error code and the request alone; standard output by default. */
   readonly logger?: Logger;
-  /** How long the sign-out everywhere may wait for Cognito, in milliseconds; SIGN_OUT_TIMEOUT_MS by default. */
-  readonly signOutTimeoutMs?: number;
 }
-
-/**
- * The longest a sign-out everywhere waits for Cognito (docs/adr/0094, D7). The SDK's client sets no request timeout, and
- * End membership and a reset ask for the sign-out after their own records are committed, while the person waits for
- * the answer: a provider that never answers would hold the page until the load balancer gave up, with no line logged.
- * Past this the request is aborted and the caller logs it as any other failure (the error's name is `AbortError`).
- */
-export const SIGN_OUT_TIMEOUT_MS = 10_000;
 
 interface Challenge {
   /** Cognito's session for the next response. */
@@ -500,9 +490,24 @@ export class CognitoAuthProvider implements AuthProvider {
     }
   }
 
-  async hasHardwareKey(grant: string): Promise<boolean> {
-    const response = await this.options.client.send(new ListWebAuthnCredentialsCommand({ AccessToken: parseGrant(grant).a }));
-    return (response.Credentials ?? []).length > 0;
+  async listHardwareKeys(grant: string): Promise<readonly ProviderHardwareKey[]> {
+    const AccessToken = parseGrant(grant).a;
+    const keys: ProviderHardwareKey[] = [];
+    let NextToken: string | undefined;
+    // A user pool holds at most twenty passkeys a user; five pages is a bound, never reached.
+    for (let page = 0; page < 5; page += 1) {
+      const response = await this.options.client.send(new ListWebAuthnCredentialsCommand({ AccessToken, ...(NextToken === undefined ? {} : { NextToken }) }));
+      for (const credential of response.Credentials ?? []) {
+        if (typeof credential.CredentialId === 'string') {
+          keys.push({ credentialId: credential.CredentialId, createdAt: credential.CreatedAt instanceof Date ? credential.CreatedAt : undefined });
+        }
+      }
+      NextToken = response.NextToken;
+      if (NextToken === undefined) {
+        break;
+      }
+    }
+    return keys;
   }
 
   async beginKeyRegistration(grant: string): Promise<KeyChallenge<PublicKeyCredentialCreationOptionsJSON>> {
@@ -662,17 +667,5 @@ export class CognitoAuthProvider implements AuthProvider {
    */
   async probe(username: string): Promise<void> {
     await this.options.client.send(new InitiateAuthCommand({ AuthFlow: 'USER_AUTH', ClientId: this.options.clientId, AuthParameters: { USERNAME: username, ...this.hash(username) } }));
-  }
-
-  async globalSignOut(sub: string): Promise<void> {
-    const abort = new AbortController();
-    const timer = setTimeout(() => {
-      abort.abort();
-    }, this.options.signOutTimeoutMs ?? SIGN_OUT_TIMEOUT_MS);
-    try {
-      await this.options.client.send(new AdminUserGlobalSignOutCommand({ UserPoolId: this.options.userPoolId, Username: sub }), { abortSignal: abort.signal });
-    } finally {
-      clearTimeout(timer);
-    }
   }
 }

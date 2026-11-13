@@ -366,6 +366,16 @@ describe('the audit log', () => {
       'organization_reinstated',
       'password_notice_sent',
       'password_notice_undelivered',
+      // Since migration 20261116090000: the key registry's and the provider sign-out's records (docs/adr/0095).
+      'hardware_key_removal_requested',
+      'hardware_key_removal_confirmed',
+      'hardware_key_removal_cancelled',
+      'hardware_key_removal_expired',
+      'hardware_key_registration_opened',
+      'hardware_key_notice_sent',
+      'hardware_key_notice_undelivered',
+      'provider_signed_out',
+      'provider_sign_out_undelivered',
     ]) {
       expect(await insert('user', reserved), reserved).toBe('42501');
       expect(await insert('service', reserved), reserved).toBe('42501');

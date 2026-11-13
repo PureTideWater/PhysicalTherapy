@@ -249,6 +249,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@aws-sdk/client-cognito-identity-provider':
+        specifier: ^3.1164.0
+        version: 3.1164.0
       '@aws-sdk/client-rds':
         specifier: ^3.1164.0
         version: 3.1164.0

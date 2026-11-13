@@ -124,6 +124,7 @@ export const MAIL_KINDS = [
   'cognito',
   'digest',
   'password_changed',
+  'hardware_keys_removed',
   'dunning',
   'support_grant_opened',
   'support_grant_closed',
@@ -136,7 +137,7 @@ export const MAIL_KINDS = [
 export type MailKind = (typeof MAIL_KINDS)[number];
 /** The kinds each stream carries (mail_send_stream_kind). */
 export const MAIL_STREAM_KINDS: Readonly<Record<MailStream, readonly MailKind[]>> = {
-  transactional: ['cognito', 'digest', 'password_changed', 'probe'],
+  transactional: ['cognito', 'digest', 'password_changed', 'hardware_keys_removed', 'probe'],
   notices: ['support_grant_opened', 'support_grant_closed', 'dunning', 'probe'],
   screening: ['screening_result', 'screening_failed', 'screening_reminder', 'screening_withdrawal', 'probe'],
 };

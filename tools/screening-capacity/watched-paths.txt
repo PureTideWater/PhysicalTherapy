@@ -66,6 +66,7 @@ apps/web/src/lib/auth/dev-store.ts
 apps/web/src/lib/auth/password.ts
 apps/web/src/lib/auth/pending.ts
 apps/web/src/lib/auth/provider.ts
+apps/web/src/lib/auth/registration-code.ts
 apps/web/src/lib/auth/seal.ts
 apps/web/src/lib/auth/secret-hash.ts
 apps/web/src/lib/auth/sessions.ts
@@ -190,10 +191,13 @@ apps/worker/src/parse/loader.ts
 apps/worker/src/parse/plan.ts
 apps/worker/src/parse/report.ts
 apps/worker/src/platform/audit-copy.ts
+apps/worker/src/platform/cognito-sign-out.ts
+apps/worker/src/platform/hardware-key-notices.ts
 apps/worker/src/platform/mail-events.ts
 apps/worker/src/platform/monitoring-schedule.ts
 apps/worker/src/platform/password-notices.ts
 apps/worker/src/platform/pg-dump-restorer.ts
+apps/worker/src/platform/provider-sign-outs.ts
 apps/worker/src/platform/rds-restorer.ts
 apps/worker/src/platform/restore-drill.ts
 apps/worker/src/platform/support-notices.ts

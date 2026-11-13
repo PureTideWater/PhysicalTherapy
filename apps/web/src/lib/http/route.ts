@@ -146,10 +146,37 @@ export class NotFoundError extends Error {
   }
 }
 
-/** Thrown by a handler: input its schema accepts but the domain does not. Messages name fields, never values. */
+/**
+ * The refusals of an act on a key removal that leave a security event for the acting account: the database's own
+ * closed list (hardware_key_removal_refused; docs/adr/0095, test SEC-28). They are the refusals a person probing the
+ * two-person rule would meet, and the four of a request that bound what a request may hold (test SGN-31): a
+ * requester met by one of those is trying how far a request reaches.
+ */
+export const KEY_REMOVAL_REFUSALS = [
+  'not_permitted',
+  'two_people',
+  'not_own_account',
+  'requester_left',
+  'one_administrator_request',
+  'asked_again_too_soon',
+  'target_asks',
+  'no_third_administrator',
+] as const;
+export type KeyRemovalRefusal = (typeof KEY_REMOVAL_REFUSALS)[number];
+
+/**
+ * Thrown by a handler: input its schema accepts but the domain does not. Messages name fields, never values.
+ *
+ * `keyRemovalRefusal` names one of the closed list above when the database refused an act on a key removal. The
+ * handler's transaction is rolled back with the refusal and a handler has no second connection, so the routes'
+ * wrapper records the security event after the rollback, in a transaction of its own as the acting account.
+ */
 export class InputError extends Error {
   override readonly name = 'InputError';
-  constructor(readonly issues: readonly Issue[]) {
+  constructor(
+    readonly issues: readonly Issue[],
+    readonly keyRemovalRefusal?: KeyRemovalRefusal,
+  ) {
     super(issues.map((issue) => `${issue.field}: ${issue.message}`).join('; '));
   }
 }
@@ -163,6 +190,12 @@ export interface MutationResult {
 export interface AuditSpec {
   readonly action: string;
   readonly objectType: string;
+  /**
+   * 'database': the function the handler calls writes this event itself, under a reserved action the application role
+   * cannot insert (the hardware-key registry, docs/adr/0095), so the wrapper writes none. The route still names the
+   * action, and its tests hold that exactly one event exists for each act.
+   */
+  readonly writtenBy?: 'database';
 }
 
 /**
@@ -179,6 +212,12 @@ export interface SampleRefs {
   readonly membershipId: string;
   /** A locked user in the group. */
   readonly lockedUserId: string;
+  /** A member of the group with a registered hardware key and no key removal (docs/adr/0095). */
+  readonly keyHolderUserId: string;
+  /** Key removals another platform administrator requested, one to confirm and one to cancel, and a confirmed one whose account is closed. */
+  readonly keyRemovalToConfirmId: string;
+  readonly keyRemovalToCancelId: string;
+  readonly keyRemovalClosedId: string;
   readonly firmId: string;
   readonly grantId: string;
   readonly supportGrantId: string;
@@ -337,17 +376,7 @@ export type PublicContext<P, I> = BaseContext<P, I, Services>;
  * that fails or is refused. A failure of the work is logged by code and does not change the outcome: the request's
  * records are already committed, and the job's own schedule takes it up.
  */
-export type AfterCommit = (work: () => Promise<unknown>, options?: AfterCommitOptions) => void;
-
-export interface AfterCommitOptions {
-  /**
-   * Run instead of the work when the commit ended without an answer, so whether the request saved is not known
-   * (docs/adr/0094, D6): for work whose absence would be a silent security gap if the request did save, and which is
-   * harmless if it did not. Its failure is logged by code and changes nothing. Most work leaves this out: it runs
-   * only for a commit that is known.
-   */
-  readonly whenCommitUnknown?: () => Promise<unknown>;
-}
+export type AfterCommit = (work: () => Promise<unknown>) => void;
 
 export interface ActorContext<P, I> extends BaseContext<P, I, SignedInServices> {
   readonly actor: Actor;

@@ -155,3 +155,61 @@ export function passwordChangedLines(changedAt: Date, supportEmail: string, seco
     `If you did not, write to ${supportEmail} now from the address you sign in with, and tell your organization’s administrator. We will help you secure the account.`,
   ];
 }
+
+/** The three hardware-key notices of an account (docs/adr/0095): the notice row's kind. */
+export const HARDWARE_KEY_NOTICE_KINDS = ['removed', 'registration_opened', 'registered_after_removal'] as const;
+export type HardwareKeyNoticeKind = (typeof HARDWARE_KEY_NOTICE_KINDS)[number];
+
+/** Each hardware-key notice's subject, sent with the product's name after it by the worker's brandedSubject(). */
+export const HARDWARE_KEY_NOTICE_SUBJECTS: Readonly<Record<HardwareKeyNoticeKind, string>> = {
+  removed: 'Your hardware key was removed',
+  registration_opened: 'Registration of a new hardware key is open',
+  registered_after_removal: 'A new hardware key was registered',
+};
+
+/** How long an opened registration lasts (the database's hour: hardware_key_removal_opening), from which the email computes its end. */
+export const KEY_REGISTRATION_OPEN_HOURS = 1;
+
+/** Said wherever a notice names the one-time code: a message that carries one, or asks for one, is not the product's. */
+const NEVER_BY_EMAIL = `${brandName} never sends this code by email or text.`;
+
+/**
+ * A hardware-key notice's lines (docs/adr/0095), to the account's own address, from the outbox the database writes in
+ * the event's own transaction. What happened and when (UTC, to the minute); what the next sign-in asks for, where that
+ * is true of the event; and the one route if the reader did not expect it: the support address, written to from the
+ * address they sign in with (the password-changed email's phrase). No name, no practice, no link, no code: the
+ * one-time code that opens registration is read to the member by a person and is in no email.
+ *
+ * - `removed`: the key was removed by two of the product's administrators; the account cannot sign in until it
+ *   registers a new key, which it does only once support opens registration and reads it a one-time code by phone.
+ * - `registration_opened`: registration is open until a time; with the one-time code. The notice's row carries the
+ *   opening's own time (hardware_key_registration_open() writes one clock reading to registration_opened_at and to
+ *   the notice's event_at), and the database's check holds the end to exactly one hour after it, so the email
+ *   computes the end from the event's time and it is the row's own.
+ * Both say the code is never sent by email or text, so a message that carries or asks for one is not the product's.
+ * The key is named in the singular throughout, as the sign-in screens name it: an account holds one live key.
+ * - `registered_after_removal`: a new key was registered; signing in asks for it from now on.
+ */
+export function hardwareKeyNoticeLines(kind: HardwareKeyNoticeKind, eventAt: Date, supportEmail: string): readonly string[] {
+  const at = utcMinute(eventAt);
+  switch (kind) {
+    case 'removed':
+      return [
+        `The hardware key on your ${brandName} account was removed by two ${brandName} administrators at ${at}. Every session of this account has ended.`,
+        `You cannot sign in until you register a new hardware key. To do that, ${brandName} support first opens registration and reads you a one-time code by phone. ${NEVER_BY_EMAIL}`,
+        `If you did not expect this, write to ${supportEmail} now from the address you sign in with.`,
+      ];
+    case 'registration_opened':
+      return [
+        `${brandName} opened registration of a new hardware key on your ${brandName} account at ${at}. It is open until ${utcMinute(new Date(eventAt.getTime() + KEY_REGISTRATION_OPEN_HOURS * 3_600_000))}.`,
+        `To register the key, sign in with your password and your authenticator code, then enter the one-time code ${brandName} support read to you by phone. ${NEVER_BY_EMAIL}`,
+        `If you did not ask for this, write to ${supportEmail} at once from the address you sign in with.`,
+      ];
+    case 'registered_after_removal':
+      return [
+        `A new hardware key was registered on your ${brandName} account at ${at}.`,
+        'Signing in asks for this key from now on.',
+        `If this was not you, write to ${supportEmail} at once from the address you sign in with.`,
+      ];
+  }
+}

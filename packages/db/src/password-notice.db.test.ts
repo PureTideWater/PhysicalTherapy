@@ -1097,7 +1097,37 @@ describe('the record function’s seventh column (docs/adr/0091; DROP and CREATE
     expect(after).toBe(changes.reduce((text, [old, next]) => text.replace(old, next), before));
     const live = (await owner.query<{ body: string }>('SELECT prosrc AS body FROM pg_proc WHERE oid = $1::regprocedure', [RECORD_SIGNATURE])).rows;
     expect(live).toHaveLength(1);
-    expect(after.slice(after.indexOf('AS $$') + 'AS $$'.length, after.lastIndexOf('$$'))).toBe(live[0]?.body);
+    // Since migration 20261116090000 (docs/adr/0095) the live body is this migration's with exactly the key notice's
+    // additions: one declaration, one lock, one branch. Its arguments and its seven columns are unchanged.
+    const keyNotice: readonly (readonly [string, string])[] = [
+      ['  touched_password_notice uuid;\n', '  touched_password_notice uuid;\n  touched_key_notice uuid;\n'],
+      [
+        "    PERFORM pg_advisory_xact_lock(hashtextextended('password_notice:' || message_id, 0));\n  END IF;\n",
+        "    PERFORM pg_advisory_xact_lock(hashtextextended('password_notice:' || message_id, 0));\n" +
+          "  ELSIF kind = 'hardware_keys_removed' THEN\n" +
+          "    PERFORM pg_advisory_xact_lock(hashtextextended('hardware_key_notice:' || message_id, 0));\n" +
+          '  END IF;\n',
+      ],
+      [
+        '  -- An invitation whose Cognito message did not arrive',
+        "  IF held.stream = 'transactional' AND held.kind = 'hardware_keys_removed' AND held.state IN ('delivered', 'bounced', 'suppressed', 'rejected') THEN\n" +
+          "    UPDATE hardware_key_notice n SET state = CASE WHEN held.state = 'delivered' THEN 'delivered' ELSE 'undelivered' END\n" +
+          '     WHERE n.ses_message_id = message_id\n' +
+          "       AND (n.state = 'sent' OR (n.state = 'delivered' AND held.state IN ('bounced', 'suppressed', 'rejected')))\n" +
+          '    RETURNING n.id INTO touched_key_notice;\n' +
+          "    IF touched_key_notice IS NOT NULL AND held.state <> 'delivered' THEN\n" +
+          '      PERFORM hardware_key_notice_report_undelivered(touched_key_notice, request);\n' +
+          '    END IF;\n' +
+          '  END IF;\n' +
+          '\n' +
+          '  -- An invitation whose Cognito message did not arrive',
+      ],
+    ];
+    const body = after.slice(after.indexOf('AS $$') + 'AS $$'.length, after.lastIndexOf('$$'));
+    for (const [old] of keyNotice) {
+      expect(body.split(old).length, old).toBe(2);
+    }
+    expect(keyNotice.reduce((text, [old, next]) => text.replace(old, next), body)).toBe(live[0]?.body);
     expect((await owner.query("SELECT count(*)::int AS n FROM pg_proc WHERE proname = 'operator_record_mail_event'")).rows).toEqual([{ n: 1 }]);
   });
 });

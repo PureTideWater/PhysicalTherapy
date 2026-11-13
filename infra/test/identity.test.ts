@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { PASSWORD_MIN_LENGTH, TOKEN_LIFETIMES } from '../lib/constructs/identity';
 import { MAIL_IDENTITIES_VERIFIED_CONDITION, PARAMETER_NAMES } from '../lib/deploy-parameters';
 import { ENVIRONMENTS } from '../lib/environments';
-import { logicalIdOf, onlyResource, propertiesOf, synthesized } from './synth';
+import { logicalIdOf, onlyResource, propertiesOf, resourcesOf, synthesized } from './synth';
 
 /** The session limits docs/product/sessions.md states, read from the document itself. */
 function sessionLimits(): { absoluteMinutes: number; idleMinutes: number } {
@@ -40,10 +40,28 @@ describe.each(ENVIRONMENTS)('%s: identity', (environment) => {
     expect(poolProperties.WebAuthnUserVerification).toBe('required');
   });
 
+  it('requires user verification exactly when the web’s own check of a key does: the pool’s setting follows KEY_USER_VERIFICATION_REQUIRED (docs/adr/0095)', () => {
+    // The web's constant is read from its source, as the relying-party ID below is: infra does not build the web.
+    const flow = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/auth/sign-in.ts'), 'utf8');
+    const declared = [...flow.matchAll(/^export const KEY_USER_VERIFICATION_REQUIRED = (true|false);$/gm)];
+    expect(declared).toHaveLength(1);
+    expect(poolProperties.WebAuthnUserVerification).toBe(declared[0]?.[1] === 'true' ? 'required' : 'preferred');
+    // Both of the web's checks take the constant, and neither a literal.
+    expect(flow.match(/requireUserVerification: KEY_USER_VERIFICATION_REQUIRED,/g)).toHaveLength(2);
+    expect(flow.match(/requireUserVerification:/g)).toHaveLength(2);
+  });
+
   it('binds passkeys to the application host, the relying-party ID the web app gives WebAuthn', () => {
     expect(poolProperties.WebAuthnRelyingPartyID).toEqual({ Ref: PARAMETER_NAMES.appDomainName });
     const config = readFileSync(path.resolve(import.meta.dirname, '../../apps/web/src/lib/server/config.ts'), 'utf8');
     expect(config).toContain('rpId: settings.WEBAUTHN_RP_ID ?? new URL(settings.APP_ORIGIN).hostname');
+    // The web task is given that same reference, and its origin is https on that same host: whichever the web reads,
+    // it is the pool's (the web refuses its key steps if the two ever differ: RelyingPartyMismatch in auth/sign-in.ts).
+    const task = resourcesOf(template, 'AWS::ECS::TaskDefinition').find(([, found]) => propertiesOf(found).Family === `tp-${environment}-web`);
+    const [definition] = (task === undefined ? [] : propertiesOf(task[1]).ContainerDefinitions) as { Environment?: { Name: string; Value: unknown }[] }[];
+    const web = Object.fromEntries((definition?.Environment ?? []).map((entry) => [entry.Name, entry.Value]));
+    expect(web.WEBAUTHN_RP_ID).toEqual(poolProperties.WebAuthnRelyingPartyID);
+    expect(web.APP_ORIGIN).toEqual({ 'Fn::Join': ['', ['https://', poolProperties.WebAuthnRelyingPartyID]] });
   });
 
   it('sends Cognito\'s email in phase 2 through SES as PaidWhole <MailFromAddress>, under its domain\'s identity and the transactional set; in phase 1 through Cognito\'s own sender (docs/adr/0065, D2)', () => {

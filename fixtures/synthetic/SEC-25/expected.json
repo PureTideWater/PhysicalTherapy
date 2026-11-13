@@ -1,0 +1,17 @@
+{
+  "case": "SEC-25",
+  "module": "SEC",
+  "title": "The key registry's catalog",
+  "assertion": "`hardware_key`, `hardware_key_removal`, `hardware_key_notice` and `provider_sign_out` have row-level security enabled and forced, exactly one policy each, for the owner, and no privilege for the application role or the operator role; every function of the registry is SECURITY DEFINER, owned by the owner, with search_path pg_catalog, public, pg_temp, revoked from PUBLIC and granted only to the role its list names; the helpers granted to no role are granted to none",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": ["packages/db/src/key-registry.db.test.ts"],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic accounts of two synthetic practices the test inserts; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

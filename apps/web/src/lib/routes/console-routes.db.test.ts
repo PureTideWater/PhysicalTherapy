@@ -1,7 +1,7 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-import { type DatabaseClient, type DatabasePool, LocalKeyProvider, databaseClient, openPracticeCipher, openPool, readDatabaseUrl, withActor, withJobScope, withPracticeScope } from '@tp/db';
+import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type ScopeClient, databaseClient, openPracticeCipher, openPool, readDatabaseUrl, withActor, withJobScope, withPracticeScope } from '@tp/db';
 import { type MigratedDatabase, type TenantWorld, addMembership, asOwner, createMigratedDatabase, createOrganization, createTenantWorld, createUser, endPool } from '@tp/db/testing';
 import { createLogger } from '@tp/observability';
 import { loadRelease } from '@tp/rules/loader';
@@ -11,8 +11,10 @@ import { z } from 'zod';
 
 import { DevAuthProvider } from '../auth/dev-provider';
 import { MemoryDevStore } from '../auth/dev-store';
+import { isRegistrationCodeShaped, registrationCodeDigest } from '../auth/registration-code';
 import { Sealer } from '../auth/seal';
 import { SESSION_COOKIE, resolveSession } from '../auth/sessions';
+import { keySession, recordKey, seedPlatformAdmin } from './test-support/key-holders';
 import { openSessionNow } from './test-support/open-session';
 import { selfRoute } from '../http/invoke';
 import type { CookieJar, Route } from '../http/route';
@@ -35,6 +37,7 @@ import {
   supportPage,
   unlockUser,
 } from './console';
+import { KEY_REFUSALS, cancelKeyRemoval, confirmKeyRemoval, openKeyRegistration, requestKeyRemoval } from './console-keys';
 import { MODEL_VALUE_HINT, consoleModelsPage, setModelFlag } from './console-models';
 import { practiceHome, supportAccessPage } from './practice';
 import { ruleReleasesPage } from './rule-releases';
@@ -356,20 +359,20 @@ describe('members', () => {
     expect(invitations).toHaveLength(sent);
   });
 
-  it('ends a membership: the user’s sessions end at once and the provider signs them out', async () => {
+  it('ends a membership: the user’s sessions end at once and the provider’s sign-out is queued for the job', async () => {
     const userId = await createUser(owner);
     const membershipId = await addMembership(owner, world.organizationId, userId, 'analyst');
     const token = await sessionFor(userId, 'totp');
     expect((await resolveSession(app, token, 'test')).state).toBe('active');
-    const signOut = vi.spyOn(provider, 'globalSignOut');
     expect(await run(endMembership, admin.token, { membershipId })).toMatchObject({ status: 'ok', data: { redirect: `/console/organizations/${world.organizationId}` } });
-    expect(signOut).toHaveBeenCalledWith(`synthetic-${userId}`);
-    signOut.mockRestore();
+    expect((await owner.query(`SELECT 1 FROM provider_sign_out WHERE user_id = $1 AND reason = 'membership_ended'`, [userId])).rowCount).toBe(1);
     expect(await resolveSession(app, token, 'test')).toEqual({ state: 'ended', reason: 'ended' });
     expect(await run(endMembership, admin.token, { membershipId })).toEqual({ status: 'not_found' });
+    expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE user_id = $1', [userId])).rowCount).toBe(1);
   });
 
-  // docs/adr/0094 (Queues item 29): the provider is asked only once End membership has committed, and its failure undoes nothing.
+  // docs/adr/0095 (Queues item 37; docs/adr/0094's open case closed): End membership queues the provider's sign-out in
+  // its own transaction and the outbox job sends it. The web asks the provider nothing, after the commit or otherwise.
   describe.each([
     { name: 'the console', route: () => endMembership, actor: () => admin.token, input: (membershipId: string) => ({ membershipId }), params: () => ({}) },
     {
@@ -379,50 +382,78 @@ describe('members', () => {
       input: (membershipId: string) => ({ membershipId, confirm: 'on' }),
       params: () => ({ organizationId: world.organizationId }),
     },
-  ])('End membership in $name when the provider’s sign-out fails (SGN-19)', ({ route, actor, input, params }) => {
-    it('ends the membership, the sessions and writes the audit event; the provider is asked after the commit and its failure is one logged line', async () => {
+  ])('End membership in $name leaves the provider’s sign-out to the outbox job (SGN-19)', ({ route, actor, input, params }) => {
+    it('ends the membership and the sessions, writes the audit event and one queued row of IDs with it; the web has no call to the provider and writes no line of its own', async () => {
       const userId = await createUser(owner);
       const membershipId = await addMembership(owner, world.organizationId, userId, 'analyst');
       const token = await sessionFor(userId, 'totp');
       const lines: Record<string, unknown>[] = [];
       const logged = { ...services, logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }) };
-      const seen: { ended: boolean; sessions: number }[] = [];
-      const signOut = vi.spyOn(provider, 'globalSignOut').mockImplementation(async () => {
-        // Another connection sees only what has committed.
-        const membership = await owner.query('SELECT 1 FROM membership WHERE id = $1 AND ends_at IS NOT NULL', [membershipId]);
-        const open = await owner.query('SELECT 1 FROM user_session WHERE user_id = $1 AND ended_at IS NULL', [userId]);
-        seen.push({ ended: membership.rowCount === 1, sessions: open.rowCount ?? -1 });
-        throw Object.assign(new Error(`no sign-out for synthetic-${userId}`), { name: 'TooManyRequestsException' });
-      });
       const actorToken = await actor();
       const requestId = `test-${randomUUID()}`;
       const answer = await route().invoke(
         { cookies: new Jar(actorToken), params: params(), input: { csrfToken: csrfTokenFor(services.sealer, actorToken), requestKey: randomUUID(), ...input(membershipId) }, requestId, userAgent: null },
         logged,
       );
-      expect(signOut).toHaveBeenCalledExactlyOnceWith(`synthetic-${userId}`);
-      signOut.mockRestore();
       expect(answer).toMatchObject({ status: 'ok' });
-      expect(seen).toEqual([{ ended: true, sessions: 0 }]);
+      // The web's provider has no sign-out to call: what asks is apps/worker's adapter, from the row.
+      expect(provider).not.toHaveProperty('globalSignOut');
       expect(await resolveSession(app, token, 'test')).toEqual({ state: 'ended', reason: 'ended' });
-      expect((await owner.query(`SELECT 1 FROM audit_event WHERE action = 'membership_ended' AND object_id = $1 AND request_id = $2`, [membershipId, requestId])).rowCount).toBe(1);
-      const failures = lines.filter((line) => line['msg'] === 'security event: membership end provider sign-out failed');
-      expect(failures).toHaveLength(1);
-      expect(failures[0]).toMatchObject({ level: 'error', user_id: userId, request_id: requestId, error_code: 'TooManyRequestsException' });
-      // IDs and a code only: no address, no provider subject, no error text.
+      const event = await owner.query<{ id: string }>(`SELECT id FROM audit_event WHERE action = 'membership_ended' AND object_id = $1 AND request_id = $2`, [membershipId, requestId]);
+      expect(event.rowCount).toBe(1);
+      // One row, of the audit event that caused it, committed with it: the account, the cause, the request. No try yet.
+      const queued = await owner.query<Record<string, unknown>>('SELECT * FROM provider_sign_out WHERE user_id = $1', [userId]);
+      expect(queued.rows).toHaveLength(1);
+      expect(queued.rows[0]).toMatchObject({ user_id: userId, reason: 'membership_ended', source_event_id: event.rows[0]?.id, request_id: requestId, attempts: 0, done_at: null });
+      // IDs only, in the row and in the lines: no address, no provider subject.
+      expect(JSON.stringify(queued.rows)).not.toMatch(/synthetic-|@/);
+      expect(lines.filter((line) => line['msg'] === 'security event: membership end provider sign-out failed')).toEqual([]);
       expect(JSON.stringify(lines)).not.toMatch(/synthetic-|@/);
     });
 
-    it('asks the provider nothing when End membership is refused', async () => {
-      const signOut = vi.spyOn(provider, 'globalSignOut');
+    it('queues nothing when End membership rolls back at its commit: the row is written in the act’s transaction and goes with it', async () => {
+      const userId = await createUser(owner);
+      const membershipId = await addMembership(owner, world.organizationId, userId, 'analyst');
+      const token = await sessionFor(userId, 'totp');
+      // The server refuses the request's own COMMIT: everything the act wrote (the end, the audit event, the row) is undone.
+      const refusing: Services['pool'] = {
+        connect: async () => {
+          const client = await app.connect();
+          let resolving = false;
+          const query = (text: string, values?: unknown[]) => {
+            if (text.startsWith('BEGIN')) {
+              resolving = false;
+            }
+            resolving ||= text.includes('resolve_session');
+            return text === 'COMMIT' && !resolving
+              ? client.query('ROLLBACK').then(() => Promise.reject(Object.assign(new Error('SYNTHETIC lock words'), { code: '55P03', severity: 'ERROR' })))
+              : client.query(text, values);
+          };
+          return { query: query as ScopeClient['query'], release: (destroy?: boolean | Error) => client.release(destroy) };
+        },
+      };
       const actorToken = await actor();
+      const requestId = `test-${randomUUID()}`;
       const answer = await route().invoke(
-        { cookies: new Jar(actorToken), params: params(), input: { csrfToken: csrfTokenFor(services.sealer, actorToken), requestKey: randomUUID(), ...input(randomUUID()) }, requestId: `test-${randomUUID()}`, userAgent: null },
+        { cookies: new Jar(actorToken), params: params(), input: { csrfToken: csrfTokenFor(services.sealer, actorToken), requestKey: randomUUID(), ...input(membershipId) }, requestId, userAgent: null },
+        { ...services, pool: refusing },
+      );
+      expect(answer.status).not.toBe('ok');
+      expect((await owner.query('SELECT 1 FROM membership WHERE id = $1 AND ends_at IS NULL', [membershipId])).rowCount).toBe(1);
+      expect((await owner.query('SELECT 1 FROM audit_event WHERE request_id = $1', [requestId])).rowCount).toBe(0);
+      expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE user_id = $1 OR request_id = $2', [userId, requestId])).rowCount).toBe(0);
+      expect((await resolveSession(app, token, 'test')).state).toBe('active');
+    });
+
+    it('queues nothing when End membership is refused', async () => {
+      const actorToken = await actor();
+      const requestId = `test-${randomUUID()}`;
+      const answer = await route().invoke(
+        { cookies: new Jar(actorToken), params: params(), input: { csrfToken: csrfTokenFor(services.sealer, actorToken), requestKey: randomUUID(), ...input(randomUUID()) }, requestId, userAgent: null },
         services,
       );
       expect(answer).toEqual({ status: 'not_found' });
-      expect(signOut).not.toHaveBeenCalled();
-      signOut.mockRestore();
+      expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE request_id = $1', [requestId])).rowCount).toBe(0);
     });
   });
 
@@ -1056,5 +1087,371 @@ describe('Content due on the console’s Rule releases page (audit #59; docs/adr
 
   it('reads the MUE as ended on a day after it runs out', async () => {
     expect((await dueAt('2027-01-05T15:00:00Z')).items.find((item) => item.family === 'ncci_mue')).toMatchObject({ stage: 'ended', loadedThrough: '2026-12-31' });
+  });
+});
+
+/**
+ * The hardware-key registry's console (docs/adr/0095; Queues item 37; design section 6, 16.4, 16.5): two platform
+ * administrators, neither of them the account, each seven days in the role and each in a key session of the last 15
+ * minutes, remove an account's keys; one of them then opens registration with a code shown once. The functions decide
+ * and write the audit rows; these tests hold what the routes add: the handler's role check, the acting session, the
+ * refusals' words, exactly one audit event an act and none for a refusal, and a code that reaches no record or log.
+ */
+describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27)', () => {
+  interface KeyHolder {
+    readonly id: string;
+    readonly credential: Buffer;
+    /** A key session opened just now with the registered key. */
+    token(): Promise<string>;
+  }
+
+  async function holder(id: string): Promise<KeyHolder> {
+    const credential = await recordKey(app, id);
+    return { id, credential, token: async () => (await keySession(app, id, credential)).sessionToken };
+  }
+
+  /** A platform administrator `days` in the role, with a registered key. */
+  async function keyAdmin(days = 8): Promise<KeyHolder> {
+    const id = await createUser(owner, { hardwareKeyRequired: true });
+    await seedPlatformAdmin(owner, admin.internalId, id, days);
+    return holder(id);
+  }
+
+  /** A member of the customer organization with a registered key. */
+  async function keyMember(): Promise<KeyHolder> {
+    const id = await createUser(owner, { hardwareKeyRequired: true });
+    await addMembership(owner, world.organizationId, id, 'analyst');
+    return holder(id);
+  }
+
+  async function act<R>(route: Route<R>, token: string, input: Record<string, unknown>, to: Services = services) {
+    const requestId = `test-${randomUUID()}`;
+    const outcome = await route.invoke({ cookies: new Jar(token), params: {}, input: { csrfToken: csrfTokenFor(services.sealer, token), requestKey: randomUUID(), ...input }, requestId, userAgent: null }, to);
+    // What the act itself wrote. The security event a refused act leaves for the acting account is SEC-28's, read by refusalsOf.
+    const events = (await owner.query<{ action: string }>("SELECT action FROM audit_event WHERE request_id = $1 AND action <> 'security_event' ORDER BY at", [requestId])).rows.map((row) => row.action);
+    return { outcome, events, requestId };
+  }
+
+  /** The holder's key session, begun 16 minutes ago: live, theirs, and no longer the acting session the functions ask for. */
+  async function staleToken(of: KeyHolder): Promise<string> {
+    const session = await keySession(app, of.id, of.credential);
+    await owner.query("UPDATE user_session SET started_at = started_at - interval '16 minutes', expires_at = expires_at - interval '16 minutes' WHERE id = $1", [session.sessionId]);
+    return session.sessionToken;
+  }
+
+  const removalOf = async (userId: string) =>
+    (await owner.query<{ id: string; state: string; registration_code_sha256: Buffer | null }>('SELECT id, state, registration_code_sha256 FROM hardware_key_removal WHERE user_id = $1 ORDER BY requested_at DESC LIMIT 1', [userId])).rows[0];
+  const refusedWith = (message: string) => ({ status: 'invalid', issues: [{ field: 'input', message }] });
+  const organizationId = () => world.organizationId;
+
+  let first: KeyHolder;
+  let second: KeyHolder;
+
+  beforeAll(async () => {
+    first = await keyAdmin();
+    second = await keyAdmin();
+  });
+
+  it('requests a removal: the function’s one audit event, no second from the wrapper, and the organization’s page shows who asked', async () => {
+    const member = await keyMember();
+    const { outcome, events } = await act(requestKeyRemoval, await first.token(), { organizationId: organizationId(), userId: member.id });
+    expect(outcome).toMatchObject({ status: 'ok', data: { redirect: `/console/organizations/${organizationId()}` } });
+    expect(events).toEqual(['hardware_key_removal_requested']);
+    const removal = await removalOf(member.id);
+    expect(removal?.state).toBe('requested');
+    const page = await run(organizationPage, await second.token(), undefined, { organizationId: organizationId() });
+    expect(page).toMatchObject({ status: 'ok' });
+    const row = (page as { data: { members: { userId: string; keyRemoval: unknown }[] } }).data.members.find((each) => each.userId === member.id);
+    expect(row?.keyRemoval).toMatchObject({ removalId: removal?.id, state: 'requested', requestedById: first.id, mine: false, liveKeys: 1, registrationClosed: false, registrationOpenUntil: null });
+    expect((row?.keyRemoval as { requestedByEmail: string }).requestedByEmail).toContain('@');
+    // Nothing else changed: the member's key and session stand.
+    expect(await resolveSession(app, await member.token(), 'test')).toMatchObject({ state: 'active' });
+  });
+
+  it('refuses a request, each time writing nothing: the account itself, under seven days, a code session, a second open request, a practice administrator, no such account', async () => {
+    const member = await keyMember();
+    const input = { organizationId: organizationId(), userId: member.id };
+    const refusals = [
+      await act(requestKeyRemoval, await first.token(), { organizationId: organizationId(), userId: first.id }),
+      await act(requestKeyRemoval, await (await keyAdmin(3)).token(), input),
+      await act(requestKeyRemoval, await sessionFor(first.id, 'totp'), input),
+      await act(requestKeyRemoval, await staleToken(first), input),
+      await act(requestKeyRemoval, admin.token, input),
+      await act(requestKeyRemoval, await sessionFor(world.adminUserId, 'totp'), input),
+      await act(requestKeyRemoval, await first.token(), { organizationId: organizationId(), userId: randomUUID() }),
+    ];
+    expect(refusals.map((each) => each.outcome)).toEqual([
+      refusedWith(KEY_REFUSALS.hardware_key_removal_not_own_account),
+      refusedWith(KEY_REFUSALS.not_permitted),
+      // A code session of an internal role is turned away by the wrapper before the handler; a key session older than 15 minutes by Postgres.
+      { status: 'hardware_key_required' },
+      refusedWith(KEY_REFUSALS.not_permitted),
+      // The console's own administrator: in the role today, with no registered key.
+      refusedWith(KEY_REFUSALS.not_permitted),
+      expect.objectContaining({ status: 'forbidden', permission: 'organization.manage' }),
+      { status: 'not_found' },
+    ]);
+    expect(refusals.flatMap((each) => each.events)).toEqual([]);
+    expect(await removalOf(member.id)).toBeUndefined();
+    expect((await act(requestKeyRemoval, await first.token(), input)).outcome).toMatchObject({ status: 'ok' });
+    const again = await act(requestKeyRemoval, await second.token(), input);
+    expect(again.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_open_once));
+    expect(again.events).toEqual([]);
+  });
+
+  it('SGN-31: a second open request against another platform administrator, and the same request again inside seven days of a cancel, are refused in the registry’s words and write nothing', async () => {
+    const [requester, first, second] = [await keyAdmin(), await keyAdmin(), await keyAdmin()];
+    const internal = admin.internalId;
+    expect((await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: first.id })).outcome).toMatchObject({ status: 'ok' });
+    const another = await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: second.id });
+    expect(another.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_one_administrator_request));
+    expect(another.events).toEqual([]);
+    expect(await refusalsOf(another.requestId)).toEqual([{ object_id: requester.id, purpose: 'key_removal_refused_one_administrator_request', actor_kind: 'system', practice_id: null }]);
+    expect(await removalOf(second.id)).toBeUndefined();
+    const removalId = (await removalOf(first.id))?.id ?? '';
+    expect((await act(cancelKeyRemoval, await requester.token(), { organizationId: internal, removalId })).outcome).toMatchObject({ status: 'ok' });
+    const again = await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: first.id });
+    expect(again.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_asked_again_too_soon));
+    expect(again.events).toEqual([]);
+    expect(await refusalsOf(again.requestId)).toEqual([{ object_id: requester.id, purpose: 'key_removal_refused_asked_again_too_soon', actor_kind: 'system', practice_id: null }]);
+    expect((await removalOf(first.id))?.state).toBe('cancelled');
+    // Another administrator is not held by either limit.
+    expect((await act(requestKeyRemoval, await second.token(), { organizationId: internal, userId: first.id })).outcome).toMatchObject({ status: 'ok' });
+  });
+
+  it('SGN-31: a request by an account whose own keys are asked for, and a request against a platform administrator that no third could confirm, are refused in the registry’s words, write nothing and leave the acting account’s security event', async () => {
+    const [requester, target, third] = [await keyAdmin(), await keyAdmin(), await keyAdmin()];
+    const internal = admin.internalId;
+    expect((await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: target.id })).outcome).toMatchObject({ status: 'ok' });
+    const counter = await act(requestKeyRemoval, await target.token(), { organizationId: internal, userId: requester.id });
+    expect(counter.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_target_asks));
+    expect(counter.events).toEqual([]);
+    expect(await refusalsOf(counter.requestId)).toEqual([{ object_id: target.id, purpose: 'key_removal_refused_target_asks', actor_kind: 'system', practice_id: null }]);
+    expect(await removalOf(requester.id)).toBeUndefined();
+    // An administrator the request does not name is not held: an honest request with three administrators stands.
+    expect((await act(requestKeyRemoval, await third.token(), { organizationId: internal, userId: requester.id })).outcome).toMatchObject({ status: 'ok' });
+
+    // Exactly two platform administrators: every other live platform_admin membership ended for the length of the act.
+    const [one, other] = [await keyAdmin(), await keyAdmin()];
+    const others = (
+      await owner.query<{ id: string }>("SELECT id FROM membership WHERE role = 'platform_admin' AND ends_at IS NULL AND user_id <> ALL($1::uuid[])", [[one.id, other.id]])
+    ).rows.map((row) => row.id);
+    const setEnds = async (to: string) => {
+      await owner.query('BEGIN');
+      await owner.query("SET LOCAL session_replication_role = 'replica'");
+      await owner.query(`UPDATE membership SET ends_at = ${to} WHERE id = ANY($1::uuid[])`, [others]);
+      await owner.query('COMMIT');
+    };
+    await setEnds("now() - interval '1 minute'");
+    try {
+      const alone = await act(requestKeyRemoval, await one.token(), { organizationId: internal, userId: other.id });
+      expect(alone.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_no_third_administrator));
+      expect(alone.events).toEqual([]);
+      expect(await refusalsOf(alone.requestId)).toEqual([{ object_id: one.id, purpose: 'key_removal_refused_no_third_administrator', actor_kind: 'system', practice_id: null }]);
+      expect(await removalOf(other.id)).toBeUndefined();
+    } finally {
+      await setEnds('NULL');
+    }
+  });
+
+  /** The security events a refused act on a key removal left, as the database wrote them: the account, the reason, the request. */
+  const refusalsOf = async (requestId: string) =>
+    (
+      await owner.query<{ object_id: string; purpose: string; actor_kind: string; practice_id: string | null }>(
+        "SELECT object_id, purpose, actor_kind, practice_id FROM audit_event WHERE request_id = $1 AND action = 'security_event' AND purpose LIKE 'key_removal_refused_%'",
+        [requestId],
+      )
+    ).rows;
+
+  it('SEC-28: a refused act on a key removal leaves a security event for the acting account, in a transaction of its own, and the person reads the same words', async () => {
+    const [requester, target, young] = [await keyAdmin(), await keyAdmin(), await keyAdmin(6)];
+    await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id });
+    const input = { organizationId: admin.internalId, removalId: (await removalOf(target.id))?.id };
+    const own = await act(confirmKeyRemoval, await requester.token(), input);
+    const self = await act(confirmKeyRemoval, await target.token(), input);
+    const early = await act(confirmKeyRemoval, await young.token(), input);
+    expect([own.outcome, self.outcome, early.outcome]).toEqual([
+      refusedWith(KEY_REFUSALS.hardware_key_removal_two_people),
+      refusedWith(KEY_REFUSALS.hardware_key_removal_not_own_account),
+      refusedWith(KEY_REFUSALS.not_permitted),
+    ]);
+    // One row each, about the one who acted, by the system, in no practice: never about the account of the removal.
+    expect(await refusalsOf(own.requestId)).toEqual([{ object_id: requester.id, purpose: 'key_removal_refused_two_people', actor_kind: 'system', practice_id: null }]);
+    expect(await refusalsOf(self.requestId)).toEqual([{ object_id: target.id, purpose: 'key_removal_refused_not_own_account', actor_kind: 'system', practice_id: null }]);
+    expect(await refusalsOf(early.requestId)).toEqual([{ object_id: young.id, purpose: 'key_removal_refused_not_permitted', actor_kind: 'system', practice_id: null }]);
+    // The same refusal again within the hour adds none; the request is still open, untouched.
+    const again = await act(confirmKeyRemoval, await requester.token(), input);
+    expect(again.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_two_people));
+    expect(await refusalsOf(again.requestId)).toEqual([]);
+    expect((await removalOf(target.id))?.state).toBe('requested');
+  });
+
+  it('SEC-28: a refusal that leaves no security event is not recorded as one, and one that cannot be recorded is still refused in the same words, with a line by IDs', async () => {
+    const [requester, target] = [await keyAdmin(), await keyAdmin()];
+    await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id });
+    const input = { organizationId: admin.internalId, removalId: (await removalOf(target.id))?.id };
+    // Not found, and a request already open: rules, not a probe of the two-person rule. Nothing is asked of the database.
+    const asked: string[] = [];
+    const lines: Record<string, unknown>[] = [];
+    const watching: Services = {
+      ...services,
+      logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }),
+      pool: {
+        connect: async () => {
+          const client = await app.connect();
+          return new Proxy(client, {
+            get(inner, property) {
+              if (property === 'query') {
+                return (text: unknown, values?: unknown[]) => {
+                  if (typeof text === 'string' && text.includes('hardware_key_removal_refused')) {
+                    asked.push(String(values?.[0]));
+                    return Promise.reject(new Error('synthetic failure'));
+                  }
+                  return inner.query(text as string, values);
+                };
+              }
+              const value = Reflect.get(inner, property, inner) as unknown;
+              return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(inner) : value;
+            },
+          });
+        },
+      },
+    };
+    expect((await act(confirmKeyRemoval, await requester.token(), { ...input, removalId: randomUUID() }, watching)).outcome).toEqual({ status: 'not_found' });
+    expect((await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id }, watching)).outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_open_once));
+    expect(asked).toEqual([]);
+    // The two-person refusal asks once, by its reason; the record fails, the person is refused all the same, and the line says so.
+    const refused = await act(confirmKeyRemoval, await requester.token(), input, watching);
+    expect(refused.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_two_people));
+    expect(asked).toEqual(['two_people']);
+    expect(lines.filter((line) => line.msg === 'security event: a refused act on a key removal was not recorded')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: requester.id, request_id: refused.requestId, error_code: 'key_removal_refused_two_people' }),
+    ]);
+  });
+
+  it('SEC-28: every refused act writes the web’s line, by IDs and the reason’s code, though the security event is one an hour for an account and a reason: the lines are the count (review W65 N3)', async () => {
+    const [requester, target] = [await keyAdmin(), await keyAdmin()];
+    await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id });
+    const input = { organizationId: admin.internalId, removalId: (await removalOf(target.id))?.id };
+    const lines: Record<string, unknown>[] = [];
+    const listening: Services = { ...services, logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }) };
+    const tries = [await act(confirmKeyRemoval, await requester.token(), input, listening), await act(confirmKeyRemoval, await requester.token(), input, listening), await act(confirmKeyRemoval, await requester.token(), input, listening)];
+    expect(tries.map((each) => each.outcome)).toEqual(tries.map(() => refusedWith(KEY_REFUSALS.hardware_key_removal_two_people)));
+    expect(lines.filter((line) => line.msg === 'a refused act on a key removal')).toEqual(
+      tries.map((each): unknown => expect.objectContaining({ level: 'warn', user_id: requester.id, request_id: each.requestId, error_code: 'key_removal_refused_two_people' })),
+    );
+    expect(JSON.stringify(lines)).not.toContain(target.id);
+    expect((await Promise.all(tries.map((each) => refusalsOf(each.requestId)))).map((rows) => rows.length)).toEqual([1, 0, 0]);
+  });
+
+  it('confirms only with a second person: the requester, the account itself, an administrator under seven days and a session other than the acting key session are refused; then the keys, the sessions and the provider’s outbox', async () => {
+    const target = await keyAdmin();
+    const targetToken = await target.token();
+    await act(requestKeyRemoval, await first.token(), { organizationId: admin.internalId, userId: target.id });
+    const removal = await removalOf(target.id);
+    const input = { organizationId: admin.internalId, removalId: removal?.id };
+    const refusals = [
+      await act(confirmKeyRemoval, await first.token(), input),
+      await act(confirmKeyRemoval, targetToken, input),
+      await act(confirmKeyRemoval, await (await keyAdmin(6)).token(), input),
+      // The second administrator holds a fresh key session elsewhere; the request comes on their key session of 16 minutes ago, then on a code session.
+      await second.token().then(() => staleToken(second)).then((token) => act(confirmKeyRemoval, token, input)),
+      await act(confirmKeyRemoval, await sessionFor(second.id, 'totp'), input),
+      await act(confirmKeyRemoval, await second.token(), { organizationId: admin.internalId, removalId: randomUUID() }),
+    ];
+    expect(refusals.map((each) => each.outcome)).toEqual([
+      refusedWith(KEY_REFUSALS.hardware_key_removal_two_people),
+      refusedWith(KEY_REFUSALS.hardware_key_removal_not_own_account),
+      refusedWith(KEY_REFUSALS.not_permitted),
+      refusedWith(KEY_REFUSALS.not_permitted),
+      { status: 'hardware_key_required' },
+      { status: 'not_found' },
+    ]);
+    expect(refusals.flatMap((each) => each.events)).toEqual([]);
+    expect((await removalOf(target.id))?.state).toBe('requested');
+
+    const confirmed = await act(confirmKeyRemoval, await second.token(), input);
+    expect(confirmed.outcome).toMatchObject({ status: 'ok', data: { redirect: `/console/organizations/${admin.internalId}` } });
+    expect(confirmed.events).toEqual(['hardware_key_removal_confirmed']);
+    expect((await owner.query('SELECT 1 FROM hardware_key WHERE user_id = $1 AND removed_at IS NULL', [target.id])).rowCount).toBe(0);
+    // The provider is the outbox job's to ask (docs/adr/0095): the web writes the row's cause and calls nothing.
+    expect(provider).not.toHaveProperty('globalSignOut');
+    expect((await owner.query('SELECT 1 FROM provider_sign_out WHERE user_id = $1', [target.id])).rowCount).toBe(1);
+
+    // The session of the closed account: ended, so the wrapper turns it away and nothing is written for it.
+    expect(await resolveSession(app, targetToken, 'test')).toMatchObject({ state: 'ended' });
+    const closed = await act(cancelKeyRemoval, targetToken, input);
+    expect(closed.outcome.status).not.toBe('ok');
+    expect(closed.events).toEqual([]);
+    // And Postgres opens it no new one, by key or by code.
+    await expect(target.token()).rejects.toThrow();
+    await expect(sessionFor(target.id, 'totp')).rejects.toThrow();
+
+    const decided = await act(confirmKeyRemoval, await second.token(), input);
+    expect(decided.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_decided));
+    expect(decided.events).toEqual([]);
+  });
+
+  it('cancels: the account itself may not, the requester may, with the function’s one audit event', async () => {
+    const target = await keyAdmin();
+    await act(requestKeyRemoval, await first.token(), { organizationId: admin.internalId, userId: target.id });
+    const input = { organizationId: admin.internalId, removalId: (await removalOf(target.id))?.id };
+    const own = await act(cancelKeyRemoval, await target.token(), input);
+    expect(own.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_not_own_account));
+    expect(own.events).toEqual([]);
+    const cancelled = await act(cancelKeyRemoval, await first.token(), input);
+    expect(cancelled.outcome).toMatchObject({ status: 'ok', data: { redirect: `/console/organizations/${admin.internalId}` } });
+    expect(cancelled.events).toEqual(['hardware_key_removal_cancelled']);
+    expect((await removalOf(target.id))?.state).toBe('cancelled');
+    const again = await act(cancelKeyRemoval, await second.token(), input);
+    expect(again.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_decided));
+    expect(await resolveSession(app, await target.token(), 'test')).toMatchObject({ state: 'active' });
+  });
+
+  it('opens registration with a code shown once: only its SHA-256 is kept, and the code is in no redirect, audit row or log line', async () => {
+    const member = await keyMember();
+    await act(requestKeyRemoval, await first.token(), { organizationId: organizationId(), userId: member.id });
+    const input = { organizationId: organizationId(), removalId: (await removalOf(member.id))?.id };
+    // Not yet confirmed, so the account is not closed: nothing to open.
+    const early = await act(openKeyRegistration, await second.token(), input);
+    expect(early.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_registration_not_closed));
+    await act(confirmKeyRemoval, await second.token(), input);
+
+    const weak = await act(openKeyRegistration, await staleToken(first), input);
+    expect(weak.outcome).toEqual(refusedWith(KEY_REFUSALS.not_permitted));
+    expect([...early.events, ...weak.events]).toEqual([]);
+
+    const lines: string[] = [];
+    const logged = { ...services, logger: createLogger({ sink: (line) => lines.push(line) }) };
+    const opened = await act(openKeyRegistration, await first.token(), input, logged);
+    expect(opened.outcome).toMatchObject({ status: 'ok', data: { objectId: input.removalId } });
+    const data = (opened.outcome as unknown as { data: { registrationCode: string; openUntil: Date; redirect?: string } }).data;
+    expect(isRegistrationCodeShaped(data.registrationCode)).toBe(true);
+    expect(data.redirect).toBeUndefined();
+    expect(data.openUntil.getTime()).toBeGreaterThan(Date.now());
+    expect(opened.events).toEqual(['hardware_key_registration_opened']);
+    expect((await removalOf(member.id))?.registration_code_sha256?.equals(registrationCodeDigest(services.registrationCodeKey, data.registrationCode))).toBe(true);
+    // Keyed (review A3): the stored digest is not the code's bare SHA-256, and the sign-in flow of the same services,
+    // which digests under the same key, takes the code the console's route opened with; another code it refuses.
+    expect((await removalOf(member.id))?.registration_code_sha256?.equals(createHash('sha256').update(data.registrationCode, 'utf8').digest())).toBe(false);
+    const typing = { step: 'register_key' as const, email: 'key-member@synthetic.test', userId: member.id, grant: 'none', began: Date.now(), codeRequired: true as const };
+    const typed = { deviceToken: undefined, userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/141.0', requestId: `test-${randomUUID()}` };
+    expect(await services.signIn.answerRegistrationCode(typing, 'ABCD EFGH', typed)).toEqual({ kind: 'refused', reason: 'registration_code' });
+    expect(await services.signIn.answerRegistrationCode(typing, data.registrationCode, typed)).toMatchObject({
+      kind: 'pending',
+      pending: { step: 'register_key', codeRequired: true, code: registrationCodeDigest(services.registrationCodeKey, data.registrationCode).toString('hex') },
+    });
+    const audit = await owner.query('SELECT row_to_json(e)::text AS row FROM audit_event e WHERE request_id = $1', [opened.requestId]);
+    expect(JSON.stringify([audit.rows, lines])).not.toContain(data.registrationCode);
+
+    const page = await run(organizationPage, await second.token(), undefined, { organizationId: organizationId() });
+    const row = (page as { data: { members: { userId: string; keyRemoval: { registrationOpenUntil: Date | null; registrationClosed: boolean } }[] } }).data.members.find((each) => each.userId === member.id);
+    expect(row?.keyRemoval).toMatchObject({ state: 'confirmed', registrationClosed: true, liveKeys: 0 });
+    expect(row?.keyRemoval.registrationOpenUntil?.getTime()).toBe(data.openUntil.getTime());
+    expect(JSON.stringify(page)).not.toContain(data.registrationCode);
+
+    const twice = await act(openKeyRegistration, await second.token(), input);
+    expect(twice.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_registration_open_once));
+    expect(twice.events).toEqual([]);
   });
 });

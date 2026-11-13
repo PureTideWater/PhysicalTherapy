@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { Sealer } from '../auth/seal';
 import { createServices } from '../server/services';
 import { securityTxtFile, disclosurePage } from '../routes/security';
 import { textHandler } from '../http/handler';
@@ -84,7 +85,7 @@ describe('security.txt', () => {
 });
 
 describe('the security routes', () => {
-  const services = () => createServices({ origin: ORIGIN, pool: { connect: () => Promise.reject(new Error('no database')) }, provider: undefined as never, keys: undefined as never, sealer: undefined as never, securityEmail: 'report@synthetic.test' });
+  const services = () => createServices({ origin: ORIGIN, pool: { connect: () => Promise.reject(new Error('no database')) }, provider: undefined as never, keys: undefined as never, sealer: new Sealer(Buffer.alloc(32, 1)), securityEmail: 'report@synthetic.test' });
 
   it('serve security.txt as plain text from the configuration, without the database', async () => {
     const response = await textHandler(securityTxtFile, services)(new Request(`${ORIGIN}${SECURITY_TXT_PATH}`));

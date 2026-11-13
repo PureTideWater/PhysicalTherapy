@@ -1,3 +1,6 @@
+import { createHash } from 'node:crypto';
+
+import { verifyAuthenticationResponse, verifyRegistrationResponse } from '@simplewebauthn/server';
 import { type ScopeClient, type ScopePool, recordAuditEvent, withActor } from '@tp/db/runtime';
 import type { Logger } from '@tp/observability';
 
@@ -7,12 +10,23 @@ import {
   type AuthenticationResponseJSON,
   ClientCredentialError,
   type FailureStage,
+  KEY_REGISTRATION_ALGORITHMS,
   type PasswordResetResult,
   type PublicKeyCredentialCreationOptionsJSON,
   type PublicKeyCredentialRequestOptionsJSON,
   type RegistrationResponseJSON,
 } from './provider';
-import { type OpenedSession, isStaleSessionRefusal, lockAccountForSignIn, openSession, revokeUserSessions } from './sessions';
+import { registrationCodeDigest } from './registration-code';
+import {
+  KEY_NOT_LIVE_CONSTRAINT,
+  KEY_REGISTRATION_CLOSED_CONSTRAINT,
+  type OpenedSession,
+  isStaleSessionRefusal,
+  lockAccountForSignIn,
+  openSession,
+  refusedConstraint,
+  revokeUserSessions,
+} from './sessions';
 
 /**
  * Sign-in, step by step (PRD 7, Sign-in and MFA; docs/product/sessions.md; docs/adr/0016). The
@@ -43,6 +57,13 @@ import { type OpenedSession, isStaleSessionRefusal, lockAccountForSignIn, openSe
  *   start, read once from the database's clock before its first provider call; the database judges each step against
  *   the account's mark and records each refusal, and refuses a stale session itself. A reset whose outcome at the
  *   provider is unknown is read on the safer side: the sessions end, the mark moves and the operator is paged.
+ *
+ * - A hardware key opens a session only when the registry holds it live for the account (docs/adr/0095): the provider
+ *   proves the assertion, then the app reads the account's keys, refuses an unknown or removed one with the words of a
+ *   wrong credential, verifies the assertion itself against the registered public key, and the database checks the
+ *   key's digest again under the account's lock when the session is inserted. A key is recorded in the registry as it
+ *   is registered, one live key an account; after a removal, registration is closed until an administrator opens it
+ *   with a one-time code, which is judged in the database before the provider is asked for anything.
  *
  * The flow carries no state of its own. Between steps the browser holds a Pending value, which the
  * web layer seals into a short-lived HttpOnly cookie.
@@ -75,14 +96,29 @@ export type Pending =
   /** `subject`: the provider's enrolling user (docs/adr/0088, D3); absent only on a step the release before this rule sealed. */
   | ({ readonly step: 'mfa_setup'; readonly email: string; readonly challenge: string; readonly subject?: string; readonly totp?: TotpEnrollment } & Began)
   | ({ readonly step: 'mfa'; readonly email: string; readonly challenge: string } & Began)
-  | ({ readonly step: 'key'; readonly email: string; readonly challenge: string } & Began)
+  /** `assertion`: the WebAuthn challenge the browser signs, kept for the app's own check (docs/adr/0095); absent only on a step the release before sealed, which starts again. */
+  | ({ readonly step: 'key'; readonly email: string; readonly challenge: string; readonly assertion?: string } & Began)
   /**
    * An internal user proved password and TOTP but has no hardware key yet: they may register one. `addressUserId`: the
    * account the typed address named, when it is not `userId` (a crossed state; docs/adr/0093, D5): both are judged.
    * The flow seals none now, since authenticated() refuses a crossed state before this step; a step that carries one
    * is still judged for both.
+   *
+   * `creation`: the WebAuthn challenge of the registration, for the app's own verification. `codeRequired`: the
+   * account's registration is closed after a removal, so the step first asks for the one-time code (docs/adr/0095).
+   * `code`: the SHA-256 of that code, hex, present only after the database judged it open; never the code itself.
    */
-  | ({ readonly step: 'register_key'; readonly email: string; readonly userId: string; readonly grant: string; readonly challenge?: string; readonly addressUserId?: string } & Began)
+  | ({
+      readonly step: 'register_key';
+      readonly email: string;
+      readonly userId: string;
+      readonly grant: string;
+      readonly challenge?: string;
+      readonly addressUserId?: string;
+      readonly creation?: string;
+      readonly codeRequired?: true;
+      readonly code?: string;
+    } & Began)
   /** A reset code was asked for the typed address: unproven until the code is, so it holds no challenge and opens nothing. */
   | { readonly step: 'reset'; readonly email: string };
 
@@ -96,6 +132,8 @@ export type RefusalReason =
   | 'invitation_expired'
   /** A second factor asked for outside a live invitation (docs/adr/0088, D3). */
   | 'enrolment_not_open'
+  /** The one-time code that opens key registration after a removal: no opening stands, or the code is wrong; one answer for both (docs/adr/0095). */
+  | 'registration_code'
   /** The provider refused this application's client credential (docs/adr/0088, D2): the platform's failure. */
   | 'client_credential';
 
@@ -111,7 +149,71 @@ export type FlowResult =
 interface Attempt {
   readonly began: number | undefined;
   readonly step: Exclude<JudgedStep, 'key_registered'>;
+  /** A key sign-in's response and the challenge it must sign, for the registry's check (docs/adr/0095). */
+  readonly response?: AuthenticationResponseJSON;
+  readonly assertion?: string;
 }
+
+/** A row of sign_in_hardware_keys(): a removed key comes without its public key. */
+interface KeyRow {
+  readonly credential_sha256: Buffer;
+  readonly public_key: Buffer | null;
+  readonly removed: boolean;
+}
+
+/**
+ * Whether a key's response must show user verification. One constant for the app's own two checks; the user pool
+ * requires the same (infra/lib/constructs/identity.ts; infra/test/identity.test.ts reads this line and holds the pool's
+ * setting to it, so the two cannot drift), and the provider twin does.
+ */
+export const KEY_USER_VERIFICATION_REQUIRED = true;
+
+/**
+ * What a hardware-key step is refused with when the provider's relying-party ID is not the app's. It names the setting
+ * and where the other value comes from, and carries neither value.
+ */
+export const RELYING_PARTY_MISMATCH =
+  'WEBAUTHN_RP_ID (unset: the host of APP_ORIGIN) is not the relying-party ID of the user pool (the stack’s application domain name): hardware-key steps are refused until the two are the same';
+
+/** The platform's failure, never the person's: thrown, so the request fails and nothing is counted against anyone. */
+export { KEY_REGISTRATION_ALGORITHMS };
+
+/** The provider's registration options list neither algorithm the product offers (KEY_REGISTRATION_ALGORITHMS): an unexpected failure, not the person's. */
+export class KeyAlgorithmsNotOffered extends Error {
+  constructor() {
+    super('the identity provider offers no signature algorithm the product registers a hardware key under');
+    this.name = 'KeyAlgorithmsNotOffered';
+  }
+}
+
+export class RelyingPartyMismatch extends Error {
+  constructor() {
+    super(RELYING_PARTY_MISMATCH);
+    this.name = 'RelyingPartyMismatch';
+  }
+}
+
+/** An unknown credential at the provider is deleted by the cleaning only when the provider registered it longer ago than this (docs/adr/0095). */
+export const UNKNOWN_CREDENTIAL_GRACE_MS = 15 * 60_000;
+
+const sha256 = (value: Uint8Array): Buffer => createHash('sha256').update(value).digest();
+
+/** The credential ID's bytes when the response is well formed: `id` equals `rawId`, canonical base64url, 16 to 1,023 bytes. */
+function credentialBytes(id: unknown, rawId: unknown): Buffer | undefined {
+  if (typeof id !== 'string' || id !== rawId || !/^[A-Za-z0-9_-]+$/.test(id)) {
+    return undefined;
+  }
+  const bytes = Buffer.from(id, 'base64url');
+  return bytes.toString('base64url') === id && bytes.length >= 16 && bytes.length <= 1023 ? bytes : undefined;
+}
+
+/** An error's class name alone: a verification library's messages carry values. */
+const className = (error: unknown): string => (error instanceof Error && /^[A-Za-z]+$/.test(error.constructor.name) ? error.constructor.name : 'unknown');
+
+class KeyNotVerified extends Error {}
+
+/** The registry answered no row: a wrong one-time code against an open registration, which it counted (docs/adr/0095). */
+class KeyCodeRefused extends Error {}
 
 interface Account {
   readonly user_id: string;
@@ -146,6 +248,13 @@ export interface SignInDependencies {
   readonly pool: ScopePool<ScopeClient>;
   readonly provider: AuthProvider;
   readonly logger: Logger;
+  /** What the app's own check of a key's response expects: the relying party and the origin the browser signed for (docs/adr/0095). */
+  readonly webauthn: { readonly rpId: string; readonly origin: string };
+  /**
+   * The key a registration code is digested under (registration-code.ts; review A3). The console's route that opens a
+   * registration digests under the same one: both take it from Services.registrationCodeKey (server/services.ts).
+   */
+  readonly registrationCodeKey: Uint8Array;
   /** The clock the reset request's floor is measured on, epoch ms (default Date.now). */
   readonly now?: () => number;
   /** How the reset request waits out its floor (default a timer). */
@@ -275,6 +384,31 @@ export class SignInFlow {
    * Runs a step that calls the provider: a refused client credential (docs/adr/0088, D2) is logged as a security event
    * by the provider's error name and answered as the platform's failure, before anything counts it as the person's.
    */
+  private relyingParty: 'unchecked' | 'same' | 'differs' = 'unchecked';
+
+  /**
+   * One relying-party ID (docs/adr/0095): the pool's and the app's are two settings, and the app verifies every key's
+   * response against its own. The provider's is read from the options of the first key step that carries one and
+   * compared once in this process; when it differs this and every later key step is refused, the later ones before the
+   * provider is asked, and every refused step is logged at error: the operator's alarm counts the line, and a line
+   * written once would let it return to OK while every key step is still refused (delta review D3). Without the check
+   * each honest key would be refused as a wrong credential, with nothing to say why. Called with the request's context
+   * alone by the steps that hold no options, and with the options' ID, absent or not, by the steps that hold them.
+   */
+  private oneRelyingParty(context: SignInContext | undefined, options?: { readonly theirs: string | undefined }): void {
+    if (this.relyingParty === 'unchecked' && options !== undefined) {
+      // Options that name no ID leave the browser to use the origin's host (WebAuthn's default), so that is what is
+      // compared: the check is settled by the first options either way (review A7 of the key registry).
+      const theirs = options.theirs ?? new URL(this.deps.webauthn.origin).hostname;
+      this.relyingParty = theirs === this.deps.webauthn.rpId ? 'same' : 'differs';
+    }
+    if (this.relyingParty === 'differs') {
+      // A constant message and code: the operator's alarm counts the code (review A6). No value of either setting.
+      this.deps.logger.error('configuration: the relying-party ID is not the provider’s; hardware-key steps are refused', { request_id: context?.requestId ?? null, error_code: 'RELYING_PARTY_MISMATCH' });
+      throw new RelyingPartyMismatch();
+    }
+  }
+
   private async guarded<R>(context: SignInContext | undefined, refusal: R, run: () => Promise<R>): Promise<R> {
     try {
       return await run();
@@ -397,6 +531,96 @@ export class SignInFlow {
     }
   }
 
+  private keys(userId: string): Promise<KeyRow[]> {
+    return this.query<KeyRow>('SELECT credential_sha256, public_key, removed FROM sign_in_hardware_keys($1)', [userId]);
+  }
+
+  /** One security event for the account, at most one a reason and an hour; it counts no failed sign-in (docs/adr/0095). */
+  private async keyRefused(userId: string, why: 'not_registered' | 'removed' | 'assertion' | 'malformed', context: SignInContext): Promise<void> {
+    await this.query('SELECT sign_in_key_refused($1, $2, $3)', [userId, why, context.requestId]);
+  }
+
+  /**
+   * The registry's check of a key sign-in the provider has verified (docs/adr/0095): the response is well formed, the
+   * credential's digest is a live key of the account, and the assertion verifies against that key's registered public
+   * key, checked here, since the provider matched a credential by its own reading of the response. Answers the digest
+   * the session will carry, or nothing after recording the refusal; an unknown or removed key also has the provider's
+   * leftovers cleaned with the grant. No counter is stored, so the library is given zero and compares none.
+   */
+  private async registeredKey(userId: string, keys: readonly KeyRow[], attempt: Attempt, grant: string, context: SignInContext): Promise<Buffer | undefined> {
+    const { response, assertion, began } = attempt;
+    const bytes = response === undefined ? undefined : credentialBytes(response.id, response.rawId);
+    if (response === undefined || bytes === undefined || assertion === undefined) {
+      await this.keyRefused(userId, 'malformed', context);
+      return undefined;
+    }
+    const digest = sha256(bytes);
+    const row = keys.find((key) => key.credential_sha256.equals(digest));
+    if (row === undefined || row.removed || row.public_key === null) {
+      if (row?.removed === true) {
+        // Someone still holds a key that two administrators took away: the operator is paged.
+        this.deps.logger.error('security event: removed hardware key used', { user_id: userId, request_id: context.requestId });
+      }
+      await this.keyRefused(userId, row?.removed === true ? 'removed' : 'not_registered', context);
+      await this.cleaned(userId, keys, grant, began, context);
+      return undefined;
+    }
+    try {
+      const { verified } = await verifyAuthenticationResponse({
+        response,
+        expectedChallenge: assertion,
+        expectedOrigin: this.deps.webauthn.origin,
+        expectedRPID: this.deps.webauthn.rpId,
+        credential: { id: response.id, publicKey: new Uint8Array(row.public_key), counter: 0 },
+        requireUserVerification: KEY_USER_VERIFICATION_REQUIRED,
+      });
+      if (!verified) {
+        throw new KeyNotVerified();
+      }
+    } catch (error) {
+      // The provider accepted something the registered key did not sign. The class name alone: the messages carry values.
+      this.deps.logger.error('security event: hardware key assertion refused by the registry', { user_id: userId, request_id: context.requestId, error_code: className(error) });
+      await this.keyRefused(userId, 'assertion', context);
+      return undefined;
+    }
+    return digest;
+  }
+
+  /**
+   * The cleaning after an unknown or removed key was tried, best effort, with the grant (docs/adr/0095): deletes at the
+   * provider each credential whose digest is a removed key, and each the registry does not know that the provider
+   * registered more than fifteen minutes before this attempt began; never a live key, and never a young unknown one
+   * (it may be a key the member is registering in another tab). Its line carries a count and a code, no credential.
+   */
+  private async cleaned(userId: string, keys: readonly KeyRow[], grant: string, began: number | undefined, context: SignInContext): Promise<void> {
+    let deleted = 0;
+    let code: string | null = null;
+    try {
+      for (const held of await this.deps.provider.listHardwareKeys(grant)) {
+        const bytes = credentialBytes(held.credentialId, held.credentialId);
+        if (bytes === undefined) {
+          continue;
+        }
+        const digest = sha256(bytes);
+        const row = keys.find((key) => key.credential_sha256.equals(digest));
+        const old = began !== undefined && held.createdAt !== undefined && held.createdAt.getTime() < began - UNKNOWN_CREDENTIAL_GRACE_MS;
+        if (row === undefined ? old : row.removed) {
+          if (await this.deps.provider.removeHardwareKey(grant, held.credentialId)) {
+            deleted += 1;
+          } else {
+            code = 'not_removed';
+          }
+        }
+      }
+    } catch (error) {
+      if (error instanceof ClientCredentialError) {
+        this.deps.logger.error('security event: client credential refused', { request_id: context.requestId, error_code: error.code });
+      }
+      code = errorCode(error);
+    }
+    this.deps.logger.info('hardware key leftovers cleaned', { user_id: userId, request_id: context.requestId, record_count: deleted, error_code: code });
+  }
+
   /**
    * The provider proved the person. After the account is found, not disabled and not locked, and before anything is
    * opened or sealed, the attempt is judged against a password reset (docs/adr/0093, D5): for the account the
@@ -442,19 +666,46 @@ export class SignInFlow {
         return refused('no_account');
       }
       const judgedAccounts = [account.user_id];
-      if (account.hardware_key_required && step.identity.method !== 'webauthn') {
-        if (!(await this.deps.provider.hasHardwareKey(step.grant))) {
+      const viaKey = step.identity.method === 'webauthn';
+      // The registry's one read (docs/adr/0095): it says whether the account holds a key, where the provider was asked before.
+      const keys = viaKey || account.hardware_key_required ? await this.keys(account.user_id) : [];
+      if (account.hardware_key_required && !viaKey) {
+        if (!keys.some((key) => !key.removed)) {
           held = false;
-          return { kind: 'pending', pending: { step: 'register_key', email: account.email, userId: account.user_id, grant: step.grant, began: attempt.began } };
+          // Every key removed: registration is closed until it is opened, so the step asks for the code first. The
+          // database judges it whatever this says (a removal of no keys closes too, and is found there).
+          return {
+            kind: 'pending',
+            pending: { step: 'register_key', email: account.email, userId: account.user_id, grant: step.grant, began: attempt.began, ...(keys.length > 0 ? { codeRequired: true as const } : {}) },
+          };
         }
         await release();
         return refused('hardware_key_required');
       }
+      let credential: Buffer | undefined;
+      if (viaKey) {
+        credential = await this.registeredKey(account.user_id, keys, attempt, step.grant, context);
+        if (credential === undefined) {
+          await release();
+          return refused('credentials');
+        }
+      }
       await release();
       let session: OpenedSession;
       try {
-        session = await openSession(this.deps.pool, { userId: account.user_id, method: step.identity.method, ...context, began });
+        session = await openSession(this.deps.pool, { userId: account.user_id, method: step.identity.method, ...context, began, ...(credential === undefined ? {} : { keyCredentialSha256: credential }) });
       } catch (error) {
+        const constraint = refusedConstraint(error);
+        if (constraint === KEY_REGISTRATION_CLOSED_CONSTRAINT) {
+          // The account's keys were removed and no new one is registered: no code session, whatever its key flag says.
+          this.deps.logger.warn('security event: code session refused while key registration is closed', { user_id: account.user_id, request_id: context.requestId });
+          return refused('hardware_key_required');
+        }
+        if (constraint === KEY_NOT_LIVE_CONSTRAINT) {
+          // A removal's confirmation committed between the registry's read and the insert: answered as a stale session.
+          await this.keyRefused(account.user_id, 'removed', context);
+          return refused('expired');
+        }
         if (!isStaleSessionRefusal(error)) {
           throw error;
         }
@@ -615,6 +866,7 @@ export class SignInFlow {
 
   /** Hardware-key sign-in: the browser's request options. A locked account gets none. */
   async beginKey(email: string, context?: SignInContext): Promise<{ readonly options: PublicKeyCredentialRequestOptionsJSON; readonly pending: Pending } | FlowResult> {
+    this.oneRelyingParty(context);
     // The attempt's start, before the account is read and the provider asked (docs/adr/0093, D3).
     const began = await this.beganNow();
     const account = await this.account({ email });
@@ -623,7 +875,8 @@ export class SignInFlow {
     }
     return this.guarded<{ readonly options: PublicKeyCredentialRequestOptionsJSON; readonly pending: Pending } | FlowResult>(context, refused('client_credential'), async () => {
       const { options, challenge } = await this.deps.provider.beginKeySignIn(email);
-      return { options, pending: { step: 'key', email, challenge, began } };
+      this.oneRelyingParty(context, { theirs: options.rpId });
+      return { options, pending: { step: 'key', email, challenge, began, assertion: options.challenge } };
     });
   }
 
@@ -634,11 +887,12 @@ export class SignInFlow {
    * stale one is refused in authenticated(), after the assertion.
    */
   async completeKey(pending: Pending, response: AuthenticationResponseJSON, context: SignInContext): Promise<FlowResult> {
-    if (pending.step !== 'key' || pending.began === undefined) {
+    this.oneRelyingParty(context);
+    if (pending.step !== 'key' || pending.began === undefined || pending.assertion === undefined) {
       return refused('expired');
     }
     return this.guarded(context, refused('client_credential'), async () =>
-      this.after(await this.deps.provider.completeKeySignIn(pending.challenge, response), pending.email, { began: pending.began, step: 'key' }, context),
+      this.after(await this.deps.provider.completeKeySignIn(pending.challenge, response), pending.email, { began: pending.began, step: 'key', response, assertion: pending.assertion }, context),
     );
   }
 
@@ -651,23 +905,100 @@ export class SignInFlow {
     return true;
   }
 
-  async beginKeyRegistration(pending: Pending, context?: SignInContext): Promise<{ readonly options: PublicKeyCredentialCreationOptionsJSON; readonly pending: Pending } | FlowResult> {
+  /**
+   * Whether the account may register a key now (docs/adr/0095): `not_closed`, `open` (a usable opening, and the step's
+   * code is its code) or `refused`. The database judges, under the account's lock, and counts a wrong code there.
+   * A step that holds no code is only asking whether one is needed: it is judged with no start, which the function
+   * answers (`not_closed` or `refused`) without counting a try, so reaching the code screen spends none of the five
+   * (review A2 of the key registry). The step's start is judged before this, by registrationStale().
+   */
+  private judgeRegistration(pending: Extract<Pending, { step: 'register_key' }>, context: SignInContext | undefined): Promise<'not_closed' | 'open' | 'refused'> {
+    const { code } = pending;
+    return withActor(this.deps.pool, pending.userId, async (scope) => {
+      const { rows } = await scope.client.query<{ answer: 'not_closed' | 'open' | 'refused' }>('SELECT hardware_key_registration_judge($1, $2, $3) AS answer', [
+        code === undefined ? null : Buffer.from(code, 'hex'),
+        code === undefined || pending.began === undefined ? null : new Date(pending.began),
+        context?.requestId ?? null,
+      ]);
+      return rows[0]?.answer ?? 'refused';
+    });
+  }
+
+  /**
+   * Whether the step must first be given the one-time code. A step already known to need one, and holding none, is
+   * answered without asking the database; every other step is judged, before the provider is asked for anything. A
+   * step with no code counts no try there (judgeRegistration); one that holds a code the opening does not is a guess.
+   */
+  private async codeNeeded(pending: Extract<Pending, { step: 'register_key' }>, context: SignInContext | undefined): Promise<boolean> {
+    return (pending.codeRequired === true && pending.code === undefined) || (await this.judgeRegistration(pending, context)) === 'refused';
+  }
+
+  /** The step as the code screen holds it: the grant kept, no code, no options. */
+  private codeScreen(pending: Extract<Pending, { step: 'register_key' }>): FlowResult {
+    const { code: _code, challenge: _challenge, creation: _creation, ...rest } = pending;
+    return { kind: 'pending', pending: { ...rest, codeRequired: true } };
+  }
+
+  /**
+   * The one-time code an administrator read to the member (docs/adr/0095). Only its digest leaves this call, and the
+   * step carries the digest only after the database answered `open`. No opening and a wrong code are one refusal.
+   */
+  async answerRegistrationCode(pending: Pending, typed: string, context: SignInContext): Promise<FlowResult> {
     if (pending.step !== 'register_key') {
       return refused('expired');
     }
     if (await this.registrationStale(pending, context)) {
       return refused('expired');
     }
-    const { options, challenge } = await this.deps.provider.beginKeyRegistration(pending.grant);
-    return { options, pending: { ...pending, challenge } };
+    const { code: _code, challenge: _challenge, creation: _creation, codeRequired: _codeRequired, ...rest } = pending;
+    const code = registrationCodeDigest(this.deps.registrationCodeKey, typed).toString('hex');
+    const answer = await this.judgeRegistration({ ...rest, code }, context);
+    if (answer === 'refused') {
+      return refused('registration_code');
+    }
+    return { kind: 'pending', pending: answer === 'open' ? { ...rest, codeRequired: true, code } : rest };
   }
 
-  async completeKeyRegistration(pending: Pending, response: RegistrationResponseJSON, context: SignInContext): Promise<FlowResult> {
-    if (pending.step !== 'register_key' || pending.challenge === undefined) {
+  async beginKeyRegistration(pending: Pending, context?: SignInContext): Promise<{ readonly options: PublicKeyCredentialCreationOptionsJSON; readonly pending: Pending } | FlowResult> {
+    this.oneRelyingParty(context);
+    if (pending.step !== 'register_key') {
       return refused('expired');
     }
     if (await this.registrationStale(pending, context)) {
       return refused('expired');
+    }
+    if (await this.codeNeeded(pending, context)) {
+      return this.codeScreen(pending);
+    }
+    const { options, challenge } = await this.deps.provider.beginKeyRegistration(pending.grant);
+    this.oneRelyingParty(context, { theirs: options.rp.id });
+    // The browser is offered the product's two algorithms, in the product's order, whatever the provider listed
+    // (ruling R2; KEY_REGISTRATION_ALGORITHMS). A provider that lists neither is a failure of the platform's, logged
+    // by IDs; the grant stays with the step and lapses on its own.
+    const offered = new Set(options.pubKeyCredParams.filter((each) => each.type === 'public-key').map((each) => each.alg));
+    const pubKeyCredParams = KEY_REGISTRATION_ALGORITHMS.filter((alg) => offered.has(alg)).map((alg) => ({ alg, type: 'public-key' as const }));
+    if (pubKeyCredParams.length === 0) {
+      this.deps.logger.error('configuration: the provider offers neither ES256 nor RS256 at key registration; the step is refused', {
+        user_id: pending.userId,
+        request_id: context?.requestId ?? null,
+        error_code: 'KEY_ALGORITHMS_NOT_OFFERED',
+      });
+      throw new KeyAlgorithmsNotOffered();
+    }
+    return { options: { ...options, pubKeyCredParams }, pending: { ...pending, challenge, creation: options.challenge } };
+  }
+
+  async completeKeyRegistration(pending: Pending, response: RegistrationResponseJSON, context: SignInContext): Promise<FlowResult> {
+    this.oneRelyingParty(context);
+    if (pending.step !== 'register_key' || pending.challenge === undefined || pending.creation === undefined) {
+      return refused('expired');
+    }
+    if (await this.registrationStale(pending, context)) {
+      return refused('expired');
+    }
+    // Judged again before the provider registers anything: the provider holds no key for a closed account.
+    if (await this.codeNeeded(pending, context)) {
+      return this.codeScreen(pending);
     }
     if (!(await this.deps.provider.completeKeyRegistration(pending.grant, pending.challenge, response))) {
       return refused('key_not_registered');
@@ -676,7 +1007,7 @@ export class SignInFlow {
     // key's line or its audit record (review SEC-S3 of 2026-11-11).
     let result: FlowResult;
     try {
-      result = await this.keyRegistered(pending, response.id, context);
+      result = await this.keyRegistered(pending, response, context);
     } catch (error) {
       try {
         await this.guarded(context, undefined, () => this.deps.provider.release(pending.grant));
@@ -691,9 +1022,10 @@ export class SignInFlow {
   }
 
   /** What a key the provider has just registered becomes: audited, or, across a password reset, removed or locked and reported (docs/adr/0093, D6). */
-  private async keyRegistered(pending: Extract<Pending, { step: 'register_key' }>, credentialId: string, context: SignInContext): Promise<FlowResult> {
+  private async keyRegistered(pending: Extract<Pending, { step: 'register_key' }>, response: RegistrationResponseJSON, context: SignInContext): Promise<FlowResult> {
+    const credentialId = response.id;
     // The check above read the committed mark, so a registration already at the provider when a reset commits still
-    // registers, and the reset's provider sign-out comes after its commit (docs/adr/0093, D6). Judged once more; a
+    // registers, and the provider is signed out of only after the reset's commit, by the job (docs/adr/0093, D6; 0095). Judged once more; a
     // judgement that throws is read as a refusal, the safer side.
     let across: Judgement[];
     let unjudged = false;
@@ -704,14 +1036,31 @@ export class SignInFlow {
       unjudged = true;
     }
     if (!unjudged && across.length === 0) {
+      // The registry (docs/adr/0095): the app verifies the registration itself to read the public key, then the
+      // database records the key with its audit event, under the account's lock. If either fails the key is removed
+      // at the provider with the grant; one that stays has no row, so it opens nothing.
+      let failure: string;
       try {
-        await this.audit(pending.userId, 'hardware_key_registered', context.requestId, 'webauthn');
+        await this.recorded(pending, response, context);
+        return { kind: 'key_registered' };
       } catch (error) {
-        // The key is at the provider with no audit record: said by IDs before the error leaves (review S3 of the fix round).
-        this.deps.logger.error('hardware key registered but not audited', { user_id: pending.userId, request_id: context.requestId, error_code: errorCode(error) });
-        throw error;
+        failure = refusedConstraint(error) ?? (error instanceof KeyNotVerified ? 'not_verified' : error instanceof KeyCodeRefused ? 'registration_code_refused' : className(error));
       }
-      return { kind: 'key_registered' };
+      let gone = false;
+      try {
+        gone = await this.deps.provider.removeHardwareKey(pending.grant, credentialId);
+      } catch (error) {
+        if (error instanceof ClientCredentialError) {
+          this.deps.logger.error('security event: client credential refused', { request_id: context.requestId, error_code: error.code });
+        }
+      }
+      this.deps.logger.error('hardware key registered at the provider but not recorded', {
+        user_id: pending.userId,
+        request_id: context.requestId,
+        error_code: failure,
+        outcome_code: gone ? 'removed' : 'not_removed',
+      });
+      return refused('key_not_registered');
     }
     // A key registered across the reset is removed, best effort. The reset's own sign-out has usually ended the
     // token that could remove it (review SEC-B1), so a key that stays locks its account: it then signs in to
@@ -745,6 +1094,48 @@ export class SignInFlow {
       await this.audit(pending.userId, 'hardware_key_registered', context.requestId, 'webauthn');
     }
     return refused('expired');
+  }
+
+  /** The app's own verification of a registration the provider accepted, then the registry's row (docs/adr/0095). */
+  private async recorded(pending: Extract<Pending, { step: 'register_key' }>, response: RegistrationResponseJSON, context: SignInContext): Promise<void> {
+    const bytes = credentialBytes(response.id, response.rawId);
+    if (bytes === undefined || pending.creation === undefined || pending.began === undefined) {
+      throw new KeyNotVerified();
+    }
+    let publicKey: Uint8Array;
+    try {
+      const verified = await verifyRegistrationResponse({
+        response,
+        expectedChallenge: pending.creation,
+        expectedOrigin: this.deps.webauthn.origin,
+        expectedRPID: this.deps.webauthn.rpId,
+        requireUserVerification: KEY_USER_VERIFICATION_REQUIRED,
+        // A credential under any other algorithm is refused here, whatever the provider accepted (ruling R2).
+        supportedAlgorithmIDs: [...KEY_REGISTRATION_ALGORITHMS],
+      });
+      if (!verified.verified || verified.registrationInfo === undefined || verified.registrationInfo.credential.id !== response.id) {
+        throw new KeyNotVerified();
+      }
+      publicKey = verified.registrationInfo.credential.publicKey;
+    } catch {
+      // The library's messages carry values: nothing of them leaves.
+      throw new KeyNotVerified();
+    }
+    const began = new Date(pending.began);
+    const recorded = await withActor(this.deps.pool, pending.userId, (scope) =>
+      scope.client.query('SELECT key_id FROM hardware_key_record($1, $2, $3, $4, $5)', [
+        sha256(bytes),
+        Buffer.from(publicKey),
+        pending.code === undefined ? null : Buffer.from(pending.code, 'hex'),
+        began,
+        context.requestId,
+      ]),
+    );
+    // No row is a refusal, never a registration: the registry counted a wrong one-time code and returned nothing so
+    // that the count commits. The caller removes the key at the provider, as for every other failure here.
+    if (recorded.rows.length !== 1) {
+      throw new KeyCodeRefused();
+    }
   }
 
   /**
@@ -797,8 +1188,8 @@ export class SignInFlow {
    * Sets a new password with the mailed code (docs/adr/0081, the forgotten password). The account is looked up first,
    * the provider asked second (docs/adr/0091, D15; review SEC-02 of 2026-11-11): a database that cannot be reached
    * throws from the lookup while the provider still holds the old password and the code is unspent, so the person tries
-   * again, and nothing after the provider's answer needs the lookup, so a reset whose sessions cannot be ended, or whose
-   * provider sign-out fails, is always logged by the user's ID. The lookup decides nothing before that answer: the
+   * again, and nothing after the provider's answer needs the lookup, so a reset whose sessions cannot be ended
+   * is always logged by the user's ID. The lookup decides nothing before that answer: the
    * provider is asked for every address, with an account or none, and a refusal is answered alike for both. The code is
    * the authorization: a refused one is one answer, counts no failure and writes nothing (a count would mark real
    * accounts by timing and let anyone lock one). On a reset, one transaction as the account ends every session and
@@ -846,9 +1237,16 @@ export class SignInFlow {
   /**
    * What a reset does to the account, or a reset that may have happened: one transaction as the account takes its row
    * lock first (docs/adr/0093, D2), ends every session and records the event, on which the database moves the
-   * account's mark and ends its sessions itself (D1); retried once, a second failure logged (review R-3). Then the
-   * provider signs the user out everywhere, its failure logged and never failing the reset (review SEC-N1). Answers
-   * whether the sessions ended and the event was recorded.
+   * account's mark and ends its sessions itself (D1) and queues the provider's own sign-out (docs/adr/0095: the worker's
+   * job `provider_sign_outs` sends it; nothing here asks the provider, so a reset never waits on it and a try that
+   * rolls back queues nothing); retried once, a second failure logged (review R-3). Answers whether the sessions
+   * ended and the event was recorded.
+   *
+   * After the second failure the provider may hold a new password while nothing here was recorded, so a third
+   * transaction asks for the one thing that needs neither the account's lock nor the session update: the provider's
+   * own sign-out, queued by `provider_sign_out_unrecorded_reset` for the acting account alone (test SGN-28). It ends no
+   * app session and moves no mark; the error line still pages, and says whether the sign-out was queued, was already
+   * waiting, or could not be queued (the runbook's step for each).
    */
   private async endedByReset(account: Account, action: 'password_reset_completed' | 'password_reset_outcome_unknown', purpose: string, context: SignInContext): Promise<boolean> {
     let ended = false;
@@ -865,12 +1263,16 @@ export class SignInFlow {
       }
     }
     if (!ended) {
-      this.deps.logger.error('security event: password reset sessions not ended', { user_id: account.user_id, request_id: context.requestId });
-    }
-    try {
-      await this.deps.provider.globalSignOut(account.cognito_sub);
-    } catch (error) {
-      this.deps.logger.error('security event: password reset provider sign-out failed', { user_id: account.user_id, request_id: context.requestId, error_code: errorCode(error) });
+      let outcome: 'provider_sign_out_queued' | 'provider_sign_out_waiting' | 'provider_sign_out_not_queued' = 'provider_sign_out_not_queued';
+      try {
+        const answer = await withActor(this.deps.pool, account.user_id, (scope) =>
+          scope.client.query<{ queued: boolean }>('SELECT provider_sign_out_unrecorded_reset($1) AS queued', [context.requestId]),
+        );
+        outcome = answer.rows[0]?.queued === true ? 'provider_sign_out_queued' : 'provider_sign_out_waiting';
+      } catch {
+        // Said by the line below: the operator queues it (docs/runbooks, the unrecorded reset).
+      }
+      this.deps.logger.error('security event: password reset sessions not ended', { user_id: account.user_id, request_id: context.requestId, outcome_code: outcome });
     }
     return ended;
   }

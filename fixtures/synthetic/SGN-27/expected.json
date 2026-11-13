@@ -1,0 +1,23 @@
+{
+  "case": "SGN-27",
+  "module": "SGN",
+  "title": "Registration, and registration after a removal with a one-time code",
+  "assertion": "A registration records the key's digest and public key with `hardware_key_registered` and the session carries the digest; one the app's own verification refuses, and a second key beside a live one, record nothing and are removed at the provider; after a removal registration is closed: the account is asked for the code before the provider is asked for anything, no opening and a wrong code answer alike and keep the step, a code of the wrong shape is an issue on its field and counts no try, the right code (typed in lower case with a space) registers one key, consumes the opening and leaves `key_registered_after_removal` and the notice; the fifth wrong code spends the opening; an opening made before a later confirmation, End membership or reset is dead; the account cannot open its own, an account that is not closed cannot be opened, and an open registration is not opened again; the code is in no cookie, result or log line; the console shows it once",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "packages/db/src/key-registry.db.test.ts",
+    "apps/web/src/lib/auth/sign-in.db.test.ts",
+    "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
+    "apps/web/src/lib/routes/console-routes.db.test.ts",
+    "apps/web/e2e/key-registry.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

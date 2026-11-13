@@ -411,7 +411,7 @@ describe('the database refuses a stale session (SGN-17; docs/adr/0093 D4)', () =
     expect(await failure(openSession(reset, await newDevice(reset), start))).toEqual(REFUSED);
   });
 
-  it('neither checks nor locks a row with no start (the previous image’s insert): it passes after a reset, and while another transaction holds the account’s row, where a row with a start waits', async () => {
+  it('does not check a row with no start (the previous image’s insert): it passes after a reset; and since the key registry it takes the account’s row as every session insert does, FOR NO KEY UPDATE, until its transaction ends (docs/adr/0095, amending D4)', async () => {
     const user = await createUser(owner);
     const device = await newDevice(user);
     await recordReset(user);
@@ -423,17 +423,38 @@ describe('the database refuses a stale session (SGN-17; docs/adr/0093 D4)', () =
     const start = await began();
     const holder = await actorTransaction(user);
     await holder.client.query('SELECT sign_in_lock_account()');
-    // No start: done while the lock is held.
-    const unlocked = openSession(user, device, undefined);
-    expect(await settles(unlocked, 3000)).toBe(true);
-    expect(await failure(unlocked)).toBe('accepted');
-    // A start: it waits for the account's row, and goes on when the holder ends.
+    // No start: user_session_hardware_key (migration 20261116090000) takes the account's row for every insert, so a
+    // removal's confirmation, which holds that row while it removes the keys and ends the sessions, is either before
+    // this insert (which then reads the removal) or after it (and ends it). It waits, and goes on when the holder ends.
+    const bare = await actorTransaction(user);
+    const noStart = failure(bare.client.query(WITHOUT_START, [user, device, tokenHash()]));
+    expect(await waits(bare.pid)).toBe(true);
+    await holder.client.query('COMMIT');
+    expect(await noStart).toBe('accepted');
+    // A start: it waits for the same row, now held by the insert with none.
     const waiter = await actorTransaction(user);
     const insert = failure(waiter.client.query(WITH_START, [user, device, tokenHash(), start]));
     expect(await waits(waiter.pid)).toBe(true);
-    await holder.client.query('COMMIT');
+    // What the no-start insert holds until its transaction ends, read by what it lets through and what it refuses:
+    // FOR NO KEY UPDATE, the mode every taker of the account's row uses. It refuses a second taker (so it serialises
+    // against a confirmation, End membership and a reset) and lets a key-share lock through, the lock a foreign-key
+    // check of a row that names the user takes; FOR UPDATE would refuse that too and add nothing here.
+    const probe = async (mode: string) => {
+      const session = await connect(database.url);
+      try {
+        await session.client.query('BEGIN');
+        return await failure(session.client.query(`SELECT 1 FROM "user" WHERE id = $1 FOR ${mode} NOWAIT`, [user]));
+      } finally {
+        await close(session.client);
+      }
+    };
+    expect(await probe('KEY SHARE')).toBe('accepted');
+    expect(await probe('NO KEY UPDATE')).toMatchObject({ code: '55P03' });
+    await bare.client.query('COMMIT');
+    // Released at the transaction's end: the insert with a start, next in line, goes on and commits.
     expect(await insert).toBe('accepted');
     await waiter.client.query('COMMIT');
+    expect(await probe('NO KEY UPDATE')).toBe('accepted');
   });
 });
 

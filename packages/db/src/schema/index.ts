@@ -309,10 +309,22 @@ export {
   screeningMailRefusal,
 } from './operations';
 export {
+  HARDWARE_KEY_NOTICE_KINDS,
+  HARDWARE_KEY_NOTICE_STATES,
+  HARDWARE_KEY_REMOVAL_STATES,
+  type HardwareKeyNoticeKind,
+  type HardwareKeyNoticeRow,
+  type HardwareKeyNoticeState,
+  type HardwareKeyRemovalRow,
+  type HardwareKeyRemovalState,
+  type HardwareKeyRow,
   MFA_METHODS,
   type MfaMethod,
   type MutationRequestRow,
   PERMISSION_EFFECTS,
+  PROVIDER_SIGN_OUT_REASONS,
+  type ProviderSignOutReason,
+  type ProviderSignOutRow,
   type RolePermissionRow,
   SESSION_END_REASONS,
   type SessionEndReason,
@@ -321,6 +333,10 @@ export {
   mutationRequest,
   rolePermission,
   userDevice,
+  hardwareKey,
+  hardwareKeyNotice,
+  hardwareKeyRemoval,
+  providerSignOut,
   userSession,
 } from './identity';
 export {

@@ -1,0 +1,22 @@
+{
+  "case": "JOB-08",
+  "module": "JOB",
+  "title": "The provider_sign_outs job",
+  "assertion": "Every minute the platform job claims each due row, asks the provider for one global sign-out by the account's subject, and marks it done (`signed_out`, or `no_such_user`) or failed with the error's name; stopped between its transactions at each point it sends at most one more sign-out and loses none; its lines carry IDs and codes only, `security event: provider sign-out not delivered` at error for LATE and GAVE_UP with the cause's request ID, on which `ProviderSignOutNotDelivered` alarms, and `provider sign-outs run` once a run, whose absence for ten minutes alarms (`ProviderSignOutsNotRunning`); a step that fails does not stop the others; no account, subject, address or code rides in the job's payload",
+  "synthetic": true,
+  "completesIn": 6,
+  "assertedBy": [
+    "apps/worker/src/platform/provider-sign-outs.db.test.ts",
+    "apps/worker/src/platform/cognito-sign-out.test.ts",
+    "apps/worker/src/jobs/platform.test.ts",
+    "infra/test/monitoring.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic accounts and a provider twin the tests make; no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

@@ -1,0 +1,21 @@
+{
+  "case": "SGN-20",
+  "module": "SGN",
+  "title": "A session opens only for a live registered key, and never by code for a closed account",
+  "assertion": "In Postgres, on every session insert and under the account's row lock: a key session opens with the digest of a live key of its account and is refused, each by name, with no row, another account's digest, a removed key and a malformed digest; the previous image's key session, which carries no digest, is let through only for an account the registry never touched; a password-and-code session for an account whose registration is closed after a removal is refused whatever its hardware-key rule, and for no other account; the web answers that refusal as a key being required",
+  "synthetic": true,
+  "completesIn": 1,
+  "assertedBy": [
+    "packages/db/src/key-registry.db.test.ts",
+    "apps/web/src/lib/auth/sign-in.db.test.ts",
+    "apps/web/e2e/key-registry.spec.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
