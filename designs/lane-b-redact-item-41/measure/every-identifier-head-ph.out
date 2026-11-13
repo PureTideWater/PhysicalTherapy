@@ -1,0 +1,32 @@
+== through redactLetterForScreen and the check
+digits-only member ID: {"clear":0,"hidden":0,"refused":11540}
+digits-only claim number: {"clear":0,"hidden":11540,"refused":0}
+digits-only member ID of nine digits (a pattern takes it): {"clear":0,"hidden":0,"refused":11540}
+digits-only claim number of ten digits (a pattern takes it): {"clear":0,"hidden":11540,"refused":0}
+lettered member ID: {"clear":0,"hidden":5770,"refused":5770}
+lettered claim number: {"clear":0,"hidden":0,"refused":11540}
+surname: {"clear":0,"hidden":0,"refused":11540}
+full name: {"clear":0,"hidden":0,"refused":11540}
+surname, first: {"clear":0,"hidden":0,"refused":11540}
+date of birth, slashes: {"clear":0,"hidden":0,"refused":11540}
+date of birth, ISO: {"clear":0,"hidden":0,"refused":11540}
+date of birth, in words: {"clear":0,"hidden":0,"refused":11540}
+NOT STORED, a Social Security number by pattern: {"clear":0,"hidden":0,"refused":11540}
+NOT STORED, a phone number by pattern: {"clear":11540,"hidden":0,"refused":0}
+all kinds: {"clear":11540,"hidden":28850,"refused":121170} of 1154 characters x 2 sides x 5 frames x 14 kinds
+== through redactLetter and the check
+digits-only member ID: {"clear":0,"hidden":0,"refused":11540}
+digits-only claim number: {"clear":0,"hidden":11540,"refused":0}
+digits-only member ID of nine digits (a pattern takes it): {"clear":0,"hidden":0,"refused":11540}
+digits-only claim number of ten digits (a pattern takes it): {"clear":0,"hidden":11540,"refused":0}
+lettered member ID: {"clear":0,"hidden":5770,"refused":5770}
+lettered claim number: {"clear":0,"hidden":0,"refused":11540}
+surname: {"clear":0,"hidden":0,"refused":11540}
+full name: {"clear":0,"hidden":0,"refused":11540}
+surname, first: {"clear":0,"hidden":0,"refused":11540}
+date of birth, slashes: {"clear":0,"hidden":0,"refused":11540}
+date of birth, ISO: {"clear":0,"hidden":0,"refused":11540}
+date of birth, in words: {"clear":0,"hidden":0,"refused":11540}
+NOT STORED, a Social Security number by pattern: {"clear":0,"hidden":0,"refused":11540}
+NOT STORED, a phone number by pattern: {"clear":11540,"hidden":0,"refused":0}
+all kinds: {"clear":11540,"hidden":28850,"refused":121170} of 1154 characters x 2 sides x 5 frames x 14 kinds

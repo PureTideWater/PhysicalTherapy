@@ -1,0 +1,40 @@
+== through redactLetterForScreen and the check
+digits-only member ID: {"clear":378,"hidden":189,"refused":1386,"noIdentifierThere":0}
+digits-only claim number: {"clear":378,"hidden":189,"refused":1386,"noIdentifierThere":0}
+digits-only member ID of nine digits (a pattern takes it): {"clear":378,"hidden":189,"refused":1386,"noIdentifierThere":0}
+digits-only claim number of ten digits (a pattern takes it): {"clear":151,"hidden":416,"refused":1386,"noIdentifierThere":0}
+lettered member ID: {"clear":168,"hidden":385,"refused":1400,"noIdentifierThere":0}
+lettered claim number: {"clear":168,"hidden":385,"refused":1400,"noIdentifierThere":0}
+surname: {"clear":0,"hidden":1939,"refused":14,"noIdentifierThere":0}
+full name: {"clear":0,"hidden":1491,"refused":462,"noIdentifierThere":0}
+surname, first: {"clear":0,"hidden":1939,"refused":14,"noIdentifierThere":0}
+date of birth, slashes: {"clear":364,"hidden":133,"refused":1456,"noIdentifierThere":0}
+date of birth, ISO: {"clear":553,"hidden":14,"refused":1386,"noIdentifierThere":0}
+date of birth, in words: {"clear":497,"hidden":63,"refused":1393,"noIdentifierThere":0}
+a Social Security number by pattern, not stored: {"clear":378,"hidden":21,"refused":1554,"noIdentifierThere":0}
+a phone number of seven digits by pattern, not stored: {"clear":150,"hidden":12,"refused":396,"noIdentifierThere":1395}
+a phone number of ten digits by pattern, not stored: {"clear":133,"hidden":14,"refused":1806,"noIdentifierThere":0}
+a Social Security number, stored: {"clear":378,"hidden":189,"refused":1386,"noIdentifierThere":0}
+a phone number of seven digits, stored: {"clear":378,"hidden":189,"refused":1386,"noIdentifierThere":0}
+a phone number of ten digits, stored: {"clear":126,"hidden":315,"refused":1512,"noIdentifierThere":0}
+all kinds: {"clear":4578,"hidden":8072,"refused":21109,"noIdentifierThere":1395} of 93 characters x 3 places x 7 frames x 18 kinds
+== through redactLetter and the check
+digits-only member ID: {"clear":378,"hidden":189,"refused":1386,"noIdentifierThere":0}
+digits-only claim number: {"clear":378,"hidden":189,"refused":1386,"noIdentifierThere":0}
+digits-only member ID of nine digits (a pattern takes it): {"clear":378,"hidden":189,"refused":1386,"noIdentifierThere":0}
+digits-only claim number of ten digits (a pattern takes it): {"clear":151,"hidden":416,"refused":1386,"noIdentifierThere":0}
+lettered member ID: {"clear":168,"hidden":385,"refused":1400,"noIdentifierThere":0}
+lettered claim number: {"clear":168,"hidden":385,"refused":1400,"noIdentifierThere":0}
+surname: {"clear":0,"hidden":1939,"refused":14,"noIdentifierThere":0}
+full name: {"clear":0,"hidden":1491,"refused":462,"noIdentifierThere":0}
+surname, first: {"clear":0,"hidden":1939,"refused":14,"noIdentifierThere":0}
+date of birth, slashes: {"clear":364,"hidden":133,"refused":1456,"noIdentifierThere":0}
+date of birth, ISO: {"clear":553,"hidden":14,"refused":1386,"noIdentifierThere":0}
+date of birth, in words: {"clear":497,"hidden":63,"refused":1393,"noIdentifierThere":0}
+a Social Security number by pattern, not stored: {"clear":378,"hidden":21,"refused":1554,"noIdentifierThere":0}
+a phone number of seven digits by pattern, not stored: {"clear":150,"hidden":12,"refused":396,"noIdentifierThere":1395}
+a phone number of ten digits by pattern, not stored: {"clear":133,"hidden":14,"refused":1806,"noIdentifierThere":0}
+a Social Security number, stored: {"clear":378,"hidden":189,"refused":1386,"noIdentifierThere":0}
+a phone number of seven digits, stored: {"clear":378,"hidden":189,"refused":1386,"noIdentifierThere":0}
+a phone number of ten digits, stored: {"clear":126,"hidden":315,"refused":1512,"noIdentifierThere":0}
+all kinds: {"clear":4578,"hidden":8072,"refused":21109,"noIdentifierThere":1395} of 93 characters x 3 places x 7 frames x 18 kinds

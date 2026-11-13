@@ -1,0 +1,46 @@
+base {"s5":{"letters":540,"clear":540,"hidden":0,"refused":0},"phone":{"letters":135,"clear":87,"hidden":25,"refused":23},"starts":{"letters":25,"changed":0,"refused":0}}
+head {"s5":{"letters":540,"clear":540,"hidden":0,"refused":0},"phone":{"letters":135,"clear":80,"hidden":0,"refused":55},"starts":{"letters":25,"changed":0,"refused":0}}
+head-m {"s5":{"letters":540,"clear":540,"hidden":0,"refused":0},"phone":{"letters":135,"clear":80,"hidden":0,"refused":55},"starts":{"letters":25,"changed":0,"refused":0}}
+head-n {"s5":{"letters":540,"clear":540,"hidden":0,"refused":0},"phone":{"letters":135,"clear":80,"hidden":0,"refused":55},"starts":{"letters":25,"changed":0,"refused":0}}
+head-d {"s5":{"letters":540,"clear":540,"hidden":0,"refused":0},"phone":{"letters":135,"clear":80,"hidden":0,"refused":55},"starts":{"letters":25,"changed":0,"refused":0}}
+head-s5 {"s5":{"letters":540,"clear":28,"hidden":512,"refused":0},"phone":{"letters":135,"clear":80,"hidden":0,"refused":55},"starts":{"letters":25,"changed":0,"refused":0}}
+  S-5 left "Patient Zephyra/J/Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]/[PATIENT_NAME]/Q was seen on 01/05/2026."
+  S-5 left "Patient Zephyra:J:Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]:[PATIENT_NAME]:Q was seen on 01/05/2026."
+  S-5 left "Patient Zephyra·J·Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]·[PATIENT_NAME]·Q was seen on 01/05/2026."
+  S-5 left "Patient Zephyra。J。Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]。[PATIENT_NAME]。Q was seen on 01/05/2026."
+  S-5 left "Patient Zephyr A/J/Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]/[PATIENT_NAME]/Q was seen on 01/05/2026."
+  S-5 left "Patient Zephyr A:J:Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]:[PATIENT_NAME]:Q was seen on 01/05/2026."
+  S-5 left "Patient Zephyr A·J·Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]·[PATIENT_NAME]·Q was seen on 01/05/2026."
+  S-5 left "Patient Zephyr A。J。Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]。[PATIENT_NAME]。Q was seen on 01/05/2026."
+  S-5 left "Patient ZEPHYRA/J/Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]/[PATIENT_NAME]/Q was seen on 01/05/2026."
+  S-5 left "Patient ZEPHYRA:J:Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]:[PATIENT_NAME]:Q was seen on 01/05/2026."
+  S-5 left "Patient ZEPHYRA·J·Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]·[PATIENT_NAME]·Q was seen on 01/05/2026."
+  S-5 left "Patient ZEPHYRA。J。Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]。[PATIENT_NAME]。Q was seen on 01/05/2026."
+  S-5 left "Dear Zephyra,/J/Q, your claim was paid." -> "Dear [PATIENT_NAME],/J/Q, your claim was paid."
+  S-5 left "Patient Zephyra,/J/Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME],/J/Q was seen on 01/05/2026."
+  S-5 left "Re: Zephyra,/J/Q\nPaid 150.00" -> "Re: [PATIENT_NAME],/J/Q\nPaid 150.00"
+  S-5 left "Dear Zephyra,:J:Q, your claim was paid." -> "Dear [PATIENT_NAME],:J:Q, your claim was paid."
+  S-5 left "Patient Zephyra,:J:Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME],:J:Q was seen on 01/05/2026."
+  S-5 left "Re: Zephyra,:J:Q\nPaid 150.00" -> "Re: [PATIENT_NAME],:J:Q\nPaid 150.00"
+  S-5 left "Dear Zephyra,·J·Q, your claim was paid." -> "Dear [PATIENT_NAME],·J·Q, your claim was paid."
+  S-5 left "Patient Zephyra,·J·Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME],·J·Q was seen on 01/05/2026."
+  S-5 left "Re: Zephyra,·J·Q\nPaid 150.00" -> "Re: [PATIENT_NAME],·J·Q\nPaid 150.00"
+  S-5 left "Dear Zephyra,。J。Q, your claim was paid." -> "Dear [PATIENT_NAME],。J。Q, your claim was paid."
+  S-5 left "Patient Zephyra,。J。Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME],。J。Q was seen on 01/05/2026."
+  S-5 left "Re: Zephyra,。J。Q\nPaid 150.00" -> "Re: [PATIENT_NAME],。J。Q\nPaid 150.00"
+  S-5 left "Patient ZEPH YRA/J/Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]/[PATIENT_NAME]/Q was seen on 01/05/2026."
+  S-5 left "Patient ZEPH YRA:J:Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]:[PATIENT_NAME]:Q was seen on 01/05/2026."
+  S-5 left "Patient ZEPH YRA·J·Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]·[PATIENT_NAME]·Q was seen on 01/05/2026."
+  S-5 left "Patient ZEPH YRA。J。Q was seen on 01/05/2026." -> "Patient [PATIENT_NAME]。[PATIENT_NAME]。Q was seen on 01/05/2026."
+head-f {"s5":{"letters":540,"clear":540,"hidden":0,"refused":0},"phone":{"letters":135,"clear":80,"hidden":0,"refused":55},"starts":{"letters":25,"changed":10,"refused":0}}
+  changed "Re: Zephyra.J.Q. was seen today." -> "Re: [PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME]. was seen today." (head "Re: [PATIENT_NAME].J.Q. was seen today.")
+  changed "Re: Zephyra.J. was seen today." -> "Re: [PATIENT_NAME].[PATIENT_NAME]. was seen today." (head "Re: [PATIENT_NAME].J. was seen today.")
+  changed "Re: Zephyra J.Q was seen today." -> "Re: [PATIENT_NAME] [PATIENT_NAME].[PATIENT_NAME] was seen today." (head "Re: [PATIENT_NAME] [PATIENT_NAME].Q was seen today.")
+  changed "Re: Zephyra, J.Q was seen today." -> "Re: [PATIENT_NAME], [PATIENT_NAME].[PATIENT_NAME] was seen today." (head "Re: [PATIENT_NAME], [PATIENT_NAME].Q was seen today.")
+  changed "Re: Zephyra. J. Smith called today." -> "Re: [PATIENT_NAME]. [PATIENT_NAME]. Smith called today." (head "Re: [PATIENT_NAME]. J. Smith called today.")
+  changed "Re: Zephyra.J.Smith called today." -> "Re: [PATIENT_NAME].[PATIENT_NAME].Smith called today." (head "Re: [PATIENT_NAME].J.Smith called today.")
+  changed "Re: Zephyra J. Q is the code today." -> "Re: [PATIENT_NAME] [PATIENT_NAME]. [PATIENT_NAME] is the code today." (head "Re: [PATIENT_NAME] [PATIENT_NAME]. Q is the code today.")
+  changed "Re: Okafor.A.I. was seen today." -> "Re: [PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME]. was seen today." (head "Re: [PATIENT_NAME].A.I. was seen today.")
+  changed "Re: Okafor.A. was seen today." -> "Re: [PATIENT_NAME].[PATIENT_NAME]. was seen today." (head "Re: [PATIENT_NAME].A. was seen today.")
+  changed "Re: Okafor.I.A. paid today." -> "Re: [PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME]. paid today." (head "Re: [PATIENT_NAME].I.A. paid today.")
+head-ph {"s5":{"letters":540,"clear":540,"hidden":0,"refused":0},"phone":{"letters":135,"clear":50,"hidden":85,"refused":0},"starts":{"letters":25,"changed":0,"refused":0}}

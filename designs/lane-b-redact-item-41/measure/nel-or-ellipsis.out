@@ -1,0 +1,6 @@
+line break "Paid in fullZEPHYRA\nJANE" -> "Paid in fullZEPHYRA\n[PATIENT_NAME]"
+ellipsis "3007…2299" -> "3007...2299"
+ellipsis "see 3007…2299." -> "see 3007...2299."
+ellipsis "Paid in fullZEPHYRA…JANE" -> "Paid in fullZEPHYRA...[PATIENT_NAME]"
+left as U+0085 "Paid in fullZEPHYRAJANE" -> "Paid in fullZEPHYRA[PATIENT_NAME]"
+{"line break":{"hidden":16,"clear":1,"refused":3},"ellipsis":{"hidden":15,"clear":3,"refused":2},"left as U+0085":{"hidden":10,"clear":1,"refused":9}}

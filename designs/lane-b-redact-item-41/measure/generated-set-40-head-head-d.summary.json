@@ -1,0 +1,1132 @@
+{
+ "newlyRefused": {},
+ "corpus": {
+  "letters": 51833,
+  "patients": 1425,
+  "sha256": "662c2b3581e4779f9499a45d32a9dac2378e1a293b4d7c4bd359a6ed240b55f3",
+  "seed": 40
+ },
+ "shaA": "bfd54281f591cacb0d9d40d8deeb7b9cf8f3b9273dcea379a2de6aff83d6e5cc",
+ "shaB": "4da3a4375a3300ca91e5ce045b24159a1e8bcdee69fbdb44aeb3be30436f3bbd",
+ "worker": {
+  "classes": {
+   "REVERSE.KEEP.unrefused.letter-with-identifiers": 96
+  },
+  "phiClasses": [],
+  "letters": 51833,
+  "differ": 412,
+  "refusedA": 8570,
+  "refusedB": 8474,
+  "errorsA": 0,
+  "errorsB": 0,
+  "spanMismatch": 316
+ },
+ "failures": 0,
+ "notes": 2,
+ "slowestMsB": 10,
+ "forms": {
+  "G40/A.control.sentence": {
+   "exp": "observe",
+   "letters": 1,
+   "A": {
+    "replaced": 1
+   },
+   "B": {
+    "replaced": 1
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-02": {
+   "exp": "hidden",
+   "letters": 640,
+   "A": {
+    "replaced": 640
+   },
+   "B": {
+    "replaced": 640
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-03": {
+   "exp": "hidden",
+   "letters": 1280,
+   "A": {
+    "replaced": 1280
+   },
+   "B": {
+    "replaced": 1280
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-04": {
+   "exp": "hidden",
+   "letters": 1920,
+   "A": {
+    "replaced": 1920
+   },
+   "B": {
+    "replaced": 1920
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-05": {
+   "exp": "hidden",
+   "letters": 2560,
+   "A": {
+    "replaced": 2560
+   },
+   "B": {
+    "replaced": 2560
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-06": {
+   "exp": "hidden",
+   "letters": 3200,
+   "A": {
+    "replaced": 3200
+   },
+   "B": {
+    "replaced": 3200
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-07": {
+   "exp": "hidden",
+   "letters": 3840,
+   "A": {
+    "replaced": 3840
+   },
+   "B": {
+    "replaced": 3840
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-08": {
+   "exp": "hidden",
+   "letters": 4480,
+   "A": {
+    "replaced": 4480
+   },
+   "B": {
+    "replaced": 4480
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-09": {
+   "exp": "hidden",
+   "letters": 5120,
+   "A": {
+    "replaced": 5120
+   },
+   "B": {
+    "replaced": 5120
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-10": {
+   "exp": "hidden",
+   "letters": 5760,
+   "A": {
+    "replaced": 5760
+   },
+   "B": {
+    "replaced": 5760
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-11": {
+   "exp": "hidden",
+   "letters": 6400,
+   "A": {
+    "replaced": 6400
+   },
+   "B": {
+    "replaced": 6400
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.length-12": {
+   "exp": "hidden",
+   "letters": 7040,
+   "A": {
+    "replaced": 7040
+   },
+   "B": {
+    "replaced": 7040
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/A.other-names": {
+   "exp": "hidden",
+   "letters": 8,
+   "A": {
+    "replaced": 8
+   },
+   "B": {
+    "replaced": 8
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/probe.dob": {
+   "exp": "observe",
+   "letters": 288,
+   "A": {
+    "refused": 288
+   },
+   "B": {
+    "refused": 256,
+    "replaced": 32
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/probe.name": {
+   "exp": "observe",
+   "letters": 192,
+   "A": {
+    "replaced": 192
+   },
+   "B": {
+    "replaced": 192
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/probe.phone": {
+   "exp": "observe",
+   "letters": 192,
+   "A": {
+    "refused": 190,
+    "replaced": 2
+   },
+   "B": {
+    "refused": 190,
+    "replaced": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/probe.ssn": {
+   "exp": "observe",
+   "letters": 192,
+   "A": {
+    "refused": 190,
+    "replaced": 2
+   },
+   "B": {
+    "refused": 190,
+    "replaced": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/probe.surrogate.dob": {
+   "exp": "observe",
+   "letters": 6,
+   "A": {
+    "refused": 6
+   },
+   "B": {
+    "refused": 6
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/probe.surrogate.name": {
+   "exp": "observe",
+   "letters": 4,
+   "A": {
+    "replaced": 4
+   },
+   "B": {
+    "replaced": 4
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/probe.surrogate.phone": {
+   "exp": "observe",
+   "letters": 4,
+   "A": {
+    "refused": 4
+   },
+   "B": {
+    "refused": 4
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/probe.surrogate.ssn": {
+   "exp": "observe",
+   "letters": 4,
+   "A": {
+    "refused": 4
+   },
+   "B": {
+    "refused": 4
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.apart": {
+   "exp": "hidden",
+   "letters": 60,
+   "A": {
+    "replaced": 60
+   },
+   "B": {
+    "replaced": 60
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.control.nfkc.lettered": {
+   "exp": "observe",
+   "letters": 201,
+   "A": {
+    "refused": 201
+   },
+   "B": {
+    "refused": 201
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.control.nfkc.name": {
+   "exp": "observe",
+   "letters": 201,
+   "A": {
+    "refused": 201
+   },
+   "B": {
+    "refused": 201
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.control.stable.lettered": {
+   "exp": "observe",
+   "letters": 953,
+   "A": {
+    "refused": 953
+   },
+   "B": {
+    "refused": 953
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.control.stable.name": {
+   "exp": "observe",
+   "letters": 953,
+   "A": {
+    "refused": 953
+   },
+   "B": {
+    "refused": 953
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.left.floor": {
+   "exp": "left",
+   "letters": 30,
+   "A": {
+    "left": 28,
+    "replaced": 2
+   },
+   "B": {
+    "left": 28,
+    "replaced": 2
+   },
+   "failures": 0,
+   "notes": 2
+  },
+  "G40/r13.nfkc.bare.after": {
+   "exp": "refused",
+   "letters": 201,
+   "A": {
+    "refused": 201
+   },
+   "B": {
+    "refused": 201
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.nfkc.bare.before": {
+   "exp": "refused",
+   "letters": 201,
+   "A": {
+    "refused": 201
+   },
+   "B": {
+    "refused": 201
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.nfkc.labeled.after": {
+   "exp": "refused",
+   "letters": 201,
+   "A": {
+    "refused": 201
+   },
+   "B": {
+    "refused": 201
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.nfkc.labeled.before": {
+   "exp": "refused",
+   "letters": 201,
+   "A": {
+    "refused": 201
+   },
+   "B": {
+    "refused": 201
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.stable.bare.after": {
+   "exp": "refused",
+   "letters": 953,
+   "A": {
+    "refused": 953
+   },
+   "B": {
+    "refused": 953
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.stable.bare.before": {
+   "exp": "refused",
+   "letters": 953,
+   "A": {
+    "refused": 953
+   },
+   "B": {
+    "refused": 953
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.stable.labeled.after": {
+   "exp": "refused",
+   "letters": 953,
+   "A": {
+    "refused": 953
+   },
+   "B": {
+    "refused": 953
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r13.stable.labeled.before": {
+   "exp": "refused",
+   "letters": 953,
+   "A": {
+    "refused": 953
+   },
+   "B": {
+    "refused": 953
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.inside.after-dash": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 64,
+    "replaced": 32
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.inside.after-first-digit": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.inside.bare": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.inside.before-space": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 64,
+    "replaced": 32
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.inside.glued": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.inside.labeled": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.inside.lettered": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.inside.twice": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.outside.after": {
+   "exp": "hidden",
+   "letters": 96,
+   "A": {
+    "replaced": 96
+   },
+   "B": {
+    "replaced": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.outside.before": {
+   "exp": "hidden",
+   "letters": 96,
+   "A": {
+    "replaced": 96
+   },
+   "B": {
+    "replaced": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.outside.letter-after": {
+   "exp": "hidden",
+   "letters": 96,
+   "A": {
+    "replaced": 96
+   },
+   "B": {
+    "replaced": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.outside.letter-before": {
+   "exp": "hidden",
+   "letters": 96,
+   "A": {
+    "replaced": 96
+   },
+   "B": {
+    "replaced": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.inside.after-dash": {
+   "exp": "refused",
+   "letters": 2,
+   "A": {
+    "refused": 2
+   },
+   "B": {
+    "refused": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.inside.after-first-digit": {
+   "exp": "refused",
+   "letters": 2,
+   "A": {
+    "refused": 2
+   },
+   "B": {
+    "refused": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.inside.bare": {
+   "exp": "refused",
+   "letters": 2,
+   "A": {
+    "refused": 2
+   },
+   "B": {
+    "refused": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.inside.before-space": {
+   "exp": "refused",
+   "letters": 2,
+   "A": {
+    "refused": 2
+   },
+   "B": {
+    "refused": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.inside.glued": {
+   "exp": "refused",
+   "letters": 2,
+   "A": {
+    "refused": 2
+   },
+   "B": {
+    "refused": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.inside.labeled": {
+   "exp": "refused",
+   "letters": 2,
+   "A": {
+    "refused": 2
+   },
+   "B": {
+    "refused": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.inside.lettered": {
+   "exp": "refused",
+   "letters": 2,
+   "A": {
+    "refused": 2
+   },
+   "B": {
+    "refused": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.inside.twice": {
+   "exp": "refused",
+   "letters": 2,
+   "A": {
+    "refused": 2
+   },
+   "B": {
+    "refused": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.outside.after": {
+   "exp": "hidden",
+   "letters": 2,
+   "A": {
+    "replaced": 2
+   },
+   "B": {
+    "replaced": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.outside.before": {
+   "exp": "hidden",
+   "letters": 2,
+   "A": {
+    "replaced": 2
+   },
+   "B": {
+    "replaced": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.outside.letter-after": {
+   "exp": "hidden",
+   "letters": 2,
+   "A": {
+    "replaced": 2
+   },
+   "B": {
+    "replaced": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/r14.surrogate.outside.letter-before": {
+   "exp": "hidden",
+   "letters": 2,
+   "A": {
+    "replaced": 2
+   },
+   "B": {
+    "replaced": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.c1.code-range": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.c1.dash-after-number": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.c1.dash-before-number": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.c1.date-range": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.c1.no-identifier": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.c1.possessive": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.c1.quoted-name": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.c1.quoted-number": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.c1.quotes": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nel.amount-line-then-number": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nel.letter": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nel.name-ends-line": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nel.no-identifier": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nel.number-ends-line": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nel.number-then-date-line": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 4,
+    "replaced": 12
+   },
+   "B": {
+    "refused": 4,
+    "replaced": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nul.between-words": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nul.in-number": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nul.no-identifier": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nul.trailing": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.nul.utf16-read-as-bytes": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.circled-list-number-before": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.circled-list-number-set-apart": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.footnote-after-claim-number": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.footnote-after-member-id": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.footnote-after-number-at-line-end": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.footnote-after-period": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.footnote-set-apart": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.list-number-with-full-stop-before": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.list-number-with-full-stop-set-apart": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.no-identifier": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.parenthesized-list-number-before": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "refused": 16
+   },
+   "B": {
+    "refused": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G40/real.r3.superscripts-no-number-beside": {
+   "exp": "observe",
+   "letters": 16,
+   "A": {
+    "replaced": 16
+   },
+   "B": {
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  }
+ }
+}

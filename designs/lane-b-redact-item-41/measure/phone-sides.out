@@ -1,0 +1,37 @@
+after clear->clear 18
+after refused->clear 2
+after refused->hidden 25
+before clear->clear 17
+before clear->hidden 8
+before refused->clear 3
+before refused->hidden 17
+inside clear->clear 10
+inside clear->hidden 27
+inside refused->hidden 8
+labelled/ten ¹ clear->clear 3
+labelled/ten ¹ clear->hidden 5
+labelled/ten ¹ refused->hidden 10
+labelled/ten ½ clear->clear 2
+labelled/ten ½ clear->hidden 3
+labelled/ten ½ refused->clear 1
+labelled/ten ½ refused->hidden 12
+labelled/ten Ⅳ clear->clear 3
+labelled/ten Ⅳ clear->hidden 7
+labelled/ten Ⅳ refused->hidden 8
+labelled/ten ↀ clear->clear 3
+labelled/ten ↀ clear->hidden 7
+labelled/ten ↀ refused->hidden 8
+labelled/ten ① clear->clear 3
+labelled/ten ① clear->hidden 5
+labelled/ten ① refused->hidden 10
+seven bare ¹ clear->clear 7
+seven bare ¹ clear->hidden 2
+seven bare ½ clear->clear 3
+seven bare ½ refused->clear 4
+seven bare ½ refused->hidden 2
+seven bare Ⅳ clear->clear 7
+seven bare Ⅳ clear->hidden 2
+seven bare ↀ clear->clear 7
+seven bare ↀ clear->hidden 2
+seven bare ① clear->clear 7
+seven bare ① clear->hidden 2
