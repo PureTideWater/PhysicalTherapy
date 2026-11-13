@@ -2806,6 +2806,19 @@ describe('MOD-25: a letter the base refuses stays refused, whatever the wider re
     expect(read.text).toBe(written);
   });
 
+  it('a letter this reader’s own check refuses anyway goes back as the base wrote it, without the mark (MOD-15’s glued name)', () => {
+    // Seed 1568248446 of MOD-15's property: the base's wider reading alone refused the text both readings write, and
+    // the first version of this rule marked it, though the check refuses that text by itself.
+    const [patient, claims] = held(['JANE Q ZEPHYRA'], ['SYNMEMBER0042', '900000000'], ['SYNCLAIM0001']);
+    for (const letter of ['RE: Zephyra900-12-3456. Noted. ', 'RE: Zephyra900-12-3456. SSN 9\u200b00-0\u200b0-0\u200b001. Noted. ']) {
+      expect(redactionSpans(letter, patient, claims).text).toBe(letter);
+      const read = entry(letter, patient, claims);
+      expect(read.refused).toBe(true);
+      expect(read.text.startsWith('RE: Zephyra[SSN]. ')).toBe(true);
+      expect(read.text.includes('\u0001')).toBe(false);
+    }
+  });
+
   it('the letters beside them that the base sent are sent as before', () => {
     const [patient, claims] = held(['AAAAAAAA'], ['7,7,7,7,7'], ['11111111', 'ZZ12345 01']);
     expect(entry('Fax 7777,7:1111 paid', patient, claims)).toEqual({ text: 'Fax [MEMBER_ID]:1111 paid', refused: false });

@@ -3803,7 +3803,15 @@ function screenAsBothRead(text: string, patient: PatientIdentifiers, claims: rea
  * asks to catch.
  */
 function asTheBaseRead<T>(read: () => T): T {
-  const kept = { viewsOfCheck, datesOfCheck, formsOfCheck, alikeOfWider, storeScope, widerReading, checkWorkSpent };
+  return apartFromTheEntry(true, read);
+}
+
+/**
+ * A reading apart from the entry that asks: on a counter of its own that starts from nothing, with stores of its own,
+ * as the base read (`asBase`) or as this reader reads. The entry's count and stores are, after it, what they were.
+ */
+function apartFromTheEntry<T>(asBase: boolean, read: () => T): T {
+  const kept = { viewsOfCheck, datesOfCheck, formsOfCheck, alikeOfWider, storeScope, widerReading, checkWorkSpent, baseReading };
   viewsOfCheck = null;
   datesOfCheck = null;
   formsOfCheck = null;
@@ -3811,12 +3819,11 @@ function asTheBaseRead<T>(read: () => T): T {
   storeScope = null;
   widerReading = false;
   checkWorkSpent = 0;
-  baseReading = true;
+  baseReading = asBase;
   try {
     return inOneReading(read);
   } finally {
-    baseReading = false;
-    ({ viewsOfCheck, datesOfCheck, formsOfCheck, alikeOfWider, storeScope, widerReading, checkWorkSpent } = kept);
+    ({ viewsOfCheck, datesOfCheck, formsOfCheck, alikeOfWider, storeScope, widerReading, checkWorkSpent, baseReading } = kept);
   }
 }
 
@@ -3845,6 +3852,12 @@ function asTheBaseRead<T>(read: () => T): T {
  * entry counted on the same steps, and the base counted its first reading besides), the one who asks marks the text
  * (refusedByMarkAfter): this reading's wider forms are not the base's, and nothing is assumed of them.
  *
+ * One case needs no mark and gets none: the base's text is `sent` and only its wider reading refuses it here (the
+ * first reading's check was not asked of it, above), and this reader's own whole check of `sent`, asked apart from the
+ * entry on a count from nothing, refuses it. The answer is then null: the entry returns `sent` as it would have, and
+ * holdsIdentifier, which starts from the entry's count and so refuses wherever a count from nothing does, refuses it
+ * (a name glued to a number, "RE: Zephyra900-12-3456.": the text goes back as the base wrote it, without the mark).
+ *
  * The first reading is not run again: MOD-25 changed nothing of it, so its matches, spans and text are the base's.
  */
 function refusedAsTheBaseRead(
@@ -3857,7 +3870,8 @@ function refusedAsTheBaseRead(
   patient: PatientIdentifiers,
   claims: readonly LetterClaim[],
 ): { readonly spans: readonly PlacedSpan[]; readonly byFirstRead: boolean } | null {
-  return asTheBaseRead(() => {
+  let onSent = false;
+  const refused = asTheBaseRead(() => {
     let spans = first.spans;
     try {
       const inBothWritings = (text: string, holds: (read: string) => boolean) => {
@@ -3878,7 +3892,11 @@ function refusedAsTheBaseRead(
       if (text !== sent && inBothWritings(text, firstReadHolds)) {
         return { spans, byFirstRead: true };
       }
-      return inBothWritings(text, (read) => widerMatchesIn(masked(read, claims.length), subject).length > 0) ? { spans, byFirstRead: false } : null;
+      if (!inBothWritings(text, (read) => widerMatchesIn(masked(read, claims.length), subject).length > 0)) {
+        return null;
+      }
+      onSent = text === sent;
+      return { spans, byFirstRead: false };
     } catch (error) {
       if (!(error instanceof PastCheckWorkBudget)) {
         throw error;
@@ -3886,6 +3904,7 @@ function refusedAsTheBaseRead(
       return { spans, byFirstRead: false };
     }
   });
+  return onSent && apartFromTheEntry(false, () => holdsIdentifier(sent, patient, claims)) ? null : refused;
 }
 
 /** redactLetterForScreen as the first reading alone gives it (matchesIn, appliedMatches), with the matches it applied and their spans. */
