@@ -68,7 +68,8 @@ describe('PHI minimization before the call', () => {
     expect(denialLetterSpec.prepare({ ...input, patient, text: 'Re: PATIENT_NAME' }).user).toContain('Re: [PATIENT_NAME]');
   });
 
-  it('leaves no identifier in any letter, whatever its synthetic names and numbers (property)', () => {
+  // 20 s is wall time on shared runners (the runner's default 5 s was passed there), not the product's budget; 4.1 to 4.8 s on a quiet machine.
+  it('leaves no identifier in any letter, whatever its synthetic names and numbers (property)', { timeout: 20_000 }, () => {
     const word = fc.stringMatching(/^[A-Z][a-z]{2,9}$/);
     const number = fc.stringMatching(/^SYN[0-9]{6,10}$/);
     fc.assert(
@@ -432,7 +433,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(checked(names, text)).toEqual(run.value);
   });
 
-  it('counts the same work for the same letter in every run, and none of a letter before it', () => {
+  // 20 s is wall time on shared runners (the runner's default 5 s was passed there), not the product's budget; 1.2 to 1.5 s on a quiet machine.
+  it('counts the same work for the same letter in every run, and none of a letter before it', { timeout: 20_000 }, () => {
     const letter = `Vantree${' J'.repeat(8_000)} \u0445 was seen 11/01/2026; call (202) 555-0123.`;
     const first = checked(['JANE Q VANTREE'], letter);
     expect(first.held).toBe(false);
@@ -444,7 +446,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(checked(['JANE Q VANTREE'], letter)).toEqual(first);
   });
 
-  it('holds one budget for the redaction and the check together: a letter the check takes past it is refused', () => {
+  // 20 s is wall time on shared runners (the runner's default 5 s was passed there), not the product's budget; 1.9 to 2.8 s on a quiet machine.
+  it('holds one budget for the redaction and the check together: a letter the check takes past it is refused', { timeout: 20_000 }, () => {
     const who = patient(['JANE Q VANTREE']);
     const text = fill('5\n').slice(0, 60_000);
     const redacted = redactLetterForScreen(text, who, claim('SYN555001'));
@@ -568,6 +571,137 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(run.ms, `refused ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
     // The same letter has the same answer, and the same count, again.
     expect(checked(['JANE Q VANTREE'], text)).toEqual(run.value);
+  });
+
+  // MOD-25 on the check's work budget (Queues item 34; docs/adr/0054). The check reads a member ID or claim number of
+  // digits alone, of five digits or more, glued to a letter: WORK.formCharacter for each character of the letter, for
+  // each such number and form, in each fold and writing it reads, on the view the wider reading stored. A call that
+  // holds no such number pays nothing: every row above is such a call, the one at 403.5M of the 420M among them.
+  const digitsOnly = { who: patient(['JANE Q VANTREE'], ['ZZ1234567', '76543210']), numbers: claim('SYN555001', '1234567890') };
+  it.each([
+    ['a long gap after a name and many initials past it (the dearest row above: 405.7M of the 420M here)', `Vantree${' '.repeat(2_000)}x${' J'.repeat(49_000)}`],
+    ['dates written with spaces alone', fill('1 1 11 ')],
+    ['words no reading takes', fill('paid in full. ')],
+    ['words no reading takes, on lines that end CR LF, with a look-alike letter', `${fill('paid in full.\r\n')}\u0445`],
+  ])('reads a letter for a call with two digits-only numbers within the budget and the 3 s: %s', { timeout: HANG_GUARD_MS }, (_case, text) => {
+    const run = timed(BUDGET_MS, () => {
+      const redacted = redactLetterForScreen(text, digitsOnly.who, digitsOnly.numbers);
+      return { text: redacted.text, held: holdsIdentifier(redacted.text, digitsOnly.who, digitsOnly.numbers, checkWorkOf(redacted)) };
+    });
+    expect(run.value.held).toBe(false);
+    expect(run.value.text).not.toContain(BARRIER);
+    expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
+  });
+
+  it('refuses the number glued to a letter at the end of 100,000 characters, within the 3 s', { timeout: HANG_GUARD_MS }, () => {
+    const text = `${fillTo('paid in full. ', N - 20)} Fax X76543210`;
+    const run = timed(BUDGET_MS, () => {
+      const redacted = redactLetterForScreen(text, digitsOnly.who, digitsOnly.numbers);
+      return { spent: checkWorkOf(redacted), text: redacted.text, held: holdsIdentifier(redacted.text, digitsOnly.who, digitsOnly.numbers, checkWorkOf(redacted)) };
+    });
+    // Refused by the check's reading, not by the count: the redaction left it as written, well within the budget.
+    expect(run.value.held).toBe(true);
+    expect(run.value.text).toBe(text);
+    expect(run.value.spent).toBeLessThan(CHECK_WORK_BUDGET / 2);
+    expect(run.ms, `refused ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
+  });
+
+  it('refuses, by the count and within the 3 s, a crafted letter that ten digits-only claim numbers take past the check’s work budget', { timeout: HANG_GUARD_MS }, () => {
+    // Dates written with spaces alone, 100,000 characters: 418.78M of the 420M with these numbers on a97d73e4, sent.
+    // The glued reading adds 0.2M for each of the ten (two units a character): 420.78M, past the budget, REFUSED, the
+    // base's own rule past the budget. The budget is not raised for it. With one such number (411.32M) the letter is read.
+    const who = patient(['JANE Q VANTREE']);
+    const ten = claim('SYN555001', ...Array.from({ length: 10 }, (_, index) => String(7_654_301 + index)));
+    const text = fill('1 1 11 ');
+    const path = (numbers: ReturnType<typeof claim>) => {
+      const redacted = redactLetterForScreen(text, who, numbers);
+      return { text: redacted.text, spent: checkWorkOf(redacted), held: holdsIdentifier(redacted.text, who, numbers, checkWorkOf(redacted)) };
+    };
+    const run = timed(BUDGET_MS, () => path(ten));
+    expect(run.value.held).toBe(true);
+    // The redaction ran to its end within the budget; the check, counting on from there, is past it and refuses.
+    expect(run.value.text).toBe(text);
+    expect(run.value.spent).toBeLessThanOrEqual(CHECK_WORK_BUDGET);
+    expect(run.ms, `refused ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
+    expect(path(ten)).toEqual(run.value);
+    expect(path(claim('SYN555001', '7654301')).held).toBe(false);
+  });
+
+  it('charges the glued reading two units a character for each digits-only number at the floor in each reading, on the stored view, and nothing under the floor', { timeout: HANG_GUARD_MS }, () => {
+    /**
+     * The check's own work on a text it does not refuse: the budget less the most work already spent with which it
+     * still reads to its end (holdsIdentifier refuses a letter whose count passes the budget, and for nothing else here).
+     */
+    const costOfCheck = (text: string, who: ReturnType<typeof patient>, numbers: ReturnType<typeof claim>) => {
+      expect(holdsIdentifier(text, who, numbers, 0)).toBe(false);
+      let read = 0;
+      let refused = CHECK_WORK_BUDGET + 1;
+      while (refused - read > 1) {
+        const middle = Math.floor((read + refused) / 2);
+        if (holdsIdentifier(text, who, numbers, middle)) {
+          refused = middle;
+        } else {
+          read = middle;
+        }
+      }
+      return CHECK_WORK_BUDGET - read;
+    };
+    const MORE = 1_400;
+    const prose = (length: number, end: string) => `${'paid in full. '.repeat(length / 'paid in full. '.length)}${end}`;
+    // What MORE characters of a letter add to the check for a call: the same call on two lengths, so that what a call
+    // costs whatever the letter's length is not in it.
+    const forMore = (memberId: string, claimNumbers: string[], end: string) => {
+      const who = patient(['JANE Q VANTREE'], ['ZZ1234567', memberId]);
+      return costOfCheck(prose(2 * MORE, end), who, claim(...claimNumbers)) - costOfCheck(prose(MORE, end), who, claim(...claimNumbers));
+    };
+    // One number of five digits: two units a character more than one of four, which the rule does not read. A view of
+    // the rule's own would be thirty units a character more (WORK.viewCharacter): it takes the wider reading's.
+    expect(forMore('76543', ['SYN555001'], '') - forMore('7654', ['SYN555001'], '')).toBe(2 * MORE);
+    // Two numbers, one a claim's: four. (Five digits each: from six a number is read with a digit for a letter too, which costs by the letter's length.)
+    expect(forMore('76543', ['SYN555001', '12345'], '') - forMore('7654', ['SYN555001', '1234'], '')).toBe(4 * MORE);
+    // A letter with a CR LF is read in both writings, and one with a look-alike letter on both folds: each reading is charged.
+    expect(forMore('76543', ['SYN555001'], '\r\n') - forMore('7654', ['SYN555001'], '\r\n')).toBe(4 * MORE);
+    expect(forMore('76543', ['SYN555001'], ' \u0445') - forMore('7654', ['SYN555001'], ' \u0445')).toBe(4 * MORE);
+  });
+
+  // Review 2 of Queues item 34 (R2-1): where the records hold a separator in a number, the wider reading joins a run of
+  // marks there (A-5). A run of that same separator in a letter, with the rest of the number not after it, was read in
+  // time that doubled with each character (26 slashes: 7 s; 500: no answer), on work the counter does not see.
+  it.each([
+    ['held with a slash, 26 slashes after the piece', 'ZZ12345/01', `Member ID: ZZ12345${'/'.repeat(26)} Group: 100`],
+    ['held with a slash, 2,000 slashes after the piece', 'ZZ12345/01', `Member ID: ZZ12345${'/'.repeat(2_000)} Group: 100`],
+    ['held with a space, a column padded with spaces to 100,000 characters', 'ZZ12345 01', `Member ID: ZZ12345${' '.repeat(N - 30)} Group: 100`],
+    ['held with a hyphen, a rule of hyphens to 100,000 characters', 'ZZ12345-01', `Member ID: ZZ12345 ${'-'.repeat(N - 30)} Group: 100`],
+    ['digits alone held with a hyphen, a rule of hyphens to 100,000 characters', '12345-01', `Ref 12345 ${'-'.repeat(N - 30)} paid`],
+  ])('reads a run of the separator the records hold in a number within the 3 s: %s', { timeout: HANG_GUARD_MS }, (_case, memberId, text) => {
+    const who = patient(['JANE Q VANTREE'], [memberId]);
+    const numbers = claim('SYN555001');
+    const run = timed(BUDGET_MS, () => {
+      const redacted = redactLetterForScreen(text, who, numbers);
+      return { text: redacted.text, held: holdsIdentifier(redacted.text, who, numbers, checkWorkOf(redacted)) };
+    });
+    // The piece of five or more is replaced (rule (c)) and the letter is sent, as before the run was read in linear time.
+    expect(run.value.held).toBe(false);
+    expect(run.value.text).not.toContain('12345');
+    expect(run.value.text).toContain('[MEMBER_ID]');
+    expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
+  });
+
+  // Review 2 of Queues item 34 (R2-2): every letter is now read for its CR LF line endings, and a run of CRs with no
+  // line feed after it was scanned again from each of its CRs (100,000: 8 to 16 s), on work the counter does not see.
+  it.each([
+    ['after a name', `Dear Vantree, ${'\r'.repeat(N)}`],
+    ['after prose, a letter after the run', `The claim was paid. ${'\r'.repeat(N)}x`],
+    ['after a CR LF', `Paid.\r\n${'\r'.repeat(N)}`],
+    ['after a line feed (the third reading)', `Paid.\n${'\r'.repeat(N)}x`],
+  ])('reads a run of 100,000 carriage returns with no line feed after it within the 3 s: %s', { timeout: HANG_GUARD_MS }, (_case, text) => {
+    const run = timed(BUDGET_MS, () => {
+      const redacted = redactLetterForScreen(text, digitsOnly.who, digitsOnly.numbers);
+      return { text: redacted.text, held: holdsIdentifier(redacted.text, digitsOnly.who, digitsOnly.numbers, checkWorkOf(redacted)) };
+    });
+    expect(run.value.held).toBe(false);
+    expect(run.value.text).not.toContain('Vantree');
+    expect(run.ms, `redacted and checked ${String(text.length)} characters in ${run.said}`).toBeLessThan(run.allowedMs);
   });
 
   // Review round 3 (GATEWAY3-3): the check's own paths, a letter it refuses included, in time linear in its length.

@@ -55,6 +55,19 @@ describe('the inputs', () => {
     }
   });
 
+  it('refuse what only the drafter’s check reads: a number as the records hold it, a piece of it, digits glued to a letter, a word of a name held with a mark (MOD-25, rule (d))', () => {
+    const held = { ...input, identifiers: ['JANE+ZEPHYRA', 'ZZ12345/01', '76543210'], names: ['JANE+ZEPHYRA'], numbers: ['ZZ12345/01', '76543210'] };
+    const quoting = (quote: string) => ({ ...held, content: { ...held.content, citation: { ...held.content.citation, quote } as typeof input.content.citation } });
+    for (const quote of ['per unit, member ZZ12345/01', 'per unit, member ZZ12345 / 01', 'per unit, member ZZ12345', 'per unit, fax X76543210 ext 12', 'per unit for Ms. Zephyra', 'per unit for JANE']) {
+      expect(() => narrativeSpec.prepare(quoting(quote)), quote).toThrow(expect.objectContaining({ code: 'identifier_in_input' }));
+    }
+    // The facts themselves hold none of that case's identifiers, and no name is read written apart ("in a" for INA).
+    expect(narrativeSpec.prepare(held).user).toBe(narrativeSpec.prepare(input).user);
+    expect(narrativeSpec.prepare({ ...quoting('paid in a timely manner'), names: ['INA+ZEPHYRA'], identifiers: ['INA+ZEPHYRA'], numbers: [] }).user).toContain('paid in a timely manner');
+    // The recorded cost: a word the records hold beside a name with a mark is that name's word.
+    expect(mentionsIdentifier('Medicare paid the line short.', { names: ['ZEPHYRA*MEDICARE'], numbers: [] })).toBe(true);
+  });
+
   it('read names as names and numbers as numbers: an amount or a date in the facts is never a claim’s digits', () => {
     const facts = narrativeSpec.prepare(input).user;
     expect(facts).toContain('$300.00');

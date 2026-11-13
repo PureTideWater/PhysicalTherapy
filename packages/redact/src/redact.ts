@@ -568,6 +568,15 @@ let storeScope: object | null = null;
 let widerReading = false;
 
 /**
+ * Whether the wider reading reads as the base of Queues item 34 read it (a97d73e4, MOD-23 alone; asTheBaseRead): none of
+ * what MOD-25 widened. Inside a name's part a space, a joiner, a period or U+0085 and no other mark (A-4); where the
+ * records write a separator, what joins a number anywhere and that separator, no run of marks (A-5); no piece of a
+ * stored number (rule (c)); a name's words as the first reading splits them (rule (b)); each form read on from the end
+ * of the match before (R1-1). Only the gate of the two entries sets it (refusedAsTheBaseRead), inside stores of its own.
+ */
+let baseReading = false;
+
+/**
  * Whether a stored answer is taken again, counting what building it cost (Stored); with `oncePerCheck`, nothing where
  * the check that is running has paid for it. False for an answer built with no counter running when one runs now
  * (redactionSpans' first reading, then the check it asks): its cost is not known, so it is built again and counted.
@@ -670,8 +679,15 @@ const GAP = {
   tight: `(?:[${NAME_JOINERS}]|${HYPHENATION})*`,
   /** Inside a name's part, two letters or more from each end: a space or period too, if the pieces it makes pass (spacedPiecesPass). */
   spaced: `[${NAME_JOINERS}\\s.]*`,
-  /** Inside a name's part in the letter reader's wider reading (nameForm with `apart`): as `spaced`, and U+0085, a line break here (LINE_BREAK) that \\s does not hold. */
-  apart: `[${NAME_JOINERS}\\s\\u0085.]*`,
+  /**
+   * Inside a name's part in the letter reader's wider reading (nameForm with `apart`): any run of marks (runOfMarks;
+   * Queues item 34, MOD-25, A-4), which holds all of `spaced`, every line break (U+0085 too, which \\s does not hold) and
+   * every other mark: "Zephy, ra", "Zephy(ra", "Zephy/ra", "Zephy+ra". No case per mark: each mark left out was a name
+   * sent in clear. Read when a form is built, since runOfMarks names marks declared further down the file.
+   */
+  get apart(): string {
+    return baseReading ? `[${NAME_JOINERS}\\s\\u0085.]*` : runOfMarks();
+  },
   /** Between the parts the records hold apart: any joiner, white space, a period or a comma. */
   part: `[${NAME_JOINERS}\\s.,]*`,
   number: `[${NUMBER_JOINERS}]*`,
@@ -723,10 +739,38 @@ function patternOf(characters: readonly string[], gaps: readonly string[]): RegE
 }
 
 /**
+ * A run of marks (Queues item 34, MOD-25; docs/adr/0054): any run of characters that are no letter, no digit and none of
+ * the checks' three marks (PRIVATE_MARKS: a placeholder, to every check). An APOSTROPHE_LETTER is an apostrophe here, as
+ * it is in every number. What the wider reading takes where a boundary is known to stand: no case per mark, since each
+ * mark left out was a form sent in clear ("ZZ12345.01", "ZZ12345:01" and "ZZ12345#01" for a number held "ZZ12345/01").
+ * A function, since two of the marks are named further down the file.
+ *
+ * `also` (what the records write at that place, numberForm) is read only where the first class does not take the
+ * character: the two alternatives never take the same one, so a run is read one way and in time linear in its length.
+ * With a separator of the records in both, a run of it not followed by the rest of the number was tried every way,
+ * the time doubling with each character (review 2 of Queues item 34, R2-1: 26 slashes 7 s, 500 no answer).
+ */
+const runOfMarks = (also = '') => {
+  const noMark = `\\p{L}\\p{N}${BARRIER}${NAME_MARK}${OWN_MARK}`;
+  return `(?:[^${noMark}]|(?=[${noMark}])[\\u02BC\\u02B9\\u02CA${also}])*`;
+};
+
+/**
+ * The fewest letters and digits of a piece of a stored number that is read as a number of its kind (piecesOf), and the
+ * fewest digits of a digits-only number that the check refuses glued to a letter (Queues item 34, MOD-25; the
+ * orchestrator's ruling of 2026-11-12 on the design's first question). One floor for both. Under it a value is read as
+ * before: a piece of four characters, and a number of four digits glued to a letter, are sent, the recorded residual
+ * of docs/adr/0054 ("Account1234"). Five is the shortest patient control number the reader expects (SCREEN_FLOORS).
+ */
+const WIDER_NUMBER_FLOOR = 5;
+
+/**
  * A member ID's or claim number's form, compacted from its folded value, or null under two letters or digits. With
- * `asStored` (the letter reader's wider reading, widerMatchesIn), what the records themselves write between two of the
- * number's characters joins them there too, beside what joins a number anywhere: "ZZ12345/01", "ZZ12345.01", "ZZ12345,01"
- * and "ZZ12345+01" are each read as the records hold them, and a claim number held "1234/56" with no label before it.
+ * `asStored` (the letter reader's wider reading, widerMatchesIn), where the records themselves write a separator
+ * between two of the number's characters a run of marks joins them (runOfMarks; MOD-25, A-5), beside what joins a number
+ * anywhere: a number held "ZZ12345/01" is read written "ZZ12345/01", "ZZ12345.01", "ZZ12345,01", "ZZ12345 : 01" and
+ * "ZZ12345#01", and a claim number held "1234/56" with no label before it. Never where the records write nothing:
+ * "ZZ123+4501" is no writing of it. What the records write there joins as well, whatever it is (MOD-23).
  */
 function numberForm(value: string, kind: 'claim' | 'member', claim: number, asStored = false): Form | null {
   const folded = viewOf(value.normalize('NFKC'), 'join').text;
@@ -753,16 +797,42 @@ function numberForm(value: string, kind: 'claim' | 'member', claim: number, asSt
   const gaps = characters.slice(1).map((next, i) => {
     const gap = letter(characters[i]) || letter(next) ? GAP.numberNearLetter : GAP.number;
     const own = stored[i + 1] ?? '';
-    return own === '' ? gap : `${gap.slice(0, -2)}${own}]*`;
+    if (own === '') {
+      return gap;
+    }
+    return baseReading ? `${gap.slice(0, -2)}${own}]*` : runOfMarks(own);
   });
   const digitsOnly = /^\p{N}+$/u.test(compact);
   return { compact, kind, claim, pattern: patternOf(characters, gaps), insidePart: [], digitsOnly, labeled: digitsOnly ? patternOf(characters, gaps.map(() => GAP.labeledNumber)) : null };
 }
 
-/** A name's parts, each compacted from its folded value, grouped by word. */
-function nameWords(name: string): string[][] {
+/**
+ * The pieces of a stored member ID or claim number that are numbers of its kind in the letter reader's wider reading
+ * (Queues item 34, MOD-25, rule (c)): each run of its letters and digits that a character of the stored value which is
+ * no letter and no digit sets off (a joiner too: "ZZ12345 01", "ZZ12345-01", "ZZ12345/01"), if it holds a digit and
+ * WIDER_NUMBER_FLOOR letters and digits or more. None for a value the records hold in one piece. A piece under the
+ * floor ("01", "1234") or of letters alone ("ZZ") is no number: the recorded residual.
+ */
+function piecesOf(value: string): string[] {
+  const pieces = viewOf(value.normalize('NFKC'), 'join')
+    .text.split(/(?:[^\p{L}\p{N}]|[\u02BC\u02B9\u02CA])+/u)
+    .filter((piece) => piece !== '');
+  return pieces.length < 2 ? [] : pieces.filter((piece) => [...piece].length >= WIDER_NUMBER_FLOOR && /\p{N}/u.test(piece));
+}
+
+/**
+ * A stored name's words in the letter reader's wider reading (Queues item 34, MOD-25, rule (b)): split at every
+ * character that is no letter, no digit and no joiner the records' split of a word into parts reads (PIECE_SPLIT), as
+ * if a space were held there. A name held "JANE+ZEPHYRA", "JANE&ZEPHYRA" or "ZEPHYRA(JANE)" is the words JANE and
+ * ZEPHYRA, where the first reading holds one word JANEZEPHYRA and sent "Ms. Zephyra" in clear. Every character
+ * WORD_SPLIT splits at is one of these, so each word of the first reading is a word or several here: it only adds.
+ */
+const WIDER_WORD_SPLIT = /[^\p{L}\p{N}\p{Pd}−⁃'‘’`´._\u00AD]+/u;
+
+/** A name's parts, each compacted from its folded value, grouped by word; with `wider`, the words of the wider reading (WIDER_WORD_SPLIT). */
+function nameWords(name: string, wider = false): string[][] {
   return viewOf(name.normalize('NFKC'), 'join')
-    .text.split(WORD_SPLIT)
+    .text.split(wider ? WIDER_WORD_SPLIT : WORD_SPLIT)
     .map((word) => word.split(PIECE_SPLIT).map(compactFolded).filter((piece) => piece !== ''))
     .filter((word) => word.length > 0);
 }
@@ -818,7 +888,7 @@ function formsOf(subject: Subject, wider = false): readonly Form[] {
   if (formsOfCheck === null) {
     return formsBuiltOf(subject, wider);
   }
-  const key = `${ownFold}${wider ? '+' : ''}`;
+  const key = `${ownFold}${wider ? '+' : ''}${baseReading ? '<' : ''}`;
   let known = formsOfCheck.get(subject);
   if (known === undefined) {
     known = new Map();
@@ -845,16 +915,30 @@ function formsBuiltOf(subject: Subject, wider: boolean): Form[] {
       forms.set(`${form.kind}:${String(form.claim)}:${form.pattern.source}`, form);
     }
   };
+  // A piece of a stored number (piecesOf) takes its number's placeholder and the first reading's exceptions, as a
+  // number of its kind; where two numbers share a piece, the first in the call's order.
+  const pieces = new Set<string>();
+  const addPieces = (value: string, kind: 'claim' | 'member', claim: number) => {
+    for (const piece of wider && !baseReading ? piecesOf(value) : []) {
+      const form = numberForm(piece, kind, claim);
+      if (form !== null && !pieces.has(form.pattern.source)) {
+        pieces.add(form.pattern.source);
+        add(form);
+      }
+    }
+  };
   subject.claims.forEach((numbers, index) => {
     for (const number of numbers) {
       add(numberForm(number, 'claim', index + 1, wider));
+      addPieces(number, 'claim', index + 1);
     }
   });
   for (const memberId of subject.memberIds) {
     add(numberForm(memberId, 'member', 0, wider));
+    addPieces(memberId, 'member', 0);
   }
   for (const name of subject.names) {
-    const words = nameWords(name);
+    const words = nameWords(name, wider && !baseReading);
     add(nameForm(words.flat(), wider));
     for (const word of words) {
       add(nameForm(word, wider));
@@ -871,9 +955,9 @@ function formsBuiltOf(subject: Subject, wider: boolean): Form[] {
   return [...forms].filter(([key]) => !first.has(key)).map(([, form]) => form);
 }
 
-/** The first letter of each part of each name, folded: the initials taken next to a name. */
-function initialsOf(names: readonly string[]): Set<string> {
-  return new Set(names.flatMap((name) => nameWords(name).flatMap((word) => word.map((part) => [...part][0] ?? ''))).filter((letter) => /^\p{L}$/u.test(letter)));
+/** The first letter of each part of each name, folded: the initials taken next to a name; with `wider`, of the wider reading's words (nameWords). */
+function initialsOf(names: readonly string[], wider = false): Set<string> {
+  return new Set(names.flatMap((name) => nameWords(name, wider).flatMap((word) => word.map((part) => [...part][0] ?? ''))).filter((letter) => /^\p{L}$/u.test(letter)));
 }
 
 /**
@@ -1155,6 +1239,7 @@ function inOneReading<T>(read: () => T): T {
     viewsOfCheck = null;
     datesOfCheck = null;
     formsOfCheck = null;
+    alikeOfWider = null;
   }
 }
 
@@ -1246,6 +1331,13 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
       const start = match.index;
       const end = start + match[0].length;
       const range = inNormal(view, start, end);
+      if (wider && !baseReading) {
+        // The wider reading asks at every place, not from the end of the match before: under its gaps (a run of marks,
+        // MOD-25 A-4 and A-5) a match can begin at a cut form of the value, cross a mark and end inside the real writing
+        // after it ("ZEPHYRA: Z E P H Y R A Z" for ZEPHYRAZ), and a scan that went on from there sent the rest of that
+        // writing, which the narrower gaps replaced whole (review 1 of Queues item 34, R1-1). The spans are merged.
+        pattern.lastIndex = start + codePointAt(view.text, start).length;
+      }
       if (form.kind === 'name') {
         if (!wider && !spacedPiecesPass(form, view, normal, start, end)) {
           // Past the whole first code point: with the u flag, an index inside a surrogate pair finds the same match again.
@@ -1298,7 +1390,7 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
   // does not ask then (the first reading asks as it always did): on a letter of initials that search is most of a
   // reading's counted work, and it would be done, and charged, once more for nothing.
   if (subject.initials && !(wider && names.length === 0)) {
-    for (const initial of initialsNextToNames(view, normal, names, initialsOf(subject.names))) {
+    for (const initial of initialsNextToNames(view, normal, names, initialsOf(subject.names, wider && !baseReading))) {
       found.push({ ...inNormal(view, initial.start, initial.end), kind: 'name', claim: 0 });
     }
   }
@@ -1398,11 +1490,21 @@ function widerMatchesIn(normal: string, subject: Subject): Found[] {
   }
 }
 
+/**
+ * Whether the wider reading last read a text on the look-alike fold too (alikeReads, which costs WORK.fold for every
+ * character outside ASCII): its answer for that text and subject, null outside an entry (inOneReading drops it, so no
+ * letter's text is held past one).
+ */
+let alikeOfWider: { readonly normal: string; readonly subject: Subject; readonly alike: boolean } | null = null;
+
 /** widerMatchesIn's reading; it takes stored views and dates for nothing (Stored), and counts what it does itself. */
 function widerMatchesRead(normal: string, subject: Subject): Found[] {
   const read = () => ownMatchesIn(normal, subject, true).filter((match) => match.kind !== 'birth');
   const found = read();
-  if (alikeReads(normal, subject)) {
+  const alike = alikeReads(normal, subject);
+  // Kept for the check's glued reading of this same text (digitsGluedToLetter), which asks nothing twice.
+  alikeOfWider = { normal, subject, alike };
+  if (alike) {
     onFold('alike', () => {
       for (const match of read()) {
         const written = normal.slice(match.start, match.end).normalize('NFD');
@@ -3528,8 +3630,10 @@ function appliedMatches(normal: string, subject: Subject, claims: number): Found
  * writes. The first reading runs as on the base, with no counter (this entry has no refusal of its own to give for
  * it). What MOD-23 adds, the wider reading and the first reading's check that decides whether its matches are applied
  * (refusedAsFirstRead), counts its work from nothing on the check's counter: past the budget (CHECK_WORK_BUDGET) the
- * text is that text with the mark the check refuses after its last character (unreadPastTheBudgetAfter), and the
+ * text is that text with the mark the check refuses after its last character (refusedByMarkAfter), and the
  * spans are the first reading's, each where it was. The catch below is this entry's own and holds only its own count.
+ * The same text and spans where one of the call's digits-only numbers stands whole and glued to a letter in the letter
+ * as written (gluedBeforeRedaction; MOD-25, rule (a)): the check refuses it whatever a placeholder took of the number.
  */
 export function redactionSpans(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
   const normal = unbracketed(text);
@@ -3545,25 +3649,39 @@ export function redactionSpans(text: string, patient: PatientIdentifiers, claims
     checkWorkSpent = 0;
     try {
       const covered = within([...first]);
-      const wider = widerMatchesIn(unmarked(normal), subject).filter((match) => !covered(match));
-      if (wider.length === 0) {
+      const raw = unmarked(normal);
+      const wider = widerMatchesIn(raw, subject).filter((match) => !covered(match));
+      // Rule (a) on the letter as written, before any placeholder (gluedBeforeRedaction): the first reading's spans, and the
+      // mark. Where neither reading replaces anything the text is the letter as written, which the check reads itself.
+      if (first.length + wider.length > 0 && gluedBeforeRedaction(raw, subject, first)) {
+        return { text: refusedByMarkAfter(normal), spans: first };
+      }
+      const asFirstWrote = written(normal, first);
+      if (wider.length > 0 && refusedAsFirstRead(asFirstWrote, patient, claims)) {
         return { text: normal, spans: first };
       }
-      if (refusedAsFirstRead(written(normal, first), patient, claims)) {
-        return { text: normal, spans: first };
+      // What the base's whole entry refuses stays refused, with the spans the base wrote (refusedAsTheBaseRead).
+      const both = wider.length === 0 ? first : merge([...found, ...wider]);
+      const sent = wider.length === 0 ? asFirstWrote : written(normal, both);
+      const base = refusedAsTheBaseRead(normal, raw, subject, { found, spans: first, text: asFirstWrote }, wider.length > 0 ? false : undefined, sent, patient, claims);
+      if (base !== null) {
+        return { text: base.byFirstRead ? normal : refusedByMarkAfter(normal), spans: base.spans };
       }
-      return { text: normal, spans: merge([...found, ...wider]) };
+      return { text: normal, spans: both };
     } catch (error) {
       if (!(error instanceof PastCheckWorkBudget)) {
         throw error;
       }
       // Past the budget the wider reading or its check did not run to its end: the first reading's spans, and the mark.
-      return { text: unreadPastTheBudgetAfter(normal), spans: first };
+      return { text: refusedByMarkAfter(normal), spans: first };
     } finally {
       checkWorkSpent = before;
     }
   });
 }
+
+/** A span of NFKC text and the placeholder written for it (merge). */
+type PlacedSpan = Range & { readonly placeholder: string };
 
 /** NFKC text with the spans replaced by their placeholders (those `replace` takes). */
 function written(normal: string, spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[]): string {
@@ -3642,17 +3760,151 @@ function screenAsBothRead(text: string, patient: PatientIdentifiers, claims: rea
   // in "No. 900-12-3456150.00" after a CR LF hid the number from the reading with line feeds). In a letter it sends, every span the first
   // reading replaced is replaced (merge only joins and widens spans), and every run it offered the screen is offered.
   const covered = within([...first.spans]);
-  const wider = widerMatchesIn(unmarked(normal), subject).filter((match) => !covered(match));
+  const raw = unmarked(normal);
+  const wider = widerMatchesIn(raw, subject).filter((match) => !covered(match));
+  // Rule (a) of MOD-25 is read here, on the letter as written and before any placeholder is: a digits-only number that
+  // stands whole and glued to a letter refuses the letter whatever took a part of it (gluedBeforeRedaction). The first
+  // reading's text with the mark the check refuses at its first line: no more of the letter than that reading writes.
+  // Where neither reading replaces anything, what is sent to the check is the letter as written: the check reads the
+  // rule on that same text and refuses it itself, so the letter is left as it is and nothing is read twice.
+  if (first.spans.length + wider.length > 0 && gluedBeforeRedaction(raw, subject, first.spans)) {
+    return { text: refusedByMarkAfter(first.text), claims: first.claims, replaced: first.replaced, candidates: first.candidates };
+  }
   // Both the wider reading and the check asked again here count their work on this letter's counter, the check as a
   // check of its own is charged (holdsAsFirstRead): past the budget the entry refuses the letter, with no text of it.
-  if (wider.length === 0 || refusedAsFirstRead(first.text, patient, claims)) {
-    return { text: first.text, claims: first.claims, replaced: first.replaced, candidates: first.candidates };
+  const asFirstWrote = { text: first.text, claims: first.claims, replaced: first.replaced, candidates: first.candidates };
+  if (wider.length > 0 && refusedAsFirstRead(first.text, patient, claims)) {
+    return asFirstWrote;
   }
-  const spans = merge([...first.found, ...wider]);
-  const sent = written(normal, spans);
-  const own = new Set(formsOf(subject).flatMap((form) => (form.kind === 'claim' || form.kind === 'member' ? [form.compact] : [])));
-  const candidates = new Set([...first.candidates, ...identifierCandidates(sent).filter((candidate) => !own.has(candidate))]);
-  return { text: sent, claims: first.claims, replaced: spans.length, candidates: [...candidates].sort() };
+  const widened = (spans: readonly PlacedSpan[]) => {
+    const sent = written(normal, spans);
+    const own = new Set(formsOf(subject).flatMap((form) => (form.kind === 'claim' || form.kind === 'member' ? [form.compact] : [])));
+    const candidates = new Set([...first.candidates, ...identifierCandidates(sent).filter((candidate) => !own.has(candidate))]);
+    return { text: sent, claims: first.claims, replaced: spans.length, candidates: [...candidates].sort() };
+  };
+  // What the base's whole entry refuses stays refused (the ruling on finding (C) of Queues item 34's reviews): the letter
+  // is returned as the base wrote it, which the check refuses again, and nothing MOD-25 widened replaces what the base's
+  // check refused it for ("Fax 7777,7:1111,7777.7" for a member ID held "7,7,7,7,7": the base wrote "Fax
+  // [MEMBER_ID]:1111,7777.7" and refused it; with the second writing replaced too, the letter was sent). Asked on a
+  // counter and stores of its own (asTheBaseRead): it changes nothing of what this entry counts.
+  const both = wider.length === 0 ? first.spans : merge([...first.found, ...wider]);
+  const base = refusedAsTheBaseRead(normal, raw, subject, first, wider.length > 0 ? false : undefined, wider.length === 0 ? first.text : written(normal, both), patient, claims);
+  if (base !== null) {
+    const wrote = base.spans === first.spans ? asFirstWrote : widened(base.spans);
+    return base.byFirstRead ? wrote : { ...wrote, text: refusedByMarkAfter(wrote.text) };
+  }
+  return wider.length === 0 ? asFirstWrote : widened(both);
+}
+
+/**
+ * A reading as the base of Queues item 34 gave it (baseReading), apart from the entry that asks: on a counter of its own
+ * that starts from nothing, with stores of its own, so that the entry's count and stores are, after it, what they were
+ * before it. Past the budget on its own counter it throws as any reading does (PastCheckWorkBudget), for the one who
+ * asks to catch.
+ */
+function asTheBaseRead<T>(read: () => T): T {
+  return apartFromTheEntry(true, read);
+}
+
+/**
+ * A reading apart from the entry that asks: on a counter of its own that starts from nothing, with stores of its own,
+ * as the base read (`asBase`) or as this reader reads. The entry's count and stores are, after it, what they were.
+ */
+function apartFromTheEntry<T>(asBase: boolean, read: () => T): T {
+  const kept = { viewsOfCheck, datesOfCheck, formsOfCheck, alikeOfWider, storeScope, widerReading, checkWorkSpent, baseReading };
+  viewsOfCheck = null;
+  datesOfCheck = null;
+  formsOfCheck = null;
+  alikeOfWider = null;
+  storeScope = null;
+  widerReading = false;
+  checkWorkSpent = 0;
+  baseReading = asBase;
+  try {
+    return inOneReading(read);
+  } finally {
+    ({ viewsOfCheck, datesOfCheck, formsOfCheck, alikeOfWider, storeScope, widerReading, checkWorkSpent, baseReading } = kept);
+  }
+}
+
+/**
+ * Whether the base's whole entry refuses the letter (a97d73e4: the first reading, MOD-23's wider reading, and the check
+ * on the text those wrote), and the spans and text it wrote; null where the base sent it. The rule of the ruling on
+ * finding (C): refuse on either reading. A letter refused by the base's whole verdict stays refused, whatever a wider
+ * reading can now replace. The blunt rule and no cleverer one: the base's own steps are run again, in order.
+ *
+ * 1. The base's wider matches on the letter as written, those the first reading's spans do not cover. With none, its
+ *    text is the first reading's.
+ * 2. Its gate: where the first reading's check refuses the first reading's text, as written or with its CR LF line
+ *    endings as line feeds, that text stands (`firstRefused` is false where the entry's own gate, which reads those
+ *    two writings and one more, has just answered no).
+ * 3. Otherwise its text is the letter with the first reading's matches and those wider ones replaced.
+ * 4. Its check of that text in both writings: the first reading's check, then the call's own identifiers left in the
+ *    base's wider reading.
+ *
+ * The first reading's check of step 4 is asked here only where the base's text is not `sent`, the text the entry
+ * returns if this answers null: of that very text holdsIdentifier asks the same check in the same writings itself, so
+ * the letter is refused there as the base refused it, and asking here would read the letter once more for nothing.
+ *
+ * `byFirstRead` says the refusal is the first reading's check's, of the text the spans returned write: holdsIdentifier
+ * asks that same check of it first, so the text refuses itself and goes back as the base wrote it. Where only the
+ * base's wider reading refuses, or this reading passes the budget on its own counter (it counts no more than the base's
+ * entry counted on the same steps, and the base counted its first reading besides), the one who asks marks the text
+ * (refusedByMarkAfter): this reading's wider forms are not the base's, and nothing is assumed of them.
+ *
+ * One case needs no mark and gets none: the base's text is `sent` and only its wider reading refuses it here (the
+ * first reading's check was not asked of it, above), and this reader's own whole check of `sent`, asked apart from the
+ * entry on a count from nothing, refuses it. The answer is then null: the entry returns `sent` as it would have, and
+ * holdsIdentifier, which starts from the entry's count and so refuses wherever a count from nothing does, refuses it
+ * (a name glued to a number, "RE: Zephyra900-12-3456.": the text goes back as the base wrote it, without the mark).
+ *
+ * The first reading is not run again: MOD-25 changed nothing of it, so its matches, spans and text are the base's.
+ */
+function refusedAsTheBaseRead(
+  normal: string,
+  raw: string,
+  subject: Subject,
+  first: { readonly found: readonly Found[]; readonly spans: readonly PlacedSpan[]; readonly text: string },
+  firstRefused: false | undefined,
+  sent: string,
+  patient: PatientIdentifiers,
+  claims: readonly LetterClaim[],
+): { readonly spans: readonly PlacedSpan[]; readonly byFirstRead: boolean } | null {
+  let onSent = false;
+  const refused = asTheBaseRead(() => {
+    let spans = first.spans;
+    try {
+      const inBothWritings = (text: string, holds: (read: string) => boolean) => {
+        const lineFeeds = asLineFeeds(text);
+        return holds(text) || (lineFeeds !== text && holds(lineFeeds));
+      };
+      const firstReadHolds = (read: string) => holdsAsFirstRead(read, patient, claims);
+      const covered = within([...first.spans]);
+      const wider = widerMatchesIn(raw, subject).filter((match) => !covered(match));
+      let text = first.text;
+      if (wider.length > 0) {
+        if (firstRefused ?? inBothWritings(first.text, firstReadHolds)) {
+          return { spans, byFirstRead: true };
+        }
+        spans = merge([...first.found, ...wider]);
+        text = written(normal, spans);
+      }
+      if (text !== sent && inBothWritings(text, firstReadHolds)) {
+        return { spans, byFirstRead: true };
+      }
+      if (!inBothWritings(text, (read) => widerMatchesIn(masked(read, claims.length), subject).length > 0)) {
+        return null;
+      }
+      onSent = text === sent;
+      return { spans, byFirstRead: false };
+    } catch (error) {
+      if (!(error instanceof PastCheckWorkBudget)) {
+        throw error;
+      }
+      return { spans, byFirstRead: false };
+    }
+  });
+  return onSent && apartFromTheEntry(false, () => holdsIdentifier(sent, patient, claims)) ? null : refused;
 }
 
 /** redactLetterForScreen as the first reading alone gives it (matchesIn, appliedMatches), with the matches it applied and their spans. */
@@ -3660,7 +3912,7 @@ function screenAsFirstRead(
   normal: string,
   subject: Subject,
   claims: readonly LetterClaim[],
-): Redacted & { readonly candidates: readonly string[]; readonly found: readonly Found[]; readonly spans: readonly Range[] } {
+): Redacted & { readonly candidates: readonly string[]; readonly found: readonly Found[]; readonly spans: readonly PlacedSpan[] } {
   const found = appliedMatches(normal, subject, claims.length);
   const spans = merge(found);
   const sent = written(normal, spans);
@@ -3748,14 +4000,25 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
   try {
     // The first reading's check, and the call's own identifiers in the wider reading (widerMatchesIn; MOD-23).
     const subject = letterSubject(patient, claims);
-    const holds = (read: string) => holdsAsFirstRead(read, patient, claims) || widerMatchesIn(masked(read, claims.length), subject).length > 0;
+    // Then a digits-only number glued to a letter (digitsGluedToLetter; MOD-25), on the text the wider reading read.
+    const holds = (read: string) => {
+      if (holdsAsFirstRead(read, patient, claims)) {
+        return true;
+      }
+      const scanned = masked(read, claims.length);
+      return widerMatchesIn(scanned, subject).length > 0 || digitsGluedToLetter(scanned, subject);
+    };
     // A CR LF is one line ending written in two characters, and every reach of a label, a noun or a window is counted in
     // characters: the text is read once more with each CR LF written as a line feed, and the worse answer is taken, so a
     // letter is refused wherever its writing with LF is ("SSN on file. Statement", CR LF and "No. 900-12-3456150.00":
     // review K-1 of co-001/redact-ssn-phone-leaks). The first reading stands, and this one only adds. Every reading
     // here counts its work on the one counter of the letter (work): the second reading is charged as the first is, and
-    // a letter whose readings together pass the budget is refused, never read on.
-    return inOneReading(() => holds(text) || (text.includes('\r\n') && holds(asLineFeeds(text))));
+    // a letter whose readings together pass the budget is refused, never read on. A third reading where a line feed
+    // still stands right before a CR (asOneLineFeed; MOD-25, A-6), charged in full as the second is.
+    return inOneReading(() => {
+      const lineFeeds = asLineFeeds(text);
+      return holds(text) || (lineFeeds !== text && holds(lineFeeds)) || (lineFeeds.includes('\n\r') && holds(asOneLineFeed(lineFeeds)));
+    });
   } catch (error) {
     if (!(error instanceof PastCheckWorkBudget)) {
       throw error;
@@ -3768,23 +4031,199 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
 }
 
 /**
- * A text with each CR LF written as a line feed, every CR of a run before the line feed with it: "\r\r\n" is one line
- * ending too, a file converted twice (review A-6).
+ * Whether masked text holds one of the call's member IDs or claim numbers of digits alone, of WIDER_NUMBER_FLOOR digits
+ * or more, with a letter right before or right after it (Queues item 34, MOD-25, rule (a); docs/adr/0054): "Fax
+ * X76543210 ext 12", "XYZ76543210", "76543210B", "XYZ7654 3210", each sent in clear before, since no reading takes a
+ * number with a letter against it unless a label word is. The check's alone: where the number ends cannot be known, so
+ * the letter is REFUSED and nothing is redacted. The number is read in every form the readings hold it in: joined as
+ * any number is, as the records hold it and with a run of marks there (numberForm), and each piece that is a number
+ * of its kind (piecesOf). Only one side is asked: what stands on the other is not read ("XYZ76543210-01" and
+ * "XYZ76543210123" are refused), and there is no exception for a date or an amount ("2026-11-15Paid" for a claim
+ * number 20261115). A digit right beside the number is another, longer number and stays the recorded residual of the
+ * amendment of 2026-10-27 ("976543210", "765432109B"), as does a number under the floor ("Account1234").
+ *
+ * Read on the plain fold and, where a look-alike stands, on the look-alike fold, as the wider reading is, and in every
+ * writing the check reads (holdsIdentifier). It runs as part of the wider reading (widerReading): the view is the one
+ * that reading stored of this same text, taken for nothing, so a reading costs WORK.formCharacter for each character
+ * and form, and a call with no such number costs nothing at all.
+ *
+ * With `hidden` (gluedBeforeRedaction, on the letter as written), a place the number stands so is not counted where
+ * `hidden` says so of where the text given writes it: every such place is asked, not the first alone.
  */
-const asLineFeeds = (text: string) => text.replace(/\r+\n/g, '\n');
+function digitsGluedToLetter(normal: string, subject: Subject, hidden?: (range: Range) => boolean, alikeKnown?: boolean): boolean {
+  const outer = widerReading;
+  widerReading = true;
+  try {
+    if (!mayHoldWiderNumber(subject)) {
+      return false;
+    }
+    const read = () => {
+      const cores = new Set(
+        [...formsOf(subject), ...formsOf(subject, true)]
+          .filter((form) => (form.kind === 'claim' || form.kind === 'member') && form.digitsOnly && [...form.compact].length >= WIDER_NUMBER_FLOOR)
+          .flatMap(gluedCoresOf),
+      );
+      if (cores.size === 0) {
+        return false;
+      }
+      work(WORK.formCharacter * cores.size * normal.length);
+      const view = viewOf(normal, 'join');
+      const { text } = view;
+      if (hidden === undefined) {
+        return [...cores].some((core) => new RegExp(`(?<=\\p{L})(?:${core})|(?:${core})(?=\\p{L})`, 'u').test(text));
+      }
+      // Every place the number stands so, each asked for by where it is written: one that is not hidden answers.
+      return [...cores].some((core) => {
+        const glued = new RegExp(`(?<=\\p{L})(?:${core})|(?:${core})(?=\\p{L})`, 'gu');
+        for (let match = glued.exec(text); match !== null; match = glued.exec(text)) {
+          if (!hidden(inNormal(view, match.index, match.index + match[0].length))) {
+            return true;
+          }
+          glued.lastIndex = match.index + 1;
+        }
+        return false;
+      });
+    };
+    // The look-alike fold where the wider reading read this text on it: its own answer, taken for nothing.
+    // Or the answer its caller holds for the same letter in another writing of its line endings (gluedBeforeRedaction).
+    const alike = alikeKnown ?? (alikeOfWider !== null && alikeOfWider.normal === normal && alikeOfWider.subject === subject ? alikeOfWider.alike : alikeReads(normal, subject));
+    return read() || (alike && onFold('alike', read));
+  } finally {
+    widerReading = outer;
+  }
+}
 
 /**
- * A text the wider reading's work passed the budget on in redactionSpans, which has no other refusal to give: the
+ * The writings of a digits-only form that rule (a) reads glued to a letter (digitsGluedToLetter), each without word
+ * edges. Its writing after an identifier label, joined over "." and "/" too (Form.labeled, GAP.labeledNumber), label
+ * or none: "Claim No. 7654.3210B" was sent whole, since the first reading takes that writing only where the number
+ * stands and rule (a) read the number joined as any number is (review 1 of Queues item 34, R1-2). That writing holds
+ * every writing of a form joined as any number is (GAP.number is a part of GAP.labeledNumber), so such a form is read
+ * once, as before; a form with the records' own separators (numberForm with `asStored`) is read as it is as well.
+ */
+function gluedCoresOf(form: Form): string[] {
+  const own = coreOf(form);
+  if (form.labeled === null) {
+    return [own];
+  }
+  const labeled = form.labeled.source.slice(BEFORE.length, form.labeled.source.length - AFTER.length);
+  return labeled.split(GAP.labeledNumber).join(GAP.number) === own ? [labeled] : [labeled, own];
+}
+
+/**
+ * Whether a call holds a number rule (a) can read: one that may hold WIDER_NUMBER_FLOOR digits or more. A call with none
+ * is read no further, and pays nothing: no reading of the letter is asked for it (a digit of another script or a
+ * look-alike is a digit only on the folded view, so a stored value is counted by what may fold to a digit: its digits
+ * and its characters outside ASCII).
+ */
+function mayHoldWiderNumber(subject: Subject): boolean {
+  const mayHoldDigits = (value: string) => (value.normalize('NFKC').match(/\p{N}|[^\0-\x7F]/gu) ?? []).length >= WIDER_NUMBER_FLOOR;
+  return [...subject.memberIds, ...subject.claims.flat()].some(mayHoldDigits);
+}
+
+/**
+ * Rule (a) read on the letter as it is WRITTEN, before any placeholder is (Queues item 34, MOD-25; the ruling of
+ * 2026-11-12 on the generated set's finding): whether one of the call's digits-only numbers stands whole and glued to a
+ * letter (digitsGluedToLetter) anywhere but wholly under one placeholder the first reading writes. The check reads rule (a) on the redacted text alone, and a placeholder for a part of the number hid the
+ * number from it and left the rest in clear: for a number held "21318-5", "Fax 21318-5B ext" was sent as "Fax
+ * [MEMBER_ID]-5B ext" (rule (c)'s placeholder for the piece), and for 8852780545, "Fax X8-852780545 ext" as "Fax
+ * X8-[SSN] ext" (the first reading's pattern). Here no placeholder of a part hides it, whichever reading writes it: a
+ * pattern's, a piece's, or the first reading's own for a shorter number held beside. The one place not counted is the
+ * whole written number under one span of the first reading, whatever its placeholder ("Acct12345" and "Fax X8852780545
+ * ext", a label or phone word against it; "Fax X900123456 ext", the whole of it a pattern's): nothing of it is left to
+ * send, and the base redacted and sent such letters. Spans are the first reading's merged ones, one placeholder each.
+ *
+ * Read in each writing the check reads (holdsIdentifier): as written, with each CR LF as a line feed, and where a line
+ * feed then stands before a CR with those as one, each place mapped back to where the letter writes it. Each reading
+ * is charged on the letter's counter as the check's is (WORK.formCharacter for each character and form); a call with
+ * no such number costs nothing. It refuses only: the caller writes the mark the check refuses (refusedByMarkAfter),
+ * and asks only for a letter in which some placeholder is written (with none, the check reads the letter as written).
+ */
+function gluedBeforeRedaction(normal: string, subject: Subject, spans: readonly PlacedSpan[]): boolean {
+  if (!mayHoldWiderNumber(subject)) {
+    return false;
+  }
+  const hidden = (range: Range) => someOf(spans, (span) => span.start <= range.start && range.end <= span.end);
+  if (digitsGluedToLetter(normal, subject, hidden)) {
+    return true;
+  }
+  if (!normal.includes('\r')) {
+    return false;
+  }
+  // The look-alike answer is the letter's in every writing of its line endings (a CR is no look-alike): asked once,
+  // and taken from the wider reading where it read this text (alikeOfWider), as the reading above took it.
+  const alike = alikeOfWider !== null && alikeOfWider.normal === normal && alikeOfWider.subject === subject ? alikeOfWider.alike : alikeReads(normal, subject);
+  const hiddenIn = (at: readonly number[]) => (range: Range) => hidden({ start: at[range.start] ?? normal.length, end: at[range.end] ?? normal.length });
+  const lineFeeds = lineEndingsAsOne(normal, CR_LF);
+  if (lineFeeds.text !== normal && digitsGluedToLetter(lineFeeds.text, subject, hiddenIn(lineFeeds.at), alike)) {
+    return true;
+  }
+  if (!lineFeeds.text.includes('\n\r')) {
+    return false;
+  }
+  const oneLineFeed = lineEndingsAsOne(lineFeeds.text, /\n\r+/g);
+  return digitsGluedToLetter(oneLineFeed.text, subject, hiddenIn(oneLineFeed.at.map((index) => lineFeeds.at[index] ?? normal.length)), alike);
+}
+
+/**
+ * A text with each run the pattern matches written as one line feed (asLineFeeds and asOneLineFeed are its two
+ * readings), and for each character of that text where it starts in the text given; one index more, the text's end.
+ * So a place from `start` up to `end` in the text returned is written from `at[start]` up to `at[end]` in the text given.
+ */
+function lineEndingsAsOne(text: string, ending: RegExp): { readonly text: string; readonly at: readonly number[] } {
+  const at: number[] = [];
+  let read = '';
+  let kept = 0;
+  for (const match of text.matchAll(ending)) {
+    for (let index = kept; index < match.index; index += 1) {
+      at.push(index);
+    }
+    at.push(match.index);
+    read += `${text.slice(kept, match.index)}\n`;
+    kept = match.index + match[0].length;
+  }
+  for (let index = kept; index <= text.length; index += 1) {
+    at.push(index);
+  }
+  return { text: read + text.slice(kept), at };
+}
+
+/**
+ * A text with each CR LF written as a line feed, every CR of a run before the line feed with it: "\r\r\n" is one line
+ * ending too, a file converted twice (review A-6). A run is read from its first CR alone: asked from each CR of a run
+ * that no line feed ends, the pattern read the rest of the run again each time, 100,000 CRs in 8 s and more (review 2
+ * of Queues item 34, R2-2). The same runs are found: a match always began at a run's first CR.
+ */
+const CR_LF = /(?<!\r)\r+\n/g;
+const asLineFeeds = (text: string) => text.replace(CR_LF, '\n');
+
+/**
+ * A text read with line feeds (asLineFeeds) that still holds a line feed right before a CR, with each line feed and
+ * the CRs after it written as one line feed: "\n\r" is a line ending written in two characters too, and "\n\r\r"
+ * one (Queues item 34, MOD-25, A-6; review A-6 of item 26: "Account \n\rNo. 900-12-345678" was sent, the CR counted
+ * as a character of the reach). A third reading of the check, on such letters only; it only adds.
+ */
+const asOneLineFeed = (lineFeeds: string) => lineFeeds.replace(/\n\r+/g, '\n');
+
+/**
+ * A text the entry refuses and has no other refusal to give for: one the wider reading's work passed the budget on in
+ * redactionSpans, or one that holds a digits-only number glued to a letter as it is written (gluedBeforeRedaction). The
  * first reading's text with one of the checks' own marks at its end, which holdsIdentifier refuses at its first line.
  */
-const unreadPastTheBudgetAfter = (text: string) => `${text}${BARRIER}`;
+const refusedByMarkAfter = (text: string) => `${text}${BARRIER}`;
 
 /**
- * Whether the first reading's check refuses a text in either writing holdsIdentifier reads it in: as written, and with
- * its CR LF line endings as line feeds. What decides whether the wider reading's matches are applied.
+ * Whether the first reading's check refuses a text in any writing holdsIdentifier reads it in: as written, with its CR
+ * LF line endings as line feeds, and where a line feed then still stands before a CR, with those as one line feed
+ * (asOneLineFeed). What decides whether the wider reading's matches are applied.
  */
 function refusedAsFirstRead(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): boolean {
-  return holdsAsFirstRead(text, patient, claims) || (text.includes('\r\n') && holdsAsFirstRead(asLineFeeds(text), patient, claims));
+  const lineFeeds = asLineFeeds(text);
+  return (
+    holdsAsFirstRead(text, patient, claims) ||
+    (lineFeeds !== text && holdsAsFirstRead(lineFeeds, patient, claims)) ||
+    (lineFeeds.includes('\n\r') && holdsAsFirstRead(asOneLineFeed(lineFeeds), patient, claims))
+  );
 }
 
 /**
@@ -4769,12 +5208,41 @@ const narrativeSubject = (names: readonly string[], numbers: readonly string[]):
  * Whether the text holds any of the names (read as names) or numbers (member IDs and claim numbers, read
  * as numbers) in a form redaction reads: the narrative drafter's check of its facts, over the text with the gateway's
  * own placeholders masked. No date there is a date of birth, and no initial is looked for (a whole name or part is).
- * Every form counts here, a part of two letters too: what is checked is sent to a model. It is the narrative's reading
- * asked plainly, of every identifier; nameOrNumberMatches below is the same reading for a caller that needs where, and
- * a test holds the two to one answer (packages/redact/src/narrative.test.ts).
+ * Every form counts here, a part of two letters too: what is checked is sent to a model.
+ *
+ * It holds wherever the narrative's reading finds (nameOrNumberMatches below, the same reading for a caller that needs
+ * where; the packet verifier's), and more (Queues item 34, MOD-25, rule (d); docs/adr/0054). The first reading is
+ * asked first and stands; each further reading only adds, and the check holds on any of them:
+ *  - the numbers in the letter check's wider reading (widerMatchesIn, with no name given it): a number as the records
+ *    hold it, with the mark they hold or a run of marks there ("ZZ12345/01", "ZZ12345+01"), and each piece of one
+ *    that is a number by itself ("ZZ12345" of "ZZ12345 01");
+ *  - a number of digits alone glued to a letter (digitsGluedToLetter: "Fax X76543210");
+ *  - each name the records hold with a mark, as its words of the wider reading (nameWords: JANE and ZEPHYRA of
+ *    "JANE+ZEPHYRA"), read as the first reading reads a name: "Ms. Zephyra", "JANE".
+ * No name is read written apart (item 26's ruling: "in a" would fail every narrative of a patient INA), so the wider
+ * reading is given the numbers alone. What this adds refuses a call before it is made (identifier_in_input); the
+ * verifier keeps its reading, so no stored narrative fails for it, and a test holds the check to every match of the
+ * verifier's (packages/redact/src/narrative.test.ts). No counter runs here: a narrative's facts are code's own, a few
+ * thousand characters.
  */
 export function holdsNameOrNumber(text: string, identifiers: { readonly names: readonly string[]; readonly numbers: readonly string[] }): boolean {
-  return matchesIn(masked(text), narrativeSubject(identifiers.names, identifiers.numbers)).length > 0;
+  const normal = masked(text);
+  const subject = narrativeSubject(identifiers.names, identifiers.numbers);
+  // The stored views and the wider reading's answer on the look-alike fold are dropped with the call (inOneReading).
+  return inOneReading(() => {
+    if (matchesIn(normal, subject).length > 0) {
+      return true;
+    }
+    const numbers: Subject = { ...subject, names: [] };
+    if (widerMatchesIn(normal, numbers).length > 0 || digitsGluedToLetter(normal, numbers)) {
+      return true;
+    }
+    const words = identifiers.names.flatMap((name) => {
+      const wider = nameWords(name, true);
+      return wider.length > nameWords(name).length ? [wider.map((word) => word.join('-')).join(' ')] : [];
+    });
+    return words.length > 0 && matchesIn(normal, narrativeSubject(words, [])).length > 0;
+  });
 }
 
 /** Where a text holds a name or a number of the narrative's reading (nameOrNumberMatches). */
