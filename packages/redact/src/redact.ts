@@ -728,7 +728,7 @@ interface Form {
   readonly kind: OwnKind;
   /** For a claim, its number in the call (1 for [CLAIM_1]). */
   readonly claim: number;
-  readonly pattern: RegExp;
+  readonly pattern: Writing;
   /** For a name, whether each gap is inside a part (where a space must leave capitalized pieces of two letters or more). */
   readonly insidePart: readonly boolean[];
   /** A number of digits only: only such a number may be a claim's amount, or the digits whose own written form is a whole separated calendar date (writtenAsDate). */
@@ -737,11 +737,47 @@ interface Form {
    * For a digits-only number, its pattern with "." and "/" joining digits too: taken only after an identifier label
    * (IDENTIFIER_LABEL), where "Claim 1955/07/14" or "ICN 1234.5678" is the number and not a date or an amount.
    */
-  readonly labeled: RegExp | null;
+  readonly labeled: Writing | null;
 }
 
-function patternOf(characters: readonly string[], gaps: readonly string[]): RegExp {
-  return new RegExp(`${BEFORE}${characters.map((character, i) => `${escapeRegExp(character)}${gaps[i] ?? ''}`).join('')}${AFTER}`, 'gu');
+/**
+ * A form's pattern as text (Queues item 39): its source as V8 writes it and its flags. No RegExp is built for a form
+ * until a place in a view needs one (searchOf), so a call's thousands of identifiers compile only the patterns of those
+ * the letter writes. The keys formsBuiltOf deduplicates by, and the cores gluedCoresOf splits, read this same string.
+ */
+interface Writing {
+  readonly source: string;
+  readonly flags: string;
+}
+
+/**
+ * The source V8 gives a RegExp of `text` with flags 'gu' (RegExp.prototype.source; lemma 4): the text itself where it
+ * holds no "/" outside a class and no line terminator, which V8 writes as they are; else, and for no text at all, the
+ * source of a RegExp built of it.
+ */
+function sourceOf(text: string): string {
+  const built = () => new RegExp(text, 'gu').source;
+  if (text === '' || /[\n\r\u2028\u2029]/u.test(text)) {
+    return built();
+  }
+  let inClass = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const character = text[i];
+    if (character === '\\') {
+      i += 1;
+    } else if (character === '[') {
+      inClass = true;
+    } else if (character === ']') {
+      inClass = false;
+    } else if (character === '/' && !inClass) {
+      return built();
+    }
+  }
+  return text;
+}
+
+function patternOf(characters: readonly string[], gaps: readonly string[]): Writing {
+  return { source: sourceOf(`${BEFORE}${characters.map((character, i) => `${escapeRegExp(character)}${gaps[i] ?? ''}`).join('')}${AFTER}`), flags: 'gu' };
 }
 
 /**
@@ -5929,7 +5965,7 @@ export const matchingForTests = {
   /** For each word that stands contiguously in the text's letters and digits, every index of the text where it starts, in order. */
   placesOf,
   /** The source a form keeps for the pattern of `text` (flags 'gu'): V8's own. */
-  sourceOf: (text: string): string => text,
+  sourceOf,
   /** A subject's forms on a fold, the first reading's and the wider reading's, built fresh. */
   formsOf(subject: SubjectForTests, fold: 'plain' | 'alike'): readonly Form[] {
     const whole: Subject = { ...subject, datesOfBirth: null, initials: false, patterns: false };
