@@ -1,0 +1,1692 @@
+{
+ "corpus": {
+  "letters": 14356,
+  "patients": 1207,
+  "sha256": "875f6658a23073b6e3f0d79ec779254164ab065bd4ff700ea0178bb437dc5af9",
+  "seed": 34
+ },
+ "shaA": "3b34d2a284c959c09cf64608c7f80c5a2d5a63c9da1b763fc90fe357338df6a1",
+ "shaB": "bfd54281f591cacb0d9d40d8deeb7b9cf8f3b9273dcea379a2de6aff83d6e5cc",
+ "worker": {
+  "classes": {},
+  "phiClasses": [],
+  "letters": 14356,
+  "differ": 0,
+  "refusedA": 5789,
+  "refusedB": 5789,
+  "errorsA": 0,
+  "errorsB": 0,
+  "spanMismatch": 0
+ },
+ "failures": 0,
+ "notes": 6,
+ "slowestMsB": 32,
+ "forms": {
+  "G34/a.control.apart": {
+   "exp": "hidden",
+   "letters": 48,
+   "A": {
+    "replaced": 48
+   },
+   "B": {
+    "replaced": 48
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.crlf.10": {
+   "exp": "refused",
+   "letters": 72,
+   "A": {
+    "replaced": 55,
+    "refused": 17
+   },
+   "B": {
+    "replaced": 55,
+    "refused": 17
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.crlf.11": {
+   "exp": "refused",
+   "letters": 72,
+   "A": {
+    "refused": 67,
+    "replaced": 5
+   },
+   "B": {
+    "refused": 67,
+    "replaced": 5
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.crlf.12": {
+   "exp": "refused",
+   "letters": 72,
+   "A": {
+    "replaced": 4,
+    "refused": 68
+   },
+   "B": {
+    "replaced": 4,
+    "refused": 68
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.crlf.5": {
+   "exp": "refused",
+   "letters": 72,
+   "A": {
+    "refused": 72
+   },
+   "B": {
+    "refused": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.crlf.6": {
+   "exp": "refused",
+   "letters": 72,
+   "A": {
+    "refused": 72
+   },
+   "B": {
+    "refused": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.crlf.7": {
+   "exp": "refused",
+   "letters": 72,
+   "A": {
+    "refused": 72
+   },
+   "B": {
+    "refused": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.crlf.8": {
+   "exp": "refused",
+   "letters": 72,
+   "A": {
+    "refused": 72
+   },
+   "B": {
+    "refused": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.crlf.9": {
+   "exp": "refused",
+   "letters": 72,
+   "A": {
+    "replaced": 54,
+    "refused": 18
+   },
+   "B": {
+    "replaced": 54,
+    "refused": 18
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.glued.10": {
+   "exp": "refused",
+   "letters": 102,
+   "A": {
+    "replaced": 92,
+    "refused": 10
+   },
+   "B": {
+    "replaced": 92,
+    "refused": 10
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.glued.11": {
+   "exp": "refused",
+   "letters": 102,
+   "A": {
+    "refused": 102
+   },
+   "B": {
+    "refused": 102
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.glued.12": {
+   "exp": "refused",
+   "letters": 102,
+   "A": {
+    "refused": 102
+   },
+   "B": {
+    "refused": 102
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.glued.5": {
+   "exp": "refused",
+   "letters": 102,
+   "A": {
+    "refused": 102
+   },
+   "B": {
+    "refused": 102
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.glued.6": {
+   "exp": "refused",
+   "letters": 102,
+   "A": {
+    "refused": 96,
+    "replaced": 6
+   },
+   "B": {
+    "refused": 96,
+    "replaced": 6
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.glued.7": {
+   "exp": "refused",
+   "letters": 102,
+   "A": {
+    "refused": 98,
+    "replaced": 4
+   },
+   "B": {
+    "refused": 98,
+    "replaced": 4
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.glued.8": {
+   "exp": "refused",
+   "letters": 102,
+   "A": {
+    "refused": 102
+   },
+   "B": {
+    "refused": 102
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.glued.9": {
+   "exp": "refused",
+   "letters": 102,
+   "A": {
+    "replaced": 95,
+    "refused": 7
+   },
+   "B": {
+    "replaced": 95,
+    "refused": 7
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.joiner.10": {
+   "exp": "refused",
+   "letters": 138,
+   "A": {
+    "replaced": 27,
+    "refused": 111
+   },
+   "B": {
+    "replaced": 27,
+    "refused": 111
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.joiner.11": {
+   "exp": "refused",
+   "letters": 138,
+   "A": {
+    "refused": 108,
+    "replaced": 30
+   },
+   "B": {
+    "refused": 108,
+    "replaced": 30
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.joiner.12": {
+   "exp": "refused",
+   "letters": 138,
+   "A": {
+    "refused": 112,
+    "replaced": 26
+   },
+   "B": {
+    "refused": 112,
+    "replaced": 26
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.joiner.5": {
+   "exp": "refused",
+   "letters": 138,
+   "A": {
+    "refused": 138
+   },
+   "B": {
+    "refused": 138
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.joiner.6": {
+   "exp": "refused",
+   "letters": 138,
+   "A": {
+    "refused": 138
+   },
+   "B": {
+    "refused": 138
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.joiner.7": {
+   "exp": "refused",
+   "letters": 138,
+   "A": {
+    "refused": 137,
+    "replaced": 1
+   },
+   "B": {
+    "refused": 137,
+    "replaced": 1
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.joiner.8": {
+   "exp": "refused",
+   "letters": 138,
+   "A": {
+    "refused": 138
+   },
+   "B": {
+    "refused": 138
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.joiner.9": {
+   "exp": "refused",
+   "letters": 138,
+   "A": {
+    "refused": 120,
+    "replaced": 18
+   },
+   "B": {
+    "refused": 120,
+    "replaced": 18
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.labeled-separator": {
+   "exp": "refused",
+   "letters": 576,
+   "A": {
+    "refused": 576
+   },
+   "B": {
+    "refused": 576
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece-of-lettered.10": {
+   "exp": "refused",
+   "letters": 12,
+   "A": {
+    "replaced": 12
+   },
+   "B": {
+    "replaced": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece-of-lettered.11": {
+   "exp": "refused",
+   "letters": 12,
+   "A": {
+    "refused": 12
+   },
+   "B": {
+    "refused": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece-of-lettered.12": {
+   "exp": "refused",
+   "letters": 12,
+   "A": {
+    "refused": 12
+   },
+   "B": {
+    "refused": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece-of-lettered.5": {
+   "exp": "refused",
+   "letters": 12,
+   "A": {
+    "refused": 12
+   },
+   "B": {
+    "refused": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece-of-lettered.6": {
+   "exp": "refused",
+   "letters": 12,
+   "A": {
+    "refused": 12
+   },
+   "B": {
+    "refused": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece-of-lettered.7": {
+   "exp": "refused",
+   "letters": 12,
+   "A": {
+    "refused": 12
+   },
+   "B": {
+    "refused": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece-of-lettered.8": {
+   "exp": "refused",
+   "letters": 12,
+   "A": {
+    "refused": 12
+   },
+   "B": {
+    "refused": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece-of-lettered.9": {
+   "exp": "refused",
+   "letters": 12,
+   "A": {
+    "replaced": 12
+   },
+   "B": {
+    "replaced": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece.10": {
+   "exp": "refused",
+   "letters": 18,
+   "A": {
+    "replaced": 6,
+    "refused": 12
+   },
+   "B": {
+    "replaced": 6,
+    "refused": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece.11": {
+   "exp": "refused",
+   "letters": 18,
+   "A": {
+    "refused": 18
+   },
+   "B": {
+    "refused": 18
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece.12": {
+   "exp": "refused",
+   "letters": 18,
+   "A": {
+    "refused": 18
+   },
+   "B": {
+    "refused": 18
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece.5": {
+   "exp": "refused",
+   "letters": 18,
+   "A": {
+    "refused": 18
+   },
+   "B": {
+    "refused": 18
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece.6": {
+   "exp": "refused",
+   "letters": 18,
+   "A": {
+    "refused": 18
+   },
+   "B": {
+    "refused": 18
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece.7": {
+   "exp": "refused",
+   "letters": 18,
+   "A": {
+    "refused": 18
+   },
+   "B": {
+    "refused": 18
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece.8": {
+   "exp": "refused",
+   "letters": 18,
+   "A": {
+    "refused": 18
+   },
+   "B": {
+    "refused": 18
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.piece.9": {
+   "exp": "refused",
+   "letters": 18,
+   "A": {
+    "replaced": 6,
+    "refused": 12
+   },
+   "B": {
+    "replaced": 6,
+    "refused": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script-control.arabic": {
+   "exp": "observe",
+   "letters": 48,
+   "A": {
+    "replaced": 48
+   },
+   "B": {
+    "replaced": 48
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script-control.devanagari": {
+   "exp": "observe",
+   "letters": 48,
+   "A": {
+    "replaced": 48
+   },
+   "B": {
+    "replaced": 48
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script-control.fullwidth": {
+   "exp": "observe",
+   "letters": 48,
+   "A": {
+    "replaced": 48
+   },
+   "B": {
+    "replaced": 48
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script-control.persian": {
+   "exp": "observe",
+   "letters": 48,
+   "A": {
+    "replaced": 48
+   },
+   "B": {
+    "replaced": 48
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.arabic.10": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "replaced": 24
+   },
+   "B": {
+    "replaced": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.arabic.11": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.arabic.12": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.arabic.5": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.arabic.6": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.arabic.7": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.arabic.8": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.arabic.9": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "replaced": 24
+   },
+   "B": {
+    "replaced": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.devanagari.10": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "replaced": 24
+   },
+   "B": {
+    "replaced": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.devanagari.11": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.devanagari.12": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.devanagari.5": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.devanagari.6": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.devanagari.7": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.devanagari.8": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.devanagari.9": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "replaced": 24
+   },
+   "B": {
+    "replaced": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.fullwidth.10": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "replaced": 24
+   },
+   "B": {
+    "replaced": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.fullwidth.11": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.fullwidth.12": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.fullwidth.5": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.fullwidth.6": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.fullwidth.7": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.fullwidth.8": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.fullwidth.9": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "replaced": 24
+   },
+   "B": {
+    "replaced": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.persian.10": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "replaced": 24
+   },
+   "B": {
+    "replaced": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.persian.11": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.persian.12": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.persian.5": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.persian.6": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.persian.7": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.persian.8": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "refused": 24
+   },
+   "B": {
+    "refused": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.script.persian.9": {
+   "exp": "refused",
+   "letters": 24,
+   "A": {
+    "replaced": 24
+   },
+   "B": {
+    "replaced": 24
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.stored-separator.10": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 79,
+    "replaced": 17
+   },
+   "B": {
+    "refused": 79,
+    "replaced": 17
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.stored-separator.11": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 95,
+    "replaced": 1
+   },
+   "B": {
+    "refused": 95,
+    "replaced": 1
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.stored-separator.12": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 95,
+    "replaced": 1
+   },
+   "B": {
+    "refused": 95,
+    "replaced": 1
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.stored-separator.5": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.stored-separator.6": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.stored-separator.7": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 94,
+    "replaced": 2
+   },
+   "B": {
+    "refused": 94,
+    "replaced": 2
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.stored-separator.8": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 96
+   },
+   "B": {
+    "refused": 96
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a.stored-separator.9": {
+   "exp": "refused",
+   "letters": 96,
+   "A": {
+    "refused": 80,
+    "replaced": 16
+   },
+   "B": {
+    "refused": 80,
+    "replaced": 16
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a4.control.space": {
+   "exp": "observe",
+   "letters": 36,
+   "A": {
+    "replaced": 36
+   },
+   "B": {
+    "replaced": 36
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a4.edge-cut": {
+   "exp": "observe",
+   "letters": 384,
+   "A": {
+    "replaced": 384
+   },
+   "B": {
+    "replaced": 384
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a4.mark-in-part": {
+   "exp": "hidden",
+   "letters": 768,
+   "A": {
+    "replaced": 768
+   },
+   "B": {
+    "replaced": 768
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks-digits.10": {
+   "exp": "hidden",
+   "letters": 72,
+   "A": {
+    "replaced": 72
+   },
+   "B": {
+    "replaced": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks-digits.11": {
+   "exp": "hidden",
+   "letters": 72,
+   "A": {
+    "replaced": 72
+   },
+   "B": {
+    "replaced": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks-digits.12": {
+   "exp": "hidden",
+   "letters": 72,
+   "A": {
+    "replaced": 72
+   },
+   "B": {
+    "replaced": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks-digits.5": {
+   "exp": "hidden",
+   "letters": 72,
+   "A": {
+    "replaced": 72
+   },
+   "B": {
+    "replaced": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks-digits.6": {
+   "exp": "hidden",
+   "letters": 72,
+   "A": {
+    "replaced": 72
+   },
+   "B": {
+    "replaced": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks-digits.7": {
+   "exp": "hidden",
+   "letters": 72,
+   "A": {
+    "replaced": 72
+   },
+   "B": {
+    "replaced": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks-digits.8": {
+   "exp": "hidden",
+   "letters": 72,
+   "A": {
+    "replaced": 72
+   },
+   "B": {
+    "replaced": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks-digits.9": {
+   "exp": "hidden",
+   "letters": 72,
+   "A": {
+    "replaced": 72
+   },
+   "B": {
+    "replaced": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks.10": {
+   "exp": "hidden",
+   "letters": 240,
+   "A": {
+    "replaced": 240
+   },
+   "B": {
+    "replaced": 240
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks.11": {
+   "exp": "hidden",
+   "letters": 240,
+   "A": {
+    "refused": 12,
+    "replaced": 228
+   },
+   "B": {
+    "refused": 12,
+    "replaced": 228
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks.12": {
+   "exp": "hidden",
+   "letters": 240,
+   "A": {
+    "refused": 11,
+    "replaced": 229
+   },
+   "B": {
+    "refused": 11,
+    "replaced": 229
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks.5": {
+   "exp": "hidden",
+   "letters": 240,
+   "A": {
+    "replaced": 240
+   },
+   "B": {
+    "replaced": 240
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks.6": {
+   "exp": "hidden",
+   "letters": 240,
+   "A": {
+    "replaced": 240
+   },
+   "B": {
+    "replaced": 240
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks.7": {
+   "exp": "hidden",
+   "letters": 240,
+   "A": {
+    "replaced": 240
+   },
+   "B": {
+    "replaced": 240
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks.8": {
+   "exp": "hidden",
+   "letters": 240,
+   "A": {
+    "replaced": 240
+   },
+   "B": {
+    "replaced": 240
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a5.marks.9": {
+   "exp": "hidden",
+   "letters": 240,
+   "A": {
+    "replaced": 240
+   },
+   "B": {
+    "replaced": 240
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a6.control.crlf": {
+   "exp": "strict",
+   "letters": 200,
+   "A": {
+    "refused": 200
+   },
+   "B": {
+    "refused": 200
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a6.control.lf": {
+   "exp": "observe",
+   "letters": 200,
+   "A": {
+    "refused": 200
+   },
+   "B": {
+    "refused": 200
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/a6.lf-cr": {
+   "exp": "strict",
+   "letters": 1200,
+   "A": {
+    "refused": 1200
+   },
+   "B": {
+    "refused": 1200
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/b.held-three": {
+   "exp": "hidden",
+   "letters": 72,
+   "A": {
+    "replaced": 72
+   },
+   "B": {
+    "replaced": 72
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/b.held-with-mark": {
+   "exp": "hidden",
+   "letters": 780,
+   "A": {
+    "replaced": 780
+   },
+   "B": {
+    "replaced": 780
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/b.held-with-mark.a4": {
+   "exp": "hidden",
+   "letters": 936,
+   "A": {
+    "replaced": 936
+   },
+   "B": {
+    "replaced": 936
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece-digits.10": {
+   "exp": "hidden",
+   "letters": 52,
+   "A": {
+    "replaced": 52
+   },
+   "B": {
+    "replaced": 52
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece-digits.11": {
+   "exp": "hidden",
+   "letters": 80,
+   "A": {
+    "replaced": 80
+   },
+   "B": {
+    "replaced": 80
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece-digits.12": {
+   "exp": "hidden",
+   "letters": 58,
+   "A": {
+    "replaced": 58
+   },
+   "B": {
+    "replaced": 58
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece-digits.5": {
+   "exp": "hidden",
+   "letters": 66,
+   "A": {
+    "replaced": 66
+   },
+   "B": {
+    "replaced": 66
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece-digits.6": {
+   "exp": "hidden",
+   "letters": 64,
+   "A": {
+    "replaced": 64
+   },
+   "B": {
+    "replaced": 64
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece-digits.7": {
+   "exp": "hidden",
+   "letters": 64,
+   "A": {
+    "replaced": 64
+   },
+   "B": {
+    "replaced": 64
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece-digits.8": {
+   "exp": "hidden",
+   "letters": 74,
+   "A": {
+    "replaced": 74
+   },
+   "B": {
+    "replaced": 74
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece-digits.9": {
+   "exp": "hidden",
+   "letters": 54,
+   "A": {
+    "replaced": 54
+   },
+   "B": {
+    "replaced": 54
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece.10": {
+   "exp": "hidden",
+   "letters": 80,
+   "A": {
+    "replaced": 80
+   },
+   "B": {
+    "replaced": 80
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece.11": {
+   "exp": "hidden",
+   "letters": 80,
+   "A": {
+    "replaced": 80
+   },
+   "B": {
+    "replaced": 80
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece.12": {
+   "exp": "hidden",
+   "letters": 80,
+   "A": {
+    "replaced": 80
+   },
+   "B": {
+    "replaced": 80
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece.5": {
+   "exp": "hidden",
+   "letters": 80,
+   "A": {
+    "replaced": 80
+   },
+   "B": {
+    "replaced": 80
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece.6": {
+   "exp": "hidden",
+   "letters": 80,
+   "A": {
+    "replaced": 80
+   },
+   "B": {
+    "replaced": 80
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece.7": {
+   "exp": "hidden",
+   "letters": 80,
+   "A": {
+    "replaced": 80
+   },
+   "B": {
+    "replaced": 80
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece.8": {
+   "exp": "hidden",
+   "letters": 80,
+   "A": {
+    "replaced": 80
+   },
+   "B": {
+    "replaced": 80
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/c.piece.9": {
+   "exp": "hidden",
+   "letters": 80,
+   "A": {
+    "replaced": 80
+   },
+   "B": {
+    "replaced": 80
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/left.digit-beside": {
+   "exp": "left",
+   "letters": 240,
+   "A": {
+    "left": 234,
+    "replaced": 6
+   },
+   "B": {
+    "left": 234,
+    "replaced": 6
+   },
+   "failures": 0,
+   "notes": 6
+  },
+  "G34/left.glued.2": {
+   "exp": "left",
+   "letters": 120,
+   "A": {
+    "left": 120
+   },
+   "B": {
+    "left": 120
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/left.glued.3": {
+   "exp": "left",
+   "letters": 120,
+   "A": {
+    "left": 120
+   },
+   "B": {
+    "left": 120
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/left.glued.4": {
+   "exp": "left",
+   "letters": 120,
+   "A": {
+    "left": 120
+   },
+   "B": {
+    "left": 120
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/left.glued.piece-4": {
+   "exp": "left",
+   "letters": 48,
+   "A": {
+    "left": 48
+   },
+   "B": {
+    "left": 48
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/left.name-glued": {
+   "exp": "left",
+   "letters": 12,
+   "A": {
+    "left": 12
+   },
+   "B": {
+    "left": 12
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/left.piece-of-letters": {
+   "exp": "left",
+   "letters": 128,
+   "A": {
+    "left": 128
+   },
+   "B": {
+    "left": 128
+   },
+   "failures": 0,
+   "notes": 0
+  },
+  "G34/left.piece-under-5": {
+   "exp": "left",
+   "letters": 256,
+   "A": {
+    "left": 256
+   },
+   "B": {
+    "left": 256
+   },
+   "failures": 0,
+   "notes": 0
+  }
+ }
+}

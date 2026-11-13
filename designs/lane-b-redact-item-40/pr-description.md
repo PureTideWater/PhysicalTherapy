@@ -54,7 +54,17 @@ the counts are in `designs/lane-b-redact-item-40/stage-5a/measure/` on `claude/b
 
 | Command | Result |
 | --- | --- |
-MEASURED-ROWS
+| `pnpm lint`; `pnpm typecheck` | passed (1,975 files, 0 errors, 0 warnings; 24 projects) |
+| `vitest run` packages/redact, packets, synth, model-gateway | 54, 1,825, 192 and 6,050 passed (34 skipped; the two `.db.test.ts` files need DATABASE_URL, run by CI's db job) |
+| Item 40's generated set (51,833 letters) | 0 failures in every family, no PHI class |
+| Item 34's generated set (14,356 letters) | 0 differ |
+| Full uncached gate (975,489 letters, 4 workers) | 0 differ, refused 463,002 on both, PHI / unplaced / reverse classes none, real-shaped newly refused 0; slowest letter 931 ms here, 1,024 ms on the base |
+| The two budget rows | 403,548,210 and 414,023,090 units, sent, on both |
+| Fuzzed 60,000 (seeds 301 to 303) and the product fuzzer's 60,000 (401 to 403) | base-refused, head-sent 0 in both; the product fuzzer's 6 changed letters each read, nothing newly clear |
+| Item 34's cost measure (64 names, 558 texts) | 0 texts changed |
+| Ruling (A) over 40 names (453,888 letters a tree) | letters with the name or chain in clear 201,728 to 176,448, refused 0 |
+| The 100-letter property, six alternated runs a tree | base 3,268 to 3,504 ms, head 3,341 to 3,452 ms: inside the base's range |
+| Stage 5b, on the PR's head | `pnpm test`, `pnpm test:golden`, `pnpm test:db`, `pnpm test:e2e` (to be filled) |
 
 ## Reviewer agents' findings
 
