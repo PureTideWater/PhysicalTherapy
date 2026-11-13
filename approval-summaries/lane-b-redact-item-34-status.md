@@ -4,7 +4,26 @@ Design of record: `designs/lane-b-redact-item-34/design.md` (ops 163894a9). Ruli
 one constant; (d) the verifier keeps its reading; A-4's costs accepted; a digit beside the number stays recorded.
 WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. No PR is open.
 
-## RESUME-BLOCK (W63, 2026-11-13 08:30 UTC: DRAFT PR #161 OPEN, `unit` RED ON FOUR 5 s TIMEOUTS, RE-RUN ONCE, A RULING ASKED)
+## RESUME-BLOCK (W63, 2026-11-13 08:40 UTC: HANDOVER AT THE CONTEXT LIMIT. DRAFT PR #161 OPEN, NOT MERGED; ONE TESTS-ONLY COMMIT IS OWED BY THE ORCHESTRATOR'S RULING)
+
+- **State.** Draft PR #161 into claude/build-platform, branch `co-001/redact-item-34`, head 85819a81. Nothing is
+  uncommitted. W63 has unsubscribed from the PR and cancelled its check-ins. Local results and CI: the block below.
+- **The ruling of 08:20 UTC (the orchestrator), NOT APPLIED by W63.** It widens the brief (W63's brief says a later
+  message does not widen it and that no threshold or allowance is adjusted, so W63 left it for a session whose brief
+  carries it). In ONE commit on #161, tests only, no redaction code: an explicit per-test timeout of 20 s on exactly
+  denial-letter.test.ts:71, :435, :447 and redact.leaks.test.ts:2557, each with a one-line comment naming the measured
+  quiet time (below) and that the limit is wall time on shared runners, not the product's budget; assert nothing
+  less. In the PR description and the ADR 0054 amendment: the measured rise per letter (the 100-letter property
+  2.3-3.3 s on the base's reader, 2.7-3.1 s at 846968af, 4.1 s at 17028cfa, 4.1-4.8 s on the head: rounds 1 and 2
+  about 1 s, the (C) fix up to 0.5 s) as a cost of the item; one line added to Queues item 39's entry in the queue
+  list (the reader's per-letter time after item 34, to be brought down with the check's time before launch and
+  before the check's first caller is wired).
+- **Then:** required checks green on that commit; the schema-PR check of step 8 (none open at 08:20; #160 merged);
+  mark ready; merge; verify on the base; this file; one line to the orchestrator. **Do not merge 85819a81 as it is,
+  even if its re-run is green** (the ruling: the property at 80-95% of the default limit would turn later PRs red).
+- The one CI re-run of 85819a81's failed jobs is spent (queued 08:25 UTC; W63 did not read its result).
+
+## Earlier today: RESUME-BLOCK (W63, 2026-11-13 08:30 UTC: DRAFT PR #161 OPEN, `unit` RED ON FOUR 5 s TIMEOUTS, RE-RUN ONCE, A RULING ASKED)
 
 - **State.** Draft PR #161 into claude/build-platform, branch `co-001/redact-item-34`, head 85819a81 (the WIP
   450ac67d + base 979a21b8 merged + one records commit). Locally on that head: `pnpm test` 509 files 14,789 passed,
