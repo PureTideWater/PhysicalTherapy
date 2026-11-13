@@ -599,9 +599,9 @@ describe('SGN-27: registration, and registration after a removal', () => {
     expect(await count("audit_event WHERE action = 'hardware_key_registration_opened' AND actor_id = $1 AND object_id = $2", [requester.id, target.id])).toBe(1);
     expect(await count("hardware_key_notice WHERE removal_id = $1 AND kind = 'registration_opened'", [removal])).toBe(1);
     expect(await count("hardware_key_removal WHERE id = $1 AND registration_open_until = registration_opened_at + interval '1 hour' AND registration_code_sha256 = $2", [removal, secret])).toBe(1);
-    // A wrong code counts and registers nothing; the right one registers, consumes, and tells the member.
+    // A wrong code counts and registers nothing (SGN-30 holds the same for a wrong code offered to hardware_key_record);
+    // the right one registers, consumes, and tells the member.
     expect(await judge(sha256('WRONG'))).toBe('refused');
-    expect(await failure(recordKey(target.id, digest(), sha256('WRONG')))).toEqual(CLOSED);
     expect(await count('hardware_key_removal WHERE id = $1 AND registration_code_tries = 1', [removal])).toBe(1);
     expect(await judge(secret)).toBe('open');
     const fresh = digest();
@@ -971,5 +971,72 @@ describe('SEC-28: a refused act on a key removal leaves a security event for the
     expect(await code(as(OPERATOR_ROLE, 'SELECT hardware_key_removal_refused($1, $2)', ['two_people', request()]))).toBe('42501');
     expect(await events(user)).toEqual([]);
     expect(await code(asUser(user, "INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, purpose) VALUES ($1, 'user', 'security_event', 'user', $1, 'key_removal_refused_two_people')", [user]))).toBe('42501');
+  });
+});
+
+describe('SGN-30: a wrong code offered to hardware_key_record is a counted guess (owed red until hardware_key_record counts its check and returns no row)', () => {
+  const tries = async (removal: string) => (await owner.query<{ n: number }>('SELECT registration_code_tries::int AS n FROM hardware_key_removal WHERE id = $1', [removal])).rows[0]?.n;
+  const refusals = (user: string) => count("audit_event WHERE object_id = $1 AND action = 'security_event' AND actor_kind = 'system' AND purpose = 'key_registration_refused'", [user]);
+  const CLOSED = refusedBy('hardware_key_registration_closed');
+  async function opened(code: string): Promise<{ target: string; removal: string; secret: Buffer }> {
+    const target = await member();
+    const { removal, requester } = await removed(target.id);
+    const secret = sha256(code);
+    await asUser(requester.id, 'SELECT hardware_key_registration_open($1, $2, $3, $4)', [removal, await requester.session(), secret, request()]);
+    return { target: target.id, removal, secret };
+  }
+
+  it('counts one try and answers no row, with no key, no registration event and one refusal on record; the count is committed', async () => {
+    const { target, removal } = await opened('SYNTHETIC-CODE-30A');
+    expect(await recordKey(target, digest(), sha256('WRONG-1'))).toEqual([]);
+    expect(await tries(removal)).toBe(1);
+    expect(await recordKey(target, digest(), sha256('WRONG-2'))).toEqual([]);
+    expect(await tries(removal)).toBe(2);
+    expect(await count('hardware_key WHERE user_id = $1 AND removed_at IS NULL', [target])).toBe(0);
+    // The one registration on record is the key the removal took; the guesses added none.
+    expect(await count("audit_event WHERE action = 'hardware_key_registered' AND actor_id = $1", [target])).toBe(1);
+    // One security event an account and an hour, however many guesses.
+    expect(await refusals(target)).toBe(1);
+  });
+
+  it('shares the opening’s five tries with the judge: the fifth wrong code spends it, and the right code then registers nothing', async () => {
+    const { target, removal, secret } = await opened('SYNTHETIC-CODE-30B');
+    const judge = async (given: Buffer) => (await asUser<{ answer: string }>(target, 'SELECT hardware_key_registration_judge($1, $2::timestamptz, $3) AS answer', [given, await began(), request()]))[0]?.answer;
+    expect(await judge(sha256('WRONG-1'))).toBe('refused');
+    expect(await recordKey(target, digest(), sha256('WRONG-2'))).toEqual([]);
+    expect(await judge(sha256('WRONG-3'))).toBe('refused');
+    expect(await recordKey(target, digest(), sha256('WRONG-4'))).toEqual([]);
+    expect(await tries(removal)).toBe(4);
+    expect(await recordKey(target, digest(), sha256('WRONG-5'))).toEqual([]);
+    expect(await tries(removal)).toBe(5);
+    // Spent: there is no usable opening, so even the right code is refused by the raise, and nothing more is counted.
+    expect(await failure(recordKey(target, digest(), secret))).toEqual(CLOSED);
+    expect(await failure(recordKey(target, digest(), sha256('WRONG-6')))).toEqual(CLOSED);
+    expect(await judge(secret)).toBe('refused');
+    expect(await tries(removal)).toBe(5);
+    expect(await count('hardware_key WHERE user_id = $1 AND removed_at IS NULL', [target])).toBe(0);
+  });
+
+  it('counts nothing where there is no guess: no code, and no opening; and the right code after a wrong one still registers', async () => {
+    const { target, removal, secret } = await opened('SYNTHETIC-CODE-30C');
+    expect(await failure(recordKey(target, digest(), null))).toEqual(CLOSED);
+    expect(await tries(removal)).toBe(0);
+    expect(await recordKey(target, digest(), sha256('WRONG'))).toEqual([]);
+    expect(await recordKey(target, digest(), secret)).toEqual([{ key_id: expect.any(String), first_after_removal: true }]);
+    expect(await tries(removal)).toBe(1);
+    // Closed and never opened: a code is refused by the raise, as before, and there is nothing to count.
+    const unopened = await member();
+    const closed = await removed(unopened.id);
+    expect(await failure(recordKey(unopened.id, digest(), sha256('WRONG')))).toEqual(CLOSED);
+    expect(await tries(closed.removal)).toBe(0);
+  });
+
+  it('counts for the acting account alone: another account’s wrong code leaves this opening untouched', async () => {
+    const mine = await opened('SYNTHETIC-CODE-30D');
+    const theirs = await opened('SYNTHETIC-CODE-30E');
+    expect(await recordKey(theirs.target, digest(), mine.secret)).toEqual([]);
+    expect(await tries(mine.removal)).toBe(0);
+    expect(await tries(theirs.removal)).toBe(1);
+    expect(await refusals(mine.target)).toBe(0);
   });
 });
