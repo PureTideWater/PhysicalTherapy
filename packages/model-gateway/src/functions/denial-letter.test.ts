@@ -68,7 +68,8 @@ describe('PHI minimization before the call', () => {
     expect(denialLetterSpec.prepare({ ...input, patient, text: 'Re: PATIENT_NAME' }).user).toContain('Re: [PATIENT_NAME]');
   });
 
-  it('leaves no identifier in any letter, whatever its synthetic names and numbers (property)', () => {
+  // 20 s is wall time on shared runners (the runner's default 5 s was passed there), not the product's budget; 4.1 to 4.8 s on a quiet machine.
+  it('leaves no identifier in any letter, whatever its synthetic names and numbers (property)', { timeout: 20_000 }, () => {
     const word = fc.stringMatching(/^[A-Z][a-z]{2,9}$/);
     const number = fc.stringMatching(/^SYN[0-9]{6,10}$/);
     fc.assert(
@@ -432,7 +433,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(checked(names, text)).toEqual(run.value);
   });
 
-  it('counts the same work for the same letter in every run, and none of a letter before it', () => {
+  // 20 s is wall time on shared runners (the runner's default 5 s was passed there), not the product's budget; 1.2 to 1.5 s on a quiet machine.
+  it('counts the same work for the same letter in every run, and none of a letter before it', { timeout: 20_000 }, () => {
     const letter = `Vantree${' J'.repeat(8_000)} \u0445 was seen 11/01/2026; call (202) 555-0123.`;
     const first = checked(['JANE Q VANTREE'], letter);
     expect(first.held).toBe(false);
@@ -444,7 +446,8 @@ describe('one pass over one folded view: every placeholder survives and no ident
     expect(checked(['JANE Q VANTREE'], letter)).toEqual(first);
   });
 
-  it('holds one budget for the redaction and the check together: a letter the check takes past it is refused', () => {
+  // 20 s is wall time on shared runners (the runner's default 5 s was passed there), not the product's budget; 1.9 to 2.8 s on a quiet machine.
+  it('holds one budget for the redaction and the check together: a letter the check takes past it is refused', { timeout: 20_000 }, () => {
     const who = patient(['JANE Q VANTREE']);
     const text = fill('5\n').slice(0, 60_000);
     const redacted = redactLetterForScreen(text, who, claim('SYN555001'));

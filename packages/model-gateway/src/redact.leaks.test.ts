@@ -2553,7 +2553,8 @@ describe('MOD-25: a stored number written with other marks than the records hold
       expect(sentOrRefused('Ms. Zephyra was seen.', named('ZEPHYRA2'), claims)).toBe('Ms. Zephyra was seen.');
     });
 
-    it('counts the wider reading’s initials on the check’s work budget: a crafted letter past it is refused, never sent with the name', () => {
+    // 20 s is wall time on shared runners (the runner's default 5 s was passed there), not the product's budget; 2.3 to 2.7 s on a quiet machine.
+    it('counts the wider reading’s initials on the check’s work budget: a crafted letter past it is refused, never sent with the name', { timeout: 20_000 }, () => {
       // For JANE Q VANTREE held with spaces the first reading finds the name and its initials (403.5M of the 420M at 100,008
       // characters, sent). Held with a plus sign only the wider reading does, and the first reading's check is asked once
       // more: 273.0M for the redaction at 62,008 characters, sent; past the budget at 82,008 (the check's count) and at

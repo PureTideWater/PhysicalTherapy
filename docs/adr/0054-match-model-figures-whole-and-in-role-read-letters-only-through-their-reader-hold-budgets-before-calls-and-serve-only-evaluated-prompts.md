@@ -2480,6 +2480,21 @@ figures above are the earlier trees'; the last paragraph here gives them for the
 - *What the fix costs in time.* The gate's whole run of 975,489 letters took 1,311 s on the base's reader and 1,534 s
   on this one (17% more, for the whole item). The battery's generators that run for a fixed 120 s reached between 20%
   and 37% fewer letters on this reader. The slowest gate letter is 1,169 ms on the base and 1,110 ms here, of 3,000.
+- *What the item costs per letter, and the four tests' wall-time limits (2026-11-13).* The 100-letter property of
+  `denial-letter.test.ts` ("leaves no identifier in any letter") is the measure: 2.3 to 3.3 s on the base's reader
+  a97d73e4, 2.7 to 3.1 s at 846968af (the item before the reviews), 4.1 s at 17028cfa (fix rounds 1 and 2: about 1 s
+  of the rise), and 4.1 to 4.8 s on the head (the (C) fix, the base's reading run again: the rest, some tenths of a
+  second up to 0.7 s). Every letter is read for about that much longer; it is a cost of this item, not fixed here.
+  Queues item 39 holds it: the reader's per-letter time after item 34 is to be brought down, with the check's time,
+  before launch and before the check's first caller is wired. On the shared runners the `unit` job then passed the
+  test runner's default limit of 5 s on four tests, with no assertion failed: that property, the two budget tests
+  beside it ("counts the same work for the same letter in every run", 1.2 to 1.5 s quiet; "holds one budget for the
+  redaction and the check together", 1.9 to 2.8 s quiet; both unchanged from the base, where they timed out once too)
+  and the MOD-25 test of the wider reading's initials on the budget in `redact.leaks.test.ts` (2.3 to 2.7 s quiet).
+  By the orchestrator's ruling (2026-11-13) those four tests, and no other, carry an explicit limit of 20 s. The 5 s
+  was the runner's default and no bound of the product. The product's bound is the counted work budget: it, every
+  weight and the two budget rows (403,548,210 and 414,023,090 units) are unchanged, and no assertion was changed.
+  Review 6 read the further fix 95529e85 alone and found no blocker.
 - *Three more refusals in the battery's generator k-gen-A, from before the fix rounds.* Of its 20,000 letters this
   reader refuses three the base sends, each with a line break written LF CR between a Social Security or phone word
   and a number; the base refuses the same letters written with a line feed alone. 846968af, before the fix rounds,
