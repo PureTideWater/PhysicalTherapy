@@ -1,0 +1,205 @@
+RUN analyzed query=before run=1
+Time: 3859.535 ms (00:03.860)
+RUN analyzed query=before run=2
+Time: 3624.215 ms (00:03.624)
+RUN analyzed query=before run=3
+Time: 3661.207 ms (00:03.661)
+RUN analyzed query=before run=4
+Time: 3305.444 ms (00:03.305)
+RUN analyzed query=before run=5
+Time: 3638.695 ms (00:03.639)
+PLAN analyzed query=before
+Sort  (cost=99020.99..99023.99 rows=1200 width=56) (actual rows=1200.00 loops=1)
+  Sort Key: c.opened_at, c.id
+  Sort Method: quicksort  Memory: 105kB
+  Buffers: shared hit=983454 read=5660
+  ->  Seq Scan on "case" c  (cost=0.00..98959.62 rows=1200 width=56) (actual rows=1200.00 loops=1)
+        Filter: ((state <> ALL ('{resolved,closed_written_off}'::text[])) AND (practice_id = 'd2d94abf-fe71-45ac-b5a4-58c5971c3164'::uuid) AND (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])))
+        Buffers: shared hit=983454 read=5660
+        SubPlan 2
+          ->  Aggregate  (cost=82.35..82.36 rows=1 width=32) (actual rows=1.00 loops=1200)
+                Buffers: shared hit=983454 read=5584
+                ->  Nested Loop  (cost=0.86..82.35 rows=1 width=8) (actual rows=25.66 loops=1200)
+                      Buffers: shared hit=983454 read=5584
+                      ->  Index Scan using case_line_by_case on case_line x  (cost=0.43..73.89 rows=1 width=16) (actual rows=25.66 loops=1200)
+                            Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = c.practice_id) AND (case_id = c.id))
+                            Filter: CASE WHEN ((written_off_reason IS NULL) AND ((SubPlan 1) = 'actionable'::text)) THEN COALESCE((priced_line_pricing_check(priced_line_id) = 'current'::text), false) ELSE false END
+                            Index Searches: 1200
+                            Buffers: shared hit=860274 read=5584
+                            SubPlan 1
+                              ->  Limit  (cost=0.42..25.24 rows=1 width=18) (actual rows=1.00 loops=30795)
+                                    Buffers: shared hit=122602 read=578
+                                    ->  Index Scan using line_status_by_line on line_status s  (cost=0.42..50.05 rows=2 width=18) (actual rows=1.00 loops=30795)
+                                          Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = x.practice_id) AND (service_line_id = x.service_line_id))
+                                          Index Searches: 30795
+                                          Buffers: shared hit=122602 read=578
+                      ->  Index Scan using priced_line_pkey on priced_line p  (cost=0.42..8.46 rows=1 width=24) (actual rows=1.00 loops=30795)
+                            Index Cond: (id = x.priced_line_id)
+                            Filter: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+                            Index Searches: 30795
+                            Buffers: shared hit=123180
+Planning:
+  Buffers: shared hit=6 read=2
+Planning Time: 0.446 ms
+Execution Time: 3804.775 ms
+RUN analyzed query=after run=1
+Time: 8567.699 ms (00:08.568)
+RUN analyzed query=after run=2
+Time: 7041.048 ms (00:07.041)
+RUN analyzed query=after run=3
+Time: 6994.428 ms (00:06.994)
+RUN analyzed query=after run=4
+Time: 6835.052 ms (00:06.835)
+RUN analyzed query=after run=5
+Time: 6828.899 ms (00:06.829)
+PLAN analyzed query=after
+Sort  (cost=197940.61..197943.61 rows=1200 width=88) (actual rows=1200.00 loops=1)
+  Sort Key: c.opened_at, c.id
+  Sort Method: quicksort  Memory: 1336kB
+  Buffers: shared hit=1971980 read=6172
+  ->  Seq Scan on "case" c  (cost=0.00..197879.24 rows=1200 width=88) (actual rows=1200.00 loops=1)
+        Filter: ((state <> ALL ('{resolved,closed_written_off}'::text[])) AND (practice_id = 'd2d94abf-fe71-45ac-b5a4-58c5971c3164'::uuid) AND (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])))
+        Buffers: shared hit=1971980 read=6172
+        SubPlan 2
+          ->  Aggregate  (cost=82.35..82.36 rows=1 width=32) (actual rows=1.00 loops=1200)
+                Buffers: shared hit=982942 read=6096
+                ->  Nested Loop  (cost=0.86..82.35 rows=1 width=8) (actual rows=25.66 loops=1200)
+                      Buffers: shared hit=982942 read=6096
+                      ->  Index Scan using case_line_by_case on case_line x  (cost=0.43..73.89 rows=1 width=16) (actual rows=25.66 loops=1200)
+                            Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = c.practice_id) AND (case_id = c.id))
+                            Filter: CASE WHEN ((written_off_reason IS NULL) AND ((SubPlan 1) = 'actionable'::text)) THEN COALESCE((priced_line_pricing_check(priced_line_id) = 'current'::text), false) ELSE false END
+                            Index Searches: 1200
+                            Buffers: shared hit=859762 read=6096
+                            SubPlan 1
+                              ->  Limit  (cost=0.42..25.24 rows=1 width=18) (actual rows=1.00 loops=30795)
+                                    Buffers: shared hit=122535 read=645
+                                    ->  Index Scan using line_status_by_line on line_status s  (cost=0.42..50.05 rows=2 width=18) (actual rows=1.00 loops=30795)
+                                          Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = x.practice_id) AND (service_line_id = x.service_line_id))
+                                          Index Searches: 30795
+                                          Buffers: shared hit=122535 read=645
+                      ->  Index Scan using priced_line_pkey on priced_line p  (cost=0.42..8.46 rows=1 width=24) (actual rows=1.00 loops=30795)
+                            Index Cond: (id = x.priced_line_id)
+                            Filter: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+                            Index Searches: 30795
+                            Buffers: shared hit=123180
+        SubPlan 4
+          ->  Aggregate  (cost=82.37..82.43 rows=1 width=32) (actual rows=1.00 loops=1200)
+                Buffers: shared hit=989038
+                ->  Sort  (cost=82.36..82.36 rows=1 width=16) (actual rows=25.66 loops=1200)
+                      Sort Key: p_1.id
+                      Sort Method: quicksort  Memory: 25kB
+                      Buffers: shared hit=989038
+                      ->  Nested Loop  (cost=0.86..82.35 rows=1 width=16) (actual rows=25.66 loops=1200)
+                            Buffers: shared hit=989038
+                            ->  Index Scan using case_line_by_case on case_line x_1  (cost=0.43..73.89 rows=1 width=16) (actual rows=25.66 loops=1200)
+                                  Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = c.practice_id) AND (case_id = c.id))
+                                  Filter: CASE WHEN ((written_off_reason IS NULL) AND ((SubPlan 3) = 'actionable'::text)) THEN COALESCE((priced_line_pricing_check(priced_line_id) = 'current'::text), false) ELSE false END
+                                  Index Searches: 1200
+                                  Buffers: shared hit=865858
+                                  SubPlan 3
+                                    ->  Limit  (cost=0.42..25.24 rows=1 width=18) (actual rows=1.00 loops=30795)
+                                          Buffers: shared hit=123180
+                                          ->  Index Scan using line_status_by_line on line_status s_1  (cost=0.42..50.05 rows=2 width=18) (actual rows=1.00 loops=30795)
+                                                Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = x_1.practice_id) AND (service_line_id = x_1.service_line_id))
+                                                Index Searches: 30795
+                                                Buffers: shared hit=123180
+                            ->  Index Scan using priced_line_pkey on priced_line p_1  (cost=0.42..8.46 rows=1 width=16) (actual rows=1.00 loops=30795)
+                                  Index Cond: (id = x_1.priced_line_id)
+                                  Filter: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+                                  Index Searches: 30795
+                                  Buffers: shared hit=123180
+Planning:
+  Buffers: shared hit=14 read=2
+Planning Time: 0.596 ms
+Execution Time: 6812.162 ms
+RUN analyzed query=onepass run=1
+Time: 3262.984 ms (00:03.263)
+RUN analyzed query=onepass run=2
+Time: 3368.826 ms (00:03.369)
+RUN analyzed query=onepass run=3
+Time: 3372.588 ms (00:03.373)
+RUN analyzed query=onepass run=4
+Time: 3804.130 ms (00:03.804)
+RUN analyzed query=onepass run=5
+Time: 3706.487 ms (00:03.706)
+PLAN analyzed query=onepass
+Sort  (cost=99158.99..99161.99 rows=1200 width=88) (actual rows=1200.00 loops=1)
+  Sort Key: c.opened_at, c.id
+  Sort Method: quicksort  Memory: 1336kB
+  Buffers: shared hit=985338 read=3776
+  ->  Nested Loop  (cost=82.40..99097.62 rows=1200 width=88) (actual rows=1200.00 loops=1)
+        Buffers: shared hit=985338 read=3776
+        ->  Seq Scan on "case" c  (cost=0.00..118.00 rows=1200 width=40) (actual rows=1200.00 loops=1)
+              Filter: ((state <> ALL ('{resolved,closed_written_off}'::text[])) AND (practice_id = 'd2d94abf-fe71-45ac-b5a4-58c5971c3164'::uuid) AND (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])))
+              Buffers: shared read=76
+        ->  Aggregate  (cost=82.40..82.47 rows=1 width=64) (actual rows=1.00 loops=1200)
+              Buffers: shared hit=985338 read=3700
+              ->  Sort  (cost=82.39..82.39 rows=1 width=25) (actual rows=25.66 loops=1200)
+                    Sort Key: y.id
+                    Sort Method: quicksort  Memory: 26kB
+                    Buffers: shared hit=985338 read=3700
+                    ->  Subquery Scan on y  (cost=1.28..82.38 rows=1 width=25) (actual rows=25.66 loops=1200)
+                          Buffers: shared hit=985338 read=3700
+                          ->  Nested Loop Left Join  (cost=1.28..82.37 rows=1 width=25) (actual rows=25.66 loops=1200)
+                                Buffers: shared hit=985338 read=3700
+                                ->  Nested Loop  (cost=0.86..56.86 rows=1 width=104) (actual rows=25.66 loops=1200)
+                                      Buffers: shared hit=153874 read=3699
+                                      ->  Index Scan using case_line_by_case on case_line x  (cost=0.43..48.39 rows=1 width=80) (actual rows=25.66 loops=1200)
+                                            Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = c.practice_id) AND (case_id = c.id))
+                                            Index Searches: 1200
+                                            Buffers: shared hit=34393
+                                      ->  Index Scan using priced_line_pkey on priced_line p  (cost=0.42..8.46 rows=1 width=24) (actual rows=1.00 loops=30795)
+                                            Index Cond: (id = x.priced_line_id)
+                                            Filter: (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))
+                                            Index Searches: 30795
+                                            Buffers: shared hit=119481 read=3699
+                                ->  Limit  (cost=0.42..25.24 rows=1 width=18) (actual rows=1.00 loops=30795)
+                                      Buffers: shared hit=123180
+                                      ->  Index Scan using line_status_by_line on line_status s  (cost=0.42..50.05 rows=2 width=18) (actual rows=1.00 loops=30795)
+                                            Index Cond: ((practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[])) AND (practice_id = x.practice_id) AND (service_line_id = x.service_line_id))
+                                            Index Searches: 30795
+                                            Buffers: shared hit=123180
+Planning:
+  Buffers: shared hit=6 read=2
+Planning Time: 0.464 ms
+Execution Time: 3542.260 ms
+RUN analyzed insert=five run=1
+stored
+Time: 642.753 ms
+RUN analyzed insert=five run=2
+stored
+Time: 604.015 ms
+RUN analyzed insert=five run=3
+stored
+Time: 598.654 ms
+RUN analyzed insert=five run=4
+stored
+Time: 563.654 ms
+RUN analyzed insert=five run=5
+stored
+Time: 583.480 ms
+RUN analyzed insert=four run=1
+stored
+Time: 9.338 ms
+RUN analyzed insert=four run=2
+stored
+Time: 7.729 ms
+RUN analyzed insert=four run=3
+stored
+Time: 7.766 ms
+RUN analyzed insert=four run=4
+stored
+Time: 7.682 ms
+RUN analyzed insert=four run=5
+stored
+Time: 7.659 ms
+RUN analyzed insert=repeat run=1
+Time: 506.358 ms
+RUN analyzed insert=repeat run=2
+Time: 472.502 ms
+RUN analyzed insert=repeat run=3
+Time: 516.493 ms
+RUN analyzed insert=repeat run=4
+Time: 539.333 ms
+RUN analyzed insert=repeat run=5
+Time: 489.840 ms

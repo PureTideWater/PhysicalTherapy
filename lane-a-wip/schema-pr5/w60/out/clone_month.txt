@@ -1,0 +1,3 @@
+A: cases 1200, case lines 30795, priced lines 30795, stage events 61590; all practices: priced lines 1030795, case lines 1030795
+pricing check over A's case lines: current x30795
+analyzed: claim=never/never service_line=never/never pricing_run=never/never priced_line=never/never line_status=never/never case=never/never case_line=never/never

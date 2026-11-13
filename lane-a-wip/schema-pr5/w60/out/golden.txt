@@ -1,0 +1,14 @@
+
+> therapy-platform@ test:golden /home/user/PhysicalTherapy
+> tsx tools/test-golden.ts
+
+
+ RUN  v5.1.0 /home/user/PhysicalTherapy
+
+{"practice_id":null,"error_code":"MODEL_INPUT_NAMES_PATIENT","time":"2026-11-13T00:06:24.085Z","level":"warn","msg":"a model call was refused before it was sent: its input names a patient of the practice"}
+
+ Test Files  5 passed (5)
+      Tests  381 passed (381)
+   Start at  00:05:45
+   Duration  56.54s (tests 91%, import 6%, transform 3%)
+

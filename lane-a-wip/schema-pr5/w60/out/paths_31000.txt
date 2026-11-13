@@ -1,0 +1,9 @@
+
+ RUN  v5.1.0 /home/user/PhysicalTherapy
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  23:58:02
+   Duration  100.72s (tests 98%, import 1%)
+

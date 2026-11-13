@@ -1,0 +1,7 @@
+paths31000 exit 0
+seed exit 1
+NOTICE:  database "w60_wm" does not exist, skipping
+ERROR:  zero-length delimited identifier at or near """"
+LINE 1: ALTER DATABASE "" RENAME TO w60_wm
+                       ^
+clone exit 2

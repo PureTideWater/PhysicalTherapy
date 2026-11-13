@@ -1,0 +1,4 @@
+migrate exit 0
+domain-model --check exit 1
+golden exit 0
+test:db exit 0

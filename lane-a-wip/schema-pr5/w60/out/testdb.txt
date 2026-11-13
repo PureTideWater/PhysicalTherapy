@@ -1,0 +1,113 @@
+
+> therapy-platform@ test:db /home/user/PhysicalTherapy
+> vitest run --project db
+
+
+ RUN  v5.1.0 /home/user/PhysicalTherapy
+
+CAS-42.3: 2000 lines; setup 75.4 s; pass 28.0 s; peak advisory locks per backend 1 over 1026 samples
+CAS-42 setup: B 20000, A and Y 100000 lines each priced, B triaged and reported, in 145.2 s
+CAS-42 child (heap flag 420 MiB, 100000 lines): {"jobs":[{"kind":"triage","practiceId":"f067ad93-c1a7-4dfd-988f-efa621e6d2e6","outcome":"triaged","summary":{"asOf":"2026-10-26","anomalies":0,"flaggedLines":0,"validatedLines":83332,"casesOpened":1,"linesAdded":41667,"heldPatterns":0,"windowsClosed":0},"ms":48275,"actionableWriteMs":4606,"heapLivePeakMib":147,"slowest":[{"ms":14490,"runs":42,"text":"FETCH 2000 FROM triage_candidates"},{"ms":11306,"runs":2,"text":"INSERT INTO line_status (practice_id, service_line_id, stage, priced_line_id) SELECT $1, w.service_line_id, $4, w.priced"},{"ms":10631,"runs":42,"text":"SELECT p.id::text AS priced_line_id, p.trace #> '{steps,window}' AS window_step, p.trace -> 'agreement' AS agreement, (S"},{"ms":3966,"runs":43,"text":"INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, grant_id, purpose, request_i"},{"ms":2454,"runs":1,"text":"INSERT INTO case_line (practice_id, case_id, service_line_id, priced_line_id, written_off_reason) SELECT $1, $2, t.servi"}]}],"heapLivePeakMib":147,"heapLimitMib":612,"sampledHeapPeakMib":231,"rssPeakMib":480,"ms":48276,"chromium":true,"lockPeak":1,"lockSamples":1877}
+CAS-42 child (heap flag 420 MiB, 100000 lines): {"jobs":[{"kind":"report","practiceId":"f067ad93-c1a7-4dfd-988f-efa621e6d2e6","outcome":"ready","summary":null,"ms":73607,"actionableWriteMs":0,"heapLivePeakMib":121,"slowest":[{"ms":19803,"runs":51,"text":"FETCH 2000 FROM report_lines"},{"ms":19135,"runs":71,"text":"SELECT p.id::text AS priced_line_id, p.trace #> '{steps,window}' AS window_step, p.trace -> 'agreement' AS agreement, (S"},{"ms":9758,"runs":21,"text":"FETCH 2000 FROM triage_candidates"},{"ms":7986,"runs":72,"text":"INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, grant_id, purpose, request_i"},{"ms":1702,"runs":42,"text":"WITH RECURSIVE named (id) AS ( SELECT unnest($1::uuid[]) UNION SELECT k.id FROM claim k JOIN named n ON k.superseded_by_"}]}],"heapLivePeakMib":121,"heapLimitMib":612,"sampledHeapPeakMib":200,"rssPeakMib":547,"ms":73608,"chromium":true,"lockPeak":1,"lockSamples":2664}
+CAS-42 child (heap flag 560 MiB, 100000 lines): {"jobs":[{"kind":"report","practiceId":"f067ad93-c1a7-4dfd-988f-efa621e6d2e6","outcome":"ready","summary":null,"ms":74740,"actionableWriteMs":0,"heapLivePeakMib":212,"slowest":[{"ms":20456,"runs":51,"text":"FETCH 2000 FROM report_lines"},{"ms":20046,"runs":71,"text":"SELECT p.id::text AS priced_line_id, p.trace #> '{steps,window}' AS window_step, p.trace -> 'agreement' AS agreement, (S"},{"ms":9339,"runs":21,"text":"FETCH 2000 FROM triage_candidates"},{"ms":9018,"runs":72,"text":"INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, grant_id, purpose, request_i"},{"ms":1725,"runs":1,"text":"WITH quarter_lines AS ( SELECT l.id FROM service_line l JOIN claim c ON c.id = l.claim_id WHERE l.practice_id = $1 AND c"}]},{"kind":"triage","practiceId":"3dfca55c-86a0-4b71-96d6-708d0673bbe4","outcome":"triaged","summary":{"asOf":"2026-10-26","anomalies":0,"flaggedLines":0,"validatedLines":83332,"casesOpened":1,"linesAdded":41667,"heldPatterns":0,"windowsClosed":0},"ms":59605,"actionableWriteMs":4835,"heapLivePeakMib":212,"slowest":[{"ms":18375,"runs":42,"text":"FETCH 2000 FROM triage_candidates"},{"ms":13502,"runs":42,"text":"SELECT p.id::text AS priced_line_id, p.trace #> '{steps,window}' AS window_step, p.trace -> 'agreement' AS agreement, (S"},{"ms":12473,"runs":2,"text":"INSERT INTO line_status (practice_id, service_line_id, stage, priced_line_id) SELECT $1, w.service_line_id, $4, w.priced"},{"ms":5504,"runs":43,"text":"INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, practice_id, grant_id, purpose, request_i"},{"ms":3182,"runs":1,"text":"INSERT INTO case_line (practice_id, case_id, service_line_id, priced_line_id, written_off_reason) SELECT $1, $2, t.servi"}]}],"heapLivePeakMib":212,"heapLimitMib":752,"sampledHeapPeakMib":286,"rssPeakMib":626,"ms":74740,"chromium":true,"lockPeak":1,"lockSamples":2762}
+CAS-49.1: 25 runs; partial checks in 25; a row-for-row settle comparison would have failed in 0
+CAS-51 R: 500 lines in 5 case(s); setup 4.3 s; pass 3.6 s; own 2.4 s (4.82 ms a line); live heap 112 MiB; peak advisory locks 1 over 136 samples; 3568 statements
+CAS-51 R: 2000 lines in 5 case(s); setup 22.1 s; pass 19.1 s; own 10.9 s (5.46 ms a line); live heap 112 MiB; peak advisory locks 1 over 727 samples; 14143 statements
+CAS-51 R: patient search elements a line 3.00 at 500, 3.00 at 2000
+CAS-51 F: 500 lines in 1 case(s); setup 3.8 s; pass 3.5 s; own 2.2 s (4.42 ms a line); live heap 108 MiB; peak advisory locks 1 over 134 samples; 3568 statements
+CAS-51 F: 2000 lines in 1 case(s); setup 18.7 s; pass 20.9 s; own 10.9 s (5.44 ms a line); live heap 117 MiB; peak advisory locks 1 over 798 samples; 14143 statements
+CAS-51 F: patient search elements a line 3.00 at 500, 3.00 at 2000
+CAS-51 A: 500 lines in 5 case(s); setup 3.8 s; pass 3.5 s; own 2.2 s (4.47 ms a line); live heap 180 MiB; peak advisory locks 1 over 135 samples; 3568 statements
+CAS-51 A: 2000 lines in 5 case(s); setup 21.0 s; pass 20.9 s; own 10.6 s (5.32 ms a line); live heap 121 MiB; peak advisory locks 1 over 797 samples; 14143 statements
+CAS-51 A: patient search elements a line 3.00 at 500, 3.00 at 2000
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+CAS-49.2: 207 reconciles compared; 187 wrote rows; 204 decrypted a claim in the search; 0 refused on both sides
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+(node:12426) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:12426) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+(node:17370) ExperimentalWarning: The supports Web Crypto API method is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17370) ExperimentalWarning: The ML-DSA-44 Web Crypto API algorithm is an experimental feature and might change at any time
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+CAS-40.11: 10,000 events in 632 ms, 40,000 in 2699 ms (printed, not asserted)
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+CAS-50: 200 lines; 1453 statements, 2 control searches, 4 claimLines, 1000 decrypts; pass 1.6 s
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+CAS-50: 800 lines; 5683 statements, 2 control searches, 4 claimLines, 4000 decrypts; pass 6.7 s
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+result page at the worst shape (20507 groups) under a 512 MiB heap: page 1 400 KB, +17.1 MiB, 684 ms; page 206 381 KB, +16.0 MiB, 497 ms; page 411 211 KB, +13.0 MiB, 518 ms; page 411 211 KB, +12.5 MiB, 530 ms
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"0030beac-c814-4a0f-a699-60caac455726","screening_run_id":"57637932-e659-4610-9459-a6231f84d0b0","elapsed_ms":7,"record_count":25,"time":"2026-11-13T00:30:09.756Z","level":"info","msg":"screening release shared types read"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"0030beac-c814-4a0f-a699-60caac455726","screening_run_id":"57637932-e659-4610-9459-a6231f84d0b0","elapsed_ms":17,"record_count":8,"time":"2026-11-13T00:30:09.774Z","level":"info","msg":"screening release keyed records read"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"a6e611c6-208a-476f-a919-aa68294b7b1f","screening_run_id":"ad14d3d4-75fd-42ce-93b0-30fb56dbf05f","elapsed_ms":8,"record_count":25,"time":"2026-11-13T00:30:09.781Z","level":"info","msg":"screening release shared types read"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"0030beac-c814-4a0f-a699-60caac455726","screening_run_id":"57637932-e659-4610-9459-a6231f84d0b0","elapsed_ms":8,"record_count":2,"time":"2026-11-13T00:30:09.794Z","level":"info","msg":"screening run rows priced"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"0030beac-c814-4a0f-a699-60caac455726","screening_run_id":"57637932-e659-4610-9459-a6231f84d0b0","elapsed_ms":11,"record_count":2,"time":"2026-11-13T00:30:09.795Z","level":"info","msg":"screening run rows recorded"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"a6e611c6-208a-476f-a919-aa68294b7b1f","screening_run_id":"ad14d3d4-75fd-42ce-93b0-30fb56dbf05f","elapsed_ms":16,"record_count":8,"time":"2026-11-13T00:30:09.797Z","level":"info","msg":"screening release keyed records read"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"0030beac-c814-4a0f-a699-60caac455726","screening_run_id":"57637932-e659-4610-9459-a6231f84d0b0","elapsed_ms":166,"time":"2026-11-13T00:30:09.813Z","level":"info","msg":"screening result emailed"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"a6e611c6-208a-476f-a919-aa68294b7b1f","screening_run_id":"ad14d3d4-75fd-42ce-93b0-30fb56dbf05f","elapsed_ms":8,"record_count":2,"time":"2026-11-13T00:30:09.819Z","level":"info","msg":"screening run rows priced"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"a6e611c6-208a-476f-a919-aa68294b7b1f","screening_run_id":"ad14d3d4-75fd-42ce-93b0-30fb56dbf05f","elapsed_ms":13,"record_count":2,"time":"2026-11-13T00:30:09.819Z","level":"info","msg":"screening run rows recorded"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"c109f98c-32e7-403b-bad1-5f928b580338","screening_run_id":"f7b5bd5c-b9cc-48e7-a9c5-826d1df717a8","elapsed_ms":0,"record_count":25,"time":"2026-11-13T00:30:09.824Z","level":"info","msg":"screening release shared types held from an earlier run"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"c109f98c-32e7-403b-bad1-5f928b580338","screening_run_id":"f7b5bd5c-b9cc-48e7-a9c5-826d1df717a8","elapsed_ms":7,"record_count":8,"time":"2026-11-13T00:30:09.831Z","level":"info","msg":"screening release keyed records read"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"a6e611c6-208a-476f-a919-aa68294b7b1f","screening_run_id":"ad14d3d4-75fd-42ce-93b0-30fb56dbf05f","elapsed_ms":217,"time":"2026-11-13T00:30:09.833Z","level":"info","msg":"screening result emailed"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"c109f98c-32e7-403b-bad1-5f928b580338","screening_run_id":"f7b5bd5c-b9cc-48e7-a9c5-826d1df717a8","elapsed_ms":5,"record_count":2,"time":"2026-11-13T00:30:09.846Z","level":"info","msg":"screening run rows priced"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"c109f98c-32e7-403b-bad1-5f928b580338","screening_run_id":"f7b5bd5c-b9cc-48e7-a9c5-826d1df717a8","elapsed_ms":10,"record_count":2,"time":"2026-11-13T00:30:09.846Z","level":"info","msg":"screening run rows recorded"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"ca9395f4-6e2b-4d6b-95e9-ec185da10d2a","screening_run_id":"6d89b14f-4b3c-4247-9d80-ff0f8137e7c9","elapsed_ms":0,"record_count":25,"time":"2026-11-13T00:30:09.851Z","level":"info","msg":"screening release shared types held from an earlier run"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"c109f98c-32e7-403b-bad1-5f928b580338","screening_run_id":"f7b5bd5c-b9cc-48e7-a9c5-826d1df717a8","elapsed_ms":198,"time":"2026-11-13T00:30:09.853Z","level":"info","msg":"screening result emailed"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"ca9395f4-6e2b-4d6b-95e9-ec185da10d2a","screening_run_id":"6d89b14f-4b3c-4247-9d80-ff0f8137e7c9","elapsed_ms":8,"record_count":8,"time":"2026-11-13T00:30:09.859Z","level":"info","msg":"screening release keyed records read"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"ca9395f4-6e2b-4d6b-95e9-ec185da10d2a","screening_run_id":"6d89b14f-4b3c-4247-9d80-ff0f8137e7c9","elapsed_ms":3,"record_count":2,"time":"2026-11-13T00:30:09.869Z","level":"info","msg":"screening run rows priced"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"ca9395f4-6e2b-4d6b-95e9-ec185da10d2a","screening_run_id":"6d89b14f-4b3c-4247-9d80-ff0f8137e7c9","elapsed_ms":7,"record_count":2,"time":"2026-11-13T00:30:09.869Z","level":"info","msg":"screening run rows recorded"}
+{"worker_id":"4766bf67-e445-42a5-8490-461fcf2ec9cb","job_id":"ca9395f4-6e2b-4d6b-95e9-ec185da10d2a","screening_run_id":"6d89b14f-4b3c-4247-9d80-ff0f8137e7c9","elapsed_ms":213,"time":"2026-11-13T00:30:09.876Z","level":"info","msg":"screening result emailed"}
+restore-drill.db.test: the pg_dump drill is skipped: pg_dump 16 cannot dump a PostgreSQL 18 server; point PG_BIN_DIR at PostgreSQL 18 client tools
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+screening of 50000 rows: browser screen 0.3 s; stored in 2.0 s; result emailed 4.5 s after the upload
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+<claude-code-hint v="1" type="plugin" value="stripe@claude-plugins-official" />
+pricing run over 100000 lines (91666 priced): created in 0.1 s, executed in 45.7 s, 45.8 s end to end
+
+ Test Files  175 passed (175)
+      Tests  10373 passed | 1 skipped (10374)
+   Start at  00:06:42
+   Duration  1565.33s (tests 95%, import 4%)
+

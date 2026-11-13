@@ -1,0 +1,6 @@
+00:01:46 writer, never analyzed
+  exit 0
+00:03:33 ANALYZE
+00:03:34 writer, analyzed
+  exit 0
+00:05:09 done

@@ -1,0 +1,2 @@
+wrote /home/user/PhysicalTherapy/docs/product/domain-model.md: 101 tables, 1 views, 48 registered, 232 divergence rows (23 to approve), 0 explanation problem(s)
+wrote /home/user/PhysicalTherapy/packages/db/functions: 395 function files, 0 written, 0 removed
