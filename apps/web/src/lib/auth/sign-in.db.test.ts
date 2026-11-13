@@ -2350,7 +2350,7 @@ describe('one relying-party ID: the web refuses every hardware-key step when the
   }
   const refusal = (attempt: Promise<unknown>): Promise<unknown> => attempt.then(() => 'answered', (error: unknown) => error);
 
-  it('refuses the first key sign-in step and every key step after it, by a message that names the setting and no value, logged once at error; the provider is asked once', async () => {
+  it('refuses the first key sign-in step and every key step after it, by a message that names the setting and no value, logged at error on every refused step (delta review D3); the provider is asked once', async () => {
     const { staff, key } = await staffWithKey();
     const honest = await flow.beginKey(staff.email);
     if ('kind' in honest) {
@@ -2367,7 +2367,8 @@ describe('one relying-party ID: the web refuses every hardware-key step when the
     expect(message).not.toContain(OURS);
     expect(logged()).toEqual([expect.objectContaining({ level: 'error', request_id: expect.any(String) })]);
     expect(JSON.stringify(logged())).not.toContain(OURS);
-    // Latched: the next steps are refused before the provider is asked, and no second line is written.
+    // Latched: the next steps are refused before the provider is asked. Each refused step writes the line again, so
+    // the operator's alarm stays raised for as long as key steps are refused (delta review D3: it was written once).
     expect(await refusal(use.beginKey(staff.email, context()))).toBeInstanceOf(RelyingPartyMismatch);
     expect(await refusal(use.completeKey(honest.pending, key.get(honest.options), context()))).toBeInstanceOf(RelyingPartyMismatch);
     const unkeyed = await person({ internal: true });
@@ -2378,7 +2379,13 @@ describe('one relying-party ID: the web refuses every hardware-key step when the
     registering.mockRestore();
     expect(asked).toHaveBeenCalledTimes(1);
     asked.mockRestore();
-    expect(logged()).toHaveLength(1);
+    // Four refused steps, four lines, each with its own request's ID and nothing else.
+    expect(logged()).toHaveLength(4);
+    for (const line of logged()) {
+      expect(line).toMatchObject({ level: 'error', msg: LINE, error_code: 'RELYING_PARTY_MISMATCH', request_id: expect.any(String) });
+    }
+    expect(new Set(logged().map((line) => line.request_id)).size).toBe(4);
+    expect(JSON.stringify(logged())).not.toContain(OURS);
     expect(await openSessions(staff.id)).toBe(0);
   });
 
@@ -2389,6 +2396,7 @@ describe('one relying-party ID: the web refuses every hardware-key step when the
     expect(await refusal(use.beginKeyRegistration(step, context()))).toBeInstanceOf(RelyingPartyMismatch);
     expect(logged()).toHaveLength(1);
     expect(await refusal(use.completeKeyRegistration({ ...step, challenge: 'x', creation: 'x' } as Pending, new SoftAuthenticator(ORIGIN).create({ challenge: 'eA', rp: { name: 'Test', id: THEIRS }, user: { id: 'eA', name: 'x', displayName: 'x' }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }] }), context()))).toBeInstanceOf(RelyingPartyMismatch);
+    expect(logged()).toHaveLength(2);
     expect(await keyRows(staff.id)).toEqual([]);
   });
 
@@ -2439,6 +2447,47 @@ describe('one relying-party ID: the web refuses every hardware-key step when the
 });
 
 describe('key registration offers ES256 and RS256 only, whatever the provider lists (ruling R2; docs/adr/0095)', () => {
+  // Delta review D4. The flow asks the provider first and verifies after, so the refusal is the app's own: the
+  // provider (the local one takes EdDSA, as the library's default list does) registers the key, and the flow removes it.
+  it('refuses a registration under an algorithm outside the two (EdDSA, -8) that the provider accepted: not verified, the key removed at the provider, no row', async () => {
+    expect(KEY_REGISTRATION_ALGORITHMS).not.toContain(-8);
+    const lines: string[] = [];
+    const use = new SignInFlow({ registrationCodeKey: CODE_KEY, webauthn: WEBAUTHN, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
+    const staff = await person({ internal: true });
+    const key = new SoftAuthenticator(ORIGIN, true, 'EdDSA');
+    const begun = await use.beginKeyRegistration(pendingOf(await codeSignIn(staff.email, use)), context());
+    if ('kind' in begun) {
+      throw new Error('expected options');
+    }
+    const accepted = vi.spyOn(provider, 'completeKeyRegistration');
+    const removed = vi.spyOn(provider, 'removeHardwareKey');
+    const with_ = context();
+    try {
+      expect(await use.completeKeyRegistration(begun.pending, key.create(begun.options), with_)).toEqual({ kind: 'refused', reason: 'key_not_registered' });
+      // The provider took the credential: the refusal is not its, and not a malformed response's.
+      expect(accepted).toHaveBeenCalledTimes(1);
+      expect(await accepted.mock.results[0]?.value).toBe(true);
+      expect(removed).toHaveBeenCalledTimes(1);
+      expect(removed.mock.calls[0]?.[1]).toBe(key.credentialId.toString('base64url'));
+    } finally {
+      accepted.mockRestore();
+      removed.mockRestore();
+    }
+    expect(await storedIds(staff.sub)).toEqual([]);
+    expect(await keyRows(staff.id)).toEqual([]);
+    expect(logged(lines, 'hardware key registered at the provider but not recorded')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: staff.id, request_id: with_.requestId, error_code: 'not_verified', outcome_code: 'removed' }),
+    ]);
+    // The same step with an ES256 key registers: nothing but the algorithm refused it.
+    const again = await use.beginKeyRegistration(pendingOf(await codeSignIn(staff.email, use)), context());
+    if ('kind' in again) {
+      throw new Error('expected options');
+    }
+    const es256 = new SoftAuthenticator(ORIGIN);
+    expect(await use.completeKeyRegistration(again.pending, es256.create(again.options), context())).toEqual({ kind: 'key_registered' });
+    expect(await keyRows(staff.id)).toEqual([{ digest: sha(es256.credentialId).toString('hex'), live: true }]);
+  });
+
   const LINE = 'configuration: the provider offers neither ES256 nor RS256 at key registration; the step is refused';
   const listing = (algorithms: readonly number[]) => {
     const real = provider.beginKeyRegistration.bind(provider);

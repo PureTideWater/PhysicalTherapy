@@ -77,6 +77,7 @@ import {
   PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM,
   PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM,
   PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM,
+  KEY_ALGORITHMS_NOT_OFFERED_ALARM,
   RELYING_PARTY_MISMATCH_ALARM,
   RESET_AND_ENROLMENT_COUNTS,
   RESET_REQUESTS_PER_USER,
@@ -226,6 +227,8 @@ export class Monitoring extends Construct {
   readonly providerSignOutNoSuchUserAlarm: cloudwatch.Alarm;
   /** The web's relying-party ID not the provider's: every hardware-key step refused (RELYING_PARTY_MISMATCH_ALARM; docs/adr/0095). */
   readonly relyingPartyMismatchAlarm: cloudwatch.Alarm;
+  /** The provider offering neither ES256 nor RS256: no hardware key can be registered (KEY_ALGORITHMS_NOT_OFFERED_ALARM; docs/adr/0095). */
+  readonly keyAlgorithmsNotOfferedAlarm: cloudwatch.Alarm;
   /** One alarm per reset or enrolment line counted (RESET_AND_ENROLMENT_COUNTS). */
   readonly resetAndEnrolmentAlarms: Readonly<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>>;
   /** Counts each account's reset requests by its user ID (PASSWORD_RESET_REQUESTED_MESSAGE). */
@@ -725,6 +728,24 @@ export class Monitoring extends Construct {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     this.relyingPartyMismatchAlarm.addAlarmAction(notify);
+
+    // The web's line when the provider lists neither registration algorithm, by its code, in the mismatch's pattern:
+    // it fails closed too, and until it is mended no hardware key is registered (the delta review, D2).
+    const keyAlgorithmsNotOffered = counted(
+      this.webLogGroup,
+      KEY_ALGORITHMS_NOT_OFFERED_ALARM.metricName,
+      { namespace: SIGN_IN_BURST_METRIC.namespace, metricName: KEY_ALGORITHMS_NOT_OFFERED_ALARM.metricName },
+      logs.FilterPattern.stringValue('$.error_code', '=', KEY_ALGORITHMS_NOT_OFFERED_ALARM.errorCode),
+    );
+    this.keyAlgorithmsNotOfferedAlarm = new cloudwatch.Alarm(this, KEY_ALGORITHMS_NOT_OFFERED_ALARM.metricName, {
+      alarmDescription: `No ${props.environmentName} hardware key can be registered: at key registration Cognito offers neither ES256 nor RS256, the only two algorithms the product registers a key under, so the web refuses the step and each person sees a plain refusal. Nothing is exposed: it fails closed, and keys already registered still sign in. Check the user pool's WebAuthn settings and what its registration options list, and restore one of the two; nothing in the web is changed to take another algorithm (docs/runbooks/incident-response.md, the hardware key section; docs/adr/0095).`,
+      metric: keyAlgorithmsNotOffered.metric({ statistic: cloudwatch.Stats.SUM, period: Duration.seconds(KEY_ALGORITHMS_NOT_OFFERED_ALARM.periodSeconds) }),
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      threshold: KEY_ALGORITHMS_NOT_OFFERED_ALARM.threshold,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    this.keyAlgorithmsNotOfferedAlarm.addAlarmAction(notify);
 
     const resetAndEnrolmentAlarms: Partial<Record<ResetAndEnrolmentMetricName, cloudwatch.Alarm>> = {};
     for (const count of RESET_AND_ENROLMENT_COUNTS) {

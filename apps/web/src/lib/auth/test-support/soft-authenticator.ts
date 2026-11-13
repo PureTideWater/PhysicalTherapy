@@ -3,8 +3,9 @@ import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } fr
 import type { AuthenticationResponseJSON, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON, RegistrationResponseJSON } from '../provider';
 
 /**
- * A software WebAuthn authenticator for tests: an ES256 (P-256) credential, "none" attestation, user
- * presence and user verification flags. It produces the same JSON a browser's
+ * A software WebAuthn authenticator for tests: an ES256 (P-256) credential, or an EdDSA (Ed25519) one
+ * for the refusal of an algorithm the product does not offer, "none" attestation, user presence and
+ * user verification flags. It produces the same JSON a browser's
  * navigator.credentials.create() and get() give @simplewebauthn/browser, so the local provider's
  * real verification runs against it. Tests only.
  */
@@ -59,8 +60,9 @@ export class SoftAuthenticator {
   constructor(
     private readonly origin: string,
     private readonly userVerified = true,
+    private readonly algorithm: 'ES256' | 'EdDSA' = 'ES256',
   ) {
-    const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const { privateKey, publicKey } = algorithm === 'EdDSA' ? generateKeyPairSync('ed25519') : generateKeyPairSync('ec', { namedCurve: 'P-256' });
     this.privateKey = privateKey;
     const jwk = publicKey.export({ format: 'jwk' });
     this.x = Buffer.from(jwk.x ?? '', 'base64url');
@@ -77,13 +79,22 @@ export class SoftAuthenticator {
 
   create(options: PublicKeyCredentialCreationOptionsJSON): RegistrationResponseJSON {
     const clientDataJSON = this.clientData('webauthn.create', options.challenge);
-    const coseKey = new Map<Cbor, Cbor>([
-      [1, 2],
-      [3, -7],
-      [-1, 1],
-      [-2, this.x],
-      [-3, this.y],
-    ]);
+    // COSE (RFC 9053): an OKP key (kty 1) on Ed25519 (crv 6) under EdDSA (-8) holds x only; EC2 (kty 2) on P-256 (crv 1) under ES256 (-7) holds x and y.
+    const coseKey =
+      this.algorithm === 'EdDSA'
+        ? new Map<Cbor, Cbor>([
+            [1, 1],
+            [3, -8],
+            [-1, 6],
+            [-2, this.x],
+          ])
+        : new Map<Cbor, Cbor>([
+            [1, 2],
+            [3, -7],
+            [-1, 1],
+            [-2, this.x],
+            [-3, this.y],
+          ]);
     const idLength = Buffer.alloc(2);
     idLength.writeUInt16BE(this.credentialId.length);
     const counter = Buffer.alloc(4);
@@ -111,7 +122,7 @@ export class SoftAuthenticator {
     const counter = Buffer.alloc(4);
     counter.writeUInt32BE(this.counter);
     const authenticatorData = Buffer.concat([sha256(options.rpId ?? ''), Buffer.from([this.flags()]), counter]);
-    const signature = sign('sha256', Buffer.concat([authenticatorData, sha256(clientDataJSON)]), this.privateKey);
+    const signature = sign(this.algorithm === 'EdDSA' ? null : 'sha256', Buffer.concat([authenticatorData, sha256(clientDataJSON)]), this.privateKey);
     return {
       id: b64(credentialId),
       rawId: b64(credentialId),

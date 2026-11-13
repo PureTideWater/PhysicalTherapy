@@ -386,23 +386,22 @@ export class SignInFlow {
   /**
    * One relying-party ID (docs/adr/0095): the pool's and the app's are two settings, and the app verifies every key's
    * response against its own. The provider's is read from the options of the first key step that carries one and
-   * compared once in this process; when it differs the difference is logged at error, once, and this and every later
-   * key step is refused, the later ones before the provider is asked. Without it each honest key would be refused as a
-   * wrong credential, with nothing to say why. Called with no argument by the steps that hold no options, and with the
-   * options' ID, absent or not, by the steps that hold them.
+   * compared once in this process; when it differs this and every later key step is refused, the later ones before the
+   * provider is asked, and every refused step is logged at error: the operator's alarm counts the line, and a line
+   * written once would let it return to OK while every key step is still refused (delta review D3). Without the check
+   * each honest key would be refused as a wrong credential, with nothing to say why. Called with the request's context
+   * alone by the steps that hold no options, and with the options' ID, absent or not, by the steps that hold them.
    */
-  private oneRelyingParty(options?: { readonly theirs: string | undefined }, context?: SignInContext): void {
+  private oneRelyingParty(context: SignInContext | undefined, options?: { readonly theirs: string | undefined }): void {
     if (this.relyingParty === 'unchecked' && options !== undefined) {
       // Options that name no ID leave the browser to use the origin's host (WebAuthn's default), so that is what is
       // compared: the check is settled by the first options either way (review A7 of the key registry).
       const theirs = options.theirs ?? new URL(this.deps.webauthn.origin).hostname;
       this.relyingParty = theirs === this.deps.webauthn.rpId ? 'same' : 'differs';
-      if (this.relyingParty === 'differs') {
-        // A constant message and code: the operator's alarm counts the code (review A6). No value of either setting.
-        this.deps.logger.error('configuration: the relying-party ID is not the provider’s; hardware-key steps are refused', { request_id: context?.requestId ?? null, error_code: 'RELYING_PARTY_MISMATCH' });
-      }
     }
     if (this.relyingParty === 'differs') {
+      // A constant message and code: the operator's alarm counts the code (review A6). No value of either setting.
+      this.deps.logger.error('configuration: the relying-party ID is not the provider’s; hardware-key steps are refused', { request_id: context?.requestId ?? null, error_code: 'RELYING_PARTY_MISMATCH' });
       throw new RelyingPartyMismatch();
     }
   }
@@ -864,7 +863,7 @@ export class SignInFlow {
 
   /** Hardware-key sign-in: the browser's request options. A locked account gets none. */
   async beginKey(email: string, context?: SignInContext): Promise<{ readonly options: PublicKeyCredentialRequestOptionsJSON; readonly pending: Pending } | FlowResult> {
-    this.oneRelyingParty();
+    this.oneRelyingParty(context);
     // The attempt's start, before the account is read and the provider asked (docs/adr/0093, D3).
     const began = await this.beganNow();
     const account = await this.account({ email });
@@ -873,7 +872,7 @@ export class SignInFlow {
     }
     return this.guarded<{ readonly options: PublicKeyCredentialRequestOptionsJSON; readonly pending: Pending } | FlowResult>(context, refused('client_credential'), async () => {
       const { options, challenge } = await this.deps.provider.beginKeySignIn(email);
-      this.oneRelyingParty({ theirs: options.rpId }, context);
+      this.oneRelyingParty(context, { theirs: options.rpId });
       return { options, pending: { step: 'key', email, challenge, began, assertion: options.challenge } };
     });
   }
@@ -885,7 +884,7 @@ export class SignInFlow {
    * stale one is refused in authenticated(), after the assertion.
    */
   async completeKey(pending: Pending, response: AuthenticationResponseJSON, context: SignInContext): Promise<FlowResult> {
-    this.oneRelyingParty();
+    this.oneRelyingParty(context);
     if (pending.step !== 'key' || pending.began === undefined || pending.assertion === undefined) {
       return refused('expired');
     }
@@ -958,7 +957,7 @@ export class SignInFlow {
   }
 
   async beginKeyRegistration(pending: Pending, context?: SignInContext): Promise<{ readonly options: PublicKeyCredentialCreationOptionsJSON; readonly pending: Pending } | FlowResult> {
-    this.oneRelyingParty();
+    this.oneRelyingParty(context);
     if (pending.step !== 'register_key') {
       return refused('expired');
     }
@@ -969,7 +968,7 @@ export class SignInFlow {
       return this.codeScreen(pending);
     }
     const { options, challenge } = await this.deps.provider.beginKeyRegistration(pending.grant);
-    this.oneRelyingParty({ theirs: options.rp.id }, context);
+    this.oneRelyingParty(context, { theirs: options.rp.id });
     // The browser is offered the product's two algorithms, in the product's order, whatever the provider listed
     // (ruling R2; KEY_REGISTRATION_ALGORITHMS). A provider that lists neither is a failure of the platform's, logged
     // by IDs; the grant stays with the step and lapses on its own.
@@ -987,7 +986,7 @@ export class SignInFlow {
   }
 
   async completeKeyRegistration(pending: Pending, response: RegistrationResponseJSON, context: SignInContext): Promise<FlowResult> {
-    this.oneRelyingParty();
+    this.oneRelyingParty(context);
     if (pending.step !== 'register_key' || pending.challenge === undefined || pending.creation === undefined) {
       return refused('expired');
     }

@@ -66,6 +66,7 @@ import {
   PROVIDER_SIGN_OUT_NO_SUCH_USER_ALARM,
   PROVIDER_SIGN_OUT_NOT_DELIVERED_ALARM,
   PROVIDER_SIGN_OUTS_NOT_RUNNING_ALARM,
+  KEY_ALGORITHMS_NOT_OFFERED_ALARM,
   RELYING_PARTY_MISMATCH_ALARM,
   PASSWORD_RESET_REQUESTED_MESSAGE,
   PASSWORD_RESET_SESSIONS_NOT_ENDED_MESSAGE,
@@ -337,8 +338,8 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
     // job's own run line, whose absence alarms (docs/adr/0095, D16). The user pool's message trigger (docs/adr/0081, the
     // code-email amendment): a message left to the pool's template, and the web's reset request answered after its floor.
     // The round-1 review of docs/adr/0095: the platform's failed sign-out tries (B1) and its "no such user" answers (B4),
-    // and the web's relying-party mismatch (A6).
-    expect(filters).toHaveLength(45);
+    // and the web's relying-party mismatch (A6). The delta review, D2: the provider offering neither registration algorithm.
+    expect(filters).toHaveLength(46);
     const alarms = [
       stack.monitoring.screeningHeartbeatAlarm,
       stack.monitoring.screeningTimeToEmailAlarm,
@@ -368,6 +369,7 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       stack.monitoring.providerSignOutAttemptsFailingAlarm,
       stack.monitoring.providerSignOutNoSuchUserAlarm,
       stack.monitoring.relyingPartyMismatchAlarm,
+      stack.monitoring.keyAlgorithmsNotOfferedAlarm,
       stack.monitoring.resetRequestsPerUserAlarm,
       stack.mailStreams.accountBounceWarningAlarm,
       stack.mailStreams.accountBounceHighAlarm,
@@ -771,6 +773,37 @@ describe.each(ENVIRONMENTS)('%s: worker heartbeat and operator alerts', (environ
       expect(words).toContain(`Cognito has answered three ${environment} provider sign-outs in fifteen minutes with no such user`);
       expect(words).toContain('a wrong pool ID turns every sign-out into this answer');
       expect(words).toContain("check the worker's pool ID against the stack's");
+      expect(words).toContain('docs/adr/0095');
+      expect(words.length).toBeLessThanOrEqual(1024);
+    });
+
+    // The delta review, D2: the same impact as the mismatch below for registration, and it paged nobody.
+    it('counts the web\'s "neither algorithm offered" line on the web log group, by its code, and alarms on the first', () => {
+      expect(KEY_ALGORITHMS_NOT_OFFERED_ALARM).toEqual({ metricName: 'KeyAlgorithmsNotOffered', errorCode: 'KEY_ALGORITHMS_NOT_OFFERED', threshold: 1, periodSeconds: 300 });
+      const { metricName, errorCode } = KEY_ALGORITHMS_NOT_OFFERED_ALARM;
+      expect(propertiesOf(filterFor(metricName, web))).toEqual({
+        LogGroupName: ref(logicalIdOf(stack, web)),
+        FilterPattern: `{ $.error_code = "${errorCode}" }`,
+        MetricTransformations: [{ MetricNamespace: 'TherapyPlatform/Web', MetricName: metricName, MetricValue: '1', Unit: 'Count' }],
+      });
+      const alarm = propertiesOf(resourceById(template, 'AWS::CloudWatch::Alarm', logicalIdOf(stack, stack.monitoring.keyAlgorithmsNotOfferedAlarm)));
+      expect(alarm).toMatchObject({
+        Namespace: 'TherapyPlatform/Web',
+        MetricName: metricName,
+        Statistic: 'Sum',
+        Period: 300,
+        EvaluationPeriods: 1,
+        ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+        Threshold: 1,
+        TreatMissingData: 'notBreaching',
+        AlarmActions: [topic],
+      });
+      expect(alarm.Dimensions).toBeUndefined();
+      expect(filters.filter(([, filter]) => JSON.stringify(propertiesOf(filter).MetricTransformations).includes(`"MetricName":"${metricName}"`))).toHaveLength(1);
+      const words = String(alarm.AlarmDescription);
+      expect(words).toContain(`No ${environment} hardware key can be registered`);
+      expect(words).toContain('offers neither ES256 nor RS256');
+      expect(words).toContain("Check the user pool's WebAuthn settings");
       expect(words).toContain('docs/adr/0095');
       expect(words.length).toBeLessThanOrEqual(1024);
     });

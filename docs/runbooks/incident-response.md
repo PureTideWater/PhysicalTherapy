@@ -371,6 +371,14 @@ key signs in, the console included, and each sees a plain refusal. It stays so u
 `APP_ORIGIN` and the pool's relying-party ID agree. Compare the three (the web task definition's two, and the user
 pool's), correct the wrong one in the stack's configuration, and deploy: mending it is a deploy
 (docs/runbooks/deploy-and-rollback.md). Nothing at the database or at Cognito is edited by hand to let anyone in.
+The line is written on every refused key step, so the alarm stays raised while the fault lasts and clears once it is
+mended.
+
+**The provider offering neither registration algorithm** (`KeyAlgorithmsNotOffered`: the web's line with `error_code`
+`KEY_ALGORITHMS_NOT_OFFERED`, the user ID and the request ID, in `/tp/<env>/web`; one pages). The pool's registration
+options list neither ES256 nor RS256, the only two the product registers a key under, so no hardware key can be
+registered and each person sees a plain refusal; it fails closed, and keys already registered still sign in. Check
+the user pool's WebAuthn settings and restore one of the two. The web is not changed to take another algorithm.
 
 **A key notice not delivered** (`KEY_NOTICE_UNDELIVERED`, on the platform group): the member was not told of a
 removal, an opening or a registration within 24 hours, or their address changed after the request. Tell them another
@@ -574,7 +582,7 @@ accounts, in a session as the operator role (`tp_operator`), which reads `audit_
    `PasswordResetNotDeliveredThrottled`, `PasswordResetRequestFailed`, `SecondFactorEnrolmentRefused`,
    `ClientCredentialRefused`, `ClientCredentialProbeRefused`, `PasswordResetRequestOverFloor`,
    `PasswordResetSessionsNotEnded`, `ProviderSignOutNotDelivered`, `ProviderSignOutsNotRunning`,
-   `ProviderSignOutAttemptsFailing`, `ProviderSignOutNoSuchUser`, `RelyingPartyMismatch`,
+   `ProviderSignOutAttemptsFailing`, `ProviderSignOutNoSuchUser`, `RelyingPartyMismatch`, `KeyAlgorithmsNotOffered`,
    `RemovedHardwareKeyUsed`, `SignInStepRefusedAfterReset`,
    `HardwareKeyRegisteredAcrossReset`, `PasswordResetOutcomeUnknown`, `SignInRefusedCrossedAccount`): each one raised
    that no ticket or incident record already explains gets one. For each `ProviderSignOutNotDelivered` of the week, confirm its sign-out

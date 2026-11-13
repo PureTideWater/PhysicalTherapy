@@ -127,6 +127,19 @@ export const RELYING_PARTY_MISMATCH_ALARM = {
 } as const;
 
 /**
+ * The provider offers neither algorithm the product registers a hardware key under, ES256 or RS256 (ruling R2;
+ * docs/adr/0095; the delta review, D2). The web refuses the registration step and logs a line at error with this code
+ * in `error_code` and the user's and the request's IDs only (apps/web/src/lib/auth/sign-in.ts). It fails closed, and
+ * no hardware key is registered until the pool's settings are mended: one alarms, on the **web** log group.
+ */
+export const KEY_ALGORITHMS_NOT_OFFERED_ALARM = {
+  metricName: 'KeyAlgorithmsNotOffered',
+  errorCode: 'KEY_ALGORITHMS_NOT_OFFERED',
+  threshold: 1,
+  periodSeconds: SECURITY_ALARM_PERIOD_SECONDS,
+} as const;
+
+/**
  * A removed hardware key used (docs/adr/0095): a sign-in answered with a key that two platform administrators removed
  * from the account. The web refuses it and logs the line at error with the user's ID and the request's ID only
  * (apps/web/src/lib/auth/sign-in.ts). Someone still holds the removed key: one alarms.
