@@ -27,7 +27,8 @@ proof), `w64/apply-texts.py` (exact old/new pairs; scratch copies only) and `w64
 **With the texts applied in a scratch copy: 58 passed, 2 failed:** the SGN-22 prefix case above, and "JOB-07 > gives up
 at 30 tries, and at 24 hours only a row that had its four tries", whose first five lines assert the rule ruling 3
 replaced; the next session rewords them with the migration (JOB-09 holds the new rule).
-**Not known:** the whole `pnpm test:db` on the merged tree. One run was started on 04a62fed and had not finished at
+**Added after hand-over: the whole `pnpm test:db` finished (started on 04a62fed, the two test files edited under it): 180 files; 10,612 passed, 1 skipped, 16 failed:** the 14 above, plus one case each in `domain-model/domain-model.db.test.ts` and `domain-model/function-files.db.test.ts`. Those two were not read; the likely cause is the stale domain model and generated function files after the merge, which the regeneration mends. Check them first.
+**Was not known at hand-over:** the whole `pnpm test:db` on the merged tree. One run was started on 04a62fed and had not finished at
 hand-over (its files were edited under it, so its counts would not be clean anyway). `pnpm typecheck` passed on
 04a62fed (24 projects) before the tests were added; `eslint` on the two test files is clean. The migration-order check
 was not run by name. Unit, e2e, golden: not run.
