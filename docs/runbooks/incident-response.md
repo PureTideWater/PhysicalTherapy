@@ -247,9 +247,10 @@ provider anything, and their two alarms are gone.
    `provider_sign_outs` sends it within about a minute and tries again after 1, 5, 15, then 60 minutes. The line is
    written for a sign-out that is late (`error_code` `LATE`: 15 minutes after it was queued, tried or not; or five
    tries, or four and none running) and again for one the job has given up (`GAVE_UP`: 30 tries, or 24 hours after
-   it was queued once it has had at least one try). A late one is still being tried; a given-up one is never tried
-   again. **A sign-out that was never tried is never given up**, whatever its age: after the job has been down, each
-   run tries the oldest first, and one a run does not reach stays `LATE` and is tried by a later run. `LATE` lines
+   it was queued once the provider has failed at least one try). A late one is still being tried; a given-up one is
+   never tried again. **A sign-out that was never tried is never given up**, whatever its age: after the job has been
+   down, each run tries the oldest first, and one a run does not reach stays `LATE` and is tried by a later run. A
+   sign-out still waiting a day after its `LATE` line is paged `LATE` again, every day until it is done or given up. `LATE` lines
    for sign-outs with no `provider sign-out attempt failed` line before them mean the job was not running or is
    behind: "The provider sign-out job not running", below.
 2. **What holds meanwhile.** The app's own sessions of the account ended and the account's mark moved when the cause
