@@ -10,6 +10,7 @@ import {
   type AuthenticationResponseJSON,
   ClientCredentialError,
   type FailureStage,
+  KEY_REGISTRATION_ALGORITHMS,
   type PasswordResetResult,
   type PublicKeyCredentialCreationOptionsJSON,
   type PublicKeyCredentialRequestOptionsJSON,
@@ -175,6 +176,16 @@ export const RELYING_PARTY_MISMATCH =
   'WEBAUTHN_RP_ID (unset: the host of APP_ORIGIN) is not the relying-party ID of the user pool (the stack’s application domain name): hardware-key steps are refused until the two are the same';
 
 /** The platform's failure, never the person's: thrown, so the request fails and nothing is counted against anyone. */
+export { KEY_REGISTRATION_ALGORITHMS };
+
+/** The provider's registration options list neither algorithm the product offers (KEY_REGISTRATION_ALGORITHMS): an unexpected failure, not the person's. */
+export class KeyAlgorithmsNotOffered extends Error {
+  constructor() {
+    super('the identity provider offers no signature algorithm the product registers a hardware key under');
+    this.name = 'KeyAlgorithmsNotOffered';
+  }
+}
+
 export class RelyingPartyMismatch extends Error {
   constructor() {
     super(RELYING_PARTY_MISMATCH);
@@ -236,6 +247,11 @@ export interface SignInDependencies {
   readonly logger: Logger;
   /** What the app's own check of a key's response expects: the relying party and the origin the browser signed for (docs/adr/0095). */
   readonly webauthn: { readonly rpId: string; readonly origin: string };
+  /**
+   * The key a registration code is digested under (registration-code.ts; review A3). The console's route that opens a
+   * registration digests under the same one: both take it from Services.registrationCodeKey (server/services.ts).
+   */
+  readonly registrationCodeKey: Uint8Array;
   /** The clock the reset request's floor is measured on, epoch ms (default Date.now). */
   readonly now?: () => number;
   /** How the reset request waits out its floor (default a timer). */
@@ -372,13 +388,18 @@ export class SignInFlow {
    * response against its own. The provider's is read from the options of the first key step that carries one and
    * compared once in this process; when it differs the difference is logged at error, once, and this and every later
    * key step is refused, the later ones before the provider is asked. Without it each honest key would be refused as a
-   * wrong credential, with nothing to say why. Called with no argument by the steps that hold no options.
+   * wrong credential, with nothing to say why. Called with no argument by the steps that hold no options, and with the
+   * options' ID, absent or not, by the steps that hold them.
    */
-  private oneRelyingParty(theirs?: string, context?: SignInContext): void {
-    if (this.relyingParty === 'unchecked' && theirs !== undefined) {
+  private oneRelyingParty(options?: { readonly theirs: string | undefined }, context?: SignInContext): void {
+    if (this.relyingParty === 'unchecked' && options !== undefined) {
+      // Options that name no ID leave the browser to use the origin's host (WebAuthn's default), so that is what is
+      // compared: the check is settled by the first options either way (review A7 of the key registry).
+      const theirs = options.theirs ?? new URL(this.deps.webauthn.origin).hostname;
       this.relyingParty = theirs === this.deps.webauthn.rpId ? 'same' : 'differs';
       if (this.relyingParty === 'differs') {
-        this.deps.logger.error('configuration: the relying-party ID is not the provider’s; hardware-key steps are refused', { request_id: context?.requestId ?? null });
+        // A constant message and code: the operator's alarm counts the code (review A6). No value of either setting.
+        this.deps.logger.error('configuration: the relying-party ID is not the provider’s; hardware-key steps are refused', { request_id: context?.requestId ?? null, error_code: 'RELYING_PARTY_MISMATCH' });
       }
     }
     if (this.relyingParty === 'differs') {
@@ -852,7 +873,7 @@ export class SignInFlow {
     }
     return this.guarded<{ readonly options: PublicKeyCredentialRequestOptionsJSON; readonly pending: Pending } | FlowResult>(context, refused('client_credential'), async () => {
       const { options, challenge } = await this.deps.provider.beginKeySignIn(email);
-      this.oneRelyingParty(options.rpId, context);
+      this.oneRelyingParty({ theirs: options.rpId }, context);
       return { options, pending: { step: 'key', email, challenge, began, assertion: options.challenge } };
     });
   }
@@ -885,12 +906,16 @@ export class SignInFlow {
   /**
    * Whether the account may register a key now (docs/adr/0095): `not_closed`, `open` (a usable opening, and the step's
    * code is its code) or `refused`. The database judges, under the account's lock, and counts a wrong code there.
+   * A step that holds no code is only asking whether one is needed: it is judged with no start, which the function
+   * answers (`not_closed` or `refused`) without counting a try, so reaching the code screen spends none of the five
+   * (review A2 of the key registry). The step's start is judged before this, by registrationStale().
    */
   private judgeRegistration(pending: Extract<Pending, { step: 'register_key' }>, context: SignInContext | undefined): Promise<'not_closed' | 'open' | 'refused'> {
+    const { code } = pending;
     return withActor(this.deps.pool, pending.userId, async (scope) => {
       const { rows } = await scope.client.query<{ answer: 'not_closed' | 'open' | 'refused' }>('SELECT hardware_key_registration_judge($1, $2, $3) AS answer', [
-        pending.code === undefined ? null : Buffer.from(pending.code, 'hex'),
-        pending.began === undefined ? null : new Date(pending.began),
+        code === undefined ? null : Buffer.from(code, 'hex'),
+        code === undefined || pending.began === undefined ? null : new Date(pending.began),
         context?.requestId ?? null,
       ]);
       return rows[0]?.answer ?? 'refused';
@@ -899,8 +924,8 @@ export class SignInFlow {
 
   /**
    * Whether the step must first be given the one-time code. A step already known to need one, and holding none, is
-   * answered without asking the database, so reaching the screen counts no try; every other step is judged, before
-   * the provider is asked for anything.
+   * answered without asking the database; every other step is judged, before the provider is asked for anything. A
+   * step with no code counts no try there (judgeRegistration); one that holds a code the opening does not is a guess.
    */
   private async codeNeeded(pending: Extract<Pending, { step: 'register_key' }>, context: SignInContext | undefined): Promise<boolean> {
     return (pending.codeRequired === true && pending.code === undefined) || (await this.judgeRegistration(pending, context)) === 'refused';
@@ -924,7 +949,7 @@ export class SignInFlow {
       return refused('expired');
     }
     const { code: _code, challenge: _challenge, creation: _creation, codeRequired: _codeRequired, ...rest } = pending;
-    const code = registrationCodeDigest(typed).toString('hex');
+    const code = registrationCodeDigest(this.deps.registrationCodeKey, typed).toString('hex');
     const answer = await this.judgeRegistration({ ...rest, code }, context);
     if (answer === 'refused') {
       return refused('registration_code');
@@ -944,8 +969,21 @@ export class SignInFlow {
       return this.codeScreen(pending);
     }
     const { options, challenge } = await this.deps.provider.beginKeyRegistration(pending.grant);
-    this.oneRelyingParty(options.rp.id, context);
-    return { options, pending: { ...pending, challenge, creation: options.challenge } };
+    this.oneRelyingParty({ theirs: options.rp.id }, context);
+    // The browser is offered the product's two algorithms, in the product's order, whatever the provider listed
+    // (ruling R2; KEY_REGISTRATION_ALGORITHMS). A provider that lists neither is a failure of the platform's, logged
+    // by IDs; the grant stays with the step and lapses on its own.
+    const offered = new Set(options.pubKeyCredParams.filter((each) => each.type === 'public-key').map((each) => each.alg));
+    const pubKeyCredParams = KEY_REGISTRATION_ALGORITHMS.filter((alg) => offered.has(alg)).map((alg) => ({ alg, type: 'public-key' as const }));
+    if (pubKeyCredParams.length === 0) {
+      this.deps.logger.error('configuration: the provider offers neither ES256 nor RS256 at key registration; the step is refused', {
+        user_id: pending.userId,
+        request_id: context?.requestId ?? null,
+        error_code: 'KEY_ALGORITHMS_NOT_OFFERED',
+      });
+      throw new KeyAlgorithmsNotOffered();
+    }
+    return { options: { ...options, pubKeyCredParams }, pending: { ...pending, challenge, creation: options.challenge } };
   }
 
   async completeKeyRegistration(pending: Pending, response: RegistrationResponseJSON, context: SignInContext): Promise<FlowResult> {
@@ -1070,6 +1108,8 @@ export class SignInFlow {
         expectedOrigin: this.deps.webauthn.origin,
         expectedRPID: this.deps.webauthn.rpId,
         requireUserVerification: KEY_USER_VERIFICATION_REQUIRED,
+        // A credential under any other algorithm is refused here, whatever the provider accepted (ruling R2).
+        supportedAlgorithmIDs: [...KEY_REGISTRATION_ALGORITHMS],
       });
       if (!verified.verified || verified.registrationInfo === undefined || verified.registrationInfo.credential.id !== response.id) {
         throw new KeyNotVerified();

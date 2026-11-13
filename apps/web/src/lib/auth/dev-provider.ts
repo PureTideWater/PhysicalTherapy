@@ -13,6 +13,7 @@ import {
 
 import type { DevCredentialStore, DevUserRecord } from './dev-store';
 import { DEFAULT_SCRYPT_COST, type ScryptCost, hashPassword, passwordProblems, verifyPassword } from './password';
+import { KEY_REGISTRATION_ALGORITHMS } from './provider';
 import type { AuthProvider, AuthStep, EnsuredUser, KeyChallenge, NewPasswordStep, PasswordResetResult, ProviderHardwareKey, TotpSetup } from './provider';
 import type { Sealer } from './seal';
 import { PASSWORD_RESET_CODE_SECONDS, PROVIDER_CHALLENGE_SECONDS, PROVIDER_GRANT_SECONDS } from './step-limits';
@@ -282,7 +283,7 @@ export class DevAuthProvider implements AuthProvider {
       // ES256 and RS256, the two the provider offers. The library's own list starts with ML-DSA-44, whose public key
       // (1,312 bytes before its COSE wrapping) is longer than the registry's hardware_key_public_key allows, so a
       // browser that holds it would register a key the registry then refuses (docs/adr/0095).
-      supportedAlgorithmIDs: [-7, -257],
+      supportedAlgorithmIDs: [...KEY_REGISTRATION_ALGORITHMS],
     });
     return { options, challenge: this.challenge({ sub: record.sub, step: 'register', webauthn: options.challenge }) };
   }

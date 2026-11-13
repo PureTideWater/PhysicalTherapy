@@ -20,6 +20,7 @@ import { CredentialProbe, PROBE_USERNAME } from '../auth/credential-probe';
 import { DevAuthProvider } from '../auth/dev-provider';
 import { FileDevStore } from '../auth/dev-store';
 import type { AuthProvider } from '../auth/provider';
+import { registrationCodeKey } from '../auth/registration-code';
 import { Sealer } from '../auth/seal';
 import { SignInFlow } from '../auth/sign-in';
 import { readBillingConfig } from '../billing/config';
@@ -56,6 +57,12 @@ export interface Services {
   readonly provider: AuthProvider;
   readonly keys: KeyProvider;
   readonly sealer: Sealer;
+  /**
+   * The key a hardware key's registration code is digested under (auth/registration-code.ts; review A3), derived once
+   * from the sealing key. The console's route that opens a registration and the sign-in flow that judges the typed
+   * code both digest under this one value, so the two cannot differ.
+   */
+  readonly registrationCodeKey: Buffer;
   readonly logger: Logger;
   readonly signIn: SignInFlow;
   readonly now: () => Date;
@@ -260,6 +267,7 @@ export function createServices(parts: ServiceParts): Services {
   const logger = parts.logger ?? createLogger();
   const documents = parts.documents ?? new DocumentStore(new LocalSealedBytes(path.join(tmpdir(), `tp-documents-${randomUUID()}`)));
   const billingPool = parts.billingPool ?? NO_BILLING_LOGIN;
+  const codeKey = registrationCodeKey(parts.sealer);
   return {
     origin: parts.origin,
     pool: parts.pool,
@@ -269,8 +277,9 @@ export function createServices(parts: ServiceParts): Services {
     provider: parts.provider,
     keys: parts.keys,
     sealer: parts.sealer,
+    registrationCodeKey: codeKey,
     logger,
-    signIn: new SignInFlow({ webauthn: { rpId: parts.rpId ?? new URL(parts.origin).hostname, origin: parts.origin }, pool: parts.pool, provider: parts.provider, logger, ...(parts.pace === undefined ? {} : { now: parts.pace.now, sleep: parts.pace.sleep }) }),
+    signIn: new SignInFlow({ registrationCodeKey: codeKey, webauthn: { rpId: parts.rpId ?? new URL(parts.origin).hostname, origin: parts.origin }, pool: parts.pool, provider: parts.provider, logger, ...(parts.pace === undefined ? {} : { now: parts.pace.now, sleep: parts.pace.sleep }) }),
     now: parts.now ?? (() => new Date()),
     uploads: parts.uploads ?? new LocalUploadTargets(parts.origin, documents, parts.sealer),
     queue: parts.queue ?? NO_QUEUE,

@@ -1280,7 +1280,7 @@ describe('SGN-27: the code screen of key registration after a removal (docs/adr/
     const open = async (): Promise<string> => {
       const code = newRegistrationCode();
       const session = await confirmer.session();
-      await withActor(app, confirmer.id, (scope) => scope.client.query('SELECT hardware_key_registration_open($1, $2, $3, $4)', [removal, session, registrationCodeDigest(code), requestId()]));
+      await withActor(app, confirmer.id, (scope) => scope.client.query('SELECT hardware_key_registration_open($1, $2, $3, $4)', [removal, session, registrationCodeDigest(services.registrationCodeKey, code), requestId()]));
       return code;
     };
     return { staff, removal, open };

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 import { type DatabaseClient, type DatabasePool, LocalKeyProvider, type ScopeClient, databaseClient, openPracticeCipher, openPool, readDatabaseUrl, withActor, withJobScope, withPracticeScope } from '@tp/db';
@@ -1284,7 +1284,17 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
     expect(data.redirect).toBeUndefined();
     expect(data.openUntil.getTime()).toBeGreaterThan(Date.now());
     expect(opened.events).toEqual(['hardware_key_registration_opened']);
-    expect((await removalOf(member.id))?.registration_code_sha256?.equals(registrationCodeDigest(data.registrationCode))).toBe(true);
+    expect((await removalOf(member.id))?.registration_code_sha256?.equals(registrationCodeDigest(services.registrationCodeKey, data.registrationCode))).toBe(true);
+    // Keyed (review A3): the stored digest is not the code's bare SHA-256, and the sign-in flow of the same services,
+    // which digests under the same key, takes the code the console's route opened with; another code it refuses.
+    expect((await removalOf(member.id))?.registration_code_sha256?.equals(createHash('sha256').update(data.registrationCode, 'utf8').digest())).toBe(false);
+    const typing = { step: 'register_key' as const, email: member.email, userId: member.id, grant: 'none', began: Date.now(), codeRequired: true as const };
+    const typed = { userAgent: 'Mozilla/5.0 (X11; Linux x86_64) Chrome/141.0', requestId: `test-${randomUUID()}` };
+    expect(await services.signIn.answerRegistrationCode(typing, 'ABCD EFGH', typed)).toEqual({ kind: 'refused', reason: 'registration_code' });
+    expect(await services.signIn.answerRegistrationCode(typing, data.registrationCode, typed)).toMatchObject({
+      kind: 'pending',
+      pending: { step: 'register_key', codeRequired: true, code: registrationCodeDigest(services.registrationCodeKey, data.registrationCode).toString('hex') },
+    });
     const audit = await owner.query('SELECT row_to_json(e)::text AS row FROM audit_event e WHERE request_id = $1', [opened.requestId]);
     expect(JSON.stringify([audit.rows, lines])).not.toContain(data.registrationCode);
 

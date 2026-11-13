@@ -62,7 +62,7 @@ export const requestKeyRemoval = platformRoute({
   permission: 'organization.manage',
   params: z.object({}),
   input: z.object({ organizationId: opaqueId, userId: opaqueId }),
-  audit: { action: 'hardware_key_removal_requested', objectType: 'hardware_key_removal', writtenBy: 'database' },
+  audit: { action: 'hardware_key_removal_requested', objectType: 'user', writtenBy: 'database' },
   handle: async ({ scope, input, request, actor }): Promise<MutationResult> => {
     const removal = await scope.client
       .query<{ id: string }>('SELECT hardware_key_removal_request($1, $2, $3) AS id', [input.userId, actor.sessionId, request.requestId])
@@ -82,7 +82,7 @@ export const confirmKeyRemoval = platformRoute({
   permission: 'organization.manage',
   params: z.object({}),
   input: removalInput,
-  audit: { action: 'hardware_key_removal_confirmed', objectType: 'hardware_key_removal', writtenBy: 'database' },
+  audit: { action: 'hardware_key_removal_confirmed', objectType: 'user', writtenBy: 'database' },
   handle: async ({ scope, input, request, actor }): Promise<MutationResult> => {
     await scope.client.query('SELECT * FROM hardware_key_removal_confirm($1, $2, $3)', [input.removalId, actor.sessionId, request.requestId]).catch(refused);
     return { objectId: input.removalId, redirect: redirectTo(input.organizationId) };
@@ -98,7 +98,7 @@ export const cancelKeyRemoval = platformRoute({
   permission: 'organization.manage',
   params: z.object({}),
   input: removalInput,
-  audit: { action: 'hardware_key_removal_cancelled', objectType: 'hardware_key_removal', writtenBy: 'database' },
+  audit: { action: 'hardware_key_removal_cancelled', objectType: 'user', writtenBy: 'database' },
   handle: async ({ scope, input, request, actor }): Promise<MutationResult> => {
     const cancelled = await scope.client
       .query<{ ok: boolean }>('SELECT hardware_key_removal_cancel($1, $2, $3) AS ok', [input.removalId, actor.sessionId, request.requestId])
@@ -135,11 +135,11 @@ export const openKeyRegistration = platformRoute({
   permission: 'organization.manage',
   params: z.object({}),
   input: removalInput,
-  audit: { action: 'hardware_key_registration_opened', objectType: 'hardware_key_removal', writtenBy: 'database' },
-  handle: async ({ scope, input, request, actor }): Promise<RegistrationOpened> => {
+  audit: { action: 'hardware_key_registration_opened', objectType: 'user', writtenBy: 'database' },
+  handle: async ({ scope, input, request, actor, services }): Promise<RegistrationOpened> => {
     const registrationCode = newRegistrationCode();
     const opened = await scope.client
-      .query<{ until: Date }>('SELECT hardware_key_registration_open($1, $2, $3, $4) AS until', [input.removalId, actor.sessionId, registrationCodeDigest(registrationCode), request.requestId])
+      .query<{ until: Date }>('SELECT hardware_key_registration_open($1, $2, $3, $4) AS until', [input.removalId, actor.sessionId, registrationCodeDigest(services.registrationCodeKey, registrationCode), request.requestId])
       .catch(refused);
     const openUntil = opened.rows[0]?.until;
     if (openUntil === undefined) {

@@ -242,3 +242,29 @@ describe('every registered route', () => {
     }
   });
 });
+
+/**
+ * An audit event the database writes (AuditSpec.writtenBy; review A8 of the key registry): the wrapper writes none for
+ * such a route, so a route that takes the flag by copy and paste would change records with no event and no failing
+ * check. The flag is held to these routes by ID, each with the action its function writes; the database reserves all
+ * four, so the application role cannot insert them (packages/db/src/hardening.db.test.ts holds that list against the
+ * policy; it exports none, so the four are pinned here). The object is the account the key belongs to, as the
+ * functions write it (`object_type = 'user'`). A new entry is a new function that writes its own event and a test
+ * that each act leaves exactly one (console-routes.db.test.ts).
+ */
+const WRITTEN_BY_THE_DATABASE: readonly (readonly [id: string, action: string, objectType: string])[] = [
+  ['console.cancel_key_removal', 'hardware_key_removal_cancelled', 'user'],
+  ['console.confirm_key_removal', 'hardware_key_removal_confirmed', 'user'],
+  ['console.open_key_registration', 'hardware_key_registration_opened', 'user'],
+  ['console.request_key_removal', 'hardware_key_removal_requested', 'user'],
+];
+
+describe('an audit event left to the database (AuditSpec.writtenBy)', () => {
+  it('is declared by the four key-registry routes only, each under the reserved action its function writes', () => {
+    const declared = [...new Map([...EXPORTED.values(), ...registry.ROUTES].map((route) => [route.id, route])).values()]
+      .filter((route) => route.audit?.writtenBy === 'database')
+      .map((route) => [route.id, route.audit?.action, route.audit?.objectType])
+      .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+    expect(declared).toEqual(WRITTEN_BY_THE_DATABASE);
+  });
+});

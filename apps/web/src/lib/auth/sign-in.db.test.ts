@@ -10,11 +10,11 @@ import { type CognitoClient, CognitoAuthProvider } from './cognito-provider';
 import { DevAuthProvider } from './dev-provider';
 import { MemoryDevStore } from './dev-store';
 import { hashPassword } from './password';
-import { newRegistrationCode, registrationCodeDigest } from './registration-code';
+import { newRegistrationCode, registrationCodeDigest, registrationCodeKey } from './registration-code';
 import { Sealer } from './seal';
 import { ClientSecret } from './secret-hash';
 import { listDevices, resolveSession } from './sessions';
-import { type FlowResult, type Pending, RELYING_PARTY_MISMATCH, RESET_REQUEST_FLOOR_MS, RelyingPartyMismatch, SignInFlow } from './sign-in';
+import { type FlowResult, KEY_REGISTRATION_ALGORITHMS, KeyAlgorithmsNotOffered, type Pending, RELYING_PARTY_MISMATCH, RESET_REQUEST_FLOOR_MS, RelyingPartyMismatch, SignInFlow } from './sign-in';
 import { SoftAuthenticator } from './test-support/soft-authenticator';
 import { totpCode } from './totp';
 
@@ -30,6 +30,8 @@ const PASSWORD = 'Synthetic-Pass-2026';
 const SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
 /** What the app's own check of a key's response expects: the provider twin's relying party (docs/adr/0095). */
 const WEBAUTHN = { rpId: 'localhost', origin: ORIGIN };
+/** The key the flow digests a registration code under (review A3); the console's route holds the same one in the product. */
+const CODE_KEY = registrationCodeKey(new Sealer(Buffer.alloc(32, 5)));
 
 let database: MigratedDatabase;
 let owner: DatabaseClient;
@@ -63,7 +65,7 @@ beforeAll(async () => {
     scryptCost: CHEAP,
     faults: { lostResetAnswer: () => lostAnswer, keyRemovalFails: () => keyRemovalFails },
   });
-  flow = new SignInFlow({ webauthn: WEBAUTHN, pool: app, provider, logger: createLogger({ sink: () => undefined }) });
+  flow = new SignInFlow({ registrationCodeKey: CODE_KEY, webauthn: WEBAUTHN, pool: app, provider, logger: createLogger({ sink: () => undefined }) });
 });
 
 afterAll(async () => {
@@ -331,7 +333,7 @@ function paced(pool: ScopePool<ScopeClient> = app): { readonly flow: SignInFlow;
     pace.at += ms;
     return Promise.resolve();
   };
-  return { flow: new SignInFlow({ webauthn: WEBAUTHN, pool, provider, logger, now: () => pace.at, sleep }), pace, lines };
+  return { flow: new SignInFlow({ registrationCodeKey: CODE_KEY, webauthn: WEBAUTHN, pool, provider, logger, now: () => pace.at, sleep }), pace, lines };
 }
 
 /** The structured log lines with this message. */
@@ -1848,7 +1850,7 @@ function credentialRefused(): { readonly flow: SignInFlow; readonly pace: Pace; 
     pace.at += ms;
     return Promise.resolve();
   };
-  return { flow: new SignInFlow({ webauthn: WEBAUTHN, pool: app, provider: refusing, logger: createLogger({ sink: (line) => lines.push(line) }), now: () => pace.at, sleep }), pace, lines, sent };
+  return { flow: new SignInFlow({ registrationCodeKey: CODE_KEY, webauthn: WEBAUTHN, pool: app, provider: refusing, logger: createLogger({ sink: (line) => lines.push(line) }), now: () => pace.at, sleep }), pace, lines, sent };
 }
 
 const CREDENTIAL_REFUSED = 'security event: client credential refused';
@@ -2015,7 +2017,7 @@ async function keysRemoved(target: string): Promise<{ readonly removal: string; 
 async function registrationOpened(removal: string, opener: Administrator): Promise<string> {
   const code = newRegistrationCode();
   const session = await opener.session();
-  await withActor(app, opener.id, (scope) => scope.client.query('SELECT hardware_key_registration_open($1, $2, $3, $4)', [removal, session, registrationCodeDigest(code), requestId()]));
+  await withActor(app, opener.id, (scope) => scope.client.query('SELECT hardware_key_registration_open($1, $2, $3, $4)', [removal, session, registrationCodeDigest(CODE_KEY, code), requestId()]));
   return code;
 }
 
@@ -2129,7 +2131,7 @@ describe('SGN-21: a key sign-in opens a session only for a live key of the regis
 
   it('SGN-27: a registration the provider accepts and the app’s own verification refuses records nothing, removes the key at the provider and says so by IDs', async () => {
     const lines: string[] = [];
-    const strict = new SignInFlow({ webauthn: { rpId: 'localhost', origin: 'https://another-origin.synthetic.test' }, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
+    const strict = new SignInFlow({ registrationCodeKey: CODE_KEY, webauthn: { rpId: 'localhost', origin: 'https://another-origin.synthetic.test' }, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
     const staff = await person({ internal: true });
     const key = new SoftAuthenticator(ORIGIN);
     const begun = await strict.beginKeyRegistration(pendingOf(await codeSignIn(staff.email, strict)), context());
@@ -2240,7 +2242,7 @@ describe('SGN-27: after a removal, registration is closed until an administrator
     if (step.step !== 'register_key') {
       throw new Error('expected the registration step');
     }
-    const forged: Pending = { ...step, codeRequired: undefined, code: registrationCodeDigest(newRegistrationCode()).toString('hex') };
+    const forged: Pending = { ...step, codeRequired: undefined, code: registrationCodeDigest(CODE_KEY, newRegistrationCode()).toString('hex') };
     const asks = vi.spyOn(provider, 'beginKeyRegistration');
     const completes = vi.spyOn(provider, 'completeKeyRegistration');
     expect(await flow.beginKeyRegistration(forged, context())).toMatchObject({ kind: 'pending', pending: { codeRequired: true } });
@@ -2250,6 +2252,39 @@ describe('SGN-27: after a removal, registration is closed until an administrator
     asks.mockRestore();
     completes.mockRestore();
     expect(await storedIds(staff.sub)).toHaveLength(1);
+  });
+});
+
+describe('SGN-27: reaching the code screen counts no try (review A2 of the key registry; docs/adr/0095)', () => {
+  const tries = async (removal: string): Promise<number | undefined> =>
+    (await owner.query<{ tries: number }>('SELECT registration_code_tries AS tries FROM hardware_key_removal WHERE id = $1', [removal])).rows[0]?.tries;
+
+  it('SGN-27: a step that does not yet know a code is needed reaches the code screen with no try counted, and a wrong typed code counts exactly one', async () => {
+    const { staff } = await staffWithKey();
+    const { removal, opener } = await keysRemoved(staff.id);
+    await pastTheMark();
+    await registrationOpened(removal, opener);
+    const signedIn = pendingOf(await codeSignIn(staff.email));
+    if (signedIn.step !== 'register_key') {
+      throw new Error('expected the registration step');
+    }
+    // The step as it is sealed when the app's read found no key row (a removal of no keys closes too): no codeRequired.
+    const { codeRequired: _known, ...step } = signedIn;
+    const asks = vi.spyOn(provider, 'beginKeyRegistration');
+    const screen = await flow.beginKeyRegistration(step, context());
+    expect(screen).toMatchObject({ kind: 'pending', pending: { step: 'register_key', codeRequired: true } });
+    expect(await tries(removal)).toBe(0);
+    // Asked again, and at a completion with no code: still none.
+    expect(await flow.beginKeyRegistration(step, context())).toMatchObject({ kind: 'pending', pending: { codeRequired: true } });
+    expect(await flow.completeKeyRegistration({ ...step, challenge: 'x', creation: 'x' }, new SoftAuthenticator(ORIGIN).create({ challenge: 'eA', rp: { name: 'Test', id: 'localhost' }, user: { id: 'eA', name: 'x', displayName: 'x' }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }] }), context())).toMatchObject({ kind: 'pending', pending: { codeRequired: true } });
+    expect(await tries(removal)).toBe(0);
+    expect(asks).not.toHaveBeenCalled();
+    asks.mockRestore();
+    expect(await flow.answerRegistrationCode(pendingOf(screen as FlowResult), newRegistrationCode(), context())).toEqual({ kind: 'refused', reason: 'registration_code' });
+    expect(await tries(removal)).toBe(1);
+    // The sign-in after the refusal reaches the screen again: the one wrong code is the one try.
+    expect(await flow.beginKeyRegistration(step, context())).toMatchObject({ kind: 'pending', pending: { codeRequired: true } });
+    expect(await tries(removal)).toBe(1);
   });
 });
 
@@ -2309,7 +2344,7 @@ describe('one relying-party ID: the web refuses every hardware-key step when the
 
   function differing() {
     const lines: string[] = [];
-    const use = new SignInFlow({ webauthn: { rpId: OURS, origin: ORIGIN }, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
+    const use = new SignInFlow({ registrationCodeKey: CODE_KEY, webauthn: { rpId: OURS, origin: ORIGIN }, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
     const logged = () => lines.map((line) => JSON.parse(line) as Record<string, unknown>).filter((entry) => entry.msg === LINE);
     return { use, logged };
   }
@@ -2357,12 +2392,93 @@ describe('one relying-party ID: the web refuses every hardware-key step when the
     expect(await keyRows(staff.id)).toEqual([]);
   });
 
+  it('settles the check when the provider’s options carry no ID: the browser then uses the origin’s host, and that is compared with the app’s (review A7)', async () => {
+    const { staff } = await staffWithKey();
+    const { use, logged } = differing();
+    const real = provider.beginKeySignIn.bind(provider);
+    const asked = vi.spyOn(provider, 'beginKeySignIn').mockImplementation(async (email) => {
+      const { options, challenge } = await real(email);
+      const { rpId: _theirs, ...rest } = options;
+      return { options: rest, challenge };
+    });
+    try {
+      // The app's ID is not the origin's host (localhost), which is what a browser uses for options that name none.
+      expect(await refusal(use.beginKey(staff.email, context()))).toBeInstanceOf(RelyingPartyMismatch);
+      expect(logged()).toEqual([expect.objectContaining({ level: 'error', error_code: 'RELYING_PARTY_MISMATCH', request_id: expect.any(String) })]);
+      // An app whose ID is the origin's host goes on, and writes no line.
+      const lines: string[] = [];
+      const same = new SignInFlow({ registrationCodeKey: CODE_KEY, webauthn: WEBAUTHN, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
+      expect(await same.beginKey(staff.email, context())).toMatchObject({ pending: { step: 'key' } });
+      expect(lines.filter((line) => line.includes('relying-party'))).toEqual([]);
+    } finally {
+      asked.mockRestore();
+    }
+  });
+
+  it('writes the line the alarm counts (review A6): a constant message, the code RELYING_PARTY_MISMATCH and the request’s ID, no setting’s value', async () => {
+    const { staff } = await staffWithKey();
+    const { use, logged } = differing();
+    const with_ = context();
+    expect(await refusal(use.beginKey(staff.email, with_))).toBeInstanceOf(RelyingPartyMismatch);
+    const [line, ...more] = logged();
+    expect(more).toEqual([]);
+    expect(line).toMatchObject({ level: 'error', msg: LINE, error_code: 'RELYING_PARTY_MISMATCH', request_id: with_.requestId });
+    expect(Object.keys(line ?? {}).filter((field) => !['level', 'msg', 'time', 'ts', 'at', 'service', 'error_code', 'request_id'].includes(field))).toEqual([]);
+    expect(JSON.stringify(line)).not.toContain(OURS);
+    expect(JSON.stringify(line)).not.toContain(staff.email);
+  });
+
   it('compares once: a flow whose ID is the provider’s goes on, and writes no line', async () => {
     const lines: string[] = [];
-    const use = new SignInFlow({ webauthn: WEBAUTHN, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
+    const use = new SignInFlow({ registrationCodeKey: CODE_KEY, webauthn: WEBAUTHN, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
     const { staff, key } = await staffWithKey();
     expect((await keySignIn(staff.email, key, use)).kind).toBe('signed_in');
     expect((await keySignIn(staff.email, key, use)).kind).toBe('signed_in');
     expect(lines.filter((line) => line.includes('relying-party'))).toEqual([]);
+  });
+});
+
+describe('key registration offers ES256 and RS256 only, whatever the provider lists (ruling R2; docs/adr/0095)', () => {
+  const LINE = 'configuration: the provider offers neither ES256 nor RS256 at key registration; the step is refused';
+  const listing = (algorithms: readonly number[]) => {
+    const real = provider.beginKeyRegistration.bind(provider);
+    return vi.spyOn(provider, 'beginKeyRegistration').mockImplementation(async (grant) => {
+      const begun = await real(grant);
+      return { ...begun, options: { ...begun.options, pubKeyCredParams: algorithms.map((alg) => ({ alg, type: 'public-key' as const })) } };
+    });
+  };
+  const registering = async (use: SignInFlow, staff: { email: string }) => pendingOf(await use.answerTotp(pendingOf(await use.start(staff.email, PASSWORD, context())), nextCode(), context()));
+
+  it('sends the browser the two algorithms only, in the product’s order, and a key registers under them', async () => {
+    expect(KEY_REGISTRATION_ALGORITHMS).toEqual([-7, -257]);
+    const staff = await person({ internal: true });
+    const step = await registering(flow, staff);
+    for (const listed of [[-48, -8, -7, -257], [-257, -48, -7, -8]]) {
+      const asked = listing(listed);
+      const begun = await flow.beginKeyRegistration(step, context()).finally(() => asked.mockRestore());
+      if ('kind' in begun) {
+        throw new Error('expected options');
+      }
+      expect(begun.options.pubKeyCredParams).toEqual([{ alg: -7, type: 'public-key' }, { alg: -257, type: 'public-key' }]);
+    }
+    const asked = listing([-48, -8, -7, -257]);
+    const begun = await flow.beginKeyRegistration(step, context()).finally(() => asked.mockRestore());
+    if ('kind' in begun) {
+      throw new Error('expected options');
+    }
+    expect(await flow.completeKeyRegistration(begun.pending, new SoftAuthenticator(ORIGIN).create(begun.options), context())).toEqual({ kind: 'key_registered' });
+  });
+
+  it('refuses the step when the provider lists neither, by a line of IDs only', async () => {
+    const lines: string[] = [];
+    const use = new SignInFlow({ registrationCodeKey: CODE_KEY, webauthn: WEBAUTHN, pool: app, provider, logger: createLogger({ sink: (line) => lines.push(line) }) });
+    const staff = await person({ internal: true });
+    const step = await registering(use, staff);
+    const with_ = context();
+    const asked = listing([-48, -8]);
+    const answer = await use.beginKeyRegistration(step, with_).then(() => 'answered', (error: unknown) => error).finally(() => asked.mockRestore());
+    expect(answer).toBeInstanceOf(KeyAlgorithmsNotOffered);
+    expect(logged(lines, LINE)).toEqual([expect.objectContaining({ level: 'error', user_id: staff.id, request_id: with_.requestId, error_code: 'KEY_ALGORITHMS_NOT_OFFERED' })]);
+    expect(JSON.stringify(logged(lines, LINE))).not.toContain(staff.email);
   });
 });

@@ -106,6 +106,16 @@ export interface ProviderHardwareKey {
   readonly createdAt: Date | undefined;
 }
 
+/**
+ * The signature algorithms a hardware key may register under, in the order the browser is given them: ES256 (-7) and
+ * RS256 (-257), by their COSE identifiers (docs/adr/0095; the orchestrator's ruling R2 on Queues item 37). The product
+ * offers these two whatever an identity provider lists: the sign-in flow sends the browser only these and its own
+ * verification of a registration refuses any other, and the local provider offers the same two. Others
+ * are left out because their public keys do not fit the registry (ML-DSA-44's is 1,312 bytes before its COSE wrapping,
+ * more than hardware_key_public_key allows) or no supported provider offers them. Declared once, here.
+ */
+export const KEY_REGISTRATION_ALGORITHMS = [-7, -257] as const;
+
 export interface AuthProvider {
   readonly name: 'cognito' | 'dev';
   signIn(email: string, password: string): Promise<AuthStep>;
