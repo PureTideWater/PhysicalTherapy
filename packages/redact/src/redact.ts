@@ -1322,6 +1322,134 @@ function birthFormsIn(normal: string, subject: Subject): (range: Range) => boole
 /** A month's word anywhere: only then can a name lie in a written date of birth. */
 const MONTH_IN = new RegExp(MONTH_WORD, 'iu');
 
+// ---------------------------------------------------------------------------------------------------
+// One pass over the call's identifiers (Queues item 39, MOD-26; docs/adr/0054)
+//
+// Every match of a form's writing spells the form's compact, its letters and digits in order and no others, from where
+// it starts (lemma 1: no gap matches a letter or digit a compact keeps, the tests' (c)). So one pass of an automaton of
+// the forms' compacts over the view's letters and digits finds every place a form can match, and the form's own pattern
+// is run, sticky, only there: the first place at or after lastIndex where it matches is the place a global scan finds
+// (lemma 2). A form whose compact stands nowhere is not run at all. Nothing here is charged: every work(...) is the
+// base's, charge for charge (lemma 3). Nothing is kept past the call that asks.
+
+/** More places than this and a form is read by one global scan, as the base read it: cheaper than a sticky run at each. */
+const DENSE_PLACES = 16;
+
+/** A letter or digit a compact keeps (compactFolded): an APOSTROPHE_LETTER is no such letter. */
+const KEPT_CODE_POINT = /(?![ʼʹˊ])[\p{L}\p{N}]/gu;
+
+/** For each word that stands contiguously in the text's kept letters and digits, every index of the text where it starts, in order. */
+function placesOf(text: string, words: readonly string[]): Map<string, number[]> {
+  const places = new Map<string, number[]>();
+  const distinct = [...new Set(words)];
+  // The automaton (Aho-Corasick): a trie of the words by code point, each node's longest proper suffix that is a node
+  // (fail), and the nearest such suffix that ends a word (output).
+  const next: Map<string, number>[] = [new Map<string, number>()];
+  const ends: number[] = [-1];
+  const lengths = distinct.map((word, w) => {
+    let node = 0;
+    let length = 0;
+    for (const codePoint of word) {
+      let to = next[node]?.get(codePoint);
+      if (to === undefined) {
+        to = next.length;
+        next.push(new Map());
+        ends.push(-1);
+        next[node]?.set(codePoint, to);
+      }
+      node = to;
+      length += 1;
+    }
+    if (node !== 0) ends[node] = w;
+    return length;
+  });
+  const fail = new Array<number>(next.length).fill(0);
+  const output = new Array<number>(next.length).fill(-1);
+  const queue = [...(next[0]?.values() ?? [])];
+  for (let head = 0; head < queue.length; head += 1) {
+    const node = queue[head] ?? 0;
+    for (const [codePoint, to] of next[node] ?? []) {
+      let back = fail[node] ?? 0;
+      while (back !== 0 && !(next[back]?.has(codePoint) ?? false)) back = fail[back] ?? 0;
+      const suffix = node === 0 ? 0 : (next[back]?.get(codePoint) ?? 0);
+      fail[to] = suffix;
+      output[to] = (ends[suffix] ?? -1) >= 0 ? suffix : (output[suffix] ?? -1);
+      queue.push(to);
+    }
+  }
+  // One pass over the text's kept code points, each with the index where it starts.
+  const at: number[] = [];
+  let node = 0;
+  KEPT_CODE_POINT.lastIndex = 0;
+  for (let kept = KEPT_CODE_POINT.exec(text); kept !== null; kept = KEPT_CODE_POINT.exec(text)) {
+    const codePoint = kept[0];
+    at.push(kept.index);
+    while (node !== 0 && !(next[node]?.has(codePoint) ?? false)) node = fail[node] ?? 0;
+    node = next[node]?.get(codePoint) ?? 0;
+    for (let found = (ends[node] ?? -1) >= 0 ? node : (output[node] ?? -1); found >= 0; found = output[found] ?? -1) {
+      const w = ends[found] ?? -1;
+      const word = distinct[w] ?? '';
+      const start = at[at.length - (lengths[w] ?? 0)] ?? 0;
+      const list = places.get(word);
+      if (list === undefined) places.set(word, [start]);
+      else list.push(start);
+    }
+  }
+  return places;
+}
+
+/** What a reader asks of a form's pattern: a global RegExp's exec and lastIndex. */
+interface Search {
+  lastIndex: number;
+  exec(text: string): RegExpExecArray | null;
+}
+
+/**
+ * A form's writing (`source`, global flags) as a search over the view whose places are `places`: the same matches, in
+ * the same order, as `new RegExp(source, flags)` run from any lastIndex (lemma 2). Searched whole, as the base did, where
+ * the form's compact is not all kept letters and digits (lemma 1(b)) or stands at more than DENSE_PLACES places.
+ */
+function searchOf(source: string, flags: string, compact: string, places: ReadonlyMap<string, readonly number[]>): Search {
+  if (compactFolded(compact) !== compact) {
+    return new RegExp(source, flags);
+  }
+  const starts = places.get(compact);
+  if (starts === undefined) {
+    // What never matches: the form's compact stands nowhere in the view (lemma 1).
+    return { lastIndex: 0, exec: () => null };
+  }
+  if (starts.length > DENSE_PLACES) {
+    return new RegExp(source, flags);
+  }
+  let sticky: RegExp | null = null;
+  return {
+    lastIndex: 0,
+    exec(text: string): RegExpExecArray | null {
+      let low = 0;
+      let high = starts.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if ((starts[middle] ?? 0) < this.lastIndex) low = middle + 1;
+        else high = middle;
+      }
+      for (let i = low; i < starts.length; i += 1) {
+        sticky ??= new RegExp(source, `${flags.replace('g', '')}y`);
+        sticky.lastIndex = starts[i] ?? 0;
+        const match = sticky.exec(text);
+        if (match !== null) {
+          this.lastIndex = match.index + match[0].length;
+          return match;
+        }
+      }
+      this.lastIndex = 0;
+      return null;
+    },
+  };
+}
+
+/** Whether a form's whole writing can stand anywhere in the view whose places are `places` (lemma 1): the `.some` sites. */
+const mayStand = (form: Form, places: ReadonlyMap<string, readonly number[]>): boolean => compactFolded(form.compact) !== form.compact || places.has(form.compact);
+
 function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] {
   // Each form (a claim number, a member ID, a name, each of its words and parts) is read for over the whole letter.
   const forms = formsOf(subject, wider);
@@ -1331,8 +1459,9 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
   const found: Found[] = births.map((range) => ({ ...range, kind: 'birth' as const, claim: 0 }));
   const view = viewOf(normal, 'join');
   const names: Range[] = [];
+  const places = placesOf(view.text, forms.map((form) => form.compact));
   for (const form of forms) {
-    const pattern = new RegExp(form.pattern.source, form.pattern.flags);
+    const pattern = searchOf(form.pattern.source, form.pattern.flags, form.compact, places);
     for (let match = pattern.exec(view.text); match !== null; match = pattern.exec(view.text)) {
       const start = match.index;
       const end = start + match[0].length;
@@ -1362,7 +1491,7 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
     if (form.labeled !== null) {
       // After an identifier label, digits joined over "." or "/" are the number too (never an amount: isAmount), and a
       // whole written calendar date only after a label of the number's kind (labelFor).
-      const labeled = new RegExp(form.labeled.source, form.labeled.flags);
+      const labeled = searchOf(form.labeled.source, form.labeled.flags, form.compact, places);
       for (let match = labeled.exec(view.text); match !== null; match = labeled.exec(view.text)) {
         const range = inNormal(view, match.index, match.index + match[0].length);
         const fits = labelFor(view, normal, match.index, form.kind) || (anyLabelAt(view.text, match.index) && !writtenAsDate(normal, range));
@@ -1380,7 +1509,7 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
         if (source === null) {
           continue;
         }
-        const glued = new RegExp(`(?<=\\p{L})${source.source.slice(BEFORE.length)}`, source.flags);
+        const glued = searchOf(`(?<=\\p{L})${source.source.slice(BEFORE.length)}`, source.flags, form.compact, places);
         for (let match = glued.exec(view.text); match !== null; match = glued.exec(view.text)) {
           const range = inNormal(view, match.index, match.index + match[0].length);
           const label = gluedLabelBefore(view.text, match.index, (index) => writtenAt(view, normal, index));
@@ -4064,22 +4193,26 @@ function digitsGluedToLetter(normal: string, subject: Subject, hidden?: (range: 
       return false;
     }
     const read = () => {
-      const cores = new Set(
-        [...formsOf(subject), ...formsOf(subject, true)]
-          .filter((form) => (form.kind === 'claim' || form.kind === 'member') && form.digitsOnly && [...form.compact].length >= WIDER_NUMBER_FLOOR)
-          .flatMap(gluedCoresOf),
-      );
+      const numbers = [...formsOf(subject), ...formsOf(subject, true)].filter((form) => (form.kind === 'claim' || form.kind === 'member') && form.digitsOnly && [...form.compact].length >= WIDER_NUMBER_FLOOR);
+      const cores = new Set(numbers.flatMap(gluedCoresOf));
       if (cores.size === 0) {
         return false;
       }
       work(WORK.formCharacter * cores.size * normal.length);
       const view = viewOf(normal, 'join');
       const { text } = view;
+      // A core is a form's whole writing, so it stands only where the form's compact does (lemma 1): one that stands
+      // nowhere is not asked, and every answer is the one asking it gives. The charge above is for every core.
+      const places = placesOf(text, numbers.map((form) => form.compact));
+      const standing = new Set(numbers.filter((form) => mayStand(form, places)).flatMap(gluedCoresOf));
       if (hidden === undefined) {
-        return [...cores].some((core) => new RegExp(`(?<=\\p{L})(?:${core})|(?:${core})(?=\\p{L})`, 'u').test(text));
+        return [...cores].some((core) => standing.has(core) && new RegExp(`(?<=\\p{L})(?:${core})|(?:${core})(?=\\p{L})`, 'u').test(text));
       }
       // Every place the number stands so, each asked for by where it is written: one that is not hidden answers.
       return [...cores].some((core) => {
+        if (!standing.has(core)) {
+          return false;
+        }
         const glued = new RegExp(`(?<=\\p{L})(?:${core})|(?:${core})(?=\\p{L})`, 'gu');
         for (let match = glued.exec(text); match !== null; match = glued.exec(text)) {
           if (!hidden(inNormal(view, match.index, match.index + match[0].length))) {
@@ -4877,6 +5010,7 @@ function numberGlued(normal: string, subject: Subject): boolean {
     return false;
   }
   const numbers = new Set(forms.map((form) => form.compact));
+  const places = placesOf(text, forms.map((form) => form.compact));
   const parts = [...new Set(subject.names.flatMap((name) => nameWords(name).flat()))].filter((part) => [...part].length >= 2);
   const marked = text.includes(NAME_MARK) || text.includes(BARRIER);
   const isLetter = (character: string | undefined) => character !== undefined && /\p{L}/u.test(character);
@@ -4885,7 +5019,8 @@ function numberGlued(normal: string, subject: Subject): boolean {
     const core = coreOf(form);
     const lettersOnly = !/\p{N}/u.test(form.compact);
     const glued = (source: string) => new RegExp(lettersOnly ? `(?<=\\p{N})(?:${source})|(?:${source})(?=\\p{N})` : source, 'u').test(text);
-    if (glued(core)) {
+    // The whole writing stands only where the compact does (lemma 1): where it stands nowhere, it is not asked.
+    if (mayStand(form, places) && glued(core)) {
       return true;
     }
     if (!marked) {
@@ -5792,7 +5927,7 @@ export const matchingForTests = {
   /** Whether a code point is one a form's compact keeps (compactFolded): a letter or a digit, an APOSTROPHE_LETTER not. */
   kept: (codePoint: string): boolean => codePoint !== '' && compactFolded(codePoint) === codePoint,
   /** For each word that stands contiguously in the text's letters and digits, every index of the text where it starts, in order. */
-  placesOf: (_text: string, _words: readonly string[]): Map<string, number[]> => new Map(),
+  placesOf,
   /** The source a form keeps for the pattern of `text` (flags 'gu'): V8's own. */
   sourceOf: (text: string): string => text,
   /** A subject's forms on a fold, the first reading's and the wider reading's, built fresh. */
