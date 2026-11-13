@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 
-import { readDatabaseUrl, withJobScope } from '@tp/db';
-import { asOwner } from '@tp/db/testing';
+import { MIGRATIONS_DIR, databaseClient, migrate, readDatabaseUrl, readMigrations, withJobScope } from '@tp/db';
+import { asOwner, createScratchDatabase } from '@tp/db/testing';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { acceptRun, createRerun } from '../price/rerun';
@@ -11,12 +14,14 @@ import { CAS_AS_OF, CAS_RUNS, type CasRun } from '../triage/test-support/cas-run
 import { TriageWorld } from '../triage/test-support/triage-world';
 import type { Scope } from './ledger';
 import { NO_BILLING, NO_TIME_LOG, OPEN_CASES_ACTIONABLE, generateRoiStatement } from './statements';
+import type { JobContext } from '../jobs/handlers';
 import { attemptErrorCode } from '../worker';
+import { reconcileHandler } from './job';
 import { STATEMENT_COLUMNS, storedStatement } from './print';
 import { generateFourKeyStatement } from './test-support/four-key-writer';
 import { LedgerWorld } from './test-support/ledger-world';
 import { type OpenCasePathRow, PLAIN_PATH_OPEN_CASES } from './test-support/plain-path-writer';
-import { FOUR_KEYS, PREVIOUS_STATEMENT_COLUMNS, printWatched, recoupedLedSix, statementTwins } from './test-support/statement-twins';
+import { EXACT_SCALARS, FOUR_KEYS, PREVIOUS_STATEMENT_COLUMNS, printWatched, recoupedLedSix, statementTwins } from './test-support/statement-twins';
 
 /**
  * An ROI statement lists the priced lines its actionable figure counted (schema PR 5; docs/adr/0082 Decision 7; test
@@ -79,7 +84,7 @@ interface StoredRow {
   readonly rest: Record<string, unknown>;
 }
 
-const STORED = `SELECT s.id, s.actionable_open_cents::text, s.links, to_jsonb(s) - 'id' - 'generated_at' - 'created_at' - 'updated_at' AS rest FROM roi_statement s WHERE s.id = $1`;
+const STORED = `SELECT s.id, s.actionable_open_cents::text, s.links, ${EXACT_SCALARS("to_jsonb(s) - 'id' - 'generated_at' - 'created_at' - 'updated_at'")} AS rest FROM roi_statement s WHERE s.id = $1`;
 
 async function storedRow(scope: Scope, statementId: string | undefined): Promise<StoredRow> {
   const row = (await scope.client.query<StoredRow>(STORED, [statementId])).rows[0];
@@ -425,7 +430,7 @@ describe('the writer lists the lines its figure counted (T5, T11)', () => {
     await check();
     await led.load(practice, 'LED-06/recoupment.835');
     await led.reconcile(practice);
-    expect((await check()).rest.recovered_cents).not.toBe(0);
+    expect((await check()).rest.recovered_cents).not.toBe('0');
     // The case's line is listed while it is actionable, not once it has moved on to payer approved or recovered, and
     // again once the recoupment has reopened it.
     expect(stages).toEqual(['actionable', 'payer_approved', 'recovered', 'actionable']);
@@ -543,9 +548,9 @@ describe('the database checks the figure against the lines listed (T6, T7, T8)',
     };
     const generate = () => inJob(practice, (scope) => generateRoiStatement(scope, { ...quarter, requestId: `test-${randomUUID()}` }, SOURCES));
     const yesterday = await generate();
-    const all = () => owner<{ row: Record<string, unknown> }>(practice, 'SELECT to_jsonb(s) AS row FROM roi_statement s WHERE s.practice_id = $1 ORDER BY s.created_at, s.id', [practice.practiceId]);
+    const all = () => owner<{ row: Record<string, unknown> }>(practice, `SELECT ${EXACT_SCALARS('to_jsonb(s)')} AS row FROM roi_statement s WHERE s.practice_id = $1 ORDER BY s.created_at, s.id`, [practice.practiceId]);
     const before = await all();
-    expect(before.map(({ row }) => [row.id, row.actionable_open_cents, (row.links as Record<string, unknown>).actionable_open_lines])).toEqual([[yesterday?.statementId, 9000, lineIds]]);
+    expect(before.map(({ row }) => [row.id, row.actionable_open_cents, (row.links as Record<string, unknown>).actionable_open_lines])).toEqual([[yesterday?.statementId, '9000', lineIds]]);
     // The same day again: the fresh statement passes the check before the conflict is found, and nothing is stored.
     expect(await generate()).toBeNull();
     expect(await all()).toEqual(before);
@@ -778,4 +783,98 @@ describe('the readers and the PDF record (T9, T10, T12), and what a refusal show
     expect(wrong.message).not.toMatch(/[0-9]/);
     expect(attemptErrorCode(wrong)).toBe('DB_23514');
   }, 240_000);
+});
+
+/**
+ * The new image against a database that has not had the migration (T10's last clause, held here by running the new
+ * writer, not by what the old function answers): a database at the head before 20261115090000, which a deploy in the
+ * wrong order would leave. The world is a fresh one whose two functions are put back to the previous head's text, taken
+ * from a database migrated only to that head (the migration changes nothing else: its own test holds it).
+ */
+describe('the new writer against a database at the previous head (schema PR 5, the deploy order)', () => {
+  const MIGRATION_SUFFIX = '_roi_statement_actionable_lines.sql';
+  const FUNCTIONS = ['roi_links_valid(jsonb)', 'roi_statement_rules()'] as const;
+
+  async function previousHeadDefinitions(): Promise<string[]> {
+    const migration = readMigrations(MIGRATIONS_DIR).find((candidate) => candidate.name.endsWith(MIGRATION_SUFFIX))?.name ?? '';
+    expect(migration).not.toBe('');
+    const dir = mkdtempSync(path.join(tmpdir(), 'roi-statement-previous-head-'));
+    const scratch = await createScratchDatabase(readDatabaseUrl());
+    try {
+      for (const earlier of readMigrations(MIGRATIONS_DIR).filter((candidate) => candidate.name < migration)) {
+        copyFileSync(path.join(MIGRATIONS_DIR, earlier.name), path.join(dir, earlier.name));
+      }
+      await migrate({ databaseUrl: scratch.url, migrationsDir: dir, devLogin: true });
+      const client = databaseClient(scratch.url);
+      await client.connect();
+      try {
+        const defs: string[] = [];
+        for (const name of FUNCTIONS) {
+          defs.push(((await client.query<{ definition: string }>('SELECT pg_get_functiondef($1::regprocedure) AS definition', [name])).rows[0] as { definition: string }).definition);
+        }
+        return defs;
+      } finally {
+        await client.end();
+      }
+    } finally {
+      await scratch.drop();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const counts = (old: TriageWorld, practice: Practice) =>
+    asOwner(old.owner, [practice.practiceId], async () =>
+      (
+        await old.owner.query<{ statements: string; audits: string }>(
+          'SELECT (SELECT count(*) FROM roi_statement WHERE practice_id = $1)::text AS statements, (SELECT count(*) FROM audit_event WHERE practice_id = $1 AND object_type = $2)::text AS audits',
+          [practice.practiceId, 'roi_statement'],
+        )
+      ).rows[0],
+    );
+
+  it('refuses with SQLSTATE 23514 on the links CHECK, leaves no statement, audit event or queued print, and logs the code alone; a practice with no actionable line is refused the same', async () => {
+    const definitions = await previousHeadDefinitions();
+    const old = await TriageWorld.open(readDatabaseUrl());
+    try {
+      for (const definition of definitions) {
+        await old.owner.query(definition);
+      }
+      // The old function is in place: it refuses a statement that lists its lines, whatever the list.
+      const probe = (await old.owner.query<{ five: boolean | null; four: boolean | null }>(
+        `SELECT roi_links_valid('{"recovered":[],"interest":[],"approved_unposted":[],"actionable_open":[],"actionable_open_lines":[]}'::jsonb) AS five,
+                roi_links_valid('{"recovered":[],"interest":[],"approved_unposted":[],"actionable_open":[]}'::jsonb) AS four`,
+      )).rows[0];
+      expect(probe).toEqual({ five: false, four: true });
+      // A world with actionable lines (CAS-08: three lines, one case), and one with none.
+      const practice = await old.practice(`old head ${randomUUID().slice(0, 8)}`, { case_materiality_cents: '1000' });
+      await old.load(practice, 'CAS-08/remit.835');
+      const contract = await old.fixedContract(practice, FIXED);
+      await old.pricing.mapped(practice, await old.pricing.planOf(practice, 'CE:SYNPLAN-FIX-ONE'), 'contract', '2026-01-01', contract.versionId);
+      const runId = await old.pricing.createRun(practice, '2026-03-01', '2026-03-31', RELEASE);
+      await old.pricing.execute(practice, runId);
+      await old.triage(practice, runId);
+      const actionable = await asOwner(old.owner, [practice.practiceId], async () => (await old.owner.query<{ n: string }>('SELECT count(*)::text AS n FROM case_line WHERE practice_id = $1', [practice.practiceId])).rows[0]?.n);
+      expect(Number(actionable)).toBeGreaterThan(0);
+      const empty = await old.practice(`old head empty ${randomUUID().slice(0, 8)}`);
+      for (const target of [practice, empty]) {
+        const logs: Record<string, unknown>[] = [];
+        const queued: unknown[] = [];
+        const context: JobContext = { ...old.pricing.jobContext(target.practiceId, logs), enqueue: (...args: unknown[]) => Promise.resolve(queued.push(args)) as never };
+        const failure = await reconcileHandler(old.pricing.parseServices)({ practice_id: target.practiceId, day: '2026-10-01' }, context).then(
+          () => undefined,
+          (error: unknown) => error as { readonly code?: string; readonly message: string; readonly constraint?: string; readonly table?: string },
+        );
+        expect(failure?.code).toBe('23514');
+        expect({ table: failure?.table, constraint: failure?.constraint }).toEqual({ table: 'roi_statement', constraint: 'roi_statement_links' });
+        // What the worker logs for the attempt: the code, never the words.
+        expect(attemptErrorCode(failure)).toBe('DB_23514');
+        // Nothing remains: no statement, no audit event, no print queued, nothing logged but codes and IDs.
+        expect(await counts(old, target)).toEqual({ statements: '0', audits: '0' });
+        expect(queued).toEqual([]);
+        expect(JSON.stringify(logs)).not.toContain(failure?.message ?? 'never');
+      }
+    } finally {
+      await old.close();
+    }
+  }, 600_000);
 });

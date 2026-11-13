@@ -25,6 +25,13 @@ export const PREVIOUS_STATEMENT_COLUMNS = `s.id, s.period_from::text AS period_f
   s.interest_cents::text AS interest_cents, s.approved_unposted_cents::text AS approved_unposted_cents, s.actionable_open_cents::text AS actionable_open_cents,
   s.pursuit_hours::text AS pursuit_hours, s.links, s.document_key, s.generated_by, s.generated_at`;
 
+/**
+ * A jsonb expression's scalars as exact text, objects and arrays left whole (so a bigint cents column reaches JS as
+ * '9000', never as a float): `to_jsonb(s)` alone gives numbers, which node-postgres parses into doubles.
+ */
+export const EXACT_SCALARS = (jsonb: string): string =>
+  `(SELECT jsonb_object_agg(e.key, CASE WHEN jsonb_typeof(e.value) IN ('object', 'array') THEN e.value ELSE to_jsonb(e.value #>> '{}') END) FROM jsonb_each(${jsonb}) e)`;
+
 /** SYNTHETIC LED-06 worked through: approved, posted, deposited, then reopened by the payer's recoupment (entries behind recovered, and an actionable line). */
 export async function recoupedLedSix(led: LedgerWorld, label: string): Promise<Practice> {
   const practice = await led.practice(label);

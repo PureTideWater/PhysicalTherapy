@@ -11,6 +11,7 @@ import type { Scope } from './ledger';
 import { NO_BILLING, NO_TIME_LOG, OPEN_CASES_ACTIONABLE, generateRoiStatement } from './statements';
 import { generateFourKeyStatement } from './test-support/four-key-writer';
 import { type OpenCasePathRow, PLAIN_PATH_OPEN_CASES } from './test-support/plain-path-writer';
+import { EXACT_SCALARS } from './test-support/statement-twins';
 
 /**
  * The statement writer reads each case line once (schema PR 5; the design note's 4.1; test matrix LED-26): on a
@@ -75,11 +76,12 @@ async function rolledBack<T>(work: (scope: Scope) => Promise<T>): Promise<T> {
   return (result as { readonly value: T }).value;
 }
 
-const STORED = `SELECT s.links, to_jsonb(s) - 'id' - 'generated_at' - 'created_at' - 'updated_at' - 'links' AS rest FROM roi_statement s WHERE s.id = $1`;
+const STORED = `SELECT s.links, ${EXACT_SCALARS("to_jsonb(s) - 'id' - 'generated_at' - 'created_at' - 'updated_at' - 'links'")} AS rest FROM roi_statement s WHERE s.id = $1`;
 
 interface Stored {
   readonly links: Record<string, string[]>;
-  readonly rest: Record<string, unknown>;
+  /** Every value as exact text. */
+  readonly rest: Record<string, string | null>;
 }
 
 describe('the writer’s one pass and the plain path on a generated month (the note’s 4.1)', () => {
@@ -125,6 +127,6 @@ describe('the writer’s one pass and the plain path on a generated month (the n
     expect(fourKeys).toEqual(before.links);
     expect(fourKeys.actionable_open).toEqual(now.plain.map((row) => row.id));
     expect(lines).toEqual(now.plain.flatMap((row) => row.line_ids));
-    expect(now.row.rest.actionable_open_cents).toBe(Number(now.plain.reduce((sum, row) => sum + BigInt(row.actionable_cents), 0n)));
+    expect(now.row.rest.actionable_open_cents).toBe(now.plain.reduce((sum, row) => sum + BigInt(row.actionable_cents), 0n).toString());
   }, 600_000);
 });
