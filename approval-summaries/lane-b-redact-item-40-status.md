@@ -1,5 +1,21 @@
 # Queues item 40 (letter redaction: R1-3, R1-4, ruling (A)'s initial): status
 
+## RESUME-BLOCK (stage 5b, 2026-11-13 about 23:30 UTC: MERGED)
+
+- **MERGED:** PR #163 (`co-001/redact-item-40`, head 1a7c5270) into `claude/build-platform` as **6299c550**, a merge
+  commit (parents 4d40557f and 1a7c5270), with expectedHeadSha; verified on the base (packages and docs equal the head).
+  No open schema PR at merge (the four open PRs are Dependabot bumps, none touching a migration or the domain model).
+- **CI:** every job green on the final attempt. `unit` failed on attempt 1 (redact.leaks.test.ts:1955, an existing
+  property, 4.5 s alone against the 5 s default, the same on 61600c7c) and on attempt 2 (time-budget.test.ts:34's
+  calibration spread, 130.8 against 123.3), both outside the diff; re-run a second time by the orchestrator's ruling,
+  green. `db (4/4)` failed once (routes.db.test.ts:1356, the screening lock timing; apps/ untouched) and passed on
+  re-run. No limit loosened. For the queue: :1955 sits near its 5 s default; :34's spread is for Queues item 30.
+- **Accepted as recorded (orchestrator):** C-1 (cost 6: a claim letter with one footnote mark and CR LF refused on
+  cost from about 63,400 characters; Queues item 39 the cure); L-1 (a visible non-joiner inside an SSN, phone, DOB
+  or name, on the base too) to Queues item 42. Also for the queue: S-5 (initials after an unseen character before
+  their period, or an uncommon joiner) and C-2 (redactionSpans counts each stage from zero).
+- **Item 40 is done.** Nothing owed.
+
 ## RESUME-BLOCK (stage 5b, 2026-11-13 about 21:30 UTC: FIX ROUNDS 1 AND 2 DONE, MEASURED, PUSHED; NEXT: CHECKS, PR, MERGE)
 
 - **Head:** `co-001/wip-redact-item-40` at **1a7c5270**: ae0b6a3f (fix round 1: S-2 the further reading's check
