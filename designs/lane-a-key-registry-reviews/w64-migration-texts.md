@@ -2,10 +2,11 @@
 
 **W65 (session_019i9if9qjSJt3AGpHV86RSa, 2026-11-13) changed two things here: section 3 is now the REFINED ruling 3
 (the orchestrator, 03:55 UTC: a row is never given up untried), and section 5 (A4) has its text and test. The record
-is now `w65/apply-texts.py` and `w65/migration.patch` (W64's script with change 3 replaced and change 5 added; run
+is now `w65/apply-texts.py` and `w65/migration.patch` (W64's script with change 3 replaced, change 5 added and the
+review's fix round, below; run
 the same way: `python3 w65/apply-texts.py <copy of the migration> a1-trigger.sql.txt`). `w64/` is kept as it was and
-is superseded. W65's proof, same method: the two db test files with the texts applied, 64 passed, 1 failed (the
-SGN-22 prefix case, which goes with the rename); unpatched, 45 passed, 20 failed. The old JOB-07 case's five lines
+is superseded. W65's proof, same method, after the fix round: the two db test files with the texts applied, 65
+passed, 1 failed (the SGN-22 prefix case, which goes with the rename). The old JOB-07 case's five lines
 are already reworded on the WIP ref (owed red until change 3), so nothing in a test is left to reword but the
 "(owed red ...)" parentheses.**
 
@@ -40,6 +41,29 @@ the unpatched tree: **46 passed, 14 failed**. The two that stay red with the tex
 **Not proved:** the whole `pnpm test:db` on the patched tree (only the two files ran); SEC-25's maps with the new names
 (the maps are filtered by name, so they pass without them; the names must be added, below); the worker's and web's suites.
 
+## The adversarial review's fix round (W65; report `w65-review.md`: 0 blockers, 6 should-fix, 6 notes)
+Taken into the texts and tests (each proved in the 65):
+- **S1, section 2, both functions' guard:** a waiting row covers a later call only if it was NEVER TRIED
+  (`AND p.attempts = 0` added to `done_at IS NULL AND gave_up_at IS NULL AND leased_until IS NULL`). A row whose try
+  failed has no lease either, and its next try may be an hour away or its age about to give it up: it must not hold
+  back a later reset's sign-out. Flood bound: still at most one untried row an account and cause at a time.
+- **S2, section 3, GAVE_UP by age:** `p.last_error_code IS NOT NULL AND p.queued_at <= now() - interval '24 hours'`
+  in place of `p.attempts >= 1 AND ...`. The claim counts the try before the provider is called, so `attempts >= 1`
+  was true of a row whose worker was stopped between the claim and the call: given up with nothing ever sent.
+  `last_error_code` is set only by `operator_provider_sign_out_failed` (always non-NULL there: a name or `unknown`),
+  so it means one try was ANSWERED as failed. A row that kills its worker at every claim still ends at 30 tries.
+- **S3, section 3, a second statement in the sweep:** `UPDATE provider_sign_out p SET late_reported_at = NULL WHERE
+  p.done_at IS NULL AND p.gave_up_at IS NULL AND p.late_reported_at <= now() - interval '24 hours'`, after the LATE
+  mark. A row still waiting a day after its LATE line was acknowledged owes the line again, so a row no run reaches
+  (claims failing while the sweep runs) is paged daily, not once and then silent for ever. Done and given-up rows
+  are not re-armed. Locks: the sweep's own row updates, as before.
+- **S5, test only:** SGN-29 asserts the right code and a wrong one with no beginning are both `refused`, uncounted.
+- **N4, tests only:** a fresh row from the trigger and from the operator's function has `next_attempt_at = queued_at`.
+Not taken, in the status file's queue list with the reason: S4 (the web path's committed count: `recorded()` throws
+after `withActor` returned, so the transaction has committed; a web test through a real closed registration is
+owed), S6 (A1's trigger binds a target while its requester's request is open: a design question for the founder),
+N1, N2, N3, N5, N6.
+
 ## A1. The trigger user_removal_target_holds
 By reference: `a1-trigger.sql.txt` (text, lock analysis, proof). The script inserts it after `CREATE TRIGGER
 membership_removal_target_holds`, its REVOKE folded into section 14. SGN-24's three red cases pass with it (in the 58).
@@ -69,9 +93,10 @@ membership_removal_target_holds`, its REVOKE folded into section 14. SGN-24's th
 ## 3. B1 under ruling 3 REFINED: LATE by age, GAVE_UP by age only after one try (test JOB-09, three cases; old JOB-07 case)
 Section 10, `operator_provider_sign_outs_overdue`, two conditions and the comment:
 - LATE's gains `OR p.queued_at <= now() - interval '15 minutes'` (undone, whatever its tries, whatever its lease).
-- GAVE_UP's becomes `p.attempts >= 30 OR (p.attempts >= 1 AND p.queued_at <= now() - interval '24 hours')`, still only
-  with no running lease, still `done_at IS NULL AND gave_up_at IS NULL`. (Before: `p.attempts >= 4 AND` 24 hours. W64's
-  first text had no minimum; that text is withdrawn.)
+- GAVE_UP's becomes `p.attempts >= 30 OR (p.last_error_code IS NOT NULL AND p.queued_at <= now() - interval '24
+  hours')`, still only with no running lease, still `done_at IS NULL AND gave_up_at IS NULL`. (Before: `p.attempts >=
+  4 AND` 24 hours. W64's first text had no minimum; that text is withdrawn. "One try" is one ANSWERED try: the fix
+  round's S2, above.)
 - **A row with `attempts = 0` is never given up**, whatever its age: it is LATE and paged (once, then acknowledged) and
   stays claimable. Why: giving up a sign-out never attempted leaves alive a provider session the product promised to end.
 - **Oldest first needs no text change, and JOB-09's third case holds it:** the claim orders by `next_attempt_at, id`;

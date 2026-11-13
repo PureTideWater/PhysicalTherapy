@@ -25,8 +25,9 @@ B2 = r'''
 -- acting as itself, queues the provider's sign-out alone. It takes no lock on the account and ends no session, so it
 -- can commit where the reset's transaction failed twice on a lock or on the session update. It writes its own audit
 -- row (a reserved action, so only this function writes it) and the trigger above queues the row from it. While a
--- sign-out for this cause waits with no try in flight it writes nothing more: that try is still ahead and covers this
--- call too, so the outbox cannot be flooded. True when this call queued one.
+-- sign-out for this cause waits NEVER YET TRIED (no try counted, no lease) it writes nothing more: that first try is
+-- still ahead, is due at once and covers this call too, so the outbox cannot be flooded. A row already tried does not
+-- count: its try may predate this reset and its next one may be an hour away. True when this call queued one.
 CREATE FUNCTION provider_sign_out_unrecorded_reset(request text) RETURNS boolean
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 #variable_conflict use_variable
@@ -37,7 +38,7 @@ BEGIN
     RAISE EXCEPTION 'only an account queues its own sign-out after a reset that was not recorded' USING ERRCODE = 'insufficient_privilege';
   END IF;
   IF EXISTS (SELECT 1 FROM provider_sign_out p
-              WHERE p.user_id = actor AND p.reason = 'password_reset_unrecorded' AND p.done_at IS NULL AND p.gave_up_at IS NULL AND p.leased_until IS NULL) THEN
+              WHERE p.user_id = actor AND p.reason = 'password_reset_unrecorded' AND p.done_at IS NULL AND p.gave_up_at IS NULL AND p.leased_until IS NULL AND p.attempts = 0) THEN
     RETURN false;
   END IF;
   INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, request_id)
@@ -62,7 +63,7 @@ BEGIN
     RAISE EXCEPTION 'no such account' USING ERRCODE = 'no_data_found';
   END IF;
   IF EXISTS (SELECT 1 FROM provider_sign_out p
-              WHERE p.user_id = account AND p.reason = 'password_reset_unrecorded' AND p.done_at IS NULL AND p.gave_up_at IS NULL AND p.leased_until IS NULL) THEN
+              WHERE p.user_id = account AND p.reason = 'password_reset_unrecorded' AND p.done_at IS NULL AND p.gave_up_at IS NULL AND p.leased_until IS NULL AND p.attempts = 0) THEN
     RETURN NULL;
   END IF;
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
@@ -81,19 +82,22 @@ sub("'provider_signed_out',\n                       'provider_sign_out_undeliver
 
 # ---- 3 (B1): late and given up by age
 sub("     AND (p.attempts >= 5 OR (p.attempts >= 4 AND (p.leased_until IS NULL OR p.leased_until <= now())));",
-    "     AND (p.attempts >= 5 OR (p.attempts >= 4 AND (p.leased_until IS NULL OR p.leased_until <= now())) OR p.queued_at <= now() - interval '15 minutes');", '3 late')
+    "     AND (p.attempts >= 5 OR (p.attempts >= 4 AND (p.leased_until IS NULL OR p.leased_until <= now())) OR p.queued_at <= now() - interval '15 minutes');\n  UPDATE provider_sign_out p SET late_reported_at = NULL\n   WHERE p.done_at IS NULL AND p.gave_up_at IS NULL AND p.late_reported_at <= now() - interval '24 hours';", '3 late')
 sub("       AND (p.attempts >= 30 OR (p.attempts >= 4 AND p.queued_at <= now() - interval '24 hours'))",
-    "       AND (p.attempts >= 30 OR (p.attempts >= 1 AND p.queued_at <= now() - interval '24 hours'))", '3 gave up')
+    "       AND (p.attempts >= 30 OR (p.last_error_code IS NOT NULL AND p.queued_at <= now() - interval '24 hours'))", '3 gave up')
 sub("""-- The sweep. Late: five tries, or four with no running lease. Given up: 30 tries with no running lease, or 24 hours
 -- since it was queued and four tries with no running lease; a row never tried is never given up (after a long outage
 -- it is claimed).""",
 """-- The sweep. Late: five tries, or four with no running lease, or 15 minutes since it was queued, whatever its tries
 -- and whatever its lease (a slow provider with a backlog gives a row its first try late; the person is paged by the
--- row's age). Given up: 30 tries, or 24 hours since it was queued and at least one try, in both cases with no running
--- lease. A row never tried is NEVER given up, whatever its age: a sign-out the product promised is not dropped
--- unattempted. After an outage it is late and paged, the claim reaches the rows in the order they came due (an untried
--- row is due from the moment it was queued, so the oldest first), and a row a run does not reach stays late and is
--- tried by a later run; only after its own try can its age give it up.""", '3 comment')
+-- row's age). Given up: 30 tries, or 24 hours since it was queued and at least one try the job ANSWERED as failed
+-- (last_error_code is set only by operator_provider_sign_out_failed; a claim alone counts a try but may have sent
+-- nothing, a worker stopped between the claim and the call), in both cases with no running lease. A row never tried is
+-- NEVER given up, whatever its age: a sign-out the product promised is not dropped unattempted. After an outage it is
+-- late and paged, the claim reaches the rows in the order they came due (an untried row is due from the moment it was
+-- queued, so the oldest first), and a row a run does not reach stays late and is tried by a later run; only after its
+-- own answered try can its age give it up. A row still waiting 24 hours after its LATE line was acknowledged owes the
+-- line again (the acknowledgement is cleared), so a row no run reaches is paged every day, never once and then silent.""", '3 comment')
 
 # ---- 4 (D7): no security event for a step judged with no beginning
 sub("""    END IF;
