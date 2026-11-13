@@ -1,6 +1,15 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
 ## RESUME-BLOCK (W62, session_019i9ifELA5xqioWESg7ENdC; 2026-11-13; the reviews, two fix rounds, the PR and the suggested approval line are DONE; what is left: the founder's committed line, green checks, the merge)
+- **NOW (W62, 03:15 UTC, context about 190k):** the founder's line is committed on #160: `affb4f88` (author
+  PureTideWater, committer GitHub, parent `c0b1b1a0`, one line of `docs/product/domain-model.md`, the hash unchanged;
+  checked by W62 on the ref). `unit` failed once on `c0b1b1a0` (three model-gateway timeouts, not this PR's files),
+  was re-run once and passed (said on the PR). On `affb4f88`: domain model and approval-of-record green; all green,
+  mutation and the screening-capacity gate still running. The base is `1f652b6f`. **Left, exactly:** when the four
+  required checks are green on `affb4f88`: mark ready (`gh api -X PATCH` is not enough for draft: use the connector's
+  update_pull_request draft=false), wait for approval-of-record's re-run, merge (method merge, expected head
+  `affb4f88...`), `git ls-remote`, read the push runs, unsubscribe, cancel check-in `trig_01Q3BqV9w4toqV5pj7zCtAwj`,
+  set this block to "FINAL STATE: MERGED", one line to the orchestrator.
 - **PR:** #160, draft, `co-001/ledger-freeze-batch` at `c0b1b1a0` into `claude/build-platform` (`1f652b6f`, already
   contained: no merge commit was needed). The suggested approval line: one comment,
   https://github.com/PureTideWater/PhysicalTherapy/pull/160#discussion_r4558983644 (hash `e1e08a32...b9de`, the
