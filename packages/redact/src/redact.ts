@@ -757,7 +757,7 @@ interface Writing {
  */
 function sourceOf(text: string): string {
   const built = () => new RegExp(text, 'gu').source;
-  if (text === '' || /[\n\r\u2028\u2029]/u.test(text)) {
+  if (text === '' || ['\n', '\r', '\u2028', '\u2029'].some((lineBreak) => text.includes(lineBreak))) {
     return built();
   }
   let inClass = false;
@@ -1371,13 +1371,27 @@ const MONTH_IN = new RegExp(MONTH_WORD, 'iu');
 /** More places than this and a form is read by one global scan, as the base read it: cheaper than a sticky run at each. */
 const DENSE_PLACES = 16;
 
-/** A letter or digit a compact keeps (compactFolded): an APOSTROPHE_LETTER is no such letter. */
-const KEPT_CODE_POINT = /(?![ʼʹˊ])[\p{L}\p{N}]/gu;
+/** A run of the letters and digits a compact keeps (compactFolded), from lastIndex: an APOSTROPHE_LETTER is no such letter. */
+const KEPT_RUN = /(?:(?![ʼʹˊ])[\p{L}\p{N}])+/uy;
+
+/** Whether a UTF-16 code unit is an ASCII letter or digit: in ASCII, exactly the code points a compact keeps. */
+const asciiKept = (unit: number): boolean => (unit >= 48 && unit <= 57) || (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122);
+
+/** Whether every code point of `text` is one a compact keeps: compactFolded(text) === text, with no regular expression run over ASCII. */
+function allKept(text: string): boolean {
+  for (let i = 0; i < text.length; i += 1) {
+    if (!asciiKept(text.charCodeAt(i))) {
+      return compactFolded(text) === text;
+    }
+  }
+  return true;
+}
 
 /** For each word that stands contiguously in the text's kept letters and digits, every index of the text where it starts, in order. */
 function placesOf(text: string, words: readonly string[]): Map<string, number[]> {
   const places = new Map<string, number[]>();
   const distinct = [...new Set(words)];
+  if (distinct.length === 0) return places;
   // The automaton (Aho-Corasick): a trie of the words by code point, each node's longest proper suffix that is a node
   // (fail), and the nearest such suffix that ends a word (output).
   const next: Map<string, number>[] = [new Map<string, number>()];
@@ -1413,13 +1427,13 @@ function placesOf(text: string, words: readonly string[]): Map<string, number[]>
       queue.push(to);
     }
   }
-  // One pass over the text's kept code points, each with the index where it starts.
+  // One pass over the text's kept code points, each with the index where it starts. ASCII is read by its code; a run of
+  // kept code points that begins with any other is read by one sticky regular-expression run, and a code point no run
+  // begins with is not kept.
   const at: number[] = [];
   let node = 0;
-  KEPT_CODE_POINT.lastIndex = 0;
-  for (let kept = KEPT_CODE_POINT.exec(text); kept !== null; kept = KEPT_CODE_POINT.exec(text)) {
-    const codePoint = kept[0];
-    at.push(kept.index);
+  const step = (codePoint: string, index: number) => {
+    at.push(index);
     while (node !== 0 && !(next[node]?.has(codePoint) ?? false)) node = fail[node] ?? 0;
     node = next[node]?.get(codePoint) ?? 0;
     for (let found = (ends[node] ?? -1) >= 0 ? node : (output[node] ?? -1); found >= 0; found = output[found] ?? -1) {
@@ -1429,6 +1443,24 @@ function placesOf(text: string, words: readonly string[]): Map<string, number[]>
       const list = places.get(word);
       if (list === undefined) places.set(word, [start]);
       else list.push(start);
+    }
+  };
+  for (let i = 0; i < text.length; ) {
+    const unit = text.charCodeAt(i);
+    if (unit < 0x80) {
+      if (asciiKept(unit)) step(text[i] ?? '', i);
+      i += 1;
+      continue;
+    }
+    KEPT_RUN.lastIndex = i;
+    const run = KEPT_RUN.exec(text);
+    if (run === null) {
+      i += (text.codePointAt(i) ?? 0) > 0xffff ? 2 : 1;
+      continue;
+    }
+    for (const codePoint of run[0]) {
+      step(codePoint, i);
+      i += codePoint.length;
     }
   }
   return places;
@@ -1446,7 +1478,7 @@ interface Search {
  * the form's compact is not all kept letters and digits (lemma 1(b)) or stands at more than DENSE_PLACES places.
  */
 function searchOf(source: string, flags: string, compact: string, places: ReadonlyMap<string, readonly number[]>): Search {
-  if (compactFolded(compact) !== compact) {
+  if (!allKept(compact)) {
     return new RegExp(source, flags);
   }
   const starts = places.get(compact);
@@ -1484,7 +1516,7 @@ function searchOf(source: string, flags: string, compact: string, places: Readon
 }
 
 /** Whether a form's whole writing can stand anywhere in the view whose places are `places` (lemma 1): the `.some` sites. */
-const mayStand = (form: Form, places: ReadonlyMap<string, readonly number[]>): boolean => compactFolded(form.compact) !== form.compact || places.has(form.compact);
+const mayStand = (form: Form, places: ReadonlyMap<string, readonly number[]>): boolean => !allKept(form.compact) || places.has(form.compact);
 
 function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] {
   // Each form (a claim number, a member ID, a name, each of its words and parts) is read for over the whole letter.
