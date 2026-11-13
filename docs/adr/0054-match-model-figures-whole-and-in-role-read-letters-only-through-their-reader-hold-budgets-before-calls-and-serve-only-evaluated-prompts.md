@@ -2579,3 +2579,19 @@ ends in a word with a period and no space after it sends the initials after it (
 `[PATIENT_NAME].M.L.`), and an undotted last initial before a word in lower case stays (`Lopez, M L was seen`), the
 first reading's "Vantree, I am" rule; both proposed for a new queue item, measured on the gate first. Queues item 39
 holds the reader's time; this item adds the further readings and shows their time below.
+
+**Measured on 18777df0 (e17c1192 with claude/build-platform 4d40557f merged in) against the base 4d40557f (2026-11-13,
+synthetic letters only).** Measured twice, by the stage-4 session and independently by the stage-5a one, with every
+count equal. Item 40's generated set: 0 failures of 51,833 letters in every family, no PHI class. Item 34's generated
+set: 0 of 14,356 letters differ. The full gate without its cache: 975,489 letters, none differs, 463,002 refused on
+both, PHI, unplaced and reverse classes none, real-shaped letters newly refused 0; the slowest letter is 1,024 ms on
+the base and 931 ms here, of 3,000. The two budget rows count 403,548,210 and 414,023,090 units and are sent on both.
+Of 60,000 fuzzed letters (seeds 301 to 303) none the base refuses is sent; of the product fuzzer's 60,000 (seeds 401 to
+403) none either, 1,731 newly refused (cost 4) and 6 sent with another text, each read: one or two more of the held
+name's initials replaced after a writing of the name that ends in a letter alone, none another person's, nothing newly
+clear. Item 34's cost measure (64 names over 558 texts): no text changed. Over 40 ordinary names cut at every place
+(453,888 letters a tree, none refused), letters with a letter of the name or chain in clear fall from 201,728 to
+176,448; the 5,056 of ruling (A)'s form that stay are the undotted last initial before a word in lower case (Left,
+above). Time: the reader takes 1.07 to 1.10 ms a letter on the base and 1.05 to 1.06 here over 20,000 letters; the
+100-letter property takes 3,268 to 3,504 ms on the base and 3,341 to 3,452 ms here over six alternated runs each (means
+3,353 and 3,393 ms), inside the base's range. The redaction, packets, synth and model-gateway unit suites pass.
