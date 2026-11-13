@@ -816,3 +816,109 @@ describe('SGN-22: no live session without a live key, and none begun at or befor
     }
   });
 });
+
+describe('SGN-24: the target of a requested key removal changes no other account (owed red until the trigger hardware_key_removal_target_acts is in the migration)', () => {
+  const HOLDS = refusedBy('hardware_key_removal_target_acts');
+  type Outcome = Failure | { readonly rows: number };
+
+  /** One UPDATE of one "user" row as the application role acting as `by`, committed: the refusal, or the rows it changed. */
+  async function change(by: string, set: string, on: string, values: unknown[] = []): Promise<Outcome> {
+    let rows = -1;
+    const outcome = await failure(
+      asUser(by, `UPDATE "user" SET ${set} WHERE id = $1 RETURNING id`, [on, ...values]).then((changed) => {
+        rows = changed.length;
+      }),
+    );
+    return outcome === 'accepted' ? { rows } : outcome;
+  }
+  const account = async (id: string) =>
+    (await owner.query<{ status: string; hardware_key_required: boolean; email: string }>('SELECT status, hardware_key_required, email FROM "user" WHERE id = $1', [id])).rows[0];
+  const stateOf = async (removal: string) => (await owner.query<{ state: string }>('SELECT state FROM hardware_key_removal WHERE id = $1', [removal])).rows[0]?.state;
+
+  /** A removal of the administrator `target`'s keys, requested by `requester`, with a third administrator who can confirm it. */
+  async function standing() {
+    const [target, requester, third] = [await administrator(), await administrator(), await administrator()];
+    const removal = await requestRemoval(requester, target.id);
+    expect(await stateOf(removal)).toBe('requested');
+    return { target, requester, third, removal };
+  }
+
+  it('refuses the target disabling the requester, leaves the requester as it was, and the third administrator then confirms', async () => {
+    const { target, requester, third, removal } = await standing();
+    const before = await account(requester.id);
+    expect(await change(target.id, "status = 'disabled'", requester.id)).toEqual(HOLDS);
+    expect(await account(requester.id)).toEqual(before);
+    expect(await failure(confirmRemoval(third, removal))).toBe('accepted');
+    expect(await stateOf(removal)).toBe('confirmed');
+  });
+
+  it('refuses the target changing the requester’s hardware-key rule', async () => {
+    const { target, requester, third, removal } = await standing();
+    const before = await account(requester.id);
+    expect(before?.hardware_key_required).toBe(true);
+    // tp_app holds UPDATE (hardware_key_required) (20261015140000_tenancy.sql) and user_guarded_columns passes a platform
+    // administrator, so no other rule refuses this today: the trigger is the only thing that will.
+    expect(await change(target.id, 'hardware_key_required = false', requester.id)).toEqual(HOLDS);
+    expect(await account(requester.id)).toEqual(before);
+    expect(await failure(confirmRemoval(third, removal))).toBe('accepted');
+  });
+
+  it('refuses the target disabling an administrator who is neither the requester nor the account', async () => {
+    const { target, third, removal } = await standing();
+    const before = await account(third.id);
+    expect(await change(target.id, "status = 'disabled'", third.id)).toEqual(HOLDS);
+    expect(await account(third.id)).toEqual(before);
+    expect(await failure(confirmRemoval(third, removal))).toBe('accepted');
+  });
+
+  it('leaves the target its own row', async () => {
+    const { target, removal } = await standing();
+    const address = `own-${randomUUID()}@synthetic.test`;
+    expect(await change(target.id, 'email = $2', target.id, [address])).toEqual({ rows: 1 });
+    expect((await account(target.id))?.email).toBe(address);
+    expect(await stateOf(removal)).toBe('requested');
+  });
+
+  it('leaves an administrator who is not the account of a requested removal to the rules that stood before', async () => {
+    const { requester, removal } = await standing();
+    const unrelated = await administrator();
+    expect(await count("hardware_key_removal WHERE user_id = $1 AND state = 'requested'", [unrelated.id])).toBe(0);
+    // user_guarded_columns passes a platform administrator and user_self_and_platform_admin_update admits the row.
+    const outcome = await change(unrelated.id, "status = 'disabled'", requester.id);
+    expect(outcome).not.toMatchObject({ constraint: 'hardware_key_removal_target_acts' });
+    expect(outcome).toEqual({ rows: 1 });
+    expect((await account(requester.id))?.status).toBe('disabled');
+    expect(await stateOf(removal)).toBe('requested');
+  });
+
+  describe('once the request is decided the account is bound no longer: the rules that stood before decide', () => {
+    /** The same UPDATE the standing request refuses, by the same account, after `decide`. */
+    async function after(decide: (made: Awaited<ReturnType<typeof standing>>) => Promise<unknown>, state: string) {
+      const made = await standing();
+      await decide(made);
+      expect(await stateOf(made.removal)).toBe(state);
+      const outcome = await change(made.target.id, "status = 'disabled'", made.requester.id);
+      expect(outcome).not.toMatchObject({ constraint: 'hardware_key_removal_target_acts' });
+      // The account is still a platform administrator (a removal ends no membership), so its UPDATE is admitted.
+      expect(outcome).toEqual({ rows: 1 });
+      expect((await account(made.requester.id))?.status).toBe('disabled');
+    }
+
+    it('cancelled', async () => {
+      await after(async ({ requester, removal }) => asUser(requester.id, 'SELECT hardware_key_removal_cancel($1, $2, $3)', [removal, await requester.session(), request()]), 'cancelled');
+    });
+
+    it('confirmed (its sessions are closed; the application role still acts as it)', async () => {
+      await after(({ third, removal }) => confirmRemoval(third, removal), 'confirmed');
+    });
+
+    it('expired by the job', async () => {
+      await after(async ({ removal }) => {
+        await seeded("UPDATE hardware_key_removal SET requested_at = requested_at - interval '25 hours', expires_at = expires_at - interval '25 hours' WHERE id = $1", [removal]);
+        // Past its 24 hours and not yet marked, the request still binds the account (docs/adr/0095: until the job marks it).
+        const rows = await as<{ removal_id: string }>(OPERATOR_ROLE, 'SELECT removal_id FROM operator_key_removals_expire($1, $2)', [100, request()]);
+        expect(rows.map((row) => row.removal_id)).toContain(removal);
+      }, 'expired');
+    });
+  });
+});
