@@ -4,7 +4,21 @@ Design of record: `designs/lane-b-redact-item-34/design.md` (ops 163894a9). Ruli
 one constant; (d) the verifier keeps its reading; A-4's costs accepted; a digit beside the number stays recorded.
 WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. No PR is open.
 
-## RESUME-BLOCK (W69, 2026-11-13: THE TESTS-ONLY COMMIT ffdbac26 IS PUSHED ON #161; WAITING FOR CI; NOT MERGED)
+## RESUME-BLOCK (W69, 2026-11-13 08:56 UTC: MERGED. PR #161 IS IN claude/build-platform AT 17c234d2; THE ITEM IS CLOSED)
+
+- **Merged.** #161, head ffdbac26, merge commit 17c234d2 on claude/build-platform (parents 979a21b8 and ffdbac26),
+  on green required checks (`all green`, `mutation`, `screening-capacity gate`, `approval-of-record`); `unit` green
+  on the first run with the four 20 s limits. No schema PR was open (only Dependabot's #152 to #155). W69 has
+  unsubscribed and cancelled its check-in.
+- **Owed to Queues item 40:** the two forms of a stored number still sent in clear on the base, R1-3 (a number
+  character that is no decimal digit beside the number) and R1-4 (U+0085 or a control character inside it), and
+  ruling (A)'s one initial (`ZZ/ZZZZ Z.Z.Z` sent as `[PATIENT_NAME].Z`). Each is pinned as sent by a test.
+- **Owed to Queues item 39:** the reader's per-letter time after item 34 (the 100-letter property 2.3-3.3 s on the
+  base's reader, 4.1-4.8 s now), to be brought down with the check's time before launch and before the check's
+  first caller is wired; the four 20 s limits can be looked at again then. R5-3 and R6 L-1 belong with it.
+- The queue list below (R5-1, R5-2, R6 L-2 and L-3, k-gen-A) stands, not built.
+
+## Earlier today: RESUME-BLOCK (W69, 2026-11-13: THE TESTS-ONLY COMMIT ffdbac26 IS PUSHED ON #161; WAITING FOR CI; NOT MERGED)
 
 - **State.** Draft PR #161, branch `co-001/redact-item-34`, head ffdbac26 (85819a81 + one commit: `{ timeout: 20_000 }`
   on the four tests, each with its quiet time; the per-letter cost and the ruling in the ADR 0054 amendment). The PR
