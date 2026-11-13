@@ -1677,9 +1677,11 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     refused('Phone #: 900 77.3283150.00'),
     refused('Medicare ID No. 900 12.3456150.00'),
     unchanged('Medicare ID No. rate 110 32.74420'),
-    // Recorded, sent as ef3e8d20 sends them: the label and a column of blanks, or U+0085, before the writing with a point.
+    // Recorded, sent as ef3e8d20 sends it: the label and a column of blanks before the writing with a point.
     unchanged('Phone:    900 77.3283150.00'),
-    unchanged('Phone\u0085900 77.3283150.00'),
+    // With U+0085 there it was sent too, until Queues item 40, stage 3 (R1-4): read with the unseen character joined,
+    // the label stands right before the number, and the letter is refused as "Phone #: 900 77.3283150.00" is.
+    refused('Phone\u0085900 77.3283150.00'),
     // J-5: "+" is no connector, beside a dash or not; a blank's underscores cut by a box line are no blank (recorded).
     refused('Provider -+1-202-555-0123150.00'),
     refused('Claim -+- 20260112345.01'),
@@ -2762,6 +2764,7 @@ describe('MOD-25: a digits-only number written with a period or a slash and glue
  * each row seen failing on its assertion on 17c234d2, and the item's stages 2, 3 and 4 turn its three groups green.
  * The rows this replaces were pinned as SENT here (R1-3, R1-4) and under ruling (A) below.
  * Stage 2 (R1-3 with ruling 3, and the rulings of 09:55 UTC) is built: its group is a describe of its own, green.
+ * Stage 3 (R1-4, by one more reading of the whole check; the rulings of 12:58 UTC) is built: its group likewise.
  */
 const ITEM_40 = (() => {
   /** Every number character that is no decimal digit (Nl, No), and the unseen characters probed: controls and format characters the reader neither joins nor drops, one private-use and one unassigned code point. */
@@ -3006,41 +3009,210 @@ describe('MOD-25, Queues item 40, stage 2 (R1-3 with ruling 3): a number charact
   });
 });
 
-describe('OWED RED, Queues item 40 (stage 1 wrote these failing on 17c234d2; the item’s stages 2, 3 and 4 turn them green)', () => {
+describe('MOD-25, Queues item 40, stage 3 (R1-4): an unseen character inside an identifier is refused, by one more reading of the whole check', () => {
   const asMember = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210', 'ZZ7654321']), numbers: claimsOf('ZZ99887') };
+  const FORMS = [
+    ['after a label', (c: string) => `Member ID 7654${c}3210 paid`],
+    ['bare', (c: string) => `7654${c}3210`],
+    ['glued to a letter', (c: string) => `Fax X7654${c}3210 ext`],
+    ['after a dash', (c: string) => `Member ID 7654-${c}3210 paid`],
+    ['twice', (c: string) => `Member ID 7654${c}${c}3210 paid`],
+    ['inside a number that holds letters', (c: string) => `Member ID ZZ76${c}54321 paid`],
+  ] as const;
 
-  describe('stage 3, R1-4: an unseen character inside a stored number is refused', () => {
-    const FORMS = [
-      ['after a label', (c: string) => `Member ID 7654${c}3210 paid`],
-      ['bare', (c: string) => `7654${c}3210`],
-      ['glued to a letter', (c: string) => `Fax X7654${c}3210 ext`],
-      ['after a dash', (c: string) => `Member ID 7654-${c}3210 paid`],
-      ['twice', (c: string) => `Member ID 7654${c}${c}3210 paid`],
-      ['inside a number that holds letters', (c: string) => `Member ID ZZ76${c}54321 paid`],
-    ] as const;
-
-    it.each(UNSEEN_ROWS.flatMap(([name, character]) => FORMS.map(([form, write]) => [name, form, write(character)] as const)))('%s inside the number, %s: refused', (_name, _form, letter) => {
-      expect(sentOrRefused(letter, asMember.who, asMember.numbers)).toBe(REFUSED);
-    });
-
-    it('any unseen character at any place inside any digits-only number: never sent with the number in clear', () => {
-      fc.assert(
-        fc.property(ITEM_40.held, fc.constantFrom(...ITEM_40.unseen), fc.nat(), fc.boolean(), ITEM_40.frame, ({ number, who, numbers }, character, place, glued, [before, after]) => {
-          const cut = 1 + (place % (number.length - 1));
-          const letter = `${before}${glued ? 'X' : ''}${number.slice(0, cut)}${character}${number.slice(cut)}${after}`;
-          expect(ITEM_40.sentInClear(sentOrRefused(letter, who, numbers), number)).toBe(false);
-        }),
-      );
-    });
-
-    // Ruling 5: the further reading is charged in full and the budget is never raised, so the row nearest the budget
-    // (sent, in the describe above) with one unseen character in it is refused by the count. It stands where no
-    // reading finds anything: after the last line ending.
-    it('the row nearest the budget with one U+0085 added is refused by the count', () => {
-      expect(refusedByTheEntry(`${NEAR_THE_BUDGET}\u0085`, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(true);
-    });
+  it.each(UNSEEN_ROWS.flatMap(([name, character]) => FORMS.map(([form, write]) => [name, form, write(character)] as const)))('%s inside the number, %s: refused', (_name, _form, letter) => {
+    expect(sentOrRefused(letter, asMember.who, asMember.numbers)).toBe(REFUSED);
   });
 
+  it('any unseen character at any place inside any digits-only number: never sent with the number in clear', () => {
+    fc.assert(
+      fc.property(ITEM_40.held, fc.constantFrom(...ITEM_40.unseen), fc.nat(), fc.boolean(), ITEM_40.frame, ({ number, who, numbers }, character, place, glued, [before, after]) => {
+        const cut = 1 + (place % (number.length - 1));
+        const letter = `${before}${glued ? 'X' : ''}${number.slice(0, cut)}${character}${number.slice(cut)}${after}`;
+        expect(ITEM_40.sentInClear(sentOrRefused(letter, who, numbers), number)).toBe(false);
+      }),
+    );
+  });
+
+  // Ruling 5: the further reading is charged in full and the budget is never raised, so the row nearest the budget
+  // (sent, in the describe above) with one unseen character in it is refused by the count. It stands where no
+  // reading finds anything: after the last line ending.
+  it('the row nearest the budget with one U+0085 added is refused by the count', () => {
+    expect(refusedByTheEntry(`${NEAR_THE_BUDGET}\u0085`, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(true);
+  });
+
+  // By the count, and with no text: past the budget the entry returns the mark alone, as it does for a letter its
+  // first reading did not finish, and the count it hands the check is past the budget.
+  it('the row nearest the budget with one U+0085 added goes back as the mark alone, its count past the budget', () => {
+    const screened = redactLetterForScreen(`${NEAR_THE_BUDGET}\u0085`, BUDGET_PATIENT, BUDGET_CLAIMS);
+    expect(screened.text).toBe('\u0001');
+    expect(checkWorkOf(screened)).toBeGreaterThan(CHECK_WORK_BUDGET);
+  });
+
+  // Every kind of identifier, not a stored number alone (W71 measured these clear on the base: a date of birth 294
+  // of 294, a Social Security number and a phone number 194 of 196 each). The call holds the nine digits and the
+  // seven as member IDs in the "stored" rows; in the others a pattern alone reads them.
+  const stored = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210', '900123456', '5550123']), numbers: claimsOf('ZZ99887') };
+  const KINDS = [
+    ['a date of birth with slashes', asMember, '03141980', (c: string) => `DOB 03/1${c}4/1980 on file`],
+    ['a date of birth with slashes, before a slash', asMember, '03141980', (c: string) => `DOB 03/14${c}/1980 on file`],
+    ['a date of birth as the records hold it', asMember, '19800314', (c: string) => `Born 1980-03${c}-14.`],
+    ['a date of birth in words, inside the day', asMember, '141980', (c: string) => `Born March 1${c}4, 1980.`],
+    ['a date of birth in words, inside the month', asMember, '141980', (c: string) => `Born Mar${c}ch 14, 1980.`],
+    ['a Social Security number by pattern', asMember, '900123456', (c: string) => `SSN 900-12-34${c}56 on file`],
+    ['a Social Security number by pattern, before a dash', asMember, '900123456', (c: string) => `SSN 900${c}-12-3456 on file`],
+    ['a Social Security number that is stored', stored, '900123456', (c: string) => `SSN 900-12-34${c}56 on file`],
+    ['a phone number by pattern', asMember, '2125550123', (c: string) => `Call (212) 555-01${c}23 now`],
+    ['a phone number of seven digits by pattern', asMember, '5550123', (c: string) => `Call 555-01${c}23 now`],
+    ['a phone number that is stored', stored, '5550123', (c: string) => `Call 555-01${c}23 now`],
+    ['a phone number that is stored, before the dash', stored, '5550123', (c: string) => `Call 555${c}-0123 now`],
+  ] as const;
+  /** U+0085 inside a Social Security or phone number is one of the first reading's own joiners there: its placeholder, as on the base. */
+  const firstReadingJoins = (name: string, kind: string) => name === 'U+0085' && /Social Security|phone/u.test(kind);
+
+  it.each(UNSEEN_ROWS.flatMap(([name, character]) => KINDS.map(([kind, call, digits, write]) => [name, kind, write(character), call, digits] as const)))('%s inside %s: refused, or replaced whole where the first reading joins it', (name, kind, letter, call, digits) => {
+    const sent = sentOrRefused(letter, call.who, call.numbers);
+    if (firstReadingJoins(name, kind)) {
+      expect(sent).toMatch(/^(?:SSN|Call) \[(?:SSN|PHONE|MEMBER_ID)\] (?:on file|now)$/u);
+    } else {
+      expect(sent).toBe(REFUSED);
+    }
+    expect(ITEM_40.sentInClear(sent, digits)).toBe(false);
+  });
+
+  it.each(UNSEEN_ROWS)('%s inside a part of a name: the name is replaced whole as before, or the letter is refused', (_name, character) => {
+    expect(sentOrRefused(`Ms. Zeph${character}yra was seen.`, asMember.who, asMember.numbers)).toBe('Ms. [PATIENT_NAME] was seen.');
+    // Between two words of a name the records hold with a mark, the first reading wrote two placeholders with the character between them.
+    expect(sentOrRefused(`Dear Jane${character}zephyra,`, patientOf(['JANE+ZEPHYRA']), asMember.numbers)).toBe(REFUSED);
+  });
+
+  // The wider reading replaces one piece of a stored number ((c)); the unseen character stands inside the piece
+  // beside it, which was sent ("ID [MEMBER_ID] 0<U+0085>1 paid"). The further reading is of the whole letter, before
+  // any placeholder: no wider replacement hides from it the piece the character stands in.
+  it.each(
+    UNSEEN_ROWS.flatMap(([name, character]) =>
+      (
+        [
+          ['ZZ12345 01', `ID ZZ12345 0${character}1 paid`],
+          ['ZZ12345 01', `ID ZZ12345+0${character}1 paid`],
+          ['ZZ12345-01', `ID ZZ12345 0${character}1 paid`],
+          ['7654321/01', `ID 7654321 0${character}1 paid`],
+        ] as const
+      ).map(([held, letter]) => [name, held, letter] as const),
+    ),
+  )('%s inside the piece beside one the wider reading replaces, of a number held %s: %j is refused', (_name, held, letter) => {
+    const who = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], [held]);
+    expect(sentOrRefused(letter, who, asMember.numbers)).toBe(REFUSED);
+    expect(holdsIdentifier(redactLetter(letter, who, asMember.numbers).text, who, asMember.numbers)).toBe(true);
+    expect(holdsIdentifier(redactionSpans(letter, who, asMember.numbers).text, who, asMember.numbers)).toBe(true);
+  });
+
+  it.each(UNSEEN_ROWS.flatMap(([name, character]) => FORMS.map(([form, write]) => [name, form, write(character)] as const)))('%s inside the number, %s: refused through redactLetter and through redactionSpans', (_name, _form, letter) => {
+    expect(holdsIdentifier(redactLetter(letter, asMember.who, asMember.numbers).text, asMember.who, asMember.numbers)).toBe(true);
+    const read = redactionSpans(letter, asMember.who, asMember.numbers);
+    expect(holdsIdentifier(read.text, asMember.who, asMember.numbers)).toBe(true);
+  });
+
+  it('any unseen character at any place inside any kind of identifier, through each entry: never sent with it in clear', () => {
+    const WRITTEN = [
+      ['76543210', '76543210'],
+      ['ZZ7654321', 'zz7654321'],
+      ['03/14/1980', '03141980'],
+      ['1980-03-14', '19800314'],
+      ['March 14, 1980', '141980'],
+      ['900-12-3456', '900123456'],
+      ['(212) 555-0123', '2125550123'],
+      ['Zephyra', 'zephyra'],
+      ['Jane Q. Zephyra', 'zephyra'],
+    ] as const;
+    fc.assert(
+      fc.property(fc.constantFrom(...WRITTEN), fc.constantFrom(...ITEM_40.unseen), fc.nat(), ITEM_40.frame, fc.constantFrom(0, 1, 2), ([written, shown], character, place, [before, after], entry) => {
+        const cut = 1 + (place % (written.length - 1));
+        const letter = `${before}${written.slice(0, cut)}${character}${written.slice(cut)}${after}`;
+        const { who, numbers } = asMember;
+        const sent = [
+          () => sentOrRefused(letter, who, numbers),
+          () => {
+            const { text } = redactLetter(letter, who, numbers);
+            return holdsIdentifier(text, who, numbers) ? REFUSED : text;
+          },
+          () => {
+            const { text, spans } = redactionSpans(letter, who, numbers);
+            return holdsIdentifier(text, who, numbers) ? REFUSED : spans.reduceRight((kept, span) => `${kept.slice(0, span.start)}${span.placeholder}${kept.slice(span.end)}`, text);
+          },
+        ][entry]?.();
+        expect(sent === REFUSED ? '' : sent?.normalize('NFKC').replace(/[^\p{L}\p{N}]/gu, '').toLowerCase(), JSON.stringify(letter)).not.toContain(shown);
+      }),
+      { numRuns: 600 },
+    );
+  });
+
+  it('a letter that holds such a character is charged its further reading and that reading’s check in full', () => {
+    const { who, numbers } = asMember;
+    const plain = 'Ref 76543210 on file.\nNote 2.';
+    const held = 'Ref 76543210 on file.\u0085Note 2.';
+    const joined = 'Ref 76543210 on file.\u200BNote 2.';
+    const work = (letter: string) => checkWorkOf(redactLetterForScreen(letter, who, numbers));
+    expect(sentOrRefused(held, who, numbers)).toBe('Ref [MEMBER_ID] on file.\u0085Note 2.');
+    // The reading of the letter as given, the further reading, and the further reading's check: more than two readings.
+    expect(work(held)).toBeGreaterThan(work(plain) + work(joined));
+    // One that holds none, and one whose only such character is the one the further reading writes, are read once.
+    expect(2 * work(joined)).toBeLessThan(3 * work(plain));
+  });
+
+  // The narrative drafter's check of its facts takes both rules here (the orchestrator's ruling): it holds where a
+  // number character that is no decimal digit stands beside an identifier, and where an unseen character stands
+  // inside one. The verifier keeps its reading (item 34).
+  describe('the drafter’s check (holdsNameOrNumber) takes R1-3 and R1-4', () => {
+    const identifiers = { names: ['JANE Q ZEPHYRA'], numbers: ['76543210', 'ZZ7654321', 'ZZ12345 01'] };
+    it.each([
+      // R1-3: a number character beside a digits-only number, a number that holds letters, a name.
+      'Claim No. 76543210² paid',
+      'Claim No. ²76543210 paid',
+      'Claim No. ①76543210 paid',
+      'Claim No. 76543210ↀ paid',
+      'Claim No. 76543210½ paid',
+      'Claim No. ZZ7654321¹ paid',
+      'Claim No. ↀZZ7654321 paid',
+      'Ms. Zephyra¹ was seen',
+      'Ms. ⑴Zephyra was seen',
+      'Ms. Zephyraↀ was seen',
+      // R1-4: an unseen character inside each.
+      'Claim No. 7654\u00853210 paid',
+      'Claim No. 7654\u00003210 paid',
+      'Claim No. 7654\u0085\u00853210 paid',
+      'Claim No. ZZ76\u009654321 paid',
+      'Claim No. ZZ12345 0\u00851 paid',
+      'Ms. Zeph\u0085yra was seen',
+      'Ms. Zeph\u0000yra was seen',
+      'Ms. Zeph\uFFF9yra was seen',
+      // Set apart by spaces, the character is dropped and the number is one written with spaces, which the reading holds as before.
+      'Units 7654 \u0085 3210.',
+      // Both in one text.
+      'Claim No. 7654\u00853210² paid',
+      'Ms. Zeph\u0085yra¹ was seen',
+    ])('%j holds an identifier', (text) => {
+      expect(holdsNameOrNumber(text, identifiers)).toBe(true);
+    });
+
+    it.each(['Paid 01\u0085 unit ².', 'Nothing of the case is here\u0085.', 'Sent as 976543210².', 'It was paid in\u0085a lump ①.', 'Units 7654 \u0085 321.'])('%j holds none', (text) => {
+      expect(holdsNameOrNumber(text, identifiers)).toBe(false);
+    });
+
+    it('every number character beside, and every unseen character inside, a number or a name: held', () => {
+      fc.assert(
+        fc.property(fc.constantFrom('76543210', 'ZZ7654321', 'Zephyra'), fc.oneof(fc.constantFrom(...ITEM_40.numberCharacters).map((c) => [c, true] as const), fc.constantFrom(...ITEM_40.unseen).map((c) => [c, false] as const)), fc.nat(), fc.boolean(), ITEM_40.frame, (written, [character, beside], place, first, [before, after]) => {
+          const cut = 1 + (place % (written.length - 1));
+          const text = beside ? (first ? `${character}${written}` : `${written}${character}`) : `${written.slice(0, cut)}${character}${written.slice(cut)}`;
+          expect(holdsNameOrNumber(`${before}${text}${after}`, identifiers), JSON.stringify(text)).toBe(true);
+        }),
+        { numRuns: 1000 },
+      );
+    });
+  });
+});
+
+describe('OWED RED, Queues item 40 (stage 1 wrote these failing on 17c234d2; the item’s stages 2, 3 and 4 turn them green; stage 4’s group is left)', () => {
   describe('stage 4, ruling (A): the initial after a name whose match ends in a letter standing alone is replaced', () => {
     const who = (name: string) => patientOf([name], ['1961-03-03'], ['SYN555001']);
     const numbers = claimsOf('ZZ99887');
@@ -3101,7 +3273,9 @@ describe('MOD-25: a letter the base refuses stays refused, whatever the wider re
   ] as const)('%s: refused, as the base wrote it', (_what, [patient, claims], letter, written) => {
     const read = entry(letter, patient, claims);
     expect(read.refused).toBe(true);
-    expect(read.text).toBe(written);
+    // A letter that holds an unseen character (Queues item 40, stage 3) is read once more with it joined, and where that
+    // reading refuses, the text the base wrote goes back with the checks' mark after it: not one character of it changed.
+    expect(read.text).toBe(letter.includes('\u0004') || letter.includes('\u0085') ? `${written}\u0001` : written);
   });
 
   it('a letter this reader’s own check refuses anyway goes back as the base wrote it, without the mark (MOD-15’s glued name)', () => {
