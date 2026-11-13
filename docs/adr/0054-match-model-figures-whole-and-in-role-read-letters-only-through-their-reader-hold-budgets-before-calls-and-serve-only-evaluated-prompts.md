@@ -2464,8 +2464,12 @@ figures above are the earlier trees'; the last paragraph here gives them for the
   refusal mark, where the base wrote it without. The verdict was the same and the text was not the base's. Where the
   base's text is the text this reader returns anyway and only the base's wider reading refuses it, this reader's own
   whole check of that text is now asked apart from the entry, and the mark is written only where that check does not
-  refuse. Pinned by the property's counterexample and its shortest form. The delta review read 287c68d3 and did not
-  read this further fix.
+  refuse. Pinned by the property's counterexample and its shortest form. A second small review read this commit
+  alone (review 6: no blocker, three lesser findings for the queue): on 9,695 letters of a new seed, 703 of them on
+  the changed path, no letter the base refuses is sent, the only change of text from 287c68d3 is the mark no longer
+  written, and no letter's counted units move. Its lesser findings: the added check is one more budget of work a call
+  that no timing row covers; for these letters the refusal rests on the caller's check and only the two pinned letters
+  hold that; and the pinned row would pass without the base's reading, since this reader refuses both letters itself.
 - *The delta review of the fix (review 5: no blocker, three lesser findings, none built, all for the queue).*
   R5-1: a refusal the base gave by its count of work alone is not reproduced, because the base's reading is run again
   on a count from nothing; on 41 of 313 sampled letters it counts fewer units than the base did, by up to 238,226, so a
