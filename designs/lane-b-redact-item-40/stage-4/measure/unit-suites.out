@@ -1,0 +1,16 @@
+== redact
+ Test Files  2 passed (2)
+      Tests  54 passed (54)
+exit 0
+== packets
+ Test Files  46 passed (46)
+      Tests  1825 passed (1825)
+exit 0
+== synth
+ Test Files  14 passed (14)
+      Tests  192 passed (192)
+exit 0
+== model-gateway
+ Test Files  2 failed | 32 passed (34)
+      Tests  6050 passed | 34 skipped (6084)
+exit 1

@@ -1,0 +1,12 @@
+base:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 3987ms
+head:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4082ms
+base:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4227ms
+head:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4161ms
+base:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4005ms
+head:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4244ms
+head (second round, head first):  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 3903ms
+base (second round, head first):  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4243ms
+head (second round, head first):  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4154ms
+base (second round, head first):  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4073ms
+head (second round, head first):  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4235ms
+base (second round, head first):  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4128ms

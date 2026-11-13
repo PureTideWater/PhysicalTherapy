@@ -1,5 +1,109 @@
 # Queues item 40 (letter redaction: R1-3, R1-4, ruling (A)'s initial): status
 
+## RESUME-BLOCK (W75, 2026-11-13 about 16:00 UTC: STAGE 4 IS BUILT AND MEASURED, GREEN AND PUSHED; NO TEST IS OWED; NEXT IS STAGE 5)
+
+- **Head:** `co-001/wip-redact-item-40` at **e17c1192** (one commit over stage 3's 943be057, over stage 2's 07670552,
+  stage 1's 3c856166 and the base 17c234d2): `packages/redact/src/redact.ts` (+15, -3) and
+  `packages/model-gateway/src/redact.leaks.test.ts`. Pushed through the pre-push hook. No PR.
+- **The rule, as built (ruling (A), question 4 of 09:30 UTC):** in `initialsNextToNames`, the period after a taken
+  initial was already that initial's (`gapFrom`). Now, **in the wider reading alone** (`ownMatchesIn` passes
+  `wider && !baseReading`), so is the period after a NAME whose match ends in one letter standing alone
+  (`endsInLetterAlone`: the range's last code point is a letter with no word character before it). The initial after
+  it is then taken by the rule that always took one after a name (capital or lower-case name; dotted, or no word in
+  lower case after it), and the chain after it by the rule for a taken initial. The first reading is not changed by
+  one character; nothing is refused by this rule, no budget, threshold or allowance is touched; `INITIAL_GAP_AFTER`
+  is unchanged. **No form had to be refused instead.**
+- **Green:** the stage-4 group is a describe of its own, `MOD-25, Queues item 40, stage 4, ruling (A): ...`
+  (32 tests); **the OWED RED describe is empty and removed.** redact.leaks.test.ts: **1,543 passed, 0 failed.**
+  eslint and tsc clean on both packages.
+- **Rows added before the change, each seen failing on its assertion on 943be057** (24 failed, 7 passed there; the
+  6 of stage 1 among the 24): nine ordinary names whose wider match ends in a single letter, cut by a space, "/" or
+  "-" (MARIA LOPEZ `Mari A.M.L.`, OLIVIA BROWN, JOSHUA KIM, DANIEL OKAFOR `Danie L.D.O.`, ROBERT E NGUYEN, SARAH
+  COHEN, MIGUEL TORRES `Torre S.M.T.`, EMILY WATSON `Emil/Y.E.W.`, HANNAH PRICE `Hanna-H.H.P.`), one in a sentence,
+  one with spaces after the periods, one ending undotted; chains of three and of four initials (5 rows). **The 7
+  that passed before and pass after (what the rule must NOT take):** `Zephyra. I am`, `Dear Zephyra. I am writing`,
+  a provider's `J.` and `Q.` and `M.` after a sentence that ends in the patient's name (`Seen with Zephyra. J. Smith,
+  PT, ...` keeps its `J.`), `Mari A. A new claim follows.`, `Mari A. My claim ...`, and a letter that is none of the
+  patient's (`Mari A. R. Smith`). (An eighth such row was written with a wrong expectation of mine, two
+  placeholders for `Maria Lopez` where the reader writes one; corrected before the change, it passes on both.)
+  One row pins the stage's named cost (below), written with the change.
+- **Measurements** (`designs/lane-b-redact-item-40/stage-4/`: scripts, `measure/`, and
+  `measure/stage-4.counts.md` over them). Trees: base 17c234d2 (3b34d2a284c9), stage 3 943be057 (24359600cc53),
+  head e17c1192 (bfd54281f591).
+  - **Item 40's generated set** (51,833): **failures 0 in EVERY family**, PHI classes none, errors 0/0.
+    `A.length-*` 42,240: base 2,736 clear / 39,504 hidden, **head 0 / 42,240**; `A.other-names` 8: base 5 / 3,
+    **head 0 / 8**. Everything else is stage 3's to the count (only the 11 `A.*` forms differ from stage 3's
+    summary); **real-shaped rows newly refused by this stage: none** (stage 3's 84 and stage 2's 96 stand).
+  - **Item 34's generated set** (14,356): **differ 0**, failures 0, refused 5,789 on both, notes 6.
+  - **Item 34's `a4.sh` measure** (`cost-names.mts`, 64 names over 558 synthetic texts), base against head and
+    stage 3 against head: **0 texts changed, 0 new spans, every name.**
+  - **The full uncached gate, 4 workers:** 975,489 letters, **same 975,489, differ 0**, refused 463,002 on both,
+    errors 0/0, spanMismatch 0; **PHI none, KEEP none (so no KEEP.changed.text row to read), UNPLACED none, reverse
+    PHI none, reverse KEEP none; real-shaped newly refused 0.** Timing max A 1,141 ms, B 1,178 ms.
+  - **The two budget rows unchanged on both trees:** 403,548,210 and 414,023,090, both sent.
+  - **Fuzzed 60,000 (item 34's fuzzer, seeds 301 to 303): base-refused, head-sent 0** in all three, 0 with a letter
+    or digit outside placeholders; stage 3 against head over the same letters: **all 60,000 the same.**
+  - **The note's 6 unread letters** were of the item's OTHER fuzzer (the product's `fuzz-letters.ts`, seeds 401 to
+    403), so that 60,000 was run too: base-refused, head-sent **0**; stage 3 against head: refused 8,272 on both,
+    newly refused 0, newly sent 0, **6 sent with a different text, each read** and listed in the counts file: in
+    each, one or two more first letters of the held name's parts, written as dotted initials right after a writing
+    of that name that ends in one letter alone, are replaced; none is another person's; nothing is newly clear.
+  - **Ruling (A) over 40 ordinary names** (`other-names.mts`, 453,888 letters per tree, refused 0): clear 201,728
+    on the base and on stage 3, **176,448 on the head.** Ruling (A)'s form (the match ends in a letter alone, then
+    "."): 30,336 clear before, **5,056 after, each one undotted last initial before a word in lower case** (the
+    first reading's "Vantree, I am" rule, the same after any taken initial on the base). The other 171,392 are the
+    same on all three trees and are NOT ruling (A)'s form: see the questions.
+  - **Time:** the reader over 20,000 letters, two runs each: base 1.3665 and 1.3716 ms per letter, head 1.4104 and
+    1.3356, 6,997 refused on each. **The 100-letter property, six runs each:** base 3,987 to 4,243 ms (mean 4,111),
+    head 3,903 to 4,244 (mean 4,130): **the head's slowest run is 1 ms over the base's slowest**; I read that as
+    inside the noise, and say so rather than "inside the range".
+  - **Unit suites:** redact 54 passed; packets 1,825 passed; synth 192 passed; model-gateway 6,050 passed, 34
+    skipped, the two `.db.test.ts` files not running for want of DATABASE_URL (as on the base).
+- **Unexplained differences: none.**
+- **Every named cost of the whole item so far, in one list:**
+  1. Stage 2: the 96 real-shaped `real.r3` rows newly refused (a footnote mark or a list number that is a number
+     character right beside a number: footnote after a member ID, a claim number, a number at a line end; a circled,
+     parenthesized or full-stop list number before one), 16 each of six forms.
+  2. Stage 3: the 52 real-shaped letters the base redacted correctly, refused now (C1 quotes and dashes 32, U+0085
+     line endings 20); accepted by the ruling of 14:38 UTC, with a new queue item (Queues item 41) for mending such
+     characters where the text is extracted. (32 more of that set's 84 were sent in clear by the base: a leak closed.)
+  3. Stage 3: three rows outside the item's describes rewritten (the `Phone<U+0085>900 77.3283150.00` row now
+     refused; two "refused, as the base wrote it" rows with the checks' mark after their text; MOD-24's crafted
+     budget row past the budget in the redaction; MOD-15's property allows that one mark); accepted at 14:38 UTC.
+  4. Stage 3: 1,685 of 60,000 fuzzed letters (2.8%) newly refused (1,731 of the product's fuzzer's 60,000); the
+     further reading's charge, about 2x for a letter that holds an unseen character.
+  5. Not this item's, still sent in clear: a phone number by pattern that is NOT stored, with a number character
+     beside it (11,285 rows; stage 2's recorded residual, unchanged).
+  6. **Stage 4 (new):** after a name whose match ends in a letter standing alone, ANOTHER person's dotted initial
+     that is one of the patient's own initial letters is replaced too (`Mari A. M. Okafor, PT, signed.` for MARIA
+     LOPEZ is `[PATIENT_NAME]. [PATIENT_NAME]. Okafor, PT, signed.`; pinned as a row). The letter is sent and nothing
+     of the patient's is; whose initial it is cannot be known there. It needs the patient's name written cut before
+     its last letter, so no letter of the gate (975,489), of item 34's set, of the repository's synthetic prose or
+     of the 120,000 fuzzed changes for it. `Mari A. R. Smith` (not the patient's letter) and `Zephyra. J. Smith`
+     (the name ends in a word) keep their initial.
+- **Next stage, exactly: stage 5** — the measurements whole on the merged base **4d40557f** (merge the base into
+  the WIP ref first, then every gate above once more against it); ADR 0054's amendment; the test matrix (MOD-25)
+  and the synth registry entries; two adversarial reviews with the note's scopes (review 1, leaks; review 2, cost
+  and regressions); two fix rounds at most; the PR (from `.github/pull_request_template.md`); the merge on green
+  required checks. No migration, no approval line. `measure-stage-4.sh` and `after-stage-4.sh` run every gate
+  (about 35 minutes for the first, 6 for the second, on 4 cores); `other-names.mts` takes about 15 minutes for
+  three trees at once.
+- **Questions for a ruling (one line each, with the recommendation):**
+  1. Stage 4's named cost (item 6 above): recommend accept; the other choice inside the construction is to refuse
+     such a letter, which costs a whole letter where this costs one initial of a provider.
+  2. **On every tree, not ruling (A)'s form:** a name that ends in a WORD with a period right after it and no space
+     sends the initials after it (`Maria.M.L.` is `[PATIENT_NAME].M.L.`; 120,960 of the sweep's rows, base and
+     head alike). It is the rule the ruling keeps for `Zephyra. I am`. Recommend a new queue item, not this one: in
+     the wider reading, a period with NO white space after it before a dotted initial could be read as the
+     initial's (`Zephyra. I am` has the space and is not dotted), measured first on the gate.
+  3. **On every tree:** an undotted last initial before a word in lower case stays (`Lopez, M L was seen` keeps
+     its `L`; 55,488 of the sweep's rows, 5,056 of them in ruling (A)'s form). It is the first reading's "Vantree,
+     I am" rule. Recommend the same new queue item take it up, or leave it recorded; this stage did not touch it.
+  4. The 100-letter property: head's slowest of six runs 4,244 ms against the base's 4,243. Recommend accept as
+     noise (means 4,130 against 4,111; the reader's time over 20,000 letters is level); stage 5 measures it again.
+  5. Stage 2's three questions still stand unanswered (the five pinned U+A6EF rows, the not-stored phone residual,
+     the shape of the further reading, which stage 3 reused as ruled at 12:58 UTC).
+
 ## RESUME-BLOCK (W74, 2026-11-13: STAGE 3 IS BUILT AND MEASURED, GREEN AND PUSHED; NEXT IS STAGE 4)
 
 - **Head:** `co-001/wip-redact-item-40` at 943be057 (one commit over stage 2's 07670552, which is over stage 1's
