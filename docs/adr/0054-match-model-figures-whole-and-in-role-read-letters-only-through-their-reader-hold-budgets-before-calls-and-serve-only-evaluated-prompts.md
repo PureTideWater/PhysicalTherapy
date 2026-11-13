@@ -2402,3 +2402,61 @@ reached. One reproduction row differs, by rule A-4: `Dear Zeph<U+0004>yra,` was 
 `Dear [PATIENT_NAME],`. Said plainly: in this layout nine of the battery's scripts do not load on either side (b2,
 c1 and c2's reproductions, `fz2`, the audit `fz2`, `stress16`, and review I2's layouts, a1 and time), as in item 26's
 kept runs; what they would add is not in this result.
+
+**After the reviews (2026-11-12 and 2026-11-13): two fix rounds, one ruled blocker, and what stays recorded.** Three
+reviews read the item; two rounds of fixes followed, and one finding was ruled a blocker and fixed on its own. The
+figures above are the earlier trees'; the last paragraph here gives them for the tree that merged.
+
+- *Round 1. The wider reading asks at every place (review 1, R1-1).* Under the wider gaps a match could begin at a cut
+  form of a value, cross a mark and end inside the real writing after it (`ZEPHYRA: Z E P H Y R A Z` for ZEPHYRAZ);
+  the scan went on from the end of that match and the rest of the writing was sent, where the base replaced it whole.
+  The wider reading now asks at every place and the spans are merged. *A run of marks and a run of CRs are read in
+  linear time (review 2, R2-1 and R2-2):* where the records hold a separator, the run of marks took that separator by
+  two alternatives and a run of it was read in time doubling with each character (26 slashes 7 s); the alternatives
+  are disjoint now, and a CR LF line ending is read from the first CR of its run alone.
+- *Round 2. Rule (a) reads a number written with a period or a slash (review 1, R1-2; the ruling of 2026-11-12).* A
+  digits-only number written with `.` or `/` inside it and glued to a letter (`Claim No. 7654.3210B`) was sent whole
+  on the base and on this reader; it is refused. **Its cost, on harness letters only:** in the gate 18 letters are
+  newly refused, every one a fuzz letter of one harness that glues `01/02/2020` to a letter (`Seen of-June01/02/2020`,
+  `Paid 3rd01/02/2020`; the gate's letters 921580, 922066, 922254, 922587, 922726, 923085, 923290, 923413, 924728,
+  924779, 925268, 926099, 926123, 926742, 926907, 927006, 927239 and 927298). No real-shaped letter (T3) is newly
+  refused, which was the ruling's condition for keeping the rule. With it `$300.00USD` for a number `30000` is
+  refused: it is no longer the residual the list above names.
+- *The blocker, finding (C): a letter the base refuses stays refused.* The ruling: refuse on either reading. A letter
+  refused by the base's whole verdict stays refused, whatever a wider reading can now replace. For a member ID held
+  `7,7,7,7,7` the base wrote `Fax 7777,7:1111,7777.7` as `Fax [MEMBER_ID]:1111,7777.7` and refused it; A-5 replaced
+  the second writing too, nothing was left for the check to refuse, and `Fax [MEMBER_ID]:1111,[MEMBER_ID]` was sent
+  (in the fuzzed letter it was cut from, with one more `7` beside the number in clear). The same for a member ID held
+  `12121/2121` written over U+0085 (review 3, R3-4). 1 of 60,000 fuzzed letters; 0 of the gate's 975,489.
+  *Which reading of the base's check refused it:* the first reading's check, asked of the text the base's wider
+  reading wrote. It passes the first reading's own text, which holds no placeholder; once the wider reading has
+  written one, the letter is a held one, and the check refuses the digits left beside it. The entries' gate asked that
+  check only of the first reading's text, so it asked less than the base's verdict.
+  *The fix is the blunt one.* Before any wider match is applied, `redactLetterForScreen` and `redactionSpans` ask what
+  the base's whole entry did with the letter (`refusedAsTheBaseRead`): the base's own wider matches (the wider reading
+  with none of what MOD-25 widened: `baseReading`), its gate, its text, and its check of that text in both writings.
+  Where the base refused, the letter goes back as the base wrote it, which the check refuses again for the same
+  reason; where only the base's wider reading refuses, or that reading passes the budget, with the mark the check
+  refuses. Nothing is assumed of how the widened forms relate to the base's. It runs on a counter and stores of its
+  own (`asTheBaseRead`), so what the entry counts does not move by a unit: the two rows nearest the budget are at
+  403,548,210 and 414,023,090, both sent. The first reading is not run again (MOD-25 changed nothing of it), and the
+  first reading's check is not asked a second time of a text the entry returns anyway, since `holdsIdentifier` asks it
+  of that same text. **Its cost is time, not count:** the base's wider reading is read once more on every letter that
+  is not already refused, and the first reading's check once more where the base's text is not this reader's.
+- *(A), a recorded residual, pinned as sent, Queues item 40.* Reading at every place shows the last initial of a
+  chain for a name of one repeated letter: for ZZZZZZ, `ZZ/ZZZZ Z.Z.Z` is sent as `[PATIENT_NAME].Z` (the base sent
+  `ZZ/[PATIENT_NAME].Z`, more of it). 1 of 19,000 fuzzed letters, 0 on 22 other shapes of name.
+- *(B), an accepted cost: reading at every place counts more work.* For a name AAAAAAAA, the letter `A ` written
+  49,000 times was read by the base to its end (341,006,350 units for the redaction, 376,730,640 with the check) and
+  sent fully hidden; this reader refuses it by the count, with no text of it. Written 40,000 times it is sent by both
+  (307,583,640 units on the base, 346,735,808 here). Pinned as a refused row. The budget and every weight are as they
+  were, and no real-shaped letter is refused for it.
+- *Still sent, pinned, Queues item 40 (review 1, R1-3 and R1-4):* a number character that is no decimal digit right
+  beside the number (`Ref ↀ76543210`, `76543210፩`), and U+0085 or a control character inside the number (`Member ID
+  7654<U+0085>3210`, `Fax X7654<U+0085>3210 ext`).
+- *The battery's scripts that do not load.* In this layout scripts of the battery still fail at load on both sides,
+  as in item 26's kept runs and the stage 6 run above; what they would add is in no result here.
+- *Owed before any real PHI, unchanged:* the count of stored member IDs and claim numbers by length, from the first
+  practice's records.
+
+MEASURES-PLACEHOLDER
