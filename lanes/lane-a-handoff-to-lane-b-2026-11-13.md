@@ -11,7 +11,7 @@ this order. Nothing else on Lane B's queue comes before it.
 
 | # | Step | State at 15:10 UTC | Lane B's first action |
 | --- | --- | --- | --- |
-| 1 | **Queues item 40** (identifiers sent in clear beside or around odd characters) | Stages 1 to 3 of five built and measured on WIP `co-001/wip-redact-item-40`; stage 4 in build (W75) | Whatever stage the status file's top RESUME-BLOCK names next; then stage 5 |
+| 1 | **Queues item 40** (identifiers sent in clear beside or around odd characters) | Stages 1 to 4 built and measured on WIP `co-001/wip-redact-item-40`; stage 5a (the base merged, the measurements whole, the records, the PR description's draft) in hand until 18:00 UTC (W76) | **Stage 5b:** the two adversarial reviews, at most two fix rounds, e2e, the PR, the merge on green required checks (no migration, no approval line) |
 | 2 | **Queues item 41** (unseen characters mended at extraction, and counted) | Queued today, not started | A measured design note first, no build |
 | 3 | **Queues item 39** (the letter check's time) | Open; the reader is about 1.5 times slower per letter after item 34 | A measured design note first; before launch and before the check's first caller is wired |
 | 4 | **The redaction sweep** (the co-founder opted in once) | Not run; after items 40 and 41 merge | Tell the co-founder its fixed budget first; bounded, read-only |
