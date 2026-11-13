@@ -1,0 +1,5 @@
+6700 words of 9 (60300 characters): build cold 20.8 ms, then 6.3 ms
+1500 words of 40 (60000 characters): build cold 40.4 ms, then 29.5 ms
+15000 words of 4 (60000 characters): build cold 26.0 ms, then 6.4 ms
+20000 words of 3 (60000 characters): build cold 20.1 ms, then 12.3 ms
+K: 147593 code points

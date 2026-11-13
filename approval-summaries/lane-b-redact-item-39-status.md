@@ -7,6 +7,8 @@
   identifier); prototypes as source patches (`variants.mts`); the full gate base against the recommended prototype
   (`aclazy`): 975,489 letters, 0 differing; item 40's windowed re-read (`item40/`): S-1 measured, item 40's generated
   set and the full gate head against the windows, 0 differing.
-- **Next:** timing battery (`battery.sh`, out/battery.txt), then design-note.md, push, report to the orchestrator.
+- **Done too:** timing battery (98 rows, out/battery-table.md; same outputs and units on every variant); design-note.md
+  written (recommendation and stages, section 6; questions, section 8). Reported to the orchestrator.
+- **Next:** none in this stage. The build (co-001/redact-item-39) waits for the rulings in section 8.
 - **Trees:** base 4d40557f; item 40 head 107c87e1 (newer than e17c1192).
 <!-- /RESUME-BLOCK -->
