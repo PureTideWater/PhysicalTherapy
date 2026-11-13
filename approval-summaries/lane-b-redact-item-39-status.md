@@ -2,14 +2,24 @@
 
 <!-- RESUME-BLOCK -->
 - **Stage:** build, stages 1 to 4 (brief of 2026-11-13; MOD-26). Branch `co-001/redact-item-39` from
-  `claude/build-platform` 4d40557f, worktree `/home/user/redact-item-39`. WIP ref `co-001/wip-redact-item-39`.
-- **Commits:** stage 1 b86067c6 (tests and `matchingForTests`), stage 2 ae53f2d5 (views Map), stage 3 ea77da7c
-  (skeleton, automaton, sticky driver, dense rule), stage 4 c90098c6 (lazy patterns, source rule and fallback).
-- **Proven so far:** stage 1's tests seen failing on assertions on the base (below); (c), (d), (e) pass at stage 4.
-- **Running:** the full `--no-cache` gate per stage (trees snapshotted in the session scratchpad; base tree A is the
-  main checkout at 4d40557f), then the timing tests (a), (b) on a quiet machine, then the unit suites.
-- **Next:** read each gate's counts (0 differing, refused 463,002 on both, timing rows under 3 s); run (a), (b); push
-  the WIP ref; report stage 4's end to the orchestrator. Not mine: stage 5 (waits for item 40's merge), the reviews, the PR.
+  `claude/build-platform` 4d40557f. WIP ref `co-001/wip-redact-item-39` **pushed at 5af1c9a0** (ls-remote checked).
+  Handed over at about 217k context on the orchestrator's word (23:00 UTC).
+- **Commits, all on the WIP ref:** stage 1 b86067c6 (tests, `matchingForTests`), stage 2 ae53f2d5 (views Map),
+  stage 3 ea77da7c (skeleton, automaton, sticky driver, dense rule), stage 4 c90098c6 (lazy patterns, source rule and
+  fallback), and 5af1c9a0 (the skeleton scan reads ASCII by code and a non-ASCII run by one sticky run; `allKept` for
+  compactFolded(x) === x; sourceOf finds line breaks with includes).
+- **Why 5af1c9a0:** stage 3 put the corr-ssn-2 test (redact.test.ts, one reading against two in exec runs, bound
+  90 in 100) over its bound: base 2,592/2,883 = 0.899, stage 3 0.908, stage 4 0.910. Now 2,558/2,856 = 0.896.
+- **Proven:** full `--no-cache` gate, stages 1 to 4: 975,489 letters, differ 0, refused 463,002 on both, errors 0,
+  span mismatches 0; max letter 1,440 / 1,282 / 1,313 / 1,486 ms against 3 s, none over. Source check (gate-only
+  patched stage 4 tree, throws on any difference from V8's source): differ 0, errors 0. At 5af1c9a0: all 3,616
+  redact unit tests pass (MOD-26 (a) to (e) included), typecheck and lint clean. No WORK constant, CHECK_WORK_BUDGET
+  or work(...) call changed.
+- **Next, exactly:** run the full gate on 5af1c9a0's `packages/redact/src` against 4d40557f's:
+  `designs/lane-b-redact-ssn-phone/gate/run.sh <base src> <5af1c9a0 src> <out> --workers 4 --no-cache` (about 16 min).
+  It was started in the handing-over container and its result is lost with it. Need: differ 0, refused 463,002 on
+  both, no letter over 3 s. Then report stage 4's end to the orchestrator. Stages 2 to 4 are done: do not redo them.
+  Not mine: stage 5 (waits for item 40's merge), the reviews, the PR.
 <!-- /RESUME-BLOCK -->
 
 ## Rulings applied (lanes/lane-b.md 21:10 UTC)
