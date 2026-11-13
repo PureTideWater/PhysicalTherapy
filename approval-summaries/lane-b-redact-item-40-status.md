@@ -1,5 +1,23 @@
 # Queues item 40 (letter redaction: R1-3, R1-4, ruling (A)'s initial): status
 
+## RESUME-BLOCK (stage 5b, 2026-11-13 about 21:30 UTC: FIX ROUNDS 1 AND 2 DONE, MEASURED, PUSHED; NEXT: CHECKS, PR, MERGE)
+
+- **Head:** `co-001/wip-redact-item-40` at **1a7c5270**: ae0b6a3f (fix round 1: S-2 the further reading's check
+  charged in `refusedWithNumberCharactersAsOne`; S-3 20 s on the three near-budget tests; S-4 U+FFFC, `\p{Nl}`,
+  `\p{No}` in `NUMBER_JOINERS`; S-1 pinned; ADR 0054 amended), then 1a7c5270 (fix round 2: C-1's row pinned at
+  64,000, ADR cost 6 names its thresholds; N-1 wording; no code line). Every new row seen failing on its assertion
+  first (11 on 61600c7c; the stage-2 charge row fails on 61600c7c by exactly the check's 231,758 units; C-1's row
+  fails there). Base `claude/build-platform` still 4d40557f: no merge needed.
+- **Measured** (`designs/lane-b-redact-item-40/stage-5b/`, `measure/stage-5b.counts.md`): every count equals 5a's;
+  gate 975,489 differ 0, refused 463,002 both, classes none, slowest 1,349 / 1,287 ms (busier machine); budget rows
+  unchanged; fuzzers base-refused head-sent 0, 5a-head vs head 0 differ. **Bar passed.**
+- **Delta reviews** (`reviews-5b/summary.md`): no blocker; C-1 (cost of the charged check, real-shaped, from about
+  63,400 characters with CR LF) reproduced, recorded and pinned in fix round 2; L-1 (U+FFFC / number character / a
+  plain letter inside an SSN, phone, DOB or name, on the base too) reproduced, not this delta's: for Queues item 42.
+- **Next:** lint, typecheck, `pnpm test`, golden, db, e2e on 1a7c5270 (running); the PR from
+  `designs/lane-b-redact-item-40/pr-description.md` (head `co-001/redact-item-40`); subscribe; merge on green with a
+  merge commit and expectedHeadSha after the schema-PR check; verify on the base; RESUME-BLOCK to MERGED; report.
+
 ## RESUME-BLOCK (stage 5a, 2026-11-13 about 20:40 UTC: STAGE 5A DONE; NEXT 5B: FIX ROUNDS ON LANE B'S INDEPENDENT REVIEWS, E2E, PR, MERGE)
 
 - **Head:** `co-001/wip-redact-item-40` at **61600c7c**: 18777df0 (e17c1192 with `claude/build-platform` 4d40557f

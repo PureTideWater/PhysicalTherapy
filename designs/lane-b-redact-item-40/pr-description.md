@@ -1,9 +1,8 @@
-# Draft: the description of Queues item 40's pull request (stage 5a, not opened)
+# The description of Queues item 40's pull request (stage 5b)
 
 Title: `fix(redact): Queues item 40 (MOD-25): a number character or an unseen character at an identifier, and the initials after a name cut before its last letter`
 
-Head `co-001/redact-item-40` (from the WIP ref `co-001/wip-redact-item-40`), base `claude/build-platform`. Stage 5b
-fills the Checks table on the head it opens with and the reviewers' table from Lane B's two independent reviews.
+Head `co-001/redact-item-40` (from the WIP ref `co-001/wip-redact-item-40` at 1a7c5270), base `claude/build-platform`.
 
 ---
 
@@ -18,6 +17,17 @@ one of the call's own identifiers in one of them is refused or fully redacted be
   U+0000: `Member ID 7654<U+0085>3210`) is refused (R1-4);
 - after a name whose match ends in one letter standing alone (`Mari A.M.L.` for MARIA LOPEZ, `ZZ/ZZZZ Z.Z.Z` for
   ZZZZZZ), the dotted initials after it are the patient's placeholder too (ruling (A)).
+
+Fix rounds on Lane B's independent reviews (S-1 to S-4) and on the delta reviews of the fix round (C-1):
+
+- the check of what R1-3's further reading writes is charged on the letter's work count (S-2: its work reached no
+  budget; every outcome was right, since an uncounted check can only refuse);
+- U+FFFC (what PDF text writes for an object) and every number character that is no decimal digit join a stored
+  member ID or claim number, as the other number joiners do (S-4, narrow part: ADR 0054's joiner list amended):
+  `Member ID 7654<U+FFFC>3210` is `Member ID [MEMBER_ID]`, and `7654ↀ3210`, `7654½3210` refuse the letter as a number
+  character beside the number does. A letter inside a number (`7654X3210`) is Queues item 42;
+- the three tests nearest the budget carry the explicit 20 s limit the four older ones carry (S-3);
+- two costs pinned and recorded (S-1 and C-1, below), Queues item 39 their cure.
 
 The drafter's check (`holdsNameOrNumber`) takes R1-3 and R1-4 too. A person sees nothing new: a letter refused for one
 of these forms shows the existing refusal. Synthetic letters only.
@@ -38,9 +48,10 @@ the stage-3 costs accepted with Queues item 41 queued). The design: `designs/lan
 - Content releases (`content/`): unchanged.
 - Domain model (`docs/product/domain-model.md`), its approval line and `approvers.json`: unchanged.
 - CI and the GitHub settings: unchanged.
-- The reading of a letter as given: not changed by one character. Every new rule only adds a further reading that
-  refuses, or (ruling (A)) acts in the wider reading alone. The letter check's work budget, every weight,
-  `INITIAL_GAP_AFTER` and the two rows nearest the budget (403,548,210 and 414,023,090 units, both sent) are unchanged.
+- The reading of a letter as given: changed only by S-4's joiner list, which only adds matches. Every other new rule
+  only adds a further reading that refuses, or (ruling (A)) acts in the wider reading alone. The letter check's work
+  budget, every weight, `INITIAL_GAP_AFTER` and the two rows nearest the budget (403,548,210 and 414,023,090 units,
+  both sent) are unchanged.
 - The packet verifier's own reading is unchanged.
 
 ## Checks
@@ -48,9 +59,10 @@ the stage-3 costs accepted with Queues item 41 queued). The design: `designs/lan
 The required checks report on this page by themselves: <!-- required-checks -->`all green`, `mutation`,
 `screening-capacity gate` and `approval-of-record`<!-- /required-checks -->.
 
-Measured on the WIP head 18777df0 (the item's e17c1192 with `claude/build-platform` 4d40557f merged in; the reader's
-files are e17c1192's byte for byte, and the base's are 17c234d2's) against the base 4d40557f, synthetic letters only;
-the counts are in `designs/lane-b-redact-item-40/stage-5a/measure/` on `claude/build-ops`.
+Measured on the fix round's head ae0b6a3f (fix round 2, 1a7c5270, changes no code line of the reader) against the
+base 4d40557f and against stage 5a's head 61600c7c, synthetic letters only; the counts are in
+`designs/lane-b-redact-item-40/stage-5b/measure/` on `claude/build-ops` (stage 5a's in `stage-5a/measure/`). Every
+count equals stage 5a's; only wall times differ (the gate ran beside the delta reviews).
 
 | Command | Result |
 | --- | --- |
@@ -58,22 +70,31 @@ the counts are in `designs/lane-b-redact-item-40/stage-5a/measure/` on `claude/b
 | `vitest run` packages/redact, packets, synth, model-gateway | 54, 1,825, 192 and 6,050 passed (34 skipped; the two `.db.test.ts` files need DATABASE_URL, run by CI's db job) |
 | Item 40's generated set (51,833 letters) | 0 failures in every family, no PHI class |
 | Item 34's generated set (14,356 letters) | 0 differ |
-| Full uncached gate (975,489 letters, 4 workers) | 0 differ, refused 463,002 on both, PHI / unplaced / reverse classes none, real-shaped newly refused 0; slowest letter 931 ms here, 1,024 ms on the base |
+| Full uncached gate (975,489 letters, 4 workers) | 0 differ, refused 463,002 on both, PHI / unplaced / reverse classes none, real-shaped newly refused 0; slowest letter 1,287 ms here, 1,349 ms on the base, of 3,000 |
 | The two budget rows | 403,548,210 and 414,023,090 units, sent, on both |
-| Fuzzed 60,000 (seeds 301 to 303) and the product fuzzer's 60,000 (401 to 403) | base-refused, head-sent 0 in both; the product fuzzer's 6 changed letters each read, nothing newly clear |
-| Item 34's cost measure (64 names, 558 texts) | 0 texts changed |
-| Ruling (A) over 40 names (453,888 letters a tree) | letters with the name or chain in clear 201,728 to 176,448, refused 0 |
-| The 100-letter property, six alternated runs a tree | base 3,268 to 3,504 ms, head 3,341 to 3,452 ms: inside the base's range |
+| Fuzzed 60,000 (seeds 301 to 303) and the product fuzzer's 60,000 (401 to 403) | base-refused, head-sent 0 in both; the product fuzzer's 6 changed letters each read, nothing newly clear; stage 5a's head against this head: 0 differ in both |
+| Item 34's cost measure (64 names, 558 texts) (stage 5a, 18777df0; not re-run) | 0 texts changed |
+| Ruling (A) over 40 names (453,888 letters a tree) (stage 5a, 18777df0; not re-run) | letters with the name or chain in clear 201,728 to 176,448, refused 0 |
+| The 100-letter property, six alternated runs a tree (stage 5a, 18777df0; not re-run) | base 3,268 to 3,504 ms, head 3,341 to 3,452 ms: inside the base's range |
 | Stage 5b, on the PR's head | `pnpm test`, `pnpm test:golden`, `pnpm test:db`, `pnpm test:e2e` (to be filled) |
 
 ## Reviewer agents' findings
 
-Lane B's two adversarial reviews (review 1, leaks; review 2, cost and regressions, with the design note's scopes) are
-run by another session; stage 5b fills this table.
+Lane B's two adversarial reviews of e17c1192 (review 1, leaks; review 2, cost and regressions; review 3, the rulings),
+each surviving finding re-tested by a skeptic (`designs/lane-b-redact-item-40/reviews-lane-b/summary.md`), then two
+adversarial reviews of fix round 1's delta with a skeptic for each "should" (`reviews-5b/summary.md`), on
+`claude/build-ops`. No blocker survived either.
 
 | Reviewer | Finding | Resolution |
 | --- | --- | --- |
-| (stage 5b) |  |  |
+| Lane B review 2 | S-1 (should): prose with one `½` and one U+0085 refused on cost from about 77,600 characters (base: 254,000) | Recorded cost 6, pinned at 100,000; Queues item 39 the cure (the orchestrator's ruling) |
+| Lane B review 2 | S-2 (should): the check of R1-3's further reading was never charged | Fixed: charged; a crafted row the uncounted check let through is refused by the count; the stage-2 row names the added charge |
+| Lane B review 2 | S-3 (should): three tests near the budget at the 5 s default timed out under load | Fixed: the explicit 20 s limit; the product's bound unchanged |
+| Lane B review 1 | S-4 (should): a character that is no joiner inside a stored identifier hides it | Narrow part fixed: U+FFFC and number characters join a stored number (ADR 0054's list amended); a letter or other visible character inside a number is Queues item 42 |
+| Lane B review 1 | S-5 (should, on the base too): initials after an unseen character before their period, or an uncommon joiner | Recorded for the queue (not in this item's rulings) |
+| Delta review 2 | C-1 (should): with S-2 charged, a claim letter with one footnote mark and CR LF is refused on cost from about 63,400 characters (stage 5a: 96,500) | Fix round 2: recorded with cost 6 (S-1's family), pinned at 64,000; Queues item 39 the cure |
+| Delta review 1 | L-1 (should, on the base too): U+FFFC or a number character inside an SSN, phone, date of birth or name is sent; a plain `X` does the same | Recorded for the queue: Queues item 42's scope, widened beyond numbers |
+| Delta reviews | C-2, C-3, N-1 (nits) | C-3 closed by C-1's row, N-1's wording fixed, C-2 queued |
 
 Named costs, each pinned by a test and each in docs/adr/0054's amendment of 2026-11-13:
 
@@ -88,8 +109,14 @@ Named costs, each pinned by a test and each in docs/adr/0054's amendment of 2026
    reading's charge on letters holding an unseen character.
 5. After a name cut before its last letter, another person's dotted initial that is one of the patient's own letters
    is replaced too (`Mari A. M. Okafor, PT` is `[PATIENT_NAME]. [PATIENT_NAME]. Okafor, PT`).
+6. Each further reading reads the whole letter again, and its check is charged in full: prose with one `½` and one
+   U+0085 is refused on cost from about 77,600 characters (pinned at 100,000), and a claim letter with one footnote
+   mark and CR LF line endings from about 63,400 (pinned at 64,000; stage 5a 96,500), under the reader's
+   100,000-character promise. Queues item 39 is the cure.
 
-Left, recorded (not this item's): a phone number by pattern that is not stored, with a number character beside it;
+Left, recorded (not this item's): a visible character that is no joiner inside an identifier (`7654X3210`; U+FFFC or
+a number character inside an SSN, phone, date of birth or name), Queues item 42; a phone number by pattern that is not
+stored, with a number character beside it;
 `Maria.M.L.` (no space after a name ending in a word) and an undotted last initial before a word in lower case, on
 every tree, proposed for a new queue item.
 
@@ -111,4 +138,4 @@ dismisses it. The build then merges, and never reviews.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
-https://claude.ai/code/session_01FcouKRdnrwokt5fwcRT2co
+https://claude.ai/code/session_01FcouKNKwVFVHfmZfiuVbLj
