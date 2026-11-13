@@ -4,7 +4,18 @@ Design of record: `designs/lane-b-redact-item-34/design.md` (ops 163894a9). Ruli
 one constant; (d) the verifier keeps its reading; A-4's costs accepted; a digit beside the number stays recorded.
 WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. No PR is open.
 
-## RESUME-BLOCK (W63, 2026-11-13 08:40 UTC: HANDOVER AT THE CONTEXT LIMIT. DRAFT PR #161 OPEN, NOT MERGED; ONE TESTS-ONLY COMMIT IS OWED BY THE ORCHESTRATOR'S RULING)
+## RESUME-BLOCK (W69, 2026-11-13: THE TESTS-ONLY COMMIT ffdbac26 IS PUSHED ON #161; WAITING FOR CI; NOT MERGED)
+
+- **State.** Draft PR #161, branch `co-001/redact-item-34`, head ffdbac26 (85819a81 + one commit: `{ timeout: 20_000 }`
+  on the four tests, each with its quiet time; the per-letter cost and the ruling in the ADR 0054 amendment). The PR
+  description carries the same. Locally on ffdbac26: the two test files 2,210 passed (four runs), verify-content,
+  typecheck, lint exit 0. The base was 979a21b8 at the push. W69 is subscribed to the PR.
+- **Exact next step.** On green required checks: list open PRs (a schema PR carrying the founder's own approval-line
+  commit merges first; then take the base again); otherwise mark ready, merge, verify on the base, a MERGED block
+  here (owed to Queues item 40: R1-3, R1-4, ruling (A)'s one initial; to item 39: the per-letter time), one line to
+  the orchestrator. A red timeout of a test not among the four goes to the orchestrator before any change.
+
+## Earlier today: RESUME-BLOCK (W63, 2026-11-13 08:40 UTC: HANDOVER AT THE CONTEXT LIMIT. DRAFT PR #161 OPEN, NOT MERGED; ONE TESTS-ONLY COMMIT IS OWED BY THE ORCHESTRATOR'S RULING)
 
 - **State.** Draft PR #161 into claude/build-platform, branch `co-001/redact-item-34`, head 85819a81. Nothing is
   uncommitted. W63 has unsubscribed from the PR and cancelled its check-ins. Local results and CI: the block below.
@@ -73,6 +84,9 @@ WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. N
   - R5-3 and R6 L-1: time. Every letter pays the base's reading again, and the changed path one more whole check, each
     at most one more budget a call and uncounted; no timing row covers the second. Gate run time 1,311 s base, 1,534 s
     head (17% more); the battery's 120 s generators reach 20% to 37% fewer letters on the head.
+  - Queues item 39 (W69, 2026-11-13): the reader's per-letter time after item 34 (the 100-letter property 2.3-3.3 s on
+    the base's reader, 4.1-4.8 s on the head), to be brought down with the check's time before launch and before the
+    check's first caller is wired.
   - R6 L-2, L-3: the unmarked refusal rests on the caller's check; only two letters pin it, and that row would pass
     without the base's reading. A property row is owed.
   - k-gen-A (battery): the head refuses 3 of 20,000 letters the base sends (a break written LF CR between an SSN or
