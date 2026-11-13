@@ -1,6 +1,112 @@
 # Status: Queues item 37, the key registry (Lane A)
 
-## RESUME-BLOCK (2026-11-13, W65, session_019i9if9qjSJt3AGpHV86RSa): every ruling now has a proved text and an owed-red test (ruling 3 REFINED, change 5 done), the app-side code is built, the adversarial review and its one fix round are done; what is left is the typed /new-migration and everything after it
+## RESUME-BLOCK (2026-11-13, W66, session_019i9ifAN8HwXxoQicPm7XvS): the rulings of 04:55 UTC (S6 a, b, c; S4; N2; N4) have proved texts, owed-red tests, the web's words and the runbook's lines; the delta review is done with one fix; what is left is the typed /new-migration and everything after it
+
+**Ref `co-001/wip-key-registry` e1a7ac7e** (pushed through the hook; no PR; no migration file, no domain-model text, no
+generated function touched). Two commits on 055407ae: 91a84d1f (the tests, the web's two refusals and its counted
+line, the runbook) and e1a7ac7e (the review's S1 test, the runbook's wording).
+**The ONE command that applies every text of the item** (after the rename, on the first migration; W65's and W66's):
+`python3 designs/lane-a-key-registry-reviews/w66/apply-texts.py <the first migration, or a copy> designs/lane-a-key-registry-reviews/a1-trigger.sql.txt`
+must print `applied`; the typed result must equal that. `w66/migration.patch` (362 lines) is the same as a diff; `w65/`
+and `w64/` are superseded. The texts and their lock analysis: `w64-migration-texts.md`, section "W66". The review:
+`w66-review.md`. **W66 adds no object: the preflight's lists, section 14, SEC-25's maps and the header's function
+lists are exactly as W65's block (below) says.**
+
+### What W66 changed in the rules (say these with the migration)
+- **S6 (a):** `user_removal_target_holds` binds only while the request can still be confirmed: state requested,
+  `expires_at > clock_timestamp()` (whatever the job marked), the requester still passing `account_removes_keys`.
+- **S6 (b):** `hardware_key_removal_request`, against a target that holds a live platform_admin membership of an
+  internal organization: at most one such request of a requester that can still be confirmed
+  (`hardware_key_removal_one_administrator_request`), and not again against the same target for seven days after its
+  request there expired (from `expires_at`) or was cancelled (from `decided_at`)
+  (`hardware_key_removal_asked_again_too_soon`); both 23514. A transaction advisory lock on the requester, taken
+  first. Other targets and a re-request after a confirmed removal are not limited.
+- **The review's S1, taken (not in the ruling's words; the orchestrator may want to see it):** of one requester's
+  confirmable requests against accounts that are platform administrators now, only the earliest binds its target, so
+  a member asked against afterwards and then promoted is not held as well.
+- **S6 (c):** no text; the owner path was never bound. Test SGN-31 (c); the runbook says when and by whom.
+- **N2:** both sign-out functions store NULL for a request ID outside the CHECK's pattern.
+- **S4:** proved by a test through a real opening: change 5's count commits when the web refuses afterwards;
+  nothing changes in `recorded()`.
+- **N3, and one thing built for it:** the ruling's "web's refusal line" did not exist (the web wrote a line only when
+  the security event could not be recorded). W66 added it: `a refused act on a key removal` (warn; `user_id`,
+  `request_id`, `error_code` `key_removal_refused_<why>`), one a refused act, in `invoke.ts`; the runbook names it as
+  the count. No new log field. Name it in the PR.
+- The web: `KEY_REFUSALS` gains the two names (words tested in `console-keys.test.ts`). Neither is a recorded
+  refusal (no security event): see Queued.
+
+### Owed red on e1a7ac7e (each goes green with the texts; none skipped or loosened)
+Everything in W65's list below, and:
+`packages/db/src/key-registry.db.test.ts`: "SGN-31: a requested key removal binds its target only while it can still
+be confirmed, and one requester holds one administrator once" (11 of its 15: (a) 3, the S1 case 1, (b) 4, the
+two-administrator scenario 3; green today: (c), and in (b) the lapsed-open, the ordinary-accounts and the
+confirmed cases).
+`packages/db/src/provider-sign-out.db.test.ts`: "SGN-28 ... > is never lost to its trace ID ..." (1; SGN-28 now 5).
+`apps/web/src/lib/auth/sign-in.db.test.ts`: "SGN-30: the count of a wrong code refused at the registry's row is
+committed when the web then refuses" (1).
+`apps/web/src/lib/routes/console-routes.db.test.ts`: "SGN-31: a second open request against another platform
+administrator ..." (1); "SEC-28: every refused act writes the web's line ..." (1: its lines pass, its event is owed).
+
+### Proved
+- **`pnpm test:db` whole, once, on a scratch worktree of e1a7ac7e with every text applied by the one script
+  (PostgreSQL 18 on 5433, Node 24): 180 files, 10660 tests: 10655 passed, 4 failed, 1 skipped.** The four are the
+  expected ones: the SGN-22 prefix case (the rename) and the three domain-model/function-file cases (`domain-model.db.test.ts
+  > matches the schema`, `function-files.db.test.ts > DBF-01` and `> DBF-04 --check`). Every owed-red case is green there.
+- Each new test was seen red first: SGN-31's (a), (b) and scenario cases and N2 on their assertions against W65's
+  texts; S4 on its assertion on the WIP (0 tries, not 1). **Not seen red by W66:** the S1 case (the reviewer's probe
+  proved the hole; W66 saw the case only green with the fix and red on the WIP for want of the trigger); (c) and N4's
+  new assertion pass with and without the texts (they pin, they do not owe).
+- On the WIP tree: `pnpm typecheck`, `pnpm lint:logs`, `pnpm lint:copy` pass; eslint passes on every changed file
+  (`pnpm lint` whole ran once before the last one-line fix: packages and root passed, apps/web had that one error,
+  since mended and linted by file). Unit: `apps/web/src/lib/routes`, `apps/web/src/lib/http`,
+  `infra/test/monitoring.test.ts`, `packages/observability`: 807 passed. The whole unit suite, golden and e2e: not run.
+
+### For the orchestrator's ruling (the delta review; W66's recommendation with each)
+- **S2:** `membership_removal_target_holds` still binds on any row in state requested: past 24 hours with the job
+  stalled, or after the requester was disabled, the target still cannot change an internal membership (it can disable
+  accounts). Recommend the same two conditions in its EXISTS (`r.expires_at > clock_timestamp() AND
+  account_removes_keys(r.requested_by)`), plus S1's NOT EXISTS, by one more pair in the script; not built: the ruling
+  named the "user" trigger only.
+- **S3 (older than W66):** the target may counter-request against its requester, and each then holds the other for
+  24 hours. The runbook now says disable first, request second. Recommend also refusing a request by an account that
+  is itself the target of a confirmable request; needs a ruling.
+- **N1:** with exactly two platform administrators a request against the other can never be confirmed and is only a
+  shield. Recommend refusing it when no third eligible administrator exists; needs a ruling.
+
+### Left for the last session
+1. The two typed /new-migration commands with the rename (after `20261115090000_roi_statement_actionable_lines`; SGN-22's
+   file filter if the prefix changes); in the first, the texts by the one script's order, then the header comment's
+   lists by hand (W65's order, below, step 2).
+2. Outside it: SEC-25's lists (W65's step 3, unchanged by W66); `PROVIDER_SIGN_OUT_REASONS`; every "(owed red ...)"
+   parenthesis dropped (now also SGN-31's two, SGN-30's web describe, SEC-28's line case); the matrix rows SGN-28 to
+   SGN-31, SEC-28, JOB-09 and `pnpm synth --all`.
+3. ADR 0095's records: W65's list, and now S6 (a), (b) and S1 (ADR 0095 says a request binds "until the job marks
+   it": no longer), the advisory lock, the two refusal names, N2, the web's counted line.
+4. The domain model and the function files regenerated (never the approval line); the full suite once (unit, db,
+   golden, e2e); the five screens seen in a browser after the fixes (the request form's two new refusals among them);
+   the PR from the template; the suggested approval line as one PR comment.
+5. Expected then: `pnpm test:db` 10659 passed, 0 failed, 1 skipped.
+
+### Queued by W66 (lesser findings; none taken)
+- The two new refusals leave no security event, though a requester refused a second hold or a repeat is probing the
+  shield: adding `one_administrator_request` and `asked_again_too_soon` to `hardware_key_removal_refused`'s closed list
+  and to `RECORDED_REFUSALS` would record them (the runbook already calls the pattern an incident).
+- `hardware_key_removal_target_acts` has no words in `KEY_REFUSALS`: a bound target's refused act in the console
+  surfaces as the raw error. Not looked into further.
+- Review N4: `account_removes_keys` reads `now()`, the trigger `clock_timestamp()` (theoretical). N6: SGN-31's
+  weaker cases (the ordinary-accounts case by order of asks; the mutual case asserts one side and does not force a
+  deadlock; (a) would pass with "live membership" for `account_removes_keys`; a cancel by another administrator is
+  untested). Not verified by the review: whether the web's wrapper locks the actor's own "user" row before the call
+  (two administrators requesting against each other ran at once in SGN-31 without deadlock, through `withActor`).
+- No index on `hardware_key_removal (requested_by)` (the table is small; an index is a new object).
+
+### Machine notes
+As W65's below (both PostgreSQL servers were down at start; `runuser -u postgres -- pg_ctl ... -w start`; Node 24 at
+`/opt/node24/bin`). W66's scratch worktree `/home/user/w66-scratch` dies with the container. W66 read, beyond its
+list: `invoke.ts` around `keyRemovalRefused`, `sign-in.ts` around `recorded()`, the runbook's hardware key section,
+`app_actor_is_platform_admin`. W66 holds no PR and no scheduled task; its one subagent has finished.
+
+## Earlier RESUME-BLOCK (2026-11-13, W65; W66's above is the head, session_019i9if9qjSJt3AGpHV86RSa): every ruling now has a proved text and an owed-red test (ruling 3 REFINED, change 5 done), the app-side code is built, the adversarial review and its one fix round are done; what is left is the typed /new-migration and everything after it
 
 **Ref `co-001/wip-key-registry` 055407ae** (pushed through the hook; no PR; no migration file, no domain-model text and
 no generated function touched). On 77ded21e, nine commits: edb3929d (JOB-09 and JOB-07 to the refined ruling 3),

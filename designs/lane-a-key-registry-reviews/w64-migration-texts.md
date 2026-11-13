@@ -1,4 +1,6 @@
-# W64, revised by W65: the migration texts for Queues item 37 (proved in a scratch copy; NOT applied to any migration file)
+# W64, revised by W65 and W66: the migration texts for Queues item 37 (proved in a scratch copy; NOT applied to any migration file)
+
+**W66 (2026-11-13): the record is now `w66/apply-texts.py` and `w66/migration.patch`; read the section "W66" near the end. What follows is as W65 left it.**
 
 **W65 (session_019i9if9qjSJt3AGpHV86RSa, 2026-11-13) changed two things here: section 3 is now the REFINED ruling 3
 (the orchestrator, 03:55 UTC: a row is never given up untried), and section 5 (A4) has its text and test. The record
@@ -182,6 +184,97 @@ Section 8, `hardware_key_record`, inside `IF closed THEN`, and the function's co
   bounded by the request's lock timeout; a record that fails leaves the line `security event: a refused act on a key
   removal was not recorded` (IDs and the reason's code) and changes nothing the person reads.
 - Change 5: above.
+
+## W66: the rulings of 2026-11-13 04:55 UTC on review W65 (S6 (a), (b), (c); S4; N2; N4)
+Session session_019i9ifAN8HwXxoQicPm7XvS. **The record is now `w66/apply-texts.py` (W65's script whole, then a block
+"W66" of five exact old/new pairs) and `w66/migration.patch` (353 lines); `w65/` is kept and superseded. ONE command
+applies every text of the item:** `python3 w66/apply-texts.py <copy of the migration> a1-trigger.sql.txt` prints
+`applied`. The W66 pairs match the text W65's pairs leave, so they come after them; in the file's order they sit in
+section 6 (S6 (a), inside A1's text), section 7 (N2, inside change 2's two functions) and section 9 (S6 (b)).
+No new object: no new function, table, index, trigger, grant or reserved action, so **the preflight's lists, section
+14's REVOKE and GRANTs, SEC-25's maps and the header's lists gain nothing from W66**. No COMMIT, BEGIN, ROLLBACK,
+EXCEPTION WHEN OTHERS or lock_timeout. Safe to run again from the first line: as before (the preflight refuses; no
+name added). Previous image running: it calls none of these functions (the registry is new in this release).
+
+### S6 (a), section 6: `user_removal_target_holds` binds only while the request can still be confirmed
+The EXISTS becomes `r.user_id = app_actor_id() AND r.state = 'requested' AND r.expires_at > clock_timestamp() AND
+account_removes_keys(r.requested_by)`; the comment above the function and the message say so (the message now ends
+"while the request can be confirmed"; the constraint name `hardware_key_removal_target_acts` is unchanged).
+- **After the delta review (W66 S1, proved by its probe): a third condition.** Of one requester's requests that can
+  still be confirmed against accounts that are platform administrators NOW, only the earliest (`(requested_at, id)`)
+  binds its target (`AND NOT EXISTS (... e.requested_by = r.requested_by ... earlier ... target a platform
+  administrator)`). Without it a requester holding B could also hold a member X asked against afterwards (requests
+  against members are unlimited) once B promoted X to disable the requester: two held at once, which (b) counts only
+  when a request is made. A target that is not a platform administrator can change no other account anyway (the
+  "user" policy), so this narrows nothing for it. Test: SGN-31, "one requester binds one account at a time".
+- The two conditions are the confirmation's own: `hardware_key_removal_confirm` refuses at `at >= expires_at` and
+  refuses a requester who fails `account_removes_keys` (`hardware_key_removal_requester_left`). So the trigger binds
+  exactly while a confirmation could still be accepted, by the clock and not by the expiry job's mark.
+- Clock: `clock_timestamp()`, as every function of section 9 reads it (not `now()`, which is the transaction's start
+  and would bind a long transaction past the expiry).
+- Locks: none, as before. `account_removes_keys` is the STABLE definer already in section 5; it reads "user",
+  membership, organization and audit_event with no lock. The trigger adds no edge to any wait graph.
+- Residual, unchanged from A1: a request not yet committed when the target's statement takes its snapshot does not
+  bind it. New, by design: `account_removes_keys` also fails for a requester with a `role_escalation` event in the
+  last seven days or under seven days in the role; a requester could only have requested while passing it, and
+  failing it later voids the confirmation too, so the trigger and the confirmation still agree.
+- Tests: SGN-31 (a), three cases (the clock one minute either side of the expiry with the job not run; the
+  requester's membership ended; the requester disabled by a third administrator) and (c) (the owner, no actor,
+  disables the requester while the request stands).
+
+### S6 (b), section 9: `hardware_key_removal_request` limits requests against a platform administrator
+Three additions in the function and twelve comment lines above it:
+1. `PERFORM pg_advisory_xact_lock(hashtextextended('hardware_key_removal_requester:' || actor::text, 0));` directly
+   before the account's `FOR NO KEY UPDATE` (the form of `line_status:` and `document_use:` in earlier migrations).
+2. After the lapsed requests of the target are marked and before the INSERT, only where the target holds a live
+   `platform_admin` membership of an internal organization (what `app_actor_is_platform_admin()` reads, without its
+   second-factor and status conditions, so the limit is never narrower than the power it bounds):
+   - the requester's own cancelled request against this target decided inside seven days, or its expired one whose
+     `expires_at` is inside seven days: 23514, constraint `hardware_key_removal_asked_again_too_soon`;
+   - the requester's other request, state `requested` and `expires_at > at`, against another account that is a
+     platform administrator now: 23514, constraint `hardware_key_removal_one_administrator_request`.
+- The names are RAISE names, as `hardware_key_removal_target_acts` and `_requester_left` are; no table constraint.
+- A live open request of anyone against the same target still fails on `hardware_key_removal_open_once` (23505).
+- The seven days run from `expires_at` for an expired request (marked by the job, by this function or not at all:
+  an unmarked lapsed request of the target is marked by this very call first, and the refusal then rolls the mark
+  back; the job marks it) and from `decided_at` for a cancelled one, whoever cancelled it. A confirmed removal
+  starts no wait.
+- An open request already past its 24 hours does not count toward the one (it holds no one under (a)).
+- **Locks.** The advisory lock is taken first, before any row lock, by this function only, on a key of the
+  requester alone; it is held to the transaction's end. Order: advisory (requester), the target's "user" row FOR NO
+  KEY UPDATE, the target's lapsed removal rows, the inserts. The confirmation and the cancel take the target's row
+  and then the removal row and no advisory lock, so no cycle includes it. Two administrators requesting against each
+  other hold different advisory keys and each the other's row; the inserts' foreign keys take FOR KEY SHARE, which
+  does not wait on FOR NO KEY UPDATE (SGN-31's last case runs the two at once). Without the lock two requests of one
+  requester against two administrators would each see none open and both insert (SGN-31's concurrency case: the
+  second waits, then is refused). A waiting second request is bounded by the web's lock timeout (LOCK_TIMEOUT, busy).
+- The two EXISTS read `hardware_key_removal` by `requested_by`, which has no index: the table holds one row a
+  removal request, so no index is added (an index would be a new object in the preflight's list).
+- Tests: SGN-31 (b), seven cases, and the two-administrator scenario, three cases; the web's case in
+  `console-routes.db.test.ts` (the two refusals in the registry's words, nothing written).
+
+### S6 (c): no text. The owner path is `app_actor_id() IS NOT NULL` in the trigger, unchanged; SGN-31 (c) tests it
+and the runbook says when and by whom (docs/runbooks/incident-response.md, the hardware key section).
+
+### N2, section 7: both sign-out functions store no trace ID rather than fail on one
+First statement of `provider_sign_out_unrecorded_reset` and of `operator_provider_sign_out_request`:
+`IF request !~ '^[A-Za-z0-9._:-]{1,128}$' THEN request := NULL; END IF;` (the pattern of `audit_event.request_id`
+and of `provider_sign_out.request_id`, which are the same). A NULL argument stays NULL (`NULL !~ ...` is not true).
+The audit row and the outbox row both carry NULL then. No lock, no list. Test: SGN-28's new case (an over-long ID,
+one with spaces, an empty one, by both doors; a fitting one kept; none at all accepted).
+
+### S4 and N4: tests only, no text
+- S4: `sign-in.db.test.ts`, describe "SGN-30: the count of a wrong code refused at the registry's row is committed
+  when the web then refuses": a real removal and opening, the right code judged open, a wrong digest swapped in on
+  its way to `hardware_key_record`. With the texts: `registration_code_tries` is 1 and one `key_registration_refused`
+  after the web answered `key_not_registered`; the key is gone from the provider twin; the right code then still
+  registers. So change 5's count commits when the web throws, and **nothing must change in `recorded()`**. Owed red
+  on the WIP (0 tries: today's function raises and rolls back).
+- N4: one more assertion (the trigger's row from the unrecorded reset has `next_attempt_at = queued_at`); the
+  operator's was W65's.
+
+### Proof (PostgreSQL 18 on 5433, Node 24; a scratch worktree of the WIP with the migration patched by the script)
+See the status file's RESUME-BLOCK for the counts of the whole `pnpm test:db`.
 
 ## Not done
 The header comment's lists in the migration (by hand in the typed command). Everything in the status file's "Left".
