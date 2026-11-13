@@ -52,7 +52,7 @@
     "@tp/pricing": "workspace:*",
     "@tp/rules": "workspace:*",
     "@tp/triage": "workspace:*",
-    "pg-boss": "^12.38.0",
+    "pg-boss": "^12.38.1",
     "playwright-core": "catalog:",
     "yauzl": "3.4.0",
     "zod": "catalog:"

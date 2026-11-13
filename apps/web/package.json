@@ -41,7 +41,7 @@
     "aws-jwt-verify": "^5.2.1",
     "next": "^16.4.3",
     "otpauth": "^9.6.0",
-    "pg-boss": "^12.38.0",
+    "pg-boss": "^12.38.1",
     "react": "catalog:",
     "react-dom": "catalog:",
     "zod": "catalog:"
