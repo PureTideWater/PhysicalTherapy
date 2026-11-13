@@ -4164,7 +4164,7 @@ Maintains `updated_at`: `ledger_match_updated_at`.
 - Class: PHI (registered); registry policy `roi_statement_tenant`, registered by `20261023120000_recovery_ledger`, qualifies: yes
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: Ledger and reconciliation (PHI): Generated statement
-- Created by `20261023120000_recovery_ledger` (ADR 0042); its DDL, policies or trigger functions changed by `20261024120000_reconciliation_and_roi_documents`, `20261029150000_billing`, `20261108090000_suspension_refusal`
+- Created by `20261023120000_recovery_ledger` (ADR 0042); its DDL, policies or trigger functions changed by `20261024120000_reconciliation_and_roi_documents`, `20261029150000_billing`, `20261108090000_suspension_refusal`, `20261115090000_roi_statement_actionable_lines`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`actionable_open_cents`, `approved_unposted_cents`, `document_key`, `fees_cents`, `generated_by`, `id`, `interest_cents`, `links`, `period_from`, `period_to`, `practice_id`, `proof_level`, `pursuit_hours`, `recovered_cents`)
@@ -4183,7 +4183,7 @@ Maintains `updated_at`: `ledger_match_updated_at`.
 | 9 | `approved_unposted_cents` | `bigint` | NOT NULL |  |  | `20261023120000` |  |
 | 10 | `actionable_open_cents` | `bigint` | NOT NULL |  |  | `20261023120000` |  |
 | 11 | `pursuit_hours` | `numeric(9,2)` | NOT NULL |  |  | `20261023120000` |  |
-| 12 | `links` | `jsonb` | NOT NULL |  |  | `20261023120000` | not in the dictionary |
+| 12 | `links` | `jsonb` | NOT NULL |  |  | `20261023120000` |  |
 | 13 | `generated_by` | `uuid` | null |  | `user(id)` | `20261023120000` | not in the dictionary |
 | 14 | `generated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261023120000` |  |
 | 15 | `document_key` | `text` | null |  |  | `20261023120000` |  |
@@ -4232,6 +4232,7 @@ Invariants enforced by triggers:
   - "an ROI statement is generated on demand by a person who reconciles postings, in their own name"
   - "the quarterly statement is generated in no one's name"
   - "an ROI statement's recovered and interest are the sums of the entries it links"
+  - "an ROI statement's actionable figure is the variance of the priced lines it links, each once and each a line of a case it links"
 
 ## 11. Model gateway
 
@@ -6993,7 +6994,7 @@ Invariants enforced by constraints:
 
 The Data dictionary tab (`docs/product/data-dictionary.md`, imported verbatim from the planning document as of 2026-10-14) lists every table with its **key fields**, not every column. This section compares it with the live schema above. Rows in A and B, and C1 and C5, are what the founder approves. C2, C3 and C4 (status "proposed") are Change Order 001 proposals for schema that does not exist yet; they are decided in reconciliation-001, not by approving this document, and are listed so that the documents stay consistent. Where a status says a part is built, that part is schema like any other, described above and approved with it. D and E are informational (what the build added, each with the migration and ADR that added it). Each row names the ADR that explains it, or says that a founder ruling is needed.
 
-Checked and matching: 395 dictionary key fields exist (394 with the dictionary's type or convention); 15 enumerations equal their CHECK (`organization.kind (3)`, `membership.role (10)`, `agreement.kind (5)`, `remittance.status (3)`, `service_line.observed_allowed_basis (2)`, `payer_plan_mapping.mapping_kind (5)`, `contract_version.status (5)`, `contract_calendar_event.kind (4)`, `rule_record.verification (3)`, `line_status.stage (5)`, `case.state (6)`, `payer_response.kind (5)`, `ledger_entry.stage (7)`, `eval_example.source (2)`, `feature_flag.scope (3)`); 2 unique keys (`remittance (practice_id, sender_id, isa13, trn02, bpr02_cents)`, `priced_line (pricing_run_id, service_line_id)`); 11 of the 12 "Indexes that matter" exactly; 8 columns marked (enc) are encrypted; append-only triggers on `ledger_entry`, `audit_event`.
+Checked and matching: 396 dictionary key fields exist (395 with the dictionary's type or convention); 15 enumerations equal their CHECK (`organization.kind (3)`, `membership.role (10)`, `agreement.kind (5)`, `remittance.status (3)`, `service_line.observed_allowed_basis (2)`, `payer_plan_mapping.mapping_kind (5)`, `contract_version.status (5)`, `contract_calendar_event.kind (4)`, `rule_record.verification (3)`, `line_status.stage (5)`, `case.state (6)`, `payer_response.kind (5)`, `ledger_entry.stage (7)`, `eval_example.source (2)`, `feature_flag.scope (3)`); 2 unique keys (`remittance (practice_id, sender_id, isa13, trn02, bpr02_cents)`, `priced_line (pricing_run_id, service_line_id)`); 11 of the 12 "Indexes that matter" exactly; 8 columns marked (enc) are encrypted; append-only triggers on `ledger_entry`, `audit_event`.
 
 ### A. Schema divergences to approve
 
@@ -7161,7 +7162,7 @@ Per dictionary table, the columns the build added beyond the key fields the dict
 | [`posting_row`](#table-posting-row) | `row_no`, `procedure_code`, `service_date`, `payer_name`, `batch`, `template`, `fingerprint` (`20261023120000_recovery_ledger` (ADR 0042)) |
 | [`eft_row`](#table-eft-row) | `row_no`, `fingerprint` (`20261023120000_recovery_ledger` (ADR 0042)) |
 | [`ledger_entry`](#table-ledger-entry) | `seq`, `match_id`, `effective_on` (`20261023120000_recovery_ledger` (ADR 0042)) |
-| [`roi_statement`](#table-roi-statement) | `proof_level`, `links`, `generated_by` (`20261023120000_recovery_ledger` (ADR 0042))<br>`pdf_sha256` (`20261024120000_reconciliation_and_roi_documents` (ADR 0042, ADR 0043)) |
+| [`roi_statement`](#table-roi-statement) | `proof_level`, `generated_by` (`20261023120000_recovery_ledger` (ADR 0042))<br>`pdf_sha256` (`20261024120000_reconciliation_and_roi_documents` (ADR 0042, ADR 0043)) |
 | [`model_call`](#table-model-call) | `actor_kind`, `actor_id`, `provider`, `idempotency_key`, `cost_unrounded`, `outcome`, `error_code`, `attempts`, `reviewed_by`, `reviewed_at` (`20261029090000_model_gateway` (ADR 0048)) |
 | [`job_run`](#table-job-run) | `job_id`, `job_type`, `error_code`, `started_at`, `finished_at` (`20261016121000_job_runs` (ADR 0019)) |
 | [`notification`](#table-notification) | `practice_id`, `subject_id` (`20261020090000_monitoring_digests_notifications` (ADR 0039)) |
@@ -7664,8 +7665,8 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `resend_invitation(uuid)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `3a38c7bc37517a80` |
 | `resolve_session(text)` | `TABLE(outcome text, ended_now boolean, session_id uuid, user_id uuid, device_id uuid, mfa_method text, started_at timestamp with time zone, expires_at timestamp with time zone, last_seen_at timestamp with time zone, user_status text, mfa_enrolled boolean, hardware_key_required boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1dc349b28fbd9045` |
 | `revoke_user_sessions(uuid)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `49398f19386615ff` |
-| `roi_links_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `49416713dd4d13dd` |
-| `roi_statement_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5a8bc6319828acb2` |
+| `roi_links_valid(jsonb)` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `13c4dd46b9203095` |
+| `roi_statement_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp`<br>`plan_cache_mode=force_custom_plan` |  |  | `ad925199131cb411` |
 | `roles_permit(text[],text)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `1e0aed05610a51f5` |
 | `rule_content_no_truncate()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `5da9160cf53a8d06` |
 | `rule_record_immutable()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `f638f6a6b42be99a` |

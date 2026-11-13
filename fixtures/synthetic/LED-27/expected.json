@@ -1,0 +1,21 @@
+{
+  "case": "LED-27",
+  "module": "LED",
+  "title": "A new statement whose actionable figure is not its listed lines",
+  "assertion": "Refused by the database with one rule: the figure is the variance of the priced lines listed, each once and each a line of the practice on a case the statement lists; another practice's line is refused with no row of it shown; a statement without the list stays under the rule it had; a stored statement is never checked again (the PDF record; the daily repeat stores nothing)",
+  "synthetic": true,
+  "completesIn": 9,
+  "assertedBy": [
+    "apps/worker/src/reconcile/statement-lines.db.test.ts",
+    "packages/db/src/catalog.db.test.ts",
+    "packages/db/src/roi-statement-actionable-lines-migration.db.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "database tests",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}

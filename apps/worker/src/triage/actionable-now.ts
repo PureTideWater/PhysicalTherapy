@@ -84,3 +84,25 @@ export const ACTIONABLE_NOW_OF = (alias: string) => `(
               LEFT JOIN LATERAL (${LATEST_STAGE_ROW('x')}) st ON true
              WHERE x.case_id = ${alias}.id AND x.practice_id = ${alias}.practice_id
             OFFSET 0) y)`;
+
+
+/**
+ * Case `alias`'s figure and the priced lines it sums, in one pass over its lines, for a `CROSS JOIN LATERAL ... a` (one
+ * row per case): `cents`, as ACTIONABLE_NOW, and `line_ids`, those lines' priced line IDs in ID order (empty for none).
+ * What an ROI statement stores beside its actionable figure and the database's roi_statement_rules() checks the figure
+ * against (docs/adr/0082, Decision 7). Each case line is read once, as ACTIONABLE_NOW_OF reads it: the predicate
+ * (ACTIONABLE_NOW_LINE, written nowhere else) is a column of a derived table behind an optimization fence (OFFSET 0),
+ * and the sum and the list FILTER by that one column of the same rows, so they cannot come to read different lines and
+ * the pricing check runs once a line, not once for the figure and once for the list. The per-line amount is
+ * priced_line.variance_cents and nothing else; a figure that reads another amount or other rows needs that function
+ * replaced (actionable-now.test.ts).
+ */
+export const ACTIONABLE_NOW_WITH_LINES = (alias: string) => `(
+    SELECT coalesce(sum(y.variance_cents) FILTER (WHERE y.now), 0) AS cents,
+           coalesce(array_agg(y.id ORDER BY y.id) FILTER (WHERE y.now), '{}')::text[] AS line_ids
+      FROM (SELECT p.id, p.variance_cents, ${ACTIONABLE_NOW_LINE('x', 'st.stage')} AS now
+              FROM case_line x
+              JOIN priced_line p ON p.id = x.priced_line_id
+              LEFT JOIN LATERAL (${LATEST_STAGE_ROW('x')}) st ON true
+             WHERE x.case_id = ${alias}.id AND x.practice_id = ${alias}.practice_id
+            OFFSET 0) y)`;
