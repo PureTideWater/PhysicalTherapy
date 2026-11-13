@@ -1,25 +1,23 @@
 # Lane B, Queues item 39: status
 
 <!-- RESUME-BLOCK -->
-- **Stage:** build, stages 1 to 4 (brief of 2026-11-13; MOD-26). Branch `co-001/redact-item-39` from
-  `claude/build-platform` 4d40557f. WIP ref `co-001/wip-redact-item-39` **pushed at 5af1c9a0** (ls-remote checked).
-  Handed over at about 217k context on the orchestrator's word (23:00 UTC).
+- **Stage:** stages 1 to 4 done and gated; stage 5 waits for item 40 (PR #163) to merge into `claude/build-platform`
+  (2026-11-13: #163 open draft, `claude/build-platform` at 4d40557f). Branch `co-001/redact-item-39` from
+  `claude/build-platform` 4d40557f. WIP ref `co-001/wip-redact-item-39` at 5af1c9a0 (ls-remote checked).
 - **Commits, all on the WIP ref:** stage 1 b86067c6 (tests, `matchingForTests`), stage 2 ae53f2d5 (views Map),
   stage 3 ea77da7c (skeleton, automaton, sticky driver, dense rule), stage 4 c90098c6 (lazy patterns, source rule and
-  fallback), and 5af1c9a0 (the skeleton scan reads ASCII by code and a non-ASCII run by one sticky run; `allKept` for
-  compactFolded(x) === x; sourceOf finds line breaks with includes).
-- **Why 5af1c9a0:** stage 3 put the corr-ssn-2 test (redact.test.ts, one reading against two in exec runs, bound
-  90 in 100) over its bound: base 2,592/2,883 = 0.899, stage 3 0.908, stage 4 0.910. Now 2,558/2,856 = 0.896.
-- **Proven:** full `--no-cache` gate, stages 1 to 4: 975,489 letters, differ 0, refused 463,002 on both, errors 0,
-  span mismatches 0; max letter 1,440 / 1,282 / 1,313 / 1,486 ms against 3 s, none over. Source check (gate-only
-  patched stage 4 tree, throws on any difference from V8's source): differ 0, errors 0. At 5af1c9a0: all 3,616
-  redact unit tests pass (MOD-26 (a) to (e) included), typecheck and lint clean. No WORK constant, CHECK_WORK_BUDGET
-  or work(...) call changed.
-- **Next, exactly:** run the full gate on 5af1c9a0's `packages/redact/src` against 4d40557f's:
-  `designs/lane-b-redact-ssn-phone/gate/run.sh <base src> <5af1c9a0 src> <out> --workers 4 --no-cache` (about 16 min).
-  It was started in the handing-over container and its result is lost with it. Need: differ 0, refused 463,002 on
-  both, no letter over 3 s. Then report stage 4's end to the orchestrator. Stages 2 to 4 are done: do not redo them.
-  Not mine: stage 5 (waits for item 40's merge), the reviews, the PR.
+  fallback), and 5af1c9a0 (ASCII scan by code, non-ASCII run by one sticky run; `allKept`; sourceOf by includes).
+- **Final gate, 5af1c9a0 against 4d40557f, `--no-cache`, 4 workers (fresh container, 13 m 49 s):** 975,489 letters,
+  same 975,489, differ 0, refused 463,002 on both, errors 0 / 0, span mismatches 0; PHI, KEEP, unplaced none; max
+  letter 946 ms base, 997 ms head, of 3,000, none over. `git diff 4d40557f 5af1c9a0 -- packages/redact` touches no
+  CHECK_WORK_BUDGET, WORK constant or 3 s row. Report: `designs/lane-b-redact-item-39/final-gate-5af1c9a0/`.
+  Earlier: all 3,616 redact unit tests pass at 5af1c9a0, typecheck and lint clean.
+- **Next, exactly:** when #163 has merged (git ls-remote and the PR's state): merge `claude/build-platform` into the
+  WIP ref, keeping both items' behaviour in redact.ts; then stage 5 per design-note.md sections 5 and 6 (lines 233 to
+  352): windows, R = 256, the first reading's spans kept, window-interior fallback to the whole re-read, all charged.
+  Tests first, failing on an assertion, including item 40's pinned S-1 and C-1 cost rows, which become sent with no
+  identifier in clear. Oracle: item 40's generated set and the full gate against item 40's merged head.
+  Not this stage: the two reviews, ADR 0054, the PR.
 <!-- /RESUME-BLOCK -->
 
 ## Rulings applied (lanes/lane-b.md 21:10 UTC)

@@ -1,0 +1,8 @@
+worker 1 shard 1 done (121936 letters, 369 s)
+worker 0 shard 0 done (121937 letters, 371 s)
+worker 3 shard 3 done (121936 letters, 371 s)
+worker 2 shard 2 done (121936 letters, 372 s)
+worker 1 shard 5 done (121936 letters, 719 s)
+worker 3 shard 7 done (121936 letters, 724 s)
+worker 2 shard 6 done (121936 letters, 724 s)
+worker 0 shard 4 done (121936 letters, 728 s)
