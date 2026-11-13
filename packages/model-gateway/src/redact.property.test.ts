@@ -1060,10 +1060,16 @@ describe('MOD-13: every placeholder survives and no identifier survives', () => 
       expect(holdsIdentifier(redacted, patient, claims), written).toBe(false);
       expect(identifierCandidates(written.normalize('NFKC')), written).toContain(candidate);
     }
-    // Only a label word: the patient's digits glued to another word, or a glued word that is no label, stay.
+    // Only a label word is read as a label: redaction leaves the patient's digits glued to another word, and a word
+    // that is no label, as written. Glued, the check refuses the letter (Queues item 34, MOD-25: a digits-only number
+    // of five digits or more with a letter against it), so "Room AB99887766" is never sent; set apart by a space
+    // from a word that is no label, a whole written date stays and is sent.
     for (const written of ['Room AB99887766', 'Casino 2027-03-15', 'Nov 2027-03-15']) {
       expect(redactLetter(written, patient, claims).text, written).toBe(written);
     }
+    expect(holdsIdentifier('Room AB99887766', patient, claims)).toBe(true);
+    expect(holdsIdentifier('Casino 2027-03-15', patient, claims)).toBe(false);
+    expect(holdsIdentifier('Nov 2027-03-15', patient, claims)).toBe(false);
   });
 
   it('reads a label’s end through "=", an en or em dash and the minus sign (review finding phi-label-end-dash)', () => {
