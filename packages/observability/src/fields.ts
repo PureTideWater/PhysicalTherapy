@@ -62,6 +62,10 @@ export const ALLOWED_LOG_FIELDS = [
   'sign_out_id',
   'outcome_code',
   'hardware_key_notice_id',
+  // A database failure's five-character SQLSTATE (PostgreSQL's error code, such as 40P01), read by the worker from the
+  // error's code only when it has that exact shape. A code from a closed standard list; never the error's message,
+  // detail, a constraint's values or a statement.
+  'sqlstate',
   'error_code',
 ] as const;
 

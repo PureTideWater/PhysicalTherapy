@@ -112,6 +112,8 @@ interface Claimed {
   readonly account_id: string;
   readonly subject: string;
   readonly try: number;
+  /** The request of the event that queued the row. Absent while the database's claim still returns four columns. */
+  readonly cause_request_id?: string | null;
 }
 
 interface Overdue {
@@ -127,6 +129,12 @@ export function providerErrorName(error: unknown): string {
   return /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(name) ? name : 'unknown';
 }
 
+/** A database failure's SQLSTATE: the error's code when it is exactly five upper-case letters or digits; never its message. */
+export function databaseErrorState(error: unknown): string | undefined {
+  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  return typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) ? code : undefined;
+}
+
 /** Step 1: claim, call, record, one row at a time. */
 async function signOuts(options: ProviderSignOutOptions): Promise<{ done: number; failed: number }> {
   const { withClient, logger } = options;
@@ -135,7 +143,7 @@ async function signOuts(options: ProviderSignOutOptions): Promise<{ done: number
   let done = 0;
   let failed = 0;
   while (now() - began < PROVIDER_SIGN_OUT_RUN_MS) {
-    const claimed = (await withClient((client) => asOperator(client, null, async () => (await client.query('SELECT sign_out_id, account_id, subject, try FROM operator_provider_sign_out_claim()')).rows[0]))) as Claimed | undefined;
+    const claimed = (await withClient((client) => asOperator(client, null, async () => (await client.query('SELECT * FROM operator_provider_sign_out_claim()')).rows[0]))) as Claimed | undefined;
     if (claimed === undefined) {
       break;
     }
@@ -152,7 +160,8 @@ async function signOuts(options: ProviderSignOutOptions): Promise<{ done: number
       await withClient((client) => asOperator(client, null, () => client.query('SELECT operator_provider_sign_out_failed($1, $2, $3, $4)', [claimed.sign_out_id, claimed.try, name, options.requestId])));
       failed += 1;
       // The words are PROVIDER_SIGN_OUT_ATTEMPT_FAILED's, written out: the log lint reads fixed text only (a test ties the two).
-      logger.warn('provider sign-out attempt failed', { sign_out_id: claimed.sign_out_id, user_id: claimed.account_id, error_code: failure });
+      // request_id is the cause's (the reset, the removal or the ended membership that queued the row), as on the paging line.
+      logger.warn('provider sign-out attempt failed', { sign_out_id: claimed.sign_out_id, user_id: claimed.account_id, request_id: claimed.cause_request_id ?? null, error_code: failure });
       if (PROVIDER_TIMEOUT_NAMES.includes(failure)) {
         // The provider is not answering: the next row would wait its 10 seconds too. The rest go on the next run.
         break;
@@ -198,7 +207,8 @@ export async function runProviderSignOuts(options: ProviderSignOutOptions): Prom
       return await run();
     } catch (error) {
       failedSteps.push(name);
-      logger.error('provider sign-out step failed', { error_code: `${name}:${providerErrorName(error)}` });
+      const sqlstate = databaseErrorState(error);
+      logger.error('provider sign-out step failed', { error_code: `${name}:${providerErrorName(error)}`, ...(sqlstate === undefined ? {} : { sqlstate }) });
       return fallback;
     }
   };

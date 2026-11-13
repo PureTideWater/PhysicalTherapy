@@ -210,6 +210,39 @@ describe('the provider_sign_outs job (JOB-08; docs/adr/0095)', () => {
     expect(failing.asked).toHaveLength(1);
   });
 
+  it('JOB-07: a failed try’s line names the request of the event that queued the row, so the reset and its sign-out read as one story (owed red until operator_provider_sign_out_claim returns cause_request_id)', async () => {
+    const one = await queued();
+    const { lines, logger } = capture();
+    const failing = provider(() => {
+      const error = new Error('synthetic words');
+      error.name = 'TooManyRequestsException';
+      throw error;
+    });
+    await run(failing.adapter, logger);
+    expect(lines).toEqual([expect.objectContaining({ level: 'warn', msg: 'provider sign-out attempt failed', sign_out_id: one.id, user_id: one.user, request_id: one.cause, error_code: 'TooManyRequestsException' })]);
+    idsOnly(lines, [one]);
+  });
+
+  it('a step the database fails says the failure’s SQLSTATE, a code and nothing of its words; an error with no SQLSTATE says none', async () => {
+    await queued();
+    const refusing = (error: Error) =>
+      stepClient((client, text, values) => (text.includes('operator_provider_sign_out_claim') ? Promise.reject(error) : client.query(text, values)));
+    const database = capture();
+    const deadlock = Object.assign(new Error('synthetic: deadlock detected while reading a private row'), { name: 'DatabaseError', code: '40P01' });
+    await expect(runProviderSignOuts({ withClient: refusing(deadlock), provider: provider().adapter, requestId: `job-${randomUUID()}`, logger: database.logger })).rejects.toBeInstanceOf(ProviderSignOutRunFailed);
+    expect(database.lines.filter((line) => line.msg === 'provider sign-out step failed')).toEqual([expect.objectContaining({ level: 'error', error_code: 'sign_outs:DatabaseError', sqlstate: '40P01' })]);
+    expect(JSON.stringify(database.lines)).not.toContain('synthetic');
+    // A code that is not a SQLSTATE (a socket's, or anything longer or lower-case) is not passed off as one.
+    for (const code of ['ECONNREFUSED', '40p01', 'a private row', 42601]) {
+      const other = capture();
+      const failure = Object.assign(new Error('synthetic'), { name: 'Crash', code });
+      await expect(runProviderSignOuts({ withClient: refusing(failure), provider: provider().adapter, requestId: `job-${randomUUID()}`, logger: other.logger })).rejects.toBeInstanceOf(ProviderSignOutRunFailed);
+      const [line] = other.lines.filter((entry) => entry.msg === 'provider sign-out step failed');
+      expect(line).toMatchObject({ error_code: 'sign_outs:Crash' });
+      expect(line).not.toHaveProperty('sqlstate');
+    }
+  });
+
   it('stores an error whose name is not a class name as unknown', async () => {
     const one = await queued();
     const { lines, logger } = capture();
