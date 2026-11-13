@@ -1,0 +1,23 @@
+{
+  "case": "LED-26",
+  "module": "LED",
+  "title": "An ROI statement lists the lines its actionable figure counted",
+  "assertion": "The writer stores, beside the figure, the priced lines it summed, read in one pass from the same rows: each case's figure equal to `ACTIONABLE_NOW` run as its own query and to the two-subquery path row for row, on the fixture worlds and a generated month; the stored row is the one before but for the list; the page, the CSV, the list and the print job receive the four keys they read and show what they showed",
+  "synthetic": true,
+  "completesIn": 9,
+  "assertedBy": [
+    "apps/web/src/lib/reconciliation/statement-readers.db.test.ts",
+    "apps/worker/src/reconcile/statement-lines.db.test.ts",
+    "apps/worker/src/reconcile/statement-paths.db.test.ts",
+    "apps/worker/src/triage/actionable-now.db.test.ts",
+    "apps/worker/src/triage/actionable-now.test.ts"
+  ],
+  "codeListRelease": null,
+  "noFileReason": "database tests",
+  "files": [],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": null,
+  "notes": []
+}
