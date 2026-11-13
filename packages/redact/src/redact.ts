@@ -5744,3 +5744,54 @@ export function identifierRuns(text: string, options: RunOptions): string[] {
   });
   return [...runs];
 }
+
+// ---------------------------------------------------------------------------------------------------
+// For the tests of Queues item 39 (MOD-26) alone: no reader calls these.
+
+/** The shape of a subject the tests build: as Subject, with no date of birth, initials or patterns. */
+interface SubjectForTests {
+  readonly names: readonly string[];
+  readonly memberIds: readonly string[];
+  readonly claims: readonly (readonly string[])[];
+}
+
+/**
+ * The matcher's parts as the tests of Queues item 39 read them (docs/adr/0054; MOD-26): the gaps a form's writing can
+ * hold between two of its letters and digits, the places of a set of words in a text's letters and digits, the source
+ * a form keeps for its pattern, and a subject's forms. Synthetic values only; nothing here is read by a reader.
+ */
+export const matchingForTests = {
+  /** Every distinct gap a form's writing can hold, on both readings, with `stored` the class escapes of a stored value's own marks. */
+  gapSources(stored: readonly string[] = []): string[] {
+    const outer = baseReading;
+    const sources = new Set<string>();
+    try {
+      for (const asBase of [false, true]) {
+        baseReading = asBase;
+        for (const gap of [GAP.tight, GAP.spaced, GAP.apart, GAP.part, GAP.number, GAP.numberNearLetter, GAP.labeledNumber, runOfMarks()]) {
+          sources.add(gap);
+        }
+        for (const own of stored) {
+          sources.add(runOfMarks(own));
+          for (const gap of [GAP.number, GAP.numberNearLetter]) {
+            sources.add(`${gap.slice(0, -2)}${own}]*`);
+          }
+        }
+      }
+    } finally {
+      baseReading = outer;
+    }
+    return [...sources];
+  },
+  /** Whether a code point is one a form's compact keeps (compactFolded): a letter or a digit, an APOSTROPHE_LETTER not. */
+  kept: (codePoint: string): boolean => codePoint !== '' && compactFolded(codePoint) === codePoint,
+  /** For each word that stands contiguously in the text's letters and digits, every index of the text where it starts, in order. */
+  placesOf: (_text: string, _words: readonly string[]): Map<string, number[]> => new Map(),
+  /** The source a form keeps for the pattern of `text` (flags 'gu'): V8's own. */
+  sourceOf: (text: string): string => text,
+  /** A subject's forms on a fold, the first reading's and the wider reading's, built fresh. */
+  formsOf(subject: SubjectForTests, fold: 'plain' | 'alike'): readonly Form[] {
+    const whole: Subject = { ...subject, datesOfBirth: null, initials: false, patterns: false };
+    return onFold(fold, () => [...formsOf(whole), ...formsOf(whole, true)]);
+  },
+};
