@@ -2860,7 +2860,7 @@ describe('MOD-25, Queues item 40: beside its three forms, what the base does and
     expect(sentOrRefused('Dear Zephyra. I am writing', call, numbers)).toBe('Dear [PATIENT_NAME]. I am writing');
   });
 
-  it('the row nearest the budget is read to its end and sent', () => {
+  it('the row nearest the budget is read to its end and sent', { timeout: 20_000 }, () => {
     expect(refusedByTheEntry(NEAR_THE_BUDGET, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(false);
   });
 });
@@ -2979,8 +2979,19 @@ describe('MOD-25, Queues item 40, stage 2 (R1-3 with ruling 3): a number charact
     const noted = 'Ref 76543210 on file. Note ².';
     const asOne = 'Ref 76543210 on file. Note ↀ.';
     const work = (letter: string) => checkWorkOf(redactLetterForScreen(letter, who, numbers));
+    // The work the check spends on a text that holds no identifier: the budget less the least count it refuses from, plus one.
+    const workOfTheCheck = (text: string) => {
+      let [low, high] = [0, CHECK_WORK_BUDGET];
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        [low, high] = holdsIdentifier(text, who, numbers, middle) ? [low, middle] : [middle + 1, high];
+      }
+      return CHECK_WORK_BUDGET - low + 1;
+    };
     expect(sentOrRefused(noted, who, numbers)).toBe('Ref [MEMBER_ID] on file. Note 2.');
-    expect(work(noted)).toBe(work(plain) + work(asOne));
+    // Fix round 1 (Lane B's review S-2): the check of what the further reading wrote is charged too. Before, this row
+    // pinned work(plain) + work(asOne), the further reading and rule (a) alone, that check's work counted nowhere.
+    expect(work(noted)).toBe(work(plain) + work(asOne) + workOfTheCheck('Ref [MEMBER_ID] on file. Note ↀ.'));
     // Read once where every such character is the one the further reading writes already: rule (a)'s reading alone is added.
     expect(work(asOne)).toBeLessThan(2 * work('Ref 76543210 on file. Note 2.'));
     expect(sentOrRefused(asOne, who, numbers)).toBe('Ref [MEMBER_ID] on file. Note ↀ.');
@@ -3038,13 +3049,13 @@ describe('MOD-25, Queues item 40, stage 3 (R1-4): an unseen character inside an 
   // Ruling 5: the further reading is charged in full and the budget is never raised, so the row nearest the budget
   // (sent, in the describe above) with one unseen character in it is refused by the count. It stands where no
   // reading finds anything: after the last line ending.
-  it('the row nearest the budget with one U+0085 added is refused by the count', () => {
+  it('the row nearest the budget with one U+0085 added is refused by the count', { timeout: 20_000 }, () => {
     expect(refusedByTheEntry(`${NEAR_THE_BUDGET}\u0085`, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(true);
   });
 
   // By the count, and with no text: past the budget the entry returns the mark alone, as it does for a letter its
   // first reading did not finish, and the count it hands the check is past the budget.
-  it('the row nearest the budget with one U+0085 added goes back as the mark alone, its count past the budget', () => {
+  it('the row nearest the budget with one U+0085 added goes back as the mark alone, its count past the budget', { timeout: 20_000 }, () => {
     const screened = redactLetterForScreen(`${NEAR_THE_BUDGET}\u0085`, BUDGET_PATIENT, BUDGET_CLAIMS);
     expect(screened.text).toBe('\u0001');
     expect(checkWorkOf(screened)).toBeGreaterThan(CHECK_WORK_BUDGET);
@@ -3290,6 +3301,75 @@ describe('MOD-25, Queues item 40, stage 4, ruling (A): the initial after a name 
   // initial that is one of the patient's own letters is replaced there. The letter is sent; nothing of the patient's is.
   it('after a name whose match ends in a letter standing alone, another person’s dotted initial that is the patient’s own letter is replaced too', () => {
     expect(sentOrRefused('Mari A. M. Okafor, PT, signed.', who('MARIA LOPEZ'), numbers)).toBe('[PATIENT_NAME]. [PATIENT_NAME]. Okafor, PT, signed.');
+  });
+});
+
+describe('MOD-25, Queues item 40, fix round 1 (Lane B’s reviews S-1, S-2 and S-4): the further reading’s check charged, the cost of a long letter pinned, and a number character or U+FFFC inside a stored number joins it', () => {
+  const asMember = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210', 'ZZ7654321']), numbers: claimsOf('ZZ99887') };
+  const asClaim = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['SYNMEMBER0042', 'ZZ7654321']), numbers: claimsOf('76543210') };
+  /** Plain prose, no identifier and no digit, cut to `length` characters. */
+  const prose = (length: number) => 'The claim was paid in part on the date shown. '.repeat(Math.ceil(length / 46)).slice(0, length);
+  const LIMIT = { timeout: 20_000 };
+
+  // S-2: the check of what the reading with every number character written as U+2180 wrote is charged on the letter's
+  // count. This crafted row (a fraction and one U+0085 before 80,000 characters of prose) was sent while that check went
+  // uncounted (349,830,476 units counted, about 440 million spent); charged, its count passes the budget.
+  it('S-2: the number characters’ reading’s check is charged, so a crafted row the uncounted check let through is refused by the count', LIMIT, () => {
+    const letter = `½ \u0085 ${prose(80_000)}`;
+    expect(refusedByTheEntry(letter, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(true);
+    expect(checkWorkOf(redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS))).toBeGreaterThan(CHECK_WORK_BUDGET);
+  });
+
+  // The same prose with no number character and no unseen character is read once, its count far under the budget, and sent.
+  it('S-2: the same prose alone is sent unchanged', LIMIT, () => {
+    expect(sentOrRefused(prose(80_000), BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(prose(80_000));
+  });
+
+  // S-1, a recorded cost (Queues item 39 holds its cure): each further reading reads the whole letter again, so an
+  // ordinary letter with one fraction and one U+0085 is refused on cost from about 77,600 characters (Lane B's review 2),
+  // under the 100,000 the reader's time budget promises; the same letter without them is sent.
+  it('S-1, a recorded cost: 100,000 characters of prose with one ½ and one U+0085 are refused on cost; without them, sent', LIMIT, () => {
+    expect(refusedByTheEntry(`½ \u0085 ${prose(100_000)}`, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(true);
+    expect(refusedByTheEntry(prose(100_000), BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(false);
+  });
+
+  // S-4, the narrow part (ADR 0054's joiner list amended): U+FFFC (what PDF text writes for an object) and a number
+  // character that is no decimal digit, inside a stored number, join it as any number joiner does. U+FFFC is replaced
+  // with the number; a number character inside it refuses the letter, as one beside it does (R1-3).
+  it.each([
+    ['a member ID', 'Member ID 7654\uFFFC3210 was denied.', 'Member ID [MEMBER_ID] was denied.', asMember],
+    ['a claim number', 'Claim 7654\uFFFC3210 was denied.', 'Claim [CLAIM_1] was denied.', asClaim],
+    ['a member ID, two of them', 'Ref 76\uFFFC54\uFFFC3210 on file.', 'Ref [MEMBER_ID] on file.', asMember],
+  ] as const)('S-4: U+FFFC inside %s joins it: %j is sent as %j', (_kind, letter, sent, { who, numbers }) => {
+    expect(sentOrRefused(letter, who, numbers)).toBe(sent);
+  });
+
+  it.each([
+    ['a member ID', 'Member ID 7654ↀ3210 was denied.', asMember],
+    ['a claim number', 'Claim 7654ↀ3210 was denied.', asClaim],
+    ['a member ID, a Roman numeral NFKC writes as a letter', 'Member ID 7654\u217C3210 was denied.', asMember],
+    ['a member ID, a fraction', 'Member ID 7654½3210 was denied.', asMember],
+    ['a member ID, an Aegean number', 'Member ID 7654\u{10107}3210 was denied.', asMember],
+    ['a member ID, with U+FFFC beside it', 'Member ID 7654ↀ\uFFFC3210 was denied.', asMember],
+  ] as const)('S-4: a number character inside %s refuses the letter: %j', (_kind, letter, { who, numbers }) => {
+    expect(sentOrRefused(letter, who, numbers)).toBe(REFUSED);
+  });
+
+  // Every number character that is no decimal digit, inside a stored digits-only number at any place: never sent in clear.
+  it('S-4: every number character inside a stored number, at any place, leaves none of its digits in clear', () => {
+    fc.assert(
+      fc.property(ITEM_40.held, fc.constantFrom(...ITEM_40.numberCharacters), fc.nat(), ITEM_40.frame, ({ number, who, numbers }, character, place, [before, after]) => {
+        const cut = 1 + (place % (number.length - 1));
+        const letter = `${before}${number.slice(0, cut)}${character}${number.slice(cut)}${after}`;
+        expect(ITEM_40.sentInClear(sentOrRefused(letter, who, numbers), number)).toBe(false);
+        expect(sentOrRefused(letter, who, numbers)).toBe(REFUSED);
+      }),
+    );
+  });
+
+  // Not this item's (Queues item 42): a letter or another visible character inside a number is read as the base reads it.
+  it('a letter inside a stored number is read as before (Queues item 42): the two pieces are no stored number', () => {
+    expect(sentOrRefused('Member ID 7654X3210 was denied.', asMember.who, asMember.numbers)).toBe('Member ID 7654X3210 was denied.');
   });
 });
 

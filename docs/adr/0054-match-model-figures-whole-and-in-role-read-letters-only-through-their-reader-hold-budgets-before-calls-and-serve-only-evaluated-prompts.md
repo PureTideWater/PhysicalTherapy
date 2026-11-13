@@ -2553,6 +2553,19 @@ stands, every further reading only adds or refuses, and every reading counts on 
 - *The budget.* Both further readings and their checks are charged in full on the letter's one count, counting on
   from the count so far. The budget and every weight are unchanged: the two rows nearest it count 403,548,210 and
   414,023,090 units and are sent, and the second with one U+0085 added is refused by the count, with no text.
+- *Fix round 1 (Lane B's independent reviews, S-2, S-3 and S-4; the orchestrator's rulings for stage 5b).* The check of
+  what R1-3's further reading wrote is now charged on the letter's count too (S-2: it was asked after the count was
+  handed back, so its work reached no budget; every outcome was right, since an uncounted check can only refuse). A
+  crafted row the uncounted check let through (one `½` and one U+0085 before 80,000 characters of prose, 349,830,476
+  units counted) is refused by the count. **The closed joiner list of a member ID or claim number (`NUMBER_JOINERS`) is
+  amended**: U+FFFC (the object replacement character PDF text writes) and every number character that is no decimal
+  digit (`\p{Nl}`, `\p{No}`) NFKC leaves as it is join a stored number at any place, as the other joiners do. U+FFFC
+  is replaced with the number (`Member ID 7654<U+FFFC>3210` is `Member ID [MEMBER_ID]`); a number character inside
+  one is read in R1-3's further reading as U+2180, which now joins, so the letter is refused as for one beside it
+  (`7654ↀ3210`, `7654½3210`, `7654ⅼ3210`). This one rule changes the reading of the letter as given, and it only adds
+  matches. A letter or any other visible character inside a number (`7654X3210`) is not joined: Queues item 42. The
+  three tests nearest the budget carry the explicit 20 s limit the four older ones carry (S-3: 3.6 to 3.9 s alone,
+  timed out at the 5 s default with two copies in parallel); the product's bound is the counted budget, unchanged.
 
 **Costs, each named and pinned.**
 
@@ -2572,6 +2585,10 @@ stands, every further reading only adds or refuses, and every reading counts on 
    `[PATIENT_NAME]. [PATIENT_NAME]. Okafor, PT, signed.`). The letter is sent and nothing of the patient's is; whose
    initial it is cannot be known there. No letter of the gate, of item 34's set or of 120,000 fuzzed letters changes
    for it.
+6. Fix round 1, accepted as a recorded cost (Lane B's review S-1): each further reading reads the whole letter again,
+   so an ordinary letter with one fraction and one U+0085 and no identifier is refused on cost from about 77,600
+   characters (the base sends it to about 254,000), under the 100,000 the reader's time budget promises; pinned at
+   100,000. Queues item 39 (the reader's time) is the cure.
 
 **Left, each recorded.** A phone number by pattern that is not stored, with a number character beside it, is sent
 as on the base (11,285 rows of the item's set; stage 2's residual). On every tree, not ruling (A)'s form: a name that

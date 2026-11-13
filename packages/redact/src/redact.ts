@@ -15,7 +15,8 @@
  *   dropped (José is JOSE), and a run of invisible characters (soft hyphen, zero-width space) one
  *   character that joins inside a word and still ends one;
  * - a member ID or claim number matches with or without the white space, dashes, invisible characters and
- *   other number joiners (NUMBER_JOINERS: "_", "|", "\\", grouping apostrophes and primes, "~", middle dots, bullets, ";")
+ *   other number joiners (NUMBER_JOINERS: "_", "|", "\\", grouping apostrophes and primes, "~", middle dots, bullets, ";",
+ *   U+FFFC and a number character that is no decimal digit)
  *   a letter puts inside it, and the periods, slashes and colons next to a letter
  *   ("ZZ 1234567", "ZZ-1234567", "ZZ_1234567", "ZZ/1234567", "12'345'678");
  * - a name matches with or without the dashes and apostrophes inside it (O’Brien, Smith–Jones), across a
@@ -663,10 +664,13 @@ const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC\\u02B9\\u02CA`
  * R5-1 the apostrophes of digit grouping ("12'345'678", "12’345’678"), "~", the middle dots and bullets ("1234·5678",
  * "1234•5678"), ";" and the double quotes, and since review finding G4 the primes OCR writes for a grouping apostrophe
  * (U+2032, U+2035, and U+2033 as NFKC writes it, two U+2032) and the modifier-letter primes and acute (U+02B9, U+02CA,
- * apostrophes here as U+02BC is: APOSTROPHE_LETTER). None of these is a date separator (DATE_SEPARATOR) or an amount's
- * punctuation, so a number written with one is never read as a date or an amount.
+ * apostrophes here as U+02BC is: APOSTROPHE_LETTER), and since Lane B's review of Queues item 40 (S-4) U+FFFC, which PDF
+ * text writes for an object, and every number character that is no decimal digit (\p{Nl}, \p{No}) NFKC leaves as it is
+ * ("7654ↀ3210"; the further reading of R1-3 writes each such character as U+2180, so one inside a stored number is
+ * read there too, and refuses the letter as one beside it does). None of these is a date separator (DATE_SEPARATOR) or
+ * an amount's punctuation, so a number written with one is never read as a date or an amount.
  */
-const NUMBER_JOINERS = "\\s\\p{Pd}\\u2212\\u2043\\u02D7\\u2796_|\\\\\\u00AD'\\u2018\\u2019\\u02BC\\u02B9\\u02CA\\u2032\\u2035`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022;\"\\u201C\\u201D";
+const NUMBER_JOINERS = "\\s\\p{Pd}\\u2212\\u2043\\u02D7\\u2796_|\\\\\\u00AD'\\u2018\\u2019\\u02BC\\u02B9\\u02CA\\u2032\\u2035`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022;\"\\u201C\\u201D\\uFFFC\\p{Nl}\\p{No}";
 /**
  * A line break, and a dash (or VANISHED) before one: a word hyphenated at the end of a line ("Van-⏎tree"). A form feed
  * (the page break pdftotext writes) and a vertical tab are line breaks too (review finding SEC-3).
@@ -3892,16 +3896,19 @@ function refusedWithNumberCharactersAsOne(
       checkWorkSpent = before;
     }
   }
+  refused = refused || PLACEHOLDER_BESIDE_ONE_NUMBER_CHARACTER.test(again.text) || countOf(again.text, ONE_NUMBER_CHARACTER) < countOf(asOne, ONE_NUMBER_CHARACTER);
+  // The check of what this reading wrote, charged on the same count (Lane B's review of item 40, S-2: it was asked after
+  // the count was handed back, so its work reached no budget). The check of the reading of the letter as given is its
+  // caller's to ask, with this count.
+  if (!refused && asGiven === undefined) {
+    const check = { spent: counted };
+    refused = holdsIdentifierCounted(again.text, patient, claims, counted, check);
+    counted = check.spent;
+  }
   if (further !== undefined) {
     further.spent = counted;
   }
-  return (
-    refused ||
-    PLACEHOLDER_BESIDE_ONE_NUMBER_CHARACTER.test(again.text) ||
-    countOf(again.text, ONE_NUMBER_CHARACTER) < countOf(asOne, ONE_NUMBER_CHARACTER) ||
-    // The check of the reading of the letter as given is its caller's to ask, with this count.
-    (asGiven === undefined && holdsIdentifier(again.text, patient, claims, counted))
-  );
+  return refused;
 }
 
 /**
