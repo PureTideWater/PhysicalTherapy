@@ -1,6 +1,15 @@
 # Schema PR 5 (the ledger-freeze batch): status
 
-## RESUME-BLOCK (W62, session_019i9ifELA5xqioWESg7ENdC; 2026-11-13; the reviews, two fix rounds, the PR and the suggested approval line are DONE; what is left: the founder's committed line, green checks, the merge)
+## FINAL STATE: MERGED (W62, 2026-11-13 03:20 UTC)
+- PR #160 merged into `claude/build-platform` as `979a21b8` (method merge; parents `1f652b6f` and `affb4f88`, the
+  founder's committed approval line on `c0b1b1a0`). On `affb4f88`: all green, mutation, the screening-capacity gate
+  and approval-of-record green, approval-of-record green again after "ready". Verified with `git ls-remote`.
+- **Owed after it:** read the push runs the merge started on `979a21b8` to their end (started, not finished, when
+  W62 stood down at its context line); the key registry's migrations are renamed after this one (the orchestrator's
+  note, by the co-founder's typed command); the WIP ref `co-001/wip-schema-pr5` and the merged branch may go.
+- **For the queue:** the four items under "For the queue" in the block below.
+
+## Superseded by FINAL STATE above: RESUME-BLOCK (W62, session_019i9ifELA5xqioWESg7ENdC; 2026-11-13; the reviews, two fix rounds, the PR and the suggested approval line are DONE; what is left: the founder's committed line, green checks, the merge)
 - **NOW (W62, 03:15 UTC, context about 190k):** the founder's line is committed on #160: `affb4f88` (author
   PureTideWater, committer GitHub, parent `c0b1b1a0`, one line of `docs/product/domain-model.md`, the hash unchanged;
   checked by W62 on the ref). `unit` failed once on `c0b1b1a0` (three model-gateway timeouts, not this PR's files),
