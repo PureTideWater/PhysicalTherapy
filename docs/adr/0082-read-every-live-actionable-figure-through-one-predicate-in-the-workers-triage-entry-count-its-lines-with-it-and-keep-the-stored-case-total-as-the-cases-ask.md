@@ -207,3 +207,62 @@ entry; both apps' `package.json` are #42 files; and a database function would be
   and the change is dated by `generated_at` against the deploy.
 - The digest's case set (state `open`, passed deadlines excluded) and the home's (every worked state, passed deadlines
   included) are made one: a choice of which cases are nearing their deadline, not of the figure.
+
+## Amendment (schema PR 5, 2026-11-13): the statement lists the lines its actionable figure counted, and the database checks the figure against them
+
+Lane A's schema PR 5, the ledger-freeze batch. The founder's ledger freeze exception for it (granted 2026-11-07 and
+2026-11-12, relayed by the co-founder; the questions as put and the two granted texts are in
+`docs/product/reconciliation-001.md`, "Ledger semantics") covers new bodies of `roi_links_valid` and
+`roi_statement_rules` and nothing else. This note corrects one sentence of Decision 6, replaces Decision 7's "not
+yet", and records what was measured. The file above is otherwise as it was accepted.
+
+- **Decision 6, corrected.** It said `recomputeStatement()` and `roi_statement_rules()` "check recovered, interest and
+  approved-unposted, never actionable". `roi_statement_rules()` never checked approved-unposted: before this
+  amendment it checked the recovered and interest figures against their linked entries. The rest of Decision 6 stands.
+- **Decision 7, now.** The key Decision 7 offered to Lane A exists. One migration,
+  `20261115090000_roi_statement_actionable_lines.sql`, replaces the two function bodies with the granted texts, byte
+  for byte, and changes no table, column, constraint text, index, policy, trigger definition, grant or stored row:
+  - `roi_links_valid()` accepts the four keys, or those four and `actionable_open_lines` (the priced line IDs the
+    figure summed), and refuses the empty object. Statements stored with four keys stay accepted.
+  - `roi_statement_rules()` refuses a new statement that carries the list unless its actionable figure is the
+    variance of the priced lines it lists, each once and each a line of its practice on a case the statement lists. It
+    checks the sum and the cases, not that the lines were the right ones to count: a statement that lists a written-off
+    or stale line of a listed case, with a figure matching its list, is accepted (recorded by test). A statement
+    without the list stays under the rule it had, and a stored statement is never checked again (the check runs on
+    INSERT only).
+  - The migration refuses, changing nothing, unless the bodies it replaces are the ones the exception was granted on
+    and the bodies it stores hash to the granted ones. Before it replaces the second function it reads every stored
+    statement through the new `roi_links_valid()`, one practice at a time under the tenant policy, and closes with a
+    count under a SHARE lock on `roi_statement`; a failing statement or a lock it cannot have in 30 tries refuses the
+    deploy with counts only (`docs/runbooks/deploy-and-rollback.md`, "An ROI statement's listed lines").
+- **The writer.** `generateRoiStatement` stores `actionable_open_lines`: the lines of exactly the cases the statement
+  links, in the cases' order, each case's by ID. The figure and the list come from one statement and one pass over
+  each case's lines (`ACTIONABLE_NOW_WITH_LINES`: a derived table behind `OFFSET 0` whose column is
+  `ACTIONABLE_NOW_LINE`, as `ACTIONABLE_NOW_OF` of Decision 4 reads them), so a line that moves on between two reads
+  cannot make a correct statement's figure and list disagree. `ACTIONABLE_NOW`'s own text is unchanged, byte for byte,
+  and the predicate is still written once. The first build read the list as a second subquery beside `ACTIONABLE_NOW`
+  (the predicate twice a line); the one-pass form replaced it under the design's own bound and the orchestrator's
+  ruling of 2026-11-12, after both were shown to answer the same rows. No figure is computed in a new place:
+  `roiStatement()` still sums the per-case figures, and nothing under `packages/ledger/src` or `packages/pricing`
+  changes.
+- **The readers.** The statement's page, CSV, list and print job select the four keys they read, so a statement
+  listing a month's lines (about 1.3 MB of IDs at 30,795 lines) is never sent to them. No word, figure or layout a
+  person sees changes; the page and the PDF still say the actionable figure is "not recomputed from its links".
+- **Still open.** `recomputeStatement()` does not yet recompute the actionable figure from the stored lines when a
+  statement is read; the database's check at the write is the only one. That reader, and the words it would change,
+  are not part of schema PR 5.
+- **Measured (SYNTHETIC rows, PostgreSQL 18.4, pages cached; the build's records name each file).**
+  - The writer's query at a month of 30,795 lines in 1,200 open cases, other practices' 1,000,000 lines present,
+    medians: 3.99 s before and 3.82 s now with statistics never gathered; 3.64 s before and 3.37 s now analyzed. The
+    two-subquery form took 7.65 s and 6.99 s.
+  - The database's check on that statement's INSERT: 0.40 to 0.85 s in every planner state, also inside a practice of
+    1,000,000 priced lines; a four-key statement 5 to 10 ms. A statement listing 1,000,000 lines takes 28 to 29 s.
+  - The migration on 1,000,000 stored statements in 1,000 practices: 184 to 196 s; its closing count held the SHARE
+    lock 0.16 to 2.77 s; behind a writer's transaction open 20 s it waited 16.0 s; behind one open past the 30 tries
+    it refused at 219.7 s with nothing changed. On an empty table, milliseconds. Not measured on cold storage.
+- **Tests.** Test matrix LED-26 (the writer and the readers), LED-27 (the database's rule) and LED-28 (the migration
+  and its preflight). LED-01 to LED-18, LED-23 to LED-25 and the ledger oracle are unchanged, their files untouched.
+- **Revisit when**, beside the list above: the figure comes to read an amount other than `priced_line.variance_cents`
+  or rows other than `case_line.priced_line_id`'s (a new ledger freeze exception that replaces
+  `roi_statement_rules()`; `actionable-now.test.ts` and the catalog test fail until then); or a statement is first
+  written on a database whose `roi_statement` is large and cold (the preflight's limit was met with pages cached).

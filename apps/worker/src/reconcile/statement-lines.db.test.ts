@@ -19,10 +19,10 @@ import { type OpenCasePathRow, PLAIN_PATH_OPEN_CASES } from './test-support/plai
 import { FOUR_KEYS, PREVIOUS_STATEMENT_COLUMNS, printWatched, recoupedLedSix, statementTwins } from './test-support/statement-twins';
 
 /**
- * An ROI statement lists the priced lines its actionable figure counted (schema PR 5; docs/adr/0082 Decision 7; the
- * design note's T5 to T8, T11 and T15). The writer reads the figure and the list from the same rows in one statement,
- * and the database's roi_statement_rules() refuses a statement whose figure is not the variance of the lines it lists,
- * each once and each a line of a case it lists. SYNTHETIC fixtures only.
+ * An ROI statement lists the priced lines its actionable figure counted (schema PR 5; docs/adr/0082 Decision 7; test
+ * matrix LED-26 to LED-28; the design note's T5 to T8, T11 and T15). The writer reads the figure and the list from the
+ * same rows in one statement and one pass, and the database's roi_statement_rules() refuses a statement whose figure is
+ * not the variance of the lines it lists, each once and each a line of a case it lists. SYNTHETIC fixtures only.
  */
 
 let w: TriageWorld;
