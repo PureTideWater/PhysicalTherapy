@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- hardware_key_registration_judge(bytea,timestamp with time zone,text)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 9a9f2020335cec77
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 4e45de726521b4ba
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.hardware_key_registration_judge(code_sha256 bytea, began timestamp with time zone, request text)
@@ -39,6 +39,10 @@ BEGIN
       END IF;
       UPDATE hardware_key_removal r SET registration_code_tries = r.registration_code_tries + 1 WHERE r.id = opening;
     END IF;
+  END IF;
+  -- A step with no beginning carries no code (the arrival at the code screen): it is no guess and records nothing.
+  IF began IS NULL THEN
+    RETURN 'refused';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM audit_event e
                   WHERE e.object_type = 'user' AND e.object_id = actor AND e.action = 'security_event' AND e.actor_kind = 'system'

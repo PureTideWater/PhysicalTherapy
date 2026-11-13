@@ -54,7 +54,7 @@ export function isStaleSessionRefusal(error: unknown): boolean {
   return code === '23514' && constraint === STALE_SESSION_CONSTRAINT;
 }
 
-/** The names the database's refusals of a session carry since the key registry (migration 20261115090000; docs/adr/0095). */
+/** The names the database's refusals of a session carry since the key registry (migration 20261116090000; docs/adr/0095). */
 export const KEY_NOT_LIVE_CONSTRAINT = 'user_session_hardware_key_live';
 export const KEY_REGISTRATION_CLOSED_CONSTRAINT = 'user_session_key_registration_closed';
 

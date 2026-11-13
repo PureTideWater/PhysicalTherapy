@@ -750,7 +750,7 @@ describe('a forgotten password (UX-006; docs/adr/0081, the forgotten password)',
     expect(logged(outage.lines, 'security event: password reset completed')).toEqual([expect.objectContaining({ level: 'warn', user_id: user.id, request_id: request.requestId })]);
   });
 
-  it('SGN-28: a reset whose own transaction fails twice still queues the provider sign-out, alone, and the line says it did (owed red until provider_sign_out_unrecorded_reset exists)', async () => {
+  it('SGN-28: a reset whose own transaction fails twice still queues the provider sign-out, alone, and the line says it did', async () => {
     const user = await person();
     await signedIn(user.email);
     const failed = paced(failing(/revoke_user_sessions/, 2));
@@ -1636,7 +1636,7 @@ async function liveMemberships(userId: string): Promise<number> {
   return Number(rows[0]?.count ?? -1);
 }
 
-// A step begun before End membership, with the provider's sign-out not yet performed. Since migration 20261115090000
+// A step begun before End membership, with the provider's sign-out not yet performed. Since migration 20261116090000
 // (LANES.md Queues item 37; docs/adr/0095, closing docs/adr/0094's "Left open") the membership's end moves the
 // account's mark ("user".sign_in_not_before) in its own transaction, whoever ends it, so ADR 0093's rule refuses each
 // step as SGN-17 states for a reset: no session opens and no key stays on the account.
@@ -2598,7 +2598,7 @@ describe('key registration offers ES256 and RS256 only, whatever the provider li
   });
 });
 
-describe('SGN-30: the count of a wrong code refused at the registry’s row is committed when the web then refuses (review W65 S4; owed red until hardware_key_record counts its check and returns no row)', () => {
+describe('SGN-30: the count of a wrong code refused at the registry’s row is committed when the web then refuses (review W65 S4)', () => {
   /** The application's pool, with the one-time code's digest on its way to hardware_key_record swapped for another: the judge said open, and the code that reaches the row is wrong. */
   function offering(digest: Buffer): ScopePool<ScopeClient> {
     return {

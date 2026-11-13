@@ -1199,7 +1199,7 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
     expect(again.events).toEqual([]);
   });
 
-  it('SGN-31: a second open request against another platform administrator, and the same request again inside seven days of a cancel, are refused in the registry’s words and write nothing (owed red until hardware_key_removal_request limits requests against a platform administrator)', async () => {
+  it('SGN-31: a second open request against another platform administrator, and the same request again inside seven days of a cancel, are refused in the registry’s words and write nothing', async () => {
     const [requester, first, second] = [await keyAdmin(), await keyAdmin(), await keyAdmin()];
     const internal = admin.internalId;
     expect((await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: first.id })).outcome).toMatchObject({ status: 'ok' });
@@ -1219,7 +1219,7 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
     expect((await act(requestKeyRemoval, await second.token(), { organizationId: internal, userId: first.id })).outcome).toMatchObject({ status: 'ok' });
   });
 
-  it('SGN-31: a request by an account whose own keys are asked for, and a request against a platform administrator that no third could confirm, are refused in the registry’s words, write nothing and leave the acting account’s security event (owed red until hardware_key_removal_request refuses them and hardware_key_removal_refused takes their reasons)', async () => {
+  it('SGN-31: a request by an account whose own keys are asked for, and a request against a platform administrator that no third could confirm, are refused in the registry’s words, write nothing and leave the acting account’s security event', async () => {
     const [requester, target, third] = [await keyAdmin(), await keyAdmin(), await keyAdmin()];
     const internal = admin.internalId;
     expect((await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: target.id })).outcome).toMatchObject({ status: 'ok' });
@@ -1263,7 +1263,7 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
       )
     ).rows;
 
-  it('SEC-28: a refused act on a key removal leaves a security event for the acting account, in a transaction of its own, and the person reads the same words (owed red until hardware_key_removal_refused is in the migration)', async () => {
+  it('SEC-28: a refused act on a key removal leaves a security event for the acting account, in a transaction of its own, and the person reads the same words', async () => {
     const [requester, target, young] = [await keyAdmin(), await keyAdmin(), await keyAdmin(6)];
     await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id });
     const input = { organizationId: admin.internalId, removalId: (await removalOf(target.id))?.id };
@@ -1329,7 +1329,7 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
     ]);
   });
 
-  it('SEC-28: every refused act writes the web’s line, by IDs and the reason’s code, though the security event is one an hour for an account and a reason: the lines are the count (review W65 N3; the event is owed red until hardware_key_removal_refused is in the migration)', async () => {
+  it('SEC-28: every refused act writes the web’s line, by IDs and the reason’s code, though the security event is one an hour for an account and a reason: the lines are the count (review W65 N3)', async () => {
     const [requester, target] = [await keyAdmin(), await keyAdmin()];
     await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id });
     const input = { organizationId: admin.internalId, removalId: (await removalOf(target.id))?.id };

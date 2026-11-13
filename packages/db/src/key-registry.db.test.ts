@@ -207,6 +207,9 @@ describe('SEC-25: the catalog', () => {
       'hardware_key_removal_request(uuid,uuid,text)': forApp,
       'hardware_key_removal_confirm(uuid,uuid,text)': forApp,
       'hardware_key_removal_cancel(uuid,uuid,text)': forApp,
+      'hardware_key_removal_refused(text,text)': forApp,
+      'provider_sign_out_unrecorded_reset(text)': forApp,
+      'operator_provider_sign_out_request(uuid,text)': forOperator,
       'hardware_key_removals()': forApp,
       'hardware_key_registration_open(uuid,uuid,bytea,text)': forApp,
       'hardware_key_registration_judge(bytea,timestamp with time zone,text)': forApp,
@@ -228,6 +231,7 @@ describe('SEC-25: the catalog', () => {
       'user_session_hardware_key()': forNone,
       'membership_end_marks_account()': forNone,
       'membership_removal_target_holds()': forNone,
+      'user_removal_target_holds()': forNone,
       'audit_event_provider_sign_out()': forNone,
       'hardware_key_is_final()': forNone,
       'hardware_key_removal_is_final()': forNone,
@@ -257,7 +261,7 @@ describe('SEC-25: the catalog', () => {
     const { rows } = await owner.query<{ on: string; name: string; definition: string }>(
       `SELECT t.tgrelid::regclass::text AS on, t.tgname AS name, pg_get_triggerdef(t.oid) AS definition FROM pg_trigger t
         WHERE NOT t.tgisinternal AND t.tgname = ANY ($1) ORDER BY 1, 2`,
-      [['user_session_hardware_key', 'membership_end_marks_account', 'membership_removal_target_holds', 'audit_event_provider_sign_out', 'hardware_key_is_final', 'hardware_key_removal_is_final']],
+      [['user_session_hardware_key', 'membership_end_marks_account', 'membership_removal_target_holds', 'user_removal_target_holds', 'audit_event_provider_sign_out', 'hardware_key_is_final', 'hardware_key_removal_is_final']],
     );
     expect(rows.map((row) => `${row.on}:${row.name}`)).toEqual([
       'audit_event:audit_event_provider_sign_out',
@@ -265,6 +269,7 @@ describe('SEC-25: the catalog', () => {
       'hardware_key_removal:hardware_key_removal_is_final',
       'membership:membership_end_marks_account',
       'membership:membership_removal_target_holds',
+      '"user":user_removal_target_holds',
       'user_session:user_session_hardware_key',
     ]);
     const session = rows.find((row) => row.name === 'user_session_hardware_key')?.definition ?? '';
@@ -809,7 +814,7 @@ describe('SGN-22: no live session without a live key, and none begun at or befor
 
   it('adds nothing to the request path in the database: the registry’s migrations do not name resolve_session', () => {
     const migrations = new URL('../migrations/', import.meta.url);
-    const registry = readdirSync(migrations).filter((name) => name.startsWith('20261115'));
+    const registry = readdirSync(migrations).filter((name) => name.startsWith('20261116'));
     expect(registry).toHaveLength(2);
     for (const name of registry) {
       expect(readFileSync(new URL(name, migrations), 'utf8')).not.toMatch(/resolve_session/);
@@ -817,7 +822,7 @@ describe('SGN-22: no live session without a live key, and none begun at or befor
   });
 });
 
-describe('SGN-24: the target of a requested key removal changes no other account (owed red until the trigger hardware_key_removal_target_acts is in the migration)', () => {
+describe('SGN-24: the target of a requested key removal changes no other account', () => {
   const HOLDS = refusedBy('hardware_key_removal_target_acts');
   type Outcome = Failure | { readonly rows: number };
 
@@ -923,7 +928,7 @@ describe('SGN-24: the target of a requested key removal changes no other account
   });
 });
 
-describe('SGN-29: a step judged with no beginning is no guess and records no refusal (owed red until hardware_key_registration_judge returns before its security event when began is NULL)', () => {
+describe('SGN-29: a step judged with no beginning is no guess and records no refusal', () => {
   const refusals = (user: string) => count("audit_event WHERE action = 'security_event' AND actor_kind = 'system' AND object_id = $1 AND purpose = 'key_registration_refused'", [user]);
   const judge = async (user: string, codeDigest: Buffer | null, at: string | null) =>
     (await asUser<{ verdict: string }>(user, 'SELECT hardware_key_registration_judge($1, $2::timestamptz, $3) AS verdict', [codeDigest, at, request()]))[0]?.verdict;
@@ -949,7 +954,7 @@ describe('SGN-29: a step judged with no beginning is no guess and records no ref
   });
 });
 
-describe('SEC-28: a refused act on a key removal leaves a security event for the acting account (owed red until hardware_key_removal_refused is in the migration)', () => {
+describe('SEC-28: a refused act on a key removal leaves a security event for the acting account', () => {
   const events = async (user: string) =>
     (await owner.query<{ purpose: string; actor_id: string | null; practice_id: string | null }>("SELECT purpose, actor_id, practice_id FROM audit_event WHERE action = 'security_event' AND actor_kind = 'system' AND object_type = 'user' AND object_id = $1 AND purpose LIKE 'key\\_removal\\_refused\\_%' ORDER BY purpose", [user])).rows;
   const refusedAct = (user: string, why: string | null) => asUser(user, 'SELECT hardware_key_removal_refused($1, $2)', [why, request()]);
@@ -981,7 +986,7 @@ describe('SEC-28: a refused act on a key removal leaves a security event for the
     expect(await code(asUser(user, "INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, purpose) VALUES ($1, 'user', 'security_event', 'user', $1, 'key_removal_refused_two_people')", [user]))).toBe('42501');
   });
 
-  it('takes the four refusals of a request that bound what a request may hold, one row each (owed red until the closed list has them)', async () => {
+  it('takes the four refusals of a request that bound what a request may hold, one row each', async () => {
     const user = await createUser(owner);
     const reasons = ['asked_again_too_soon', 'no_third_administrator', 'one_administrator_request', 'target_asks'];
     for (const why of reasons) {
@@ -991,7 +996,7 @@ describe('SEC-28: a refused act on a key removal leaves a security event for the
   });
 });
 
-describe('SGN-30: a wrong code offered to hardware_key_record is a counted guess (owed red until hardware_key_record counts its check and returns no row)', () => {
+describe('SGN-30: a wrong code offered to hardware_key_record is a counted guess', () => {
   const tries = async (removal: string) => (await owner.query<{ n: number }>('SELECT registration_code_tries::int AS n FROM hardware_key_removal WHERE id = $1', [removal])).rows[0]?.n;
   const refusals = (user: string) => count("audit_event WHERE object_id = $1 AND action = 'security_event' AND actor_kind = 'system' AND purpose = 'key_registration_refused'", [user]);
   const CLOSED = refusedBy('hardware_key_registration_closed');
@@ -1058,7 +1063,7 @@ describe('SGN-30: a wrong code offered to hardware_key_record is a counted guess
   });
 });
 
-describe('SGN-31: a requested key removal binds its target only while it can still be confirmed, and one requester holds one administrator once (owed red until user_removal_target_holds reads the expiry and the requester, and hardware_key_removal_request limits requests against a platform administrator; and until membership_removal_target_holds reads the same, and the request refuses a target’s own request and one no third administrator could confirm)', () => {
+describe('SGN-31: a requested key removal binds its target only while it can still be confirmed, and one requester holds one administrator once', () => {
   const HOLDS = refusedBy('hardware_key_removal_target_acts');
   const TARGET_ASKS = refusedBy('hardware_key_removal_target_asks');
   const NO_THIRD = refusedBy('hardware_key_removal_no_third_administrator');
@@ -1438,7 +1443,7 @@ describe('SGN-31: a requested key removal binds its target only while it can sti
     });
   });
 
-  describe('(g) a request no third administrator could still confirm binds no one (review W67 N-1; owed red until both triggers read the third)', () => {
+  describe('(g) a request no third administrator could still confirm binds no one (review W67 N-1)', () => {
     it('A requests against B with C the only third and then disables C: B, held until then, disables A though the request still says requested', async () => {
       const [a, b, c] = [await administrator(), await administrator(), await administrator()];
       await onlyAdministrators([a, b, c], async () => {

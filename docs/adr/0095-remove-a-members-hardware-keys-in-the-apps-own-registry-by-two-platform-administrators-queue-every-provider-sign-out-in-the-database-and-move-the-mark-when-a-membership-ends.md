@@ -1,7 +1,7 @@
 # 0095. Remove a member's hardware keys in the app's own registry, by two platform administrators; queue every provider sign-out in the database; move the mark when a membership ends
 
 - **Status:** proposed (`LANES.md` Queues item 37, Lane A's schema chain; two migrations,
-  `20261115090000_key_registry.sql` and `20261115091000_key_registry_validate.sql`); accepted when the founder approves
+  `20261116090000_key_registry.sql` and `20261116091000_key_registry_validate.sql`); accepted when the founder approves
   its pull request (docs/adr/0063). Closes Queues item 29's Part A, the retry and the mark, which
   [0094](0094-end-a-membership-in-the-app-whatever-the-provider-answers-ask-the-provider-to-sign-out-only-after-the-commit-and-page-on-its-failure.md)
   handed on. Amends 0094 (D2 to D7, "left open", "Revisit when") and
@@ -170,6 +170,64 @@ Until this record a member's hardware key lived only at the identity provider. T
 8. `provider_signed_out` does not record which outcome (`signed_out` or `no_such_user`); the job's log line does
    (`outcome_code`).
 
+## Decisions the reviews added (2026-11-13, before the migration merged)
+
+The reviews of the build and the orchestrator's rulings on them changed the two unmerged migrations and the code
+around them. Each is tested by the row named (docs/product/test-matrix.md).
+
+1. **The one-time code's digest is keyed.** The web stores and compares HMAC-SHA-256 of the normalized code under a
+   32-byte key of its own (`registrationCodeDigest`), not a bare SHA-256; the database still holds only a digest and
+   compares after a second SHA-256 each side.
+2. **ES256 and RS256 only.** Registration offers the intersection of `KEY_REGISTRATION_ALGORITHMS` (-7, -257) with the
+   provider's list, refuses an empty one (`KEY_ALGORITHMS_NOT_OFFERED`) and verifies with the same list. The public
+   key's 1,024-byte cap stays; a post-quantum algorithm needs a verifier and a wider CHECK, and is queued.
+3. **Four metric filters and alarms:** `ProviderSignOutAttemptsFailing`, `ProviderSignOutNoSuchUser`,
+   `RelyingPartyMismatch`, `KeyAlgorithmsNotOffered`, each with its paragraph in docs/runbooks/incident-response.md.
+4. **The sign-out run** holds a connection only for each short transaction, never across the provider's call, and a
+   try the provider did not answer in time is the run's last.
+5. **A reset the application could not record still signs the account out (SGN-28).**
+   `provider_sign_out_unrecorded_reset(text)` writes the reserved action `password_reset_unrecorded` and the trigger
+   queues the row (reason `password_reset_unrecorded`); `operator_provider_sign_out_request(uuid, text)` is the
+   operator's way to queue one. A waiting row covers a later call only if it was never tried. Both store no request
+   ID rather than fail on one outside the CHECK's pattern. The reset's paging line carries `outcome_code`.
+6. **Late and given up (JOB-09).** A row is late by age: undone and queued over 15 minutes, whatever its tries or
+   lease. It is given up at 30 tries, or at 24 hours only once one try was answered as failed (`last_error_code IS
+   NOT NULL`), never under a running lease; a row never tried is never given up. A waiting row is paged late again
+   every day: the sweep clears `late_reported_at` 24 hours after the acknowledgement. The claim returns the cause's
+   request ID. The worker's step-failed line carries a new reviewed log field, `sqlstate_code`.
+7. **No security event for a step judged with no beginning (SGN-29);** and **a wrong code at `hardware_key_record`
+   is a counted guess (SGN-30):** it counts a try, records the refusal once an hour and returns no row, so the count
+   commits; the web treats no row as the refusal. No code or no opening still raises.
+8. **A refused act on a key removal leaves a trace that survives (SEC-28).** A refusal rolls its transaction back, so
+   the routes' wrapper calls `hardware_key_removal_refused(text, text)` afterwards, bounded, as the acting account:
+   one security event an hour for an account and a reason, from a closed list of eight (`not_permitted`,
+   `two_people`, `not_own_account`, `requester_left`, `one_administrator_request`, `asked_again_too_soon`,
+   `target_asks`, `no_third_administrator`). The web also writes one line for every refused act (`a refused act on a
+   key removal`, by IDs and the reason's code); the lines are the count.
+9. **The target of a request is bound, and only while the request can be confirmed (SGN-31).** A second trigger,
+   `user_removal_target_holds` on `"user"`, stops the target changing any other account's status or hardware-key
+   rule, as `membership_removal_target_holds` stops it changing an internal membership (otherwise a compromised
+   target disables its requester and voids the request). Both bind under the same conditions, by the clock and not
+   by the expiry job's mark: the request is not decided, is not past its 24 hours, its requester still passes
+   `account_removes_keys`, it is that requester's earliest such request against an account that is a platform
+   administrator now, and some account other than requester and target could still confirm it. A request that can
+   no longer be confirmed protects no one, so it binds no one. The owner, acting as no account, is never bound: that
+   is the way out the runbook names.
+10. **What a request may hold is bounded, in `hardware_key_removal_request`.** Against a platform administrator: one
+    request of a requester that can still be confirmed (`hardware_key_removal_one_administrator_request`); not again
+    against the same administrator for seven days after its request there expired or was cancelled
+    (`hardware_key_removal_asked_again_too_soon`); and none at all unless a third account passes
+    `account_removes_keys` (`hardware_key_removal_no_third_administrator`), which writes no row and starts no wait.
+    An account that is itself the target of a request that can still be confirmed requests no removal
+    (`hardware_key_removal_target_asks`). All 23514. The function takes two transaction advisory locks first, on
+    requester and target in the order of their IDs, before any row lock, so two requests of one requester cannot both
+    pass the count and two accounts asking against each other at once are taken one after the other, the second
+    refused. Requests against other accounts, and a request after a confirmed removal, are not limited.
+11. **The product keeps at least three eligible platform administrators from launch.** With two, neither can request
+    the other's removal (10), and the two-person rule has no second person for an administrator's own keys. With
+    three, a compromised administrator can bind one colleague for one request's 24 hours, once in seven days, while
+    the third can still disable it; if it removes the third first the binding ends with the third (9).
+
 ## Deploy and rollback
 
 - **Staff register their keys once, at the deploy.** A key registered before this release has no registry row: the new
@@ -214,11 +272,17 @@ Until this record a member's hardware key lived only at the identity provider. T
 
 ## Residuals
 
-- A refused removal (the requester confirming their own request, an administrator under seven days, a stale key
-  session, the account acting on itself) writes no audit event, because the refusal rolls back; it leaves the route
-  wrapper's log line only. Whether a refused removal needs a trace that survives is the security review's to say.
-- `hardware_key_record` is an uncounted check of a code digest for whoever holds the application role; the 40 bits and
-  the hour bound it.
+- A refused removal's security event is written after the rollback by the routes' wrapper, bounded: if that call
+  fails the refusal stands and only the web's line remains. `hardware_key_removal_target_acts` (the trigger's own
+  refusal) has no words in the console's list and no reason in the closed list.
+- A bound target cannot end or change its own internal membership either (`membership_removal_target_holds` has no
+  exemption for its own row, as the account trigger has), so it cannot step down while bound.
+- While one request against an administrator stands, neither its requester nor its target can request against a
+  third account; any other administrator can, or the requester cancels and takes the seven-day wait.
+- The third is counted when the request is made and read again by the triggers, but an administrator six days in
+  the role does not count though it could confirm tomorrow. A request not yet committed when its target's statement
+  takes its snapshot does not bind that statement. `account_removes_keys` reads the transaction's start, the triggers
+  the clock. Two accounts whose advisory keys collide (2^-64) could deadlock; one is ended, nothing written.
 - The job reads the provider's "no such user" as done. A pool ID naming the wrong pool would turn every row into that
   answer; nothing checks the pool at start.
 - `hardware_key_registration_judge` asked with no code counts a try, and the free "closed?" helper is granted to no
@@ -233,11 +297,8 @@ Until this record a member's hardware key lived only at the identity provider. T
   on. `organizationId` in the key routes' inputs serves the redirect only.
 - The registration code crosses the server-action response to the administrator's browser and lives in page state
   until the page goes.
-- The job's failed-try warning carries no cause request ID (`operator_provider_sign_out_claim` does not return it);
-  the `LATE` and `GAVE_UP` lines do. The run's eight seconds are counted from the first claim and each provider call
+- The run's eight seconds are counted from the first claim and each provider call
   may take ten more; the job holds one of the operator pool's two connections for the run.
-- `membership_removal_target_holds` holds for a request past its 24 hours until the job marks it expired, at most
-  about a minute.
 - `GAVE_UP` has no operator resend: the one manual sign-out left is the founder's break-glass, until an operator
   function exists.
 - The e2e journey (request, confirm, open, the code typed, the new key registered) is not written.

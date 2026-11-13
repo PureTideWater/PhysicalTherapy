@@ -1,7 +1,7 @@
 -- The hardware-key registry, its two-person removal, registration after a removal, the provider sign-out's outbox and
--- the mark at a membership's end (LANES.md Queues item 37; test matrix SGN-19 to SGN-27, SEC-25 to SEC-27, JOB-06 to
--- JOB-08). After migration 20261114090000. Decisions: docs/adr/0095 (new); and docs/adr/0093, 0094, 0091, 0083, 0049
--- and 0009.
+-- the mark at a membership's end (LANES.md Queues item 37; test matrix SGN-19 to SGN-31, SEC-25 to SEC-28, JOB-06 to
+-- JOB-09). After migration 20261115090000_roi_statement_actionable_lines. Decisions: docs/adr/0095 (new); and
+-- docs/adr/0093, 0094, 0091, 0083, 0049 and 0009.
 --
 -- What it adds:
 -- - hardware_key: one row a registered key (the SHA-256 of its credential ID and its public key), one live key an
@@ -12,7 +12,8 @@
 -- - hardware_key_notice: the member's email for a removal, an opening and the registration after a removal (the shape
 --   of password_notice, docs/adr/0091).
 -- - provider_sign_out: the outbox of sign-outs owed at the identity provider, one row for each ended membership,
---   recorded reset and confirmed removal, written in the cause's own transaction and drained by a platform job.
+--   recorded reset, reset the application could not record (password_reset_unrecorded) and confirmed removal, written
+--   in the cause's own transaction and drained by a platform job.
 -- - user_session.key_credential_sha256 (bytea, nullable): the key a key session was opened with; its CHECK
 --   user_session_key_digest is added NOT VALID and validated by the next migration.
 -- - mail_send_kind and mail_send_stream_kind admit hardware_keys_removed (the transactional stream), replaced NOT
@@ -21,28 +22,37 @@
 --   for a live key of its account; the previous image's key session, which carries no digest, only for an account the
 --   registry never touched; a code session never for an account whose registration is closed);
 --   membership_end_marks_account (an end moves the account's mark and ends its sessions, whoever ends it);
---   membership_removal_target_holds (the account of an open removal request changes no internal membership);
+--   membership_removal_target_holds (the account of a removal request that can still be confirmed changes no
+--   internal membership) and user_removal_target_holds on "user" (nor any other account's status or hardware-key
+--   rule): both bind only while the request is not decided, is not past its 24 hours by the clock, its requester still
+--   passes account_removes_keys, it is that requester's earliest such request against a platform administrator, and a
+--   third account could still confirm it;
 --   audit_event_provider_sign_out (queues the sign-out; membership_ended is recorded only for a membership this
 --   transaction ended and did not create); hardware_key_is_final and hardware_key_removal_is_final.
 -- - Functions for the web (tp_app): hardware_key_record, sign_in_hardware_keys, sign_in_key_refused,
---   hardware_key_removal_request, _confirm and _cancel, hardware_key_removals, hardware_key_registration_open and
---   hardware_key_registration_judge. For the platform jobs (tp_operator): operator_provider_sign_out_claim, _done,
---   _failed and _reported, operator_provider_sign_outs_overdue and _expire, operator_key_removals_expire, and the
+--   hardware_key_removal_request, _confirm and _cancel, hardware_key_removal_refused (the security event of a
+--   refused act, a closed list of eight reasons), hardware_key_removals, hardware_key_registration_open,
+--   hardware_key_registration_judge and provider_sign_out_unrecorded_reset. For the platform jobs (tp_operator):
+--   operator_provider_sign_out_claim, _done, _failed, _reported and _request, operator_provider_sign_outs_overdue and
+--   _expire, operator_key_removals_expire, and the
 --   notice's five (operator_key_notices_due, operator_key_notice_claim, _sent and _failed, operator_key_notices_stale).
 --   Granted to no role (called by the definers here, as their owner): account_removes_keys, actor_key_session,
---   account_key_registration_closed, hardware_key_opening_usable, hardware_key_notice_report_undelivered.
+--   account_key_registration_closed, hardware_key_opening_usable, hardware_key_notice_report_undelivered; and the
+--   trigger functions, user_removal_target_holds among them.
 -- - Replaced in place, signature, owner and grant unchanged: operator_record_mail_event (one lock and one branch added:
 --   an event of a hardware_keys_removed message moves its notice as it moves a password notice) and
 --   operator_mail_expire (one statement added: the key notices expire with the password notices).
--- - audit_event_record (the application role's INSERT policy) is recreated with nine more reserved actions.
+-- - audit_event_record (the application role's INSERT policy) is recreated with ten more reserved actions
+--   (password_reset_unrecorded among them: only provider_sign_out_unrecorded_reset and the operator's request write
+--   it).
 --   hardware_key_registered is not reserved yet: the previous image writes it during the deploy.
 --
 -- Tables touched: four new platform tables (no practice_id: they describe an account, hold no PHI and no contact
 -- detail, and are closed to both runtime roles: FORCE ROW LEVEL SECURITY, one policy for tp_owner, no privilege);
 -- user_session (one nullable column, no default: catalog only; one NOT VALID CHECK: no scan; one BEFORE INSERT
--- trigger; one column grant); membership (two triggers); audit_event (one AFTER INSERT trigger; one policy
--- recreated); mail_send (two CHECKs replaced NOT VALID: no scan). No PHI table, no ledger table, no rule table and no
--- pricing table is touched; no function sets app.practice_ids or app.actor_id; none is LEAKPROOF; none builds SQL.
+-- trigger; one column grant); membership (two triggers); "user" (one BEFORE UPDATE trigger); audit_event (one AFTER
+-- INSERT trigger; one policy recreated); mail_send (two CHECKs replaced NOT VALID: no scan). No PHI table, no ledger
+-- table, no rule table and no pricing table is touched; no function sets app.practice_ids or app.actor_id; none is LEAKPROOF; none builds SQL.
 -- Every function is SECURITY DEFINER, owned by tp_owner, with search_path pg_catalog, public, pg_temp, and revoked
 -- from PUBLIC. Runs as tp_owner.
 --
@@ -78,7 +88,8 @@ BEGIN
               AND (p.proname LIKE 'hardware\_key\_%' OR p.proname LIKE 'operator\_provider\_sign\_out%' OR p.proname LIKE 'operator\_key\_%'
                    OR p.proname IN ('sign_in_hardware_keys', 'sign_in_key_refused', 'account_removes_keys', 'actor_key_session',
                                     'account_key_registration_closed', 'user_session_hardware_key', 'membership_end_marks_account',
-                                    'membership_removal_target_holds', 'audit_event_provider_sign_out'))) THEN
+                                    'membership_removal_target_holds', 'audit_event_provider_sign_out', 'user_removal_target_holds',
+                                    'provider_sign_out_unrecorded_reset'))) THEN
     RAISE EXCEPTION 'a function of the key registry already exists; this migration creates them' USING ERRCODE = 'object_not_in_prerequisite_state';
   END IF;
   -- The two functions replaced whole: each stored body must be the one this migration was written on (pg_proc.prosrc,
@@ -255,7 +266,7 @@ CREATE TABLE provider_sign_out (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES "user" (id),
   reason text NOT NULL CONSTRAINT provider_sign_out_reason
-    CHECK (reason IN ('membership_ended', 'password_reset_completed', 'password_reset_outcome_unknown', 'hardware_keys_removed')),
+    CHECK (reason IN ('membership_ended', 'password_reset_completed', 'password_reset_outcome_unknown', 'hardware_keys_removed', 'password_reset_unrecorded')),
   source_event_id uuid NOT NULL CONSTRAINT provider_sign_out_once UNIQUE,
   request_id text CONSTRAINT provider_sign_out_request_id CHECK (request_id ~ '^[A-Za-z0-9._:-]{1,128}$'),
   queued_at timestamptz NOT NULL,
@@ -507,22 +518,87 @@ CREATE TRIGGER membership_end_marks_account AFTER UPDATE OF ends_at ON membershi
   WHEN (NEW.ends_at IS NOT NULL AND NEW.ends_at <= now() AND (OLD.ends_at IS NULL OR OLD.ends_at > now()))
   EXECUTE FUNCTION membership_end_marks_account();
 
--- While a removal of an account's keys is requested, that account changes no membership of an internal organization:
--- it can neither end nor demote the requester or any other administrator, which would void the request or leave no
--- one to confirm it. Once the request is decided it can again. It fires first of the BEFORE UPDATE triggers, by name.
+-- While a removal of an account's keys is requested and can still be confirmed, that account changes no membership
+-- of an internal organization: it can neither end nor demote the requester or any other administrator, which would
+-- void the request or leave no one to confirm it. It binds under exactly the conditions of user_removal_target_holds
+-- below (the same shield through the other door, review W66 S2): the request not decided, not past its 24 hours by
+-- the clock whatever the expiry job has marked, its requester still passing account_removes_keys, and of one
+-- requester's such requests against accounts that are platform administrators now only the earliest, and only while
+-- a third account could still confirm it (review W67 N-1). It takes no lock. It fires first of the BEFORE UPDATE
+-- triggers, by name.
 CREATE FUNCTION membership_removal_target_holds() RETURNS trigger
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 BEGIN
   IF app_actor_id() IS NOT NULL
      AND (organization_kind_of(OLD.organization_id) = 'internal' OR organization_kind_of(NEW.organization_id) = 'internal')
-     AND EXISTS (SELECT 1 FROM hardware_key_removal r WHERE r.user_id = app_actor_id() AND r.state = 'requested') THEN
-    RAISE EXCEPTION 'an account whose key removal is requested changes no internal membership until the request is decided'
+     AND EXISTS (SELECT 1 FROM hardware_key_removal r
+                  WHERE r.user_id = app_actor_id() AND r.state = 'requested'
+                    AND r.expires_at > clock_timestamp() AND account_removes_keys(r.requested_by)
+                    AND NOT EXISTS (SELECT 1 FROM hardware_key_removal e
+                                      JOIN membership m ON m.user_id = e.user_id
+                                      JOIN organization o ON o.id = m.organization_id
+                                     WHERE e.requested_by = r.requested_by AND e.id <> r.id AND e.state = 'requested'
+                                       AND e.expires_at > clock_timestamp() AND (e.requested_at, e.id) < (r.requested_at, r.id)
+                                       AND o.kind = 'internal' AND m.role = 'platform_admin'
+                                       AND (m.ends_at IS NULL OR m.ends_at > clock_timestamp()))
+                    AND EXISTS (SELECT 1 FROM membership t JOIN organization i ON i.id = t.organization_id
+                                 WHERE i.kind = 'internal' AND t.role = 'platform_admin'
+                                   AND t.user_id <> r.requested_by AND t.user_id <> r.user_id
+                                   AND account_removes_keys(t.user_id))) THEN
+    RAISE EXCEPTION 'an account whose key removal is requested changes no internal membership while the request can be confirmed'
       USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_removal_target_acts';
   END IF;
   RETURN NEW;
 END;
 $$;
 CREATE TRIGGER membership_removal_target_holds BEFORE UPDATE ON membership FOR EACH ROW EXECUTE FUNCTION membership_removal_target_holds();
+
+-- While a removal of an account's keys is requested and can still be confirmed, that account changes the status and
+-- the hardware-key rule of no other account: as a platform administrator it could otherwise disable the requester,
+-- which voids the request (hardware_key_removal_requester_left), or any administrator who could confirm it. Its own
+-- row it may still change. The rule binds only while the confirmation would still be accepted: the request is not
+-- decided, is not past its 24 hours by the clock (whatever the expiry job has marked) and its requester still passes
+-- account_removes_keys. A request that can no longer be confirmed protects no one, so it binds no one: otherwise a
+-- requester would shield itself from the one administrator who could disable it, for as long as the job stalled or
+-- after it had itself left the role. hardware_key_removal_request bounds the other side: how often one requester
+-- may hold one administrator this way. And one requester binds one account at a time: of its requests that can
+-- still be confirmed against accounts that are platform administrators now, only the earliest binds its target, so
+-- an account promoted while a later request against it stands is not held as well (review W66 S1). And a request
+-- binds only while some account other than its requester and its target passes account_removes_keys as a platform
+-- administrator of an internal organization (hardware_key_removal_request's own test of the third, read again here,
+-- review W67 N-1): a requester that disables or ends the only third after asking would otherwise hold its target
+-- for the request's 24 hours with no one able to confirm. The bound target cannot make this so itself: bound, it
+-- changes no other account's status and no internal membership.
+-- It takes no lock. By name it fires after user_guarded_columns and before user_updated_at; the order changes no
+-- outcome, since only a platform administrator reaches another account's row and user_guarded_columns passes one.
+CREATE FUNCTION user_removal_target_holds() RETURNS trigger
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF app_actor_id() IS NOT NULL
+     AND OLD.id <> app_actor_id()
+     AND EXISTS (SELECT 1 FROM hardware_key_removal r
+                  WHERE r.user_id = app_actor_id() AND r.state = 'requested'
+                    AND r.expires_at > clock_timestamp() AND account_removes_keys(r.requested_by)
+                    AND NOT EXISTS (SELECT 1 FROM hardware_key_removal e
+                                      JOIN membership m ON m.user_id = e.user_id
+                                      JOIN organization o ON o.id = m.organization_id
+                                     WHERE e.requested_by = r.requested_by AND e.id <> r.id AND e.state = 'requested'
+                                       AND e.expires_at > clock_timestamp() AND (e.requested_at, e.id) < (r.requested_at, r.id)
+                                       AND o.kind = 'internal' AND m.role = 'platform_admin'
+                                       AND (m.ends_at IS NULL OR m.ends_at > clock_timestamp()))
+                    AND EXISTS (SELECT 1 FROM membership t JOIN organization i ON i.id = t.organization_id
+                                 WHERE i.kind = 'internal' AND t.role = 'platform_admin'
+                                   AND t.user_id <> r.requested_by AND t.user_id <> r.user_id
+                                   AND account_removes_keys(t.user_id))) THEN
+    RAISE EXCEPTION 'an account whose key removal is requested changes no other account''s status or hardware-key rule while the request can be confirmed'
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_removal_target_acts';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER user_removal_target_holds BEFORE UPDATE ON "user" FOR EACH ROW
+  WHEN (NEW.status IS DISTINCT FROM OLD.status OR NEW.hardware_key_required IS DISTINCT FROM OLD.hardware_key_required)
+  EXECUTE FUNCTION user_removal_target_holds();
 
 -- ---------------------------------------------------------------------------------------------------
 -- 7. What queues a provider sign-out (docs/adr/0095; docs/adr/0094's open case closed)
@@ -558,8 +634,71 @@ END;
 $$;
 CREATE TRIGGER audit_event_provider_sign_out AFTER INSERT ON audit_event FOR EACH ROW
   WHEN (NEW.action = 'membership_ended'
-        OR (NEW.action IN ('password_reset_completed', 'password_reset_outcome_unknown') AND NEW.actor_kind = 'user' AND NEW.object_type = 'user' AND NEW.object_id = NEW.actor_id))
+        OR (NEW.action IN ('password_reset_completed', 'password_reset_outcome_unknown', 'password_reset_unrecorded') AND NEW.actor_kind = 'user' AND NEW.object_type = 'user' AND NEW.object_id = NEW.actor_id))
   EXECUTE FUNCTION audit_event_provider_sign_out();
+
+-- A reset the provider completed whose own transaction could not be recorded (docs/adr/0091 D15's gap): the account,
+-- acting as itself, queues the provider's sign-out alone. It takes no lock on the account and ends no session, so it
+-- can commit where the reset's transaction failed twice on a lock or on the session update. It writes its own audit
+-- row (a reserved action, so only this function writes it) and the trigger above queues the row from it. While a
+-- sign-out for this cause waits NEVER YET TRIED (no try counted, no lease) it writes nothing more: that first try is
+-- still ahead, is due at once and covers this call too, so the outbox cannot be flooded. A row already tried does not
+-- count: its try may predate this reset and its next one may be an hour away. True when this call queued one.
+CREATE FUNCTION provider_sign_out_unrecorded_reset(request text) RETURNS boolean
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+#variable_conflict use_variable
+DECLARE
+  actor uuid := app_actor_id();
+BEGIN
+  -- Never lost to its trace ID: one the audit row and the outbox would refuse (their CHECK) is stored as none.
+  IF request !~ '^[A-Za-z0-9._:-]{1,128}$' THEN
+    request := NULL;
+  END IF;
+  IF actor IS NULL OR NOT EXISTS (SELECT 1 FROM "user" u WHERE u.id = actor) THEN
+    RAISE EXCEPTION 'only an account queues its own sign-out after a reset that was not recorded' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  IF EXISTS (SELECT 1 FROM provider_sign_out p
+              WHERE p.user_id = actor AND p.reason = 'password_reset_unrecorded' AND p.done_at IS NULL AND p.gave_up_at IS NULL AND p.leased_until IS NULL AND p.attempts = 0) THEN
+    RETURN false;
+  END IF;
+  INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, request_id)
+  VALUES (actor, 'user', 'password_reset_unrecorded', 'user', actor, request);
+  RETURN true;
+END;
+$$;
+
+-- The same for the operator, where the database could not be reached at the reset (the incident runbook's step): the
+-- account is named, the audit row is the system's, and the outbox row is written here, since the trigger's guard
+-- passes only an account's own row. The same rule against a second waiting row. The sign-out's ID, or NULL when one
+-- already waits.
+CREATE FUNCTION operator_provider_sign_out_request(account uuid, request text) RETURNS uuid
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+#variable_conflict use_variable
+DECLARE
+  event uuid;
+  at timestamptz;
+  queued uuid;
+BEGIN
+  -- Never lost to its trace ID, as above.
+  IF request !~ '^[A-Za-z0-9._:-]{1,128}$' THEN
+    request := NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM "user" u WHERE u.id = account) THEN
+    RAISE EXCEPTION 'no such account' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF EXISTS (SELECT 1 FROM provider_sign_out p
+              WHERE p.user_id = account AND p.reason = 'password_reset_unrecorded' AND p.done_at IS NULL AND p.gave_up_at IS NULL AND p.leased_until IS NULL AND p.attempts = 0) THEN
+    RETURN NULL;
+  END IF;
+  INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
+  VALUES ('system', 'password_reset_unrecorded', 'user', account, 'operator', request)
+  RETURNING id, audit_event.at INTO event, at;
+  INSERT INTO provider_sign_out (user_id, reason, source_event_id, request_id, queued_at, next_attempt_at)
+  VALUES (account, 'password_reset_unrecorded', event, request, at, at)
+  RETURNING id INTO queued;
+  RETURN queued;
+END;
+$$;
 
 -- ---------------------------------------------------------------------------------------------------
 -- 8. For the web: registration and sign-in (tp_app; docs/adr/0095)
@@ -568,7 +707,12 @@ CREATE TRIGGER audit_event_provider_sign_out AFTER INSERT ON audit_event FOR EAC
 -- The acting account records its own new key (it takes no account argument), after the provider registered it and the
 -- app verified the registration itself. Under the account's row lock, on one reading of the clock: refuses a start at
 -- or before the mark or ahead of the clock, a second live key, and, when the account's registration is closed, any
--- call without the one-time code of a usable opening. A digest already known fails on hardware_key_credential_once.
+-- call without the one-time code of a usable opening. A wrong code against a usable opening is a guess like the
+-- judge's: it counts one try on the opening (the fifth spends it), records key_registration_refused at most once an
+-- account and an hour, and the function RETURNS NO ROW instead of raising, so the count commits (a raise would roll
+-- it back and leave this function an uncounted oracle for the code). The caller treats no row as the refusal and
+-- removes the key at the provider. No code at all, or no usable opening, is no guess and still raises
+-- hardware_key_registration_closed. A digest already known fails on hardware_key_credential_once.
 -- The row and its audit row exist together or not at all. The registration that consumes an opening also writes the
 -- security event key_registered_after_removal and the member's notice, and answers first_after_removal.
 CREATE FUNCTION hardware_key_record(new_credential bytea, new_public_key bytea, code_sha256 bytea, began timestamptz, request text)
@@ -602,10 +746,19 @@ BEGIN
   IF closed THEN
     opening := hardware_key_opening_usable(actor, at);
     -- Both sides hashed again before the comparison, so its timing says nothing about the stored digest.
-    IF opening IS NULL OR code_sha256 IS NULL
-       OR NOT EXISTS (SELECT 1 FROM hardware_key_removal r WHERE r.id = opening AND sha256(r.registration_code_sha256) = sha256(code_sha256)) THEN
+    IF opening IS NULL OR code_sha256 IS NULL THEN
       RAISE EXCEPTION 'registration of a hardware key after a removal needs the code an administrator opened it with'
         USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_registration_closed';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM hardware_key_removal r WHERE r.id = opening AND sha256(r.registration_code_sha256) = sha256(code_sha256)) THEN
+      UPDATE hardware_key_removal r SET registration_code_tries = r.registration_code_tries + 1 WHERE r.id = opening;
+      IF NOT EXISTS (SELECT 1 FROM audit_event e
+                      WHERE e.object_type = 'user' AND e.object_id = actor AND e.action = 'security_event' AND e.actor_kind = 'system'
+                        AND e.purpose = 'key_registration_refused' AND e.at > at - interval '1 hour') THEN
+        INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose, request_id)
+        VALUES (at, 'system', 'security_event', 'user', actor, 'key_registration_refused', request);
+      END IF;
+      RETURN;
     END IF;
   END IF;
   INSERT INTO hardware_key (user_id, credential_sha256, public_key, registered_at, registered_request_id)
@@ -660,6 +813,10 @@ BEGIN
       END IF;
       UPDATE hardware_key_removal r SET registration_code_tries = r.registration_code_tries + 1 WHERE r.id = opening;
     END IF;
+  END IF;
+  -- A step with no beginning carries no code (the arrival at the code screen): it is no guess and records nothing.
+  IF began IS NULL THEN
+    RETURN 'refused';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM audit_event e
                   WHERE e.object_type = 'user' AND e.object_id = actor AND e.action = 'security_event' AND e.actor_kind = 'system'
@@ -718,6 +875,24 @@ $$;
 -- A platform administrator asks for the removal of every key of another account. Nothing else changes: no key, no
 -- session, no notice. A request of this account already past its 24 hours is marked expired here, so the one-open-
 -- request index is exact. A second open request fails on hardware_key_removal_open_once.
+-- Against an account that is itself a platform administrator (a live platform_admin membership of an internal
+-- organization, as app_actor_is_platform_admin() reads the role) two more rules hold, because user_removal_target_holds
+-- stops that account disabling the requester while the request can be confirmed: one requester holds at most one
+-- such request that can still be confirmed (hardware_key_removal_one_administrator_request), and does not ask again
+-- against the same administrator for seven days after one of its requests there was cancelled, or expired, counted
+-- from the expiry and not from the job's mark (hardware_key_removal_asked_again_too_soon). So one requester holds one
+-- administrator for one request's life, 24 hours, at most once in eight days, and never two at once. A request
+-- against any other account is not limited by either, nor is asking again after a confirmed removal. The requester's
+-- requests are taken one at a time by a transaction advisory lock on the requester, before any row lock, so two of
+-- its requests at once cannot both pass the count.
+-- Two refusals more (review W66 S3 and N1). An account that is itself the target of a request that can still be
+-- confirmed (not decided, not past its 24 hours by the clock, its requester still passing account_removes_keys)
+-- requests no removal, against its requester or anyone (hardware_key_removal_target_asks): a counter-request would
+-- bind the honest side as the first binds this one. And a request against a platform administrator is refused when
+-- no account other than the requester and the target passes account_removes_keys
+-- (hardware_key_removal_no_third_administrator): no one could ever confirm it, so it would only be a shield. The
+-- advisory lock is therefore taken on the target as well, the two in the order of the accounts' IDs, so two accounts
+-- asking against each other at once are taken one after the other and the second is refused.
 CREATE FUNCTION hardware_key_removal_request(target_user uuid, acting_session uuid, request text) RETURNS uuid
 LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
 #variable_conflict use_variable
@@ -737,11 +912,18 @@ BEGIN
   IF target_user = actor THEN
     RAISE EXCEPTION 'an administrator does not remove the keys of their own account' USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_removal_not_own_account';
   END IF;
+  PERFORM pg_advisory_xact_lock(hashtextextended('hardware_key_removal_requester:' || least(actor, target_user)::text, 0));
+  PERFORM pg_advisory_xact_lock(hashtextextended('hardware_key_removal_requester:' || greatest(actor, target_user)::text, 0));
   SELECT lower(u.email) INTO address FROM "user" u WHERE u.id = target_user FOR NO KEY UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'no such account' USING ERRCODE = 'no_data_found';
   END IF;
   at := clock_timestamp();
+  IF EXISTS (SELECT 1 FROM hardware_key_removal r
+              WHERE r.user_id = actor AND r.state = 'requested' AND r.expires_at > at AND account_removes_keys(r.requested_by)) THEN
+    RAISE EXCEPTION 'an account whose own key removal is requested and can still be confirmed requests no key removal'
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_removal_target_asks';
+  END IF;
   WITH lapsed AS (
     UPDATE hardware_key_removal r SET state = 'expired', decided_at = at, decided_request_id = request
      WHERE r.user_id = target_user AND r.state = 'requested' AND r.expires_at <= at
@@ -749,6 +931,29 @@ BEGIN
   )
   INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, request_id)
   SELECT at, 'system', 'hardware_key_removal_expired', 'user', l.user_id, request FROM lapsed l;
+  IF EXISTS (SELECT 1 FROM membership m JOIN organization o ON o.id = m.organization_id
+              WHERE m.user_id = target_user AND o.kind = 'internal' AND m.role = 'platform_admin' AND (m.ends_at IS NULL OR m.ends_at > at)) THEN
+    IF NOT EXISTS (SELECT 1 FROM membership m JOIN organization o ON o.id = m.organization_id
+                    WHERE o.kind = 'internal' AND m.role = 'platform_admin' AND m.user_id <> actor AND m.user_id <> target_user
+                      AND account_removes_keys(m.user_id)) THEN
+      RAISE EXCEPTION 'the removal of a platform administrator''s keys is requested only while a third administrator could confirm it'
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_removal_no_third_administrator';
+    END IF;
+    IF EXISTS (SELECT 1 FROM hardware_key_removal r
+                WHERE r.requested_by = actor AND r.user_id = target_user
+                  AND ((r.state = 'cancelled' AND r.decided_at > at - interval '7 days')
+                       OR (r.state = 'expired' AND r.expires_at > at - interval '7 days'))) THEN
+      RAISE EXCEPTION 'the same administrator asks again for the removal of a platform administrator''s keys seven days after its request there expired or was cancelled'
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_removal_asked_again_too_soon';
+    END IF;
+    IF EXISTS (SELECT 1 FROM hardware_key_removal r
+                WHERE r.requested_by = actor AND r.user_id <> target_user AND r.state = 'requested' AND r.expires_at > at
+                  AND EXISTS (SELECT 1 FROM membership m JOIN organization o ON o.id = m.organization_id
+                               WHERE m.user_id = r.user_id AND o.kind = 'internal' AND m.role = 'platform_admin' AND (m.ends_at IS NULL OR m.ends_at > at))) THEN
+      RAISE EXCEPTION 'one administrator holds one open request for the removal of a platform administrator''s keys at a time'
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_removal_one_administrator_request';
+    END IF;
+  END IF;
   INSERT INTO hardware_key_removal (id, user_id, requested_by, requested_at, expires_at, request_id, address_sha256)
   VALUES (removal, target_user, actor, at, at + interval '24 hours', request, sha256(convert_to(removal::text || ':' || address, 'UTF8')));
   INSERT INTO audit_event (at, actor_id, actor_kind, action, object_type, object_id, request_id)
@@ -876,6 +1081,37 @@ BEGIN
 END;
 $$;
 
+-- One security_event for the acting account when the database refused its act on a key removal: purpose
+-- key_removal_refused_<why>, why a closed list (the refusals a person probing the two-person rule would meet, and the
+-- four of hardware_key_removal_request that bound what a request may hold: a requester met by one is trying it). The
+-- refusal itself raised and rolled back, so the route calls this in a transaction of its own. It names no other
+-- account and no removal: the actor is the subject, so no account can be written about by another. At most one row
+-- for an account and a reason in an hour. IDs only.
+CREATE FUNCTION hardware_key_removal_refused(why text, request text) RETURNS void
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+#variable_conflict use_variable
+DECLARE
+  actor uuid := app_actor_id();
+  what text;
+BEGIN
+  IF why IS NULL OR why NOT IN ('not_permitted', 'two_people', 'not_own_account', 'requester_left',
+                                'one_administrator_request', 'asked_again_too_soon', 'target_asks', 'no_third_administrator') THEN
+    RAISE EXCEPTION 'unknown key removal refusal' USING ERRCODE = 'check_violation';
+  END IF;
+  IF actor IS NULL OR NOT EXISTS (SELECT 1 FROM "user" u WHERE u.id = actor) THEN
+    RAISE EXCEPTION 'only an account records its own refused act' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  what := 'key_removal_refused_' || why;
+  IF EXISTS (SELECT 1 FROM audit_event e
+              WHERE e.object_type = 'user' AND e.object_id = actor AND e.action = 'security_event' AND e.actor_kind = 'system'
+                AND e.purpose = what AND e.at > clock_timestamp() - interval '1 hour') THEN
+    RETURN;
+  END IF;
+  INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose, request_id)
+  VALUES (clock_timestamp(), 'system', 'security_event', 'user', actor, what, request);
+END;
+$$;
+
 -- For a platform administrator only: the open requests and those decided in the last 30 days. IDs and times only; the
 -- console joins names through its own policies. registration_closed is the account's state now, not the row's.
 CREATE FUNCTION hardware_key_removals()
@@ -967,7 +1203,7 @@ $$;
 -- under 30 tries. The locking read runs exactly once (the MATERIALIZED CTE) and skips rows another run holds. The try
 -- is counted here, so a row that kills its worker still runs out of tries; the lease is two minutes, and the row goes
 -- to the back of the order until then. The only reader of the provider's subject, which is stored nowhere here.
-CREATE FUNCTION operator_provider_sign_out_claim() RETURNS TABLE (sign_out_id uuid, account_id uuid, subject text, try smallint)
+CREATE FUNCTION operator_provider_sign_out_claim() RETURNS TABLE (sign_out_id uuid, account_id uuid, subject text, try smallint, cause_request_id text)
 LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
   WITH due AS MATERIALIZED (
     SELECT p.id
@@ -982,7 +1218,7 @@ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_
      SET attempts = p.attempts + 1, leased_until = now() + interval '2 minutes', next_attempt_at = now() + interval '2 minutes'
     FROM due d, "user" u
    WHERE p.id = d.id AND u.id = p.user_id
-  RETURNING p.id, p.user_id, u.cognito_sub, p.attempts
+  RETURNING p.id, p.user_id, u.cognito_sub, p.attempts, p.request_id
 $$;
 
 -- The provider answered (signed_out, or no_such_user: there is nothing left to sign out). It acts only for the claim
@@ -1023,9 +1259,16 @@ LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_
    WHERE p.id = sign_out AND p.attempts = try AND p.done_at IS NULL AND p.gave_up_at IS NULL
 $$;
 
--- The sweep. Late: five tries, or four with no running lease. Given up: 30 tries with no running lease, or 24 hours
--- since it was queued and four tries with no running lease; a row never tried is never given up (after a long outage
--- it is claimed). provider_sign_out_undelivered is written from the UPDATE that set the mark, once under overlapping
+-- The sweep. Late: five tries, or four with no running lease, or 15 minutes since it was queued, whatever its tries
+-- and whatever its lease (a slow provider with a backlog gives a row its first try late; the person is paged by the
+-- row's age). Given up: 30 tries, or 24 hours since it was queued and at least one try the job ANSWERED as failed
+-- (last_error_code is set only by operator_provider_sign_out_failed; a claim alone counts a try but may have sent
+-- nothing, a worker stopped between the claim and the call), in both cases with no running lease. A row never tried is
+-- NEVER given up, whatever its age: a sign-out the product promised is not dropped unattempted. After an outage it is
+-- late and paged, the claim reaches the rows in the order they came due (an untried row is due from the moment it was
+-- queued, so the oldest first), and a row a run does not reach stays late and is tried by a later run; only after its
+-- own answered try can its age give it up. A row still waiting 24 hours after its LATE line was acknowledged owes the
+-- line again (the acknowledgement is cleared), so a row no run reaches is paged every day, never once and then silent. provider_sign_out_undelivered is written from the UPDATE that set the mark, once under overlapping
 -- runs. Returns one row for each line not yet acknowledged, LATE or GAVE_UP (a row may owe both), on every run until
 -- operator_provider_sign_out_reported acknowledges it: the paging line is written at least once, never lost.
 CREATE FUNCTION operator_provider_sign_outs_overdue(request text) RETURNS TABLE (sign_out_id uuid, account_id uuid, cause_request_id text, code text)
@@ -1034,11 +1277,13 @@ LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public,
 BEGIN
   UPDATE provider_sign_out p SET late_at = now()
    WHERE p.done_at IS NULL AND p.late_at IS NULL
-     AND (p.attempts >= 5 OR (p.attempts >= 4 AND (p.leased_until IS NULL OR p.leased_until <= now())));
+     AND (p.attempts >= 5 OR (p.attempts >= 4 AND (p.leased_until IS NULL OR p.leased_until <= now())) OR p.queued_at <= now() - interval '15 minutes');
+  UPDATE provider_sign_out p SET late_reported_at = NULL
+   WHERE p.done_at IS NULL AND p.gave_up_at IS NULL AND p.late_reported_at <= now() - interval '24 hours';
   WITH given AS (
     UPDATE provider_sign_out p SET gave_up_at = now(), late_at = coalesce(p.late_at, now())
      WHERE p.done_at IS NULL AND p.gave_up_at IS NULL AND (p.leased_until IS NULL OR p.leased_until <= now())
-       AND (p.attempts >= 30 OR (p.attempts >= 4 AND p.queued_at <= now() - interval '24 hours'))
+       AND (p.attempts >= 30 OR (p.last_error_code IS NOT NULL AND p.queued_at <= now() - interval '24 hours'))
     RETURNING p.user_id, p.reason
   )
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)
@@ -1519,7 +1764,7 @@ CREATE POLICY audit_event_record ON audit_event FOR INSERT TO tp_app
                        'organization_suspended', 'organization_reinstated', 'password_notice_sent', 'password_notice_undelivered',
                        'hardware_key_removal_requested', 'hardware_key_removal_confirmed', 'hardware_key_removal_cancelled', 'hardware_key_removal_expired',
                        'hardware_key_registration_opened', 'hardware_key_notice_sent', 'hardware_key_notice_undelivered', 'provider_signed_out',
-                       'provider_sign_out_undelivered')
+                       'provider_sign_out_undelivered', 'password_reset_unrecorded')
     AND (practice_id IS NULL OR practice_id = ANY (current_setting('app.practice_ids', true)::uuid[]))
   );
 
@@ -1534,7 +1779,8 @@ REVOKE ALL ON hardware_key, hardware_key_removal, hardware_key_notice, provider_
 GRANT INSERT (key_credential_sha256) ON user_session TO tp_app;
 REVOKE ALL ON FUNCTION hardware_key_is_final(), hardware_key_removal_is_final(), account_removes_keys(uuid), actor_key_session(uuid),
   account_key_registration_closed(uuid), hardware_key_opening_usable(uuid, timestamptz), user_session_hardware_key(),
-  membership_end_marks_account(), membership_removal_target_holds(), audit_event_provider_sign_out(),
+  membership_end_marks_account(), membership_removal_target_holds(), audit_event_provider_sign_out(), user_removal_target_holds(),
+  provider_sign_out_unrecorded_reset(text), operator_provider_sign_out_request(uuid, text), hardware_key_removal_refused(text, text),
   hardware_key_record(bytea, bytea, bytea, timestamptz, text), hardware_key_registration_judge(bytea, timestamptz, text),
   sign_in_hardware_keys(uuid), sign_in_key_refused(uuid, text, text), hardware_key_removal_request(uuid, uuid, text),
   hardware_key_removal_confirm(uuid, uuid, text), hardware_key_removal_cancel(uuid, uuid, text), hardware_key_removals(),
@@ -1549,11 +1795,11 @@ REVOKE ALL ON FUNCTION hardware_key_is_final(), hardware_key_removal_is_final(),
 GRANT EXECUTE ON FUNCTION hardware_key_record(bytea, bytea, bytea, timestamptz, text), hardware_key_registration_judge(bytea, timestamptz, text),
   sign_in_hardware_keys(uuid), sign_in_key_refused(uuid, text, text), hardware_key_removal_request(uuid, uuid, text),
   hardware_key_removal_confirm(uuid, uuid, text), hardware_key_removal_cancel(uuid, uuid, text), hardware_key_removals(),
-  hardware_key_registration_open(uuid, uuid, bytea, text) TO tp_app;
+  hardware_key_registration_open(uuid, uuid, bytea, text), provider_sign_out_unrecorded_reset(text), hardware_key_removal_refused(text, text) TO tp_app;
 GRANT EXECUTE ON FUNCTION operator_provider_sign_out_claim(), operator_provider_sign_out_done(uuid, smallint, text, text),
   operator_provider_sign_out_failed(uuid, smallint, text, text), operator_provider_sign_outs_overdue(text),
   operator_provider_sign_out_reported(uuid, text), operator_provider_sign_outs_expire(integer), operator_key_removals_expire(integer, text),
-  operator_key_notices_stale(integer, text), operator_key_notices_due(integer), operator_key_notice_claim(uuid),
+  operator_provider_sign_out_request(uuid, text), operator_key_notices_stale(integer, text), operator_key_notices_due(integer), operator_key_notice_claim(uuid),
   operator_key_notice_sent(uuid, text, text), operator_key_notice_failed(uuid, text, boolean, text),
   operator_record_mail_event(text, text, text, timestamptz, timestamptz, text, text, uuid, uuid, uuid, text, text, text, text),
   operator_mail_expire(integer) TO tp_operator;

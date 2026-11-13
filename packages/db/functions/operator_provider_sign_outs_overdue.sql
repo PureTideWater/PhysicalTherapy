@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- operator_provider_sign_outs_overdue(text)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: f19608f2b5ad1bb7
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 199a89979587b177
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_provider_sign_outs_overdue(request text)
@@ -15,11 +15,13 @@ AS $function$
 BEGIN
   UPDATE provider_sign_out p SET late_at = now()
    WHERE p.done_at IS NULL AND p.late_at IS NULL
-     AND (p.attempts >= 5 OR (p.attempts >= 4 AND (p.leased_until IS NULL OR p.leased_until <= now())));
+     AND (p.attempts >= 5 OR (p.attempts >= 4 AND (p.leased_until IS NULL OR p.leased_until <= now())) OR p.queued_at <= now() - interval '15 minutes');
+  UPDATE provider_sign_out p SET late_reported_at = NULL
+   WHERE p.done_at IS NULL AND p.gave_up_at IS NULL AND p.late_reported_at <= now() - interval '24 hours';
   WITH given AS (
     UPDATE provider_sign_out p SET gave_up_at = now(), late_at = coalesce(p.late_at, now())
      WHERE p.done_at IS NULL AND p.gave_up_at IS NULL AND (p.leased_until IS NULL OR p.leased_until <= now())
-       AND (p.attempts >= 30 OR (p.attempts >= 4 AND p.queued_at <= now() - interval '24 hours'))
+       AND (p.attempts >= 30 OR (p.last_error_code IS NOT NULL AND p.queued_at <= now() - interval '24 hours'))
     RETURNING p.user_id, p.reason
   )
   INSERT INTO audit_event (actor_kind, action, object_type, object_id, purpose, request_id)

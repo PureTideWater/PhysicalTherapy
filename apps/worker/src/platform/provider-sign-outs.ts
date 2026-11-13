@@ -5,7 +5,7 @@ import { type NoticeClient, asOperator } from './support-notices';
 /**
  * The provider sign-outs (docs/adr/0095; test matrix JOB-06 to JOB-08): the database queues one row in
  * provider_sign_out for each ended membership, recorded password reset and confirmed key removal, in the cause's own
- * transaction (migration 20261115090000), and this platform job asks the identity provider to sign the account out
+ * transaction (migration 20261116090000), and this platform job asks the identity provider to sign the account out
  * everywhere. The web calls the provider for none of these. Every minute, as the operator role (tp_operator), which owns
  * nothing and cannot bypass row-level security, every transaction with no practice in scope. One run, in order, each
  * step in its own try, so a failing step never stops the next; the run fails at its end if any step failed:

@@ -2,15 +2,15 @@
 
 > Generated from the live schema by `pnpm db:domain-model` (`packages/db/src/domain-model`, CO-02). It reads the PostgreSQL catalog of a database migrated with `pnpm db:migrate`, the migration files, the Data dictionary tab (`docs/product/data-dictionary.md`), the area map and the reviewed explanations of each divergence. Do not edit it by hand: regenerate it. A person fills in only the name and the date on the "Approved by" line at the end, and leaves its document hash as it is.
 
-- Generated at commit `1019531290f0610e0aebccbd9d6c9536f7a3bd3e` on branch `co-001/wip-key-registry`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
-- Migrations applied: 54; head `20261115091000_key_registry_validate.sql`
+- Generated at commit `d3f2035748918dd979a2d0c76a661918ca8ae459` on branch `co-001/wip-key-registry`, with uncommitted changes to its inputs (provenance only: `--check` ignores this line, so a commit that changes no schema keeps the document valid)
+- Migrations applied: 55; head `20261116091000_key_registry_validate.sql`
 - PostgreSQL 18; schema `public`: 105 tables (including `schema_migrations`), 1 view(s); PostgreSQL enum types: 0 (every enumeration is a CHECK constraint)
 - PHI flag: 48 tables in `phi_table_registry`; 4 tenant tables with a nullable `practice_id` outside it; 45 organization- or user-scoped tables with RLS forced; 8 global tables
 - RLS: 97 tables ENABLE and FORCE row-level security; 0 enable without forcing; 8 have none (the global tables); 188 policies
-- Functions in `public`: 428 (217 SECURITY DEFINER); triggers: 290, none disabled or replica-only; rewrite rules on tables: none
+- Functions in `public`: 432 (221 SECURITY DEFINER); triggers: 291, none disabled or replica-only; rewrite rules on tables: none
 - Default privileges (ALTER DEFAULT PRIVILEGES): none
 - Roles (group roles; login roles are per environment and not listed): `tp_app`, `tp_billing`, `tp_esign`, `tp_job`, `tp_operator`, `tp_owner`, `tp_screening`; every relation is owned by `tp_owner`
-- Divergences from the Data dictionary: 23 to approve, 57 tables and 152 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
+- Divergences from the Data dictionary: 23 to approve, 57 tables and 151 columns not in it (informational); see [Divergences from the Data dictionary](#divergences-from-the-data-dictionary)
 
 ## Contents
 
@@ -165,7 +165,7 @@
 | [`terms_acceptance`](#table-terms-acceptance) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT, INSERT(cols) | - | - |
 | [`terms_version`](#table-terms-version) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT, INSERT(cols) | - | - |
 | [`usage_snapshot`](#table-usage-snapshot) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 3 | 2 | SELECT | SELECT, INSERT | - |
-| [`user`](#table-user) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 4 | 4 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
+| [`user`](#table-user) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 4 | 5 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`user_device`](#table-user-device) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 2 | 3 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 | [`user_session`](#table-user-session) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | - | yes | yes | 2 | 4 | SELECT, INSERT(cols), UPDATE(cols) | - | - |
 
@@ -194,9 +194,9 @@ Organizations, practices (the tenant) and each practice's pricing location (its 
 | [`role_permission`](#table-role-permission) | global (no practice_id, no RLS) | no / no | 0 | SELECT | `20261015170000_identity_and_permissions` | not in the Data dictionary |
 | [`user_device`](#table-user-device) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 2 | SELECT, INSERT(cols), UPDATE(cols) | `20261015170000_identity_and_permissions` | not in the Data dictionary |
 | [`user_session`](#table-user-session) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 2 | SELECT, INSERT(cols), UPDATE(cols) | `20261015170000_identity_and_permissions` | not in the Data dictionary |
-| [`hardware_key`](#table-hardware-key) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261115090000_key_registry` | not in the Data dictionary |
-| [`hardware_key_removal`](#table-hardware-key-removal) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261115090000_key_registry` | not in the Data dictionary |
-| [`provider_sign_out`](#table-provider-sign-out) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261115090000_key_registry` | not in the Data dictionary |
+| [`hardware_key`](#table-hardware-key) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261116090000_key_registry` | not in the Data dictionary |
+| [`hardware_key_removal`](#table-hardware-key-removal) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261116090000_key_registry` | not in the Data dictionary |
+| [`provider_sign_out`](#table-provider-sign-out) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261116090000_key_registry` | not in the Data dictionary |
 | [`phi_table_registry`](#table-phi-table-registry) | global (no practice_id, no RLS) | no / no | 0 | SELECT | `20261015140000_tenancy` | Catalog of PHI tables |
 
 ### Table `organization`
@@ -447,7 +447,7 @@ Invariants enforced by triggers:
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 4 policies; owner `tp_owner`
 - Dictionary: Tenancy and access (PHI-adjacent; policies apply where noted): Identity reference; policy "Self and administrators"
-- Created by `20261015140000_tenancy` (ADR 0013); its DDL, policies or trigger functions changed by `20261015170000_identity_and_permissions`, `20261020090000_monitoring_digests_notifications`, `20261030090000_customer_sign_in_and_readiness`, `20261112090000_sign_in_not_before`
+- Created by `20261015140000_tenancy` (ADR 0013); its DDL, policies or trigger functions changed by `20261015170000_identity_and_permissions`, `20261020090000_monitoring_digests_notifications`, `20261030090000_customer_sign_in_and_readiness`, `20261112090000_sign_in_not_before`, `20261116090000_key_registry`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`cognito_sub`, `email`, `hardware_key_required`, `id`, `mfa_enrolled`, `status`)
@@ -497,6 +497,8 @@ Invariants enforced by triggers:
 - `user_guarded_columns`: `BEFORE UPDATE OF status, hardware_key_required ON "user" FOR EACH ROW EXECUTE FUNCTION user_guarded_columns()`
   - "only a platform administrator changes a user's status or hardware-key rule"
 - `user_keeps_practice_administrator`: `AFTER UPDATE OF status ON "user" DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION user_keeps_practice_administrator()`
+- `user_removal_target_holds`: `BEFORE UPDATE ON "user" FOR EACH ROW WHEN (new.status IS DISTINCT FROM old.status OR new.hardware_key_required IS DISTINCT FROM old.hardware_key_required) EXECUTE FUNCTION user_removal_target_holds()`
+  - "an account whose key removal is requested changes no other account's status or hardware-key rule while the request can be confirmed"
 
 Maintains `updated_at`: `user_updated_at`.
 
@@ -507,7 +509,7 @@ Maintains `updated_at`: `user_updated_at`.
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 4 policies; owner `tp_owner`
 - Dictionary: Tenancy and access (PHI-adjacent; policies apply where noted): Role in an organization; policy "Organization administrators"
-- Created by `20261015140000_tenancy` (ADR 0013); its DDL, policies or trigger functions changed by `20261015180000_tenancy_hardening`, `20261030090000_customer_sign_in_and_readiness`, `20261115090000_key_registry`
+- Created by `20261015140000_tenancy` (ADR 0013); its DDL, policies or trigger functions changed by `20261015180000_tenancy_hardening`, `20261030090000_customer_sign_in_and_readiness`, `20261116090000_key_registry`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`ends_at`, `id`, `organization_id`, `role`, `user_id`)
@@ -553,7 +555,7 @@ Invariants enforced by triggers:
 - `membership_invitation`: `AFTER INSERT ON membership FOR EACH ROW EXECUTE FUNCTION membership_invitation()`
 - `membership_keeps_practice_administrator`: `AFTER DELETE OR UPDATE ON membership DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION membership_keeps_practice_administrator()`
 - `membership_removal_target_holds`: `BEFORE UPDATE ON membership FOR EACH ROW EXECUTE FUNCTION membership_removal_target_holds()`
-  - "an account whose key removal is requested changes no internal membership until the request is decided"
+  - "an account whose key removal is requested changes no internal membership while the request can be confirmed"
 - `membership_role_fits_organization`: `BEFORE INSERT OR UPDATE OF organization_id, role ON membership FOR EACH ROW EXECUTE FUNCTION membership_role_fits_organization()`
   - "role % does not belong in a % organization"
 - `membership_rules`: `BEFORE INSERT OR UPDATE ON membership FOR EACH ROW EXECUTE FUNCTION membership_rules()`
@@ -986,7 +988,7 @@ Maintains `updated_at`: `user_device_updated_at`.
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 2 policies; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261015170000_identity_and_permissions` (ADR 0012, ADR 0016, ADR 0017); its DDL, policies or trigger functions changed by `20261015180000_tenancy_hardening`, `20261112090000_sign_in_not_before`, `20261115090000_key_registry`, `20261115091000_key_registry_validate`
+- Created by `20261015170000_identity_and_permissions` (ADR 0012, ADR 0016, ADR 0017); its DDL, policies or trigger functions changed by `20261015180000_tenancy_hardening`, `20261112090000_sign_in_not_before`, `20261116090000_key_registry`, `20261116091000_key_registry_validate`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols), UPDATE(cols)
 - Column grant: `tp_app` INSERT (`device_id`, `id`, `key_credential_sha256`, `mfa_method`, `sign_in_began_at`, `token_sha256`, `user_id`)
@@ -1007,7 +1009,7 @@ Maintains `updated_at`: `user_device_updated_at`.
 | 11 | `created_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261015170000` |  |
 | 12 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261015170000` |  |
 | 13 | `sign_in_began_at` | `timestamp with time zone` | null |  |  | `20261112090000` |  |
-| 14 | `key_credential_sha256` | `bytea` | null |  |  | `20261115090000` |  |
+| 14 | `key_credential_sha256` | `bytea` | null |  |  | `20261116090000` |  |
 
 Keys:
 - Primary: (id)
@@ -1054,20 +1056,20 @@ Maintains `updated_at`: `user_session_updated_at`.
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261115090000_key_registry` (ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095)
+- Created by `20261116090000_key_registry` (ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095)
 - Primary key: `id`
 - Privileges: none for any group role
 
 | # | Column | Type | Null | Default | References | Since | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261115090000` |  |
-| 2 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261115090000` |  |
-| 3 | `credential_sha256` | `bytea` | NOT NULL |  |  | `20261115090000` |  |
-| 4 | `public_key` | `bytea` | NOT NULL |  |  | `20261115090000` |  |
-| 5 | `registered_at` | `timestamp with time zone` | NOT NULL |  |  | `20261115090000` |  |
-| 6 | `registered_request_id` | `text` | null |  |  | `20261115090000` |  |
-| 7 | `removed_at` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 8 | `removal_id` | `uuid` | null |  | `hardware_key_removal(id)` | `20261115090000` |  |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261116090000` |  |
+| 2 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261116090000` |  |
+| 3 | `credential_sha256` | `bytea` | NOT NULL |  |  | `20261116090000` |  |
+| 4 | `public_key` | `bytea` | NOT NULL |  |  | `20261116090000` |  |
+| 5 | `registered_at` | `timestamp with time zone` | NOT NULL |  |  | `20261116090000` |  |
+| 6 | `registered_request_id` | `text` | null |  |  | `20261116090000` |  |
+| 7 | `removed_at` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 8 | `removal_id` | `uuid` | null |  | `hardware_key_removal(id)` | `20261116090000` |  |
 
 Keys:
 - Primary: (id)
@@ -1103,31 +1105,31 @@ Invariants enforced by triggers:
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261115090000_key_registry` (ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095)
+- Created by `20261116090000_key_registry` (ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095)
 - Primary key: `id`
 - Privileges: none for any group role
 
 | # | Column | Type | Null | Default | References | Since | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261115090000` |  |
-| 2 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261115090000` |  |
-| 3 | `requested_by` | `uuid` | NOT NULL |  | `user(id)` | `20261115090000` |  |
-| 4 | `requested_at` | `timestamp with time zone` | NOT NULL |  |  | `20261115090000` |  |
-| 5 | `expires_at` | `timestamp with time zone` | NOT NULL |  |  | `20261115090000` |  |
-| 6 | `request_id` | `text` | null |  |  | `20261115090000` |  |
-| 7 | `address_sha256` | `bytea` | NOT NULL |  |  | `20261115090000` |  |
-| 8 | `state` | `text` | NOT NULL | `'requested'::text` |  | `20261115090000` | one of requested, confirmed, cancelled, expired |
-| 9 | `decided_by` | `uuid` | null |  | `user(id)` | `20261115090000` |  |
-| 10 | `decided_at` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 11 | `decided_request_id` | `text` | null |  |  | `20261115090000` |  |
-| 12 | `keys_removed` | `integer` | null |  |  | `20261115090000` |  |
-| 13 | `sessions_ended` | `integer` | null |  |  | `20261115090000` |  |
-| 14 | `registration_opened_by` | `uuid` | null |  | `user(id)` | `20261115090000` |  |
-| 15 | `registration_opened_at` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 16 | `registration_open_until` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 17 | `registration_code_sha256` | `bytea` | null |  |  | `20261115090000` |  |
-| 18 | `registration_code_tries` | `smallint` | NOT NULL | `0` |  | `20261115090000` |  |
-| 19 | `registration_opened_request_id` | `text` | null |  |  | `20261115090000` |  |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261116090000` |  |
+| 2 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261116090000` |  |
+| 3 | `requested_by` | `uuid` | NOT NULL |  | `user(id)` | `20261116090000` |  |
+| 4 | `requested_at` | `timestamp with time zone` | NOT NULL |  |  | `20261116090000` |  |
+| 5 | `expires_at` | `timestamp with time zone` | NOT NULL |  |  | `20261116090000` |  |
+| 6 | `request_id` | `text` | null |  |  | `20261116090000` |  |
+| 7 | `address_sha256` | `bytea` | NOT NULL |  |  | `20261116090000` |  |
+| 8 | `state` | `text` | NOT NULL | `'requested'::text` |  | `20261116090000` | one of requested, confirmed, cancelled, expired |
+| 9 | `decided_by` | `uuid` | null |  | `user(id)` | `20261116090000` |  |
+| 10 | `decided_at` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 11 | `decided_request_id` | `text` | null |  |  | `20261116090000` |  |
+| 12 | `keys_removed` | `integer` | null |  |  | `20261116090000` |  |
+| 13 | `sessions_ended` | `integer` | null |  |  | `20261116090000` |  |
+| 14 | `registration_opened_by` | `uuid` | null |  | `user(id)` | `20261116090000` |  |
+| 15 | `registration_opened_at` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 16 | `registration_open_until` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 17 | `registration_code_sha256` | `bytea` | null |  |  | `20261116090000` |  |
+| 18 | `registration_code_tries` | `smallint` | NOT NULL | `0` |  | `20261116090000` |  |
+| 19 | `registration_opened_request_id` | `text` | null |  |  | `20261116090000` |  |
 
 Keys:
 - Primary: (id)
@@ -1176,27 +1178,27 @@ Invariants enforced by triggers:
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261115090000_key_registry` (ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095)
+- Created by `20261116090000_key_registry` (ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095)
 - Primary key: `id`
 - Privileges: none for any group role
 
 | # | Column | Type | Null | Default | References | Since | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261115090000` |  |
-| 2 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261115090000` |  |
-| 3 | `reason` | `text` | NOT NULL |  |  | `20261115090000` | one of membership_ended, password_reset_completed, password_reset_outcome_unknown, hardware_keys_removed |
-| 4 | `source_event_id` | `uuid` | NOT NULL |  |  | `20261115090000` |  |
-| 5 | `request_id` | `text` | null |  |  | `20261115090000` |  |
-| 6 | `queued_at` | `timestamp with time zone` | NOT NULL |  |  | `20261115090000` |  |
-| 7 | `attempts` | `smallint` | NOT NULL | `0` |  | `20261115090000` |  |
-| 8 | `next_attempt_at` | `timestamp with time zone` | NOT NULL |  |  | `20261115090000` |  |
-| 9 | `leased_until` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 10 | `done_at` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 11 | `late_at` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 12 | `gave_up_at` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 13 | `late_reported_at` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 14 | `gave_up_reported_at` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 15 | `last_error_code` | `text` | null |  |  | `20261115090000` |  |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261116090000` |  |
+| 2 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261116090000` |  |
+| 3 | `reason` | `text` | NOT NULL |  |  | `20261116090000` | one of membership_ended, password_reset_completed, password_reset_outcome_unknown, hardware_keys_removed, password_reset_unrecorded |
+| 4 | `source_event_id` | `uuid` | NOT NULL |  |  | `20261116090000` |  |
+| 5 | `request_id` | `text` | null |  |  | `20261116090000` |  |
+| 6 | `queued_at` | `timestamp with time zone` | NOT NULL |  |  | `20261116090000` |  |
+| 7 | `attempts` | `smallint` | NOT NULL | `0` |  | `20261116090000` |  |
+| 8 | `next_attempt_at` | `timestamp with time zone` | NOT NULL |  |  | `20261116090000` |  |
+| 9 | `leased_until` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 10 | `done_at` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 11 | `late_at` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 12 | `gave_up_at` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 13 | `late_reported_at` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 14 | `gave_up_reported_at` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 15 | `last_error_code` | `text` | null |  |  | `20261116090000` |  |
 
 Keys:
 - Primary: (id)
@@ -1215,7 +1217,7 @@ Policies (1):
 Invariants enforced by constraints:
 - `provider_sign_out_attempts`: `CHECK (attempts >= 0 AND attempts <= 30)`
 - `provider_sign_out_error_code`: `CHECK (last_error_code ~ '^[A-Za-z][A-Za-z0-9]{0,63}$'::text)`
-- `provider_sign_out_reason`: `CHECK (reason = ANY (ARRAY['membership_ended'::text, 'password_reset_completed'::text, 'password_reset_outcome_unknown'::text, 'hardware_keys_removed'::text]))`
+- `provider_sign_out_reason`: `CHECK (reason = ANY (ARRAY['membership_ended'::text, 'password_reset_completed'::text, 'password_reset_outcome_unknown'::text, 'hardware_keys_removed'::text, 'password_reset_unrecorded'::text]))`
 - `provider_sign_out_reported`: `CHECK ((late_reported_at IS NULL OR late_at IS NOT NULL) AND (gave_up_reported_at IS NULL OR gave_up_at IS NOT NULL))`
 - `provider_sign_out_request_id`: `CHECK (request_id ~ '^[A-Za-z0-9._:-]{1,128}$'::text)`
 
@@ -5899,7 +5901,7 @@ The append-only audit log, job runs, in-app notifications and digests (counts an
 | [`mail_stream`](#table-mail-stream) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
 | [`mail_send`](#table-mail-send) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
 | [`password_notice`](#table-password-notice) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261111090000_password_changed_notice` | not in the Data dictionary |
-| [`hardware_key_notice`](#table-hardware-key-notice) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261115090000_key_registry` | not in the Data dictionary |
+| [`hardware_key_notice`](#table-hardware-key-notice) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261116090000_key_registry` | not in the Data dictionary |
 | [`mail_recipient_key`](#table-mail-recipient-key) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
 | [`screening_mail_refusal`](#table-screening-mail-refusal) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
 | [`screening_bounce_mark`](#table-screening-bounce-mark) | organization- or user-scoped (RLS, no practice_id) | yes / yes | 1 | - | `20261107090000_mail_streams` | not in the Data dictionary |
@@ -5913,7 +5915,7 @@ The append-only audit log, job runs, in-app notifications and digests (counts an
 - Class: tenant (nullable practice_id), not registered
 - Row-level security: enabled, forced; 5 policies; owner `tp_owner`
 - Dictionary: Operations (no PHI by design): Append-only
-- Created by `20261015140500_audit_and_operations` (ADR 0013, ADR 0014); its DDL, policies or trigger functions changed by `20261015180000_tenancy_hardening`, `20261103090000_deadline_verification_and_export_attestation`, `20261107090000_mail_streams`, `20261108090000_suspension_refusal`, `20261111090000_password_changed_notice`, `20261112090000_sign_in_not_before`, `20261115090000_key_registry`
+- Created by `20261015140500_audit_and_operations` (ADR 0013, ADR 0014); its DDL, policies or trigger functions changed by `20261015180000_tenancy_hardening`, `20261103090000_deadline_verification_and_export_attestation`, `20261107090000_mail_streams`, `20261108090000_suspension_refusal`, `20261111090000_password_changed_notice`, `20261112090000_sign_in_not_before`, `20261116090000_key_registry`
 - Primary key: `id`
 - Privileges: `tp_app` SELECT, INSERT(cols); `tp_operator` SELECT
 - Column grant: `tp_app` INSERT (`action`, `actor_id`, `actor_kind`, `grant_id`, `id`, `object_id`, `object_type`, `practice_id`, `purpose`, `request_id`)
@@ -5950,7 +5952,7 @@ Policies (5):
 - `audit_event_operator_record`: PERMISSIVE FOR INSERT TO tp_owner
   - WITH CHECK `true`
 - `audit_event_record`: PERMISSIVE FOR INSERT TO tp_app
-  - WITH CHECK `((actor_id = app_actor_id()) AND (actor_kind = ANY (ARRAY['user'::text, 'service'::text])) AND (action <> ALL (ARRAY['notice_sent'::text, 'security_event'::text, 'sign_in_failed'::text, 'data_key_destroyed'::text, 'notice_undelivered'::text, 'mail_stream_paused'::text, 'mail_stream_resumed'::text, 'organization_suspended'::text, 'organization_reinstated'::text, 'password_notice_sent'::text, 'password_notice_undelivered'::text, 'hardware_key_removal_requested'::text, 'hardware_key_removal_confirmed'::text, 'hardware_key_removal_cancelled'::text, 'hardware_key_removal_expired'::text, 'hardware_key_registration_opened'::text, 'hardware_key_notice_sent'::text, 'hardware_key_notice_undelivered'::text, 'provider_signed_out'::text, 'provider_sign_out_undelivered'::text])) AND ((practice_id IS NULL) OR (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))))`
+  - WITH CHECK `((actor_id = app_actor_id()) AND (actor_kind = ANY (ARRAY['user'::text, 'service'::text])) AND (action <> ALL (ARRAY['notice_sent'::text, 'security_event'::text, 'sign_in_failed'::text, 'data_key_destroyed'::text, 'notice_undelivered'::text, 'mail_stream_paused'::text, 'mail_stream_resumed'::text, 'organization_suspended'::text, 'organization_reinstated'::text, 'password_notice_sent'::text, 'password_notice_undelivered'::text, 'hardware_key_removal_requested'::text, 'hardware_key_removal_confirmed'::text, 'hardware_key_removal_cancelled'::text, 'hardware_key_removal_expired'::text, 'hardware_key_registration_opened'::text, 'hardware_key_notice_sent'::text, 'hardware_key_notice_undelivered'::text, 'provider_signed_out'::text, 'provider_sign_out_undelivered'::text, 'password_reset_unrecorded'::text])) AND ((practice_id IS NULL) OR (practice_id = ANY ((current_setting('app.practice_ids'::text, true))::uuid[]))))`
 
 Invariants enforced by constraints:
 - `audit_event_action_check`: `CHECK (action ~ '^[a-z][a-z0-9_]{0,63}$'::text)`
@@ -5981,7 +5983,7 @@ Invariants enforced by triggers:
   - "a packet export is requested by a person who may export PHI in its practice"
   - "a packet export is requested of a packet version of its practice"
 - `audit_event_password_notice`: `AFTER INSERT ON audit_event FOR EACH ROW WHEN (new.action = 'password_reset_completed'::text AND new.actor_kind = 'user'::text AND new.object_type = 'user'::text AND new.object_id = new.actor_id) EXECUTE FUNCTION audit_event_password_notice()`
-- `audit_event_provider_sign_out`: `AFTER INSERT ON audit_event FOR EACH ROW WHEN (new.action = 'membership_ended'::text OR (new.action = ANY (ARRAY['password_reset_completed'::text, 'password_reset_outcome_unknown'::text])) AND new.actor_kind = 'user'::text AND new.object_type = 'user'::text AND new.object_id = new.actor_id) EXECUTE FUNCTION audit_event_provider_sign_out()`
+- `audit_event_provider_sign_out`: `AFTER INSERT ON audit_event FOR EACH ROW WHEN (new.action = 'membership_ended'::text OR (new.action = ANY (ARRAY['password_reset_completed'::text, 'password_reset_outcome_unknown'::text, 'password_reset_unrecorded'::text])) AND new.actor_kind = 'user'::text AND new.object_type = 'user'::text AND new.object_id = new.actor_id) EXECUTE FUNCTION audit_event_provider_sign_out()`
   - "membership_ended is recorded in the transaction that ends the membership"
 - `audit_event_sign_in_not_before`: `AFTER INSERT ON audit_event FOR EACH ROW WHEN ((new.action = ANY (ARRAY['password_reset_completed'::text, 'password_reset_outcome_unknown'::text])) AND new.actor_kind = 'user'::text AND new.object_type = 'user'::text AND new.object_id = new.actor_id) EXECUTE FUNCTION audit_event_sign_in_not_before()`
   - "a password reset is recorded at READ COMMITTED"
@@ -6632,7 +6634,7 @@ Maintains `updated_at`: `mail_stream_updated_at`.
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261107090000_mail_streams` (ADR 0065); its DDL, policies or trigger functions changed by `20261111090000_password_changed_notice`, `20261115090000_key_registry`, `20261115091000_key_registry_validate`
+- Created by `20261107090000_mail_streams` (ADR 0065); its DDL, policies or trigger functions changed by `20261111090000_password_changed_notice`, `20261116090000_key_registry`, `20261116091000_key_registry_validate`
 - Primary key: `ses_message_id`
 - Privileges: none for any group role
 
@@ -6756,26 +6758,26 @@ Maintains `updated_at`: `password_notice_updated_at`.
 - Class: organization- or user-scoped (RLS, no practice_id)
 - Row-level security: enabled, forced; 1 policy; owner `tp_owner`
 - Dictionary: not in the Data dictionary
-- Created by `20261115090000_key_registry` (ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095)
+- Created by `20261116090000_key_registry` (ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095)
 - Primary key: `id`
 - Privileges: none for any group role
 
 | # | Column | Type | Null | Default | References | Since | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261115090000` |  |
-| 2 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261115090000` |  |
-| 3 | `kind` | `text` | NOT NULL |  |  | `20261115090000` | one of removed, registration_opened, registered_after_removal |
-| 4 | `removal_id` | `uuid` | NOT NULL |  | `hardware_key_removal(id)` | `20261115090000` |  |
-| 5 | `event_at` | `timestamp with time zone` | NOT NULL |  |  | `20261115090000` |  |
-| 6 | `state` | `text` | NOT NULL | `'pending'::text` |  | `20261115090000` | one of pending, sent, delivered, undelivered, failed |
-| 7 | `attempts` | `smallint` | NOT NULL | `0` |  | `20261115090000` |  |
-| 8 | `next_attempt_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261115090000` |  |
-| 9 | `ses_message_id` | `text` | null |  |  | `20261115090000` |  |
-| 10 | `error_code` | `text` | null |  |  | `20261115090000` |  |
-| 11 | `sent_at` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 12 | `undelivered_reported_at` | `timestamp with time zone` | null |  |  | `20261115090000` |  |
-| 13 | `expires_at` | `timestamp with time zone` | NOT NULL |  |  | `20261115090000` |  |
-| 14 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261115090000` |  |
+| 1 | `id` | `uuid` | NOT NULL | `gen_random_uuid()` |  | `20261116090000` |  |
+| 2 | `user_id` | `uuid` | NOT NULL |  | `user(id)` | `20261116090000` |  |
+| 3 | `kind` | `text` | NOT NULL |  |  | `20261116090000` | one of removed, registration_opened, registered_after_removal |
+| 4 | `removal_id` | `uuid` | NOT NULL |  | `hardware_key_removal(id)` | `20261116090000` |  |
+| 5 | `event_at` | `timestamp with time zone` | NOT NULL |  |  | `20261116090000` |  |
+| 6 | `state` | `text` | NOT NULL | `'pending'::text` |  | `20261116090000` | one of pending, sent, delivered, undelivered, failed |
+| 7 | `attempts` | `smallint` | NOT NULL | `0` |  | `20261116090000` |  |
+| 8 | `next_attempt_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261116090000` |  |
+| 9 | `ses_message_id` | `text` | null |  |  | `20261116090000` |  |
+| 10 | `error_code` | `text` | null |  |  | `20261116090000` |  |
+| 11 | `sent_at` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 12 | `undelivered_reported_at` | `timestamp with time zone` | null |  |  | `20261116090000` |  |
+| 13 | `expires_at` | `timestamp with time zone` | NOT NULL |  |  | `20261116090000` |  |
+| 14 | `updated_at` | `timestamp with time zone` | NOT NULL | `now()` |  | `20261116090000` |  |
 
 Keys:
 - Primary: (id)
@@ -7086,9 +7088,9 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | D7 | [`compliance_record`](#table-compliance-record) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
 | D8 | [`contract_question`](#table-contract-question) | Payers, contracts and rates | PHI (registered) | `20261016200000_contract_questions_and_queue` | ADR 0028, ADR 0030 |
 | D9 | [`dunning_notice_recipient`](#table-dunning-notice-recipient) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261107090000_mail_streams` | ADR 0065 |
-| D10 | [`hardware_key`](#table-hardware-key) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261115090000_key_registry` | ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095 |
-| D11 | [`hardware_key_notice`](#table-hardware-key-notice) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261115090000_key_registry` | ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095 |
-| D12 | [`hardware_key_removal`](#table-hardware-key-removal) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261115090000_key_registry` | ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095 |
+| D10 | [`hardware_key`](#table-hardware-key) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261116090000_key_registry` | ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095 |
+| D11 | [`hardware_key_notice`](#table-hardware-key-notice) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261116090000_key_registry` | ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095 |
+| D12 | [`hardware_key_removal`](#table-hardware-key-removal) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261116090000_key_registry` | ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095 |
 | D13 | [`invitation`](#table-invitation) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
 | D14 | [`ledger_match`](#table-ledger-match) | Ledger | PHI (registered) | `20261023120000_recovery_ledger` | ADR 0042 |
 | D15 | [`line_note`](#table-line-note) | Documents and remittances | PHI (registered) | `20261016120000_remittances` | ADR 0015, ADR 0021, ADR 0025, ADR 0027 |
@@ -7105,7 +7107,7 @@ The dictionary gives each tenancy table a one-phrase policy. "Live policies" is 
 | D26 | [`place_of_service_split`](#table-place-of-service-split) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261104090000_free_screening` | ADR 0062 |
 | D27 | [`practice_site`](#table-practice-site) | Tenancy and access | PHI (registered) | `20261105090000_pricing_location_and_zip_plus_four` | ADR 0013, ADR 0017, ADR 0039, ADR 0040, ADR 0062, ADR 0064 |
 | D28 | [`prospect_request`](#table-prospect-request) | Billing and onboarding | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
-| D29 | [`provider_sign_out`](#table-provider-sign-out) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261115090000_key_registry` | ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095 |
+| D29 | [`provider_sign_out`](#table-provider-sign-out) | Tenancy and access | organization- or user-scoped (RLS, no practice_id) | `20261116090000_key_registry` | ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095 |
 | D30 | [`rate_limit_counter`](#table-rate-limit-counter) | Operations | organization- or user-scoped (RLS, no practice_id) | `20261030090000_customer_sign_in_and_readiness` | ADR 0043, ADR 0053 |
 | D31 | [`report_document`](#table-report-document) | Pricing, triage and cases | PHI (registered) | `20261025090000_report_documents_and_export_history` | ADR 0040, ADR 0045 |
 | D32 | [`restore_drill`](#table-restore-drill) | Operations | global (no practice_id, no RLS) | `20261015140500_audit_and_operations` | ADR 0013, ADR 0014 |
@@ -7194,7 +7196,7 @@ Columns whose CHECK constraint admits a closed list of values: the column's own 
 | `user_session.mfa_method` | `totp`, `webauthn` |
 | `user_session.end_reason` | `signed_out`, `idle`, `expired`, `device_revoked`, `revoked`, `user_disabled` |
 | `hardware_key_removal.state` | `requested`, `confirmed`, `cancelled`, `expired` |
-| `provider_sign_out.reason` | `membership_ended`, `password_reset_completed`, `password_reset_outcome_unknown`, `hardware_keys_removed` |
+| `provider_sign_out.reason` | `membership_ended`, `password_reset_completed`, `password_reset_outcome_unknown`, `hardware_keys_removed`, `password_reset_unrecorded` |
 | `source_document.kind` | `x12_835`, `era_export`, `contract`, `exhibit`, `posting_export`, `eft_export`, `payer_letter`, `other` |
 | `source_document.scan_status` | `pending`, `clean`, `flagged`, `unscannable`, `failed` |
 | `source_document.status` | `awaiting_upload`, `received`, `scanned`, `stored`, `expanded`, `parse_queued`, `parsed`, `balanced`, `loaded`, `held`, `duplicate`, `quarantined`, `not_835`, `wrong_type`, `unreadable`, `too_large`, `too_compressed`, `nested_zip`, `unsafe_entry`, `encrypted`, `too_many_entries`, `failed` |
@@ -7450,13 +7452,14 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `hardware_key_is_final()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e5bb6c78b2c1334a` |
 | `hardware_key_notice_report_undelivered(uuid,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `c49d4f21ffd9b8d2` |
 | `hardware_key_opening_usable(uuid,timestamp with time zone)` | `uuid` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` |  |  | `ec2dba7b4a457e8e` |
-| `hardware_key_record(bytea,bytea,bytea,timestamp with time zone,text)` | `TABLE(key_id uuid, first_after_removal boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `65c9fbb13ff57708` |
-| `hardware_key_registration_judge(bytea,timestamp with time zone,text)` | `text` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9a9f2020335cec77` |
+| `hardware_key_record(bytea,bytea,bytea,timestamp with time zone,text)` | `TABLE(key_id uuid, first_after_removal boolean)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `c75e97056dd15b46` |
+| `hardware_key_registration_judge(bytea,timestamp with time zone,text)` | `text` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `4e45de726521b4ba` |
 | `hardware_key_registration_open(uuid,uuid,bytea,text)` | `timestamp with time zone` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `94712141eb36d69e` |
 | `hardware_key_removal_cancel(uuid,uuid,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e56156a401a47e9f` |
 | `hardware_key_removal_confirm(uuid,uuid,text)` | `TABLE(keys_removed integer, sessions_ended integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `e2b0a3aabeeb315a` |
 | `hardware_key_removal_is_final()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `81471c644f75ca39` |
-| `hardware_key_removal_request(uuid,uuid,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `2724d5b6c71e8dec` |
+| `hardware_key_removal_refused(text,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `ce687d95e7eb4ee1` |
+| `hardware_key_removal_request(uuid,uuid,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `514f8152d98ca157` |
 | `hardware_key_removals()` | `TABLE(removal_id uuid, user_id uuid, requested_by uuid, requested_at timestamp with time zone, expires_at timestamp with time zone, state text, decided_by uuid, decided_at timestamp with time zone, live_keys integer, registration_open_until timestamp with time zone, registration_closed boolean)` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `0eaee3a958e645f9` |
 | `invitation_email_in_use(uuid,text)` | `boolean` | plpgsql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `4110c31e01ded551` |
 | `invitation_expired(uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `0e48c829be83ab97` |
@@ -7495,7 +7498,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `membership_end_marks_account()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `9d1845cc073df31e` |
 | `membership_invitation()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5101211402a5e23c` |
 | `membership_keeps_practice_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `974ecfab878a2e77` |
-| `membership_removal_target_holds()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `70d097c1183e8a4f` |
+| `membership_removal_target_holds()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `1f33de177ac3448f` |
 | `membership_role_fits_organization()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `114480521bb0ddf4` |
 | `membership_rules()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `efb897223d48b728` |
 | `membership_security_events()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `e3cb30f2adcd0012` |
@@ -7532,12 +7535,13 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `operator_password_notice_sent(uuid,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `6028322ec0a02407` |
 | `operator_password_notices_due(integer)` | `TABLE(notice_id uuid, user_id uuid)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `d3ca686c261a2915` |
 | `operator_password_notices_stale(integer,text)` | `TABLE(notice_id uuid, user_id uuid)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `04e09af840e2d487` |
-| `operator_provider_sign_out_claim()` | `TABLE(sign_out_id uuid, account_id uuid, subject text, try smallint)` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `6281242dc5da692f` |
+| `operator_provider_sign_out_claim()` | `TABLE(sign_out_id uuid, account_id uuid, subject text, try smallint, cause_request_id text)` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `939b69a4479c9d57` |
 | `operator_provider_sign_out_done(uuid,smallint,text,text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `370ed0a1534d53a9` |
 | `operator_provider_sign_out_failed(uuid,smallint,text,text)` | `void` | sql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `3c486e1f24c277a1` |
 | `operator_provider_sign_out_reported(uuid,text)` | `void` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `fc227c98d4566e7e` |
+| `operator_provider_sign_out_request(uuid,text)` | `uuid` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `427b8da17c5aa6a3` |
 | `operator_provider_sign_outs_expire(integer)` | `integer` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `338dadac47712802` |
-| `operator_provider_sign_outs_overdue(text)` | `TABLE(sign_out_id uuid, account_id uuid, cause_request_id text, code text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `f19608f2b5ad1bb7` |
+| `operator_provider_sign_outs_overdue(text)` | `TABLE(sign_out_id uuid, account_id uuid, cause_request_id text, code text)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `199a89979587b177` |
 | `operator_record_mail_event(text,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid,uuid,uuid,text,text,text,text)` | `TABLE(recorded boolean, state text, notice_undelivered uuid, invoice_undelivered uuid, invitation_undelivered uuid, stream_paused text, password_notice_undelivered uuid)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `f13d6212aaf9a029` |
 | `operator_record_support_mail(text,text,text,text,text,text)` | `TABLE(outcome text, ticket_number bigint)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator |  | `2903a95e22531e32` |
 | `operator_screening_claim(uuid)` | `TABLE(release_no integer, release_manifest_sha256 text, release_available boolean, zip text, zip_plus_four text, settings jsonb, as_of date, row_count integer, attempt integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_operator, tp_screening |  | `a35a25f1df1aa1c8` |
@@ -7646,6 +7650,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `prospect_payers_valid(text[])` | `boolean` | sql | invoker | immutable | `search_path=pg_catalog, pg_temp` | tp_app |  | `7cf431c07bbe1f8f` |
 | `prospect_request_fixed()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `deb5e1b28d963590` |
 | `provider_adjustment_references_in_practice()` | `trigger` | plpgsql | invoker | volatile |  |  |  | `d679b25d16c44132` |
+| `provider_sign_out_unrecorded_reset(text)` | `boolean` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `fdf2e36bfa59bcd5` |
 | `public_status_components()` | `TABLE(key text, name text, status text, changed_at timestamp with time zone)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `79a7ae3915c12b37` |
 | `public_status_incidents(timestamp with time zone)` | `TABLE(incident_id uuid, title text, impact text, components text[], status text, started_at timestamp with time zone, resolved_at timestamp with time zone, updates jsonb)` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `7678a79b3367ec80` |
 | `rate_limit_take(text,text,integer,integer)` | `TABLE(allowed boolean, hits integer, retry_after_seconds integer)` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `bf108aba360585e7` |
@@ -7771,6 +7776,7 @@ Every function in schema `public`. SECURITY DEFINER functions run as their owner
 | `user_keeps_practice_administrator()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `7067ce3a1c9d553b` |
 | `user_known_elsewhere(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `35d6cc736c81cd02` |
 | `user_reaches_practice_now(uuid,uuid)` | `boolean` | sql | DEFINER | stable | `search_path=pg_catalog, public, pg_temp` | tp_app |  | `9c88797ed038db3b` |
+| `user_removal_target_holds()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `655243da88de1a00` |
 | `user_session_end_is_final()` | `trigger` | plpgsql | invoker | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `31742acfa66c6d74` |
 | `user_session_hardware_key()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `67cd43499cedac80` |
 | `user_session_sign_in_not_before()` | `trigger` | plpgsql | DEFINER | volatile | `search_path=pg_catalog, public, pg_temp` |  |  | `5d65509944753a58` |
@@ -7835,8 +7841,9 @@ Every migration applied to the database, from `schema_migrations`, with the SHA-
 | 50 | `20261112090000_sign_in_not_before.sql` | ADR 0009, ADR 0049, ADR 0081, ADR 0083, ADR 0091, ADR 0093 | `1fe539f67b26b1edb2c22adcea8aee41b94091808488e40e0dd5f3f93a1d1e71` |
 | 51 | `20261113090000_ledger_lookups.sql` | ADR 0087 | `9f0d553046486acd37229ae24bf516ff52a21caaf3316a4ec45623a17f089165` |
 | 52 | `20261114090000_payer_response_document_rules.sql` | ADR 0085 | `2f2ef154a282abc1e455baedd0f7762f829c5c0323a8ebcae4cba3619a114b3f` |
-| 53 | `20261115090000_key_registry.sql` | ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095 | `a5d894284583ca04c950a74def60e8846f9e618859da0292d772ff0813b57aee` |
-| 54 | `20261115091000_key_registry_validate.sql` | ADR 0083, ADR 0095 | `2ef5403f0b73af135e71213ab434d0c1434cdaf430355cd884447916dd2f16ef` |
+| 53 | `20261115090000_roi_statement_actionable_lines.sql` | ADR 0082 | `d46c35c52ea8945f65e7eec712b3aac7a7cfe07994c010699ee2fc084fd27e55` |
+| 54 | `20261116090000_key_registry.sql` | ADR 0009, ADR 0049, ADR 0083, ADR 0091, ADR 0093, ADR 0094, ADR 0095 | `0ff9683fe33a08f318861306d13129700047e4b68b95bcad5740bcc739917363` |
+| 55 | `20261116091000_key_registry_validate.sql` | ADR 0083, ADR 0095 | `2ef5403f0b73af135e71213ab434d0c1434cdaf430355cd884447916dd2f16ef` |
 
 ## Cross-checks
 
@@ -7852,6 +7859,6 @@ catalogProblems() (packages/db/src/catalog.ts) on this database: 0 problem(s)
 
 ## Approval
 
-This document describes the schema at migration head `20261115091000_key_registry_validate.sql` (54 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
+This document describes the schema at migration head `20261116091000_key_registry_validate.sql` (55 migrations). Approving it approves the schema as described, every divergence in sections A and B, and the ruling asked for in C1 and C5. It does not decide C2, C3 and C4, which are proposals for schema that does not exist yet (reconciliation-001), apart from any part their status says is built, which is approved as the schema it describes. Under CO-02, no further schema change merges until it is approved; each later migration regenerates this document in the same pull request and is approved again. The approval line carries the SHA-256 of the document as approved (every line but the approval line and the provenance line), and Appendix D carries the SHA-256 of every migration; `--check --require-approval` refuses a line whose hash is not this text's.
 
-Approved by: ________  Date: ________  Document SHA-256: `f2f66b74b60a5056eb9a373933f8cea799cd72b0047431cd2663eb2ce1a0af25`
+Approved by: ________  Date: ________  Document SHA-256: `c06bdce55841bac4551a6f33b150b71c3bca6d7e23105bc60e6424e42b78c765`

@@ -210,7 +210,7 @@ describe('the provider_sign_outs job (JOB-08; docs/adr/0095)', () => {
     expect(failing.asked).toHaveLength(1);
   });
 
-  it('JOB-07: a failed try’s line names the request of the event that queued the row, so the reset and its sign-out read as one story (owed red until operator_provider_sign_out_claim returns cause_request_id)', async () => {
+  it('JOB-07: a failed try’s line names the request of the event that queued the row, so the reset and its sign-out read as one story', async () => {
     const one = await queued();
     const { lines, logger } = capture();
     const failing = provider(() => {

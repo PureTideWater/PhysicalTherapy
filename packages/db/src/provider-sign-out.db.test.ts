@@ -243,7 +243,7 @@ describe('JOB-07: the answers and the sweep', () => {
     expect(await linesFor(normal.id)).toEqual(['LATE']);
   });
 
-  it('gives up at 30 tries, and at 24 hours only a row that had a try; records it once; a late success is still recorded (owed red until operator_provider_sign_outs_overdue reads queued_at)', async () => {
+  it('gives up at 30 tries, and at 24 hours only a row that had a try; records it once; a late success is still recorded', async () => {
     // Never tried, queued 25 hours ago (the worker was down): late by its age and paged, never given up untried, and claimed.
     const untried = await queued();
     await rewind("queued_at = now() - interval '25 hours', next_attempt_at = now() - interval '25 hours'", untried.id);
@@ -282,7 +282,7 @@ describe('JOB-07: the answers and the sweep', () => {
   });
 });
 
-describe('SGN-28: a reset whose own transaction was never recorded still queues the provider sign-out (owed red until provider_sign_out_unrecorded_reset, operator_provider_sign_out_request and the widened reason are in the migration)', () => {
+describe('SGN-28: a reset whose own transaction was never recorded still queues the provider sign-out', () => {
   const rowsOf = async (user: string) =>
     (
       await owner.query<{ reason: string; actor_kind: string; actor_id: string | null; action: string; traced: boolean }>(
@@ -377,7 +377,7 @@ describe('SGN-28: a reset whose own transaction was never recorded still queues 
   });
 });
 
-describe('JOB-09: the sweep judges late by the row’s age whatever its tries, and gives up by age only a row whose try was answered (owed red until operator_provider_sign_outs_overdue reads queued_at)', () => {
+describe('JOB-09: the sweep judges late by the row’s age whatever its tries, and gives up by age only a row whose try was answered', () => {
   it('marks a row late 15 minutes after it was queued, tried or not, leased or not; and not a minute sooner', async () => {
     const [untried, leased, young] = [await queued(), await queued(), await queued()];
     await rewind("queued_at = now() - interval '16 minutes'", untried.id);
@@ -468,7 +468,7 @@ describe('JOB-09: the sweep judges late by the row’s age whatever its tries, a
   });
 });
 
-describe('JOB-07: the claim names the cause (owed red until operator_provider_sign_out_claim returns cause_request_id)', () => {
+describe('JOB-07: the claim names the cause', () => {
   it('returns the request ID of the event that queued the row', async () => {
     const { id } = await queued();
     const cause = (await owner.query<{ request_id: string }>('SELECT request_id FROM provider_sign_out WHERE id = $1', [id])).rows[0]?.request_id;

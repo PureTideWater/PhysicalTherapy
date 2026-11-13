@@ -2,11 +2,11 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- operator_provider_sign_out_claim()
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 6281242dc5da692f
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 939b69a4479c9d57
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.operator_provider_sign_out_claim()
- RETURNS TABLE(sign_out_id uuid, account_id uuid, subject text, try smallint)
+ RETURNS TABLE(sign_out_id uuid, account_id uuid, subject text, try smallint, cause_request_id text)
  LANGUAGE sql
  SECURITY DEFINER
  SET search_path TO 'pg_catalog', 'public', 'pg_temp'
@@ -24,7 +24,7 @@ AS $function$
      SET attempts = p.attempts + 1, leased_until = now() + interval '2 minutes', next_attempt_at = now() + interval '2 minutes'
     FROM due d, "user" u
    WHERE p.id = d.id AND u.id = p.user_id
-  RETURNING p.id, p.user_id, u.cognito_sub, p.attempts
+  RETURNING p.id, p.user_id, u.cognito_sub, p.attempts, p.request_id
 $function$;
 ALTER FUNCTION public.operator_provider_sign_out_claim() OWNER TO tp_owner;
 REVOKE ALL ON FUNCTION public.operator_provider_sign_out_claim() FROM PUBLIC;

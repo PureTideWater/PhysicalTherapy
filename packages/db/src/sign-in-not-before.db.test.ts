@@ -423,7 +423,7 @@ describe('the database refuses a stale session (SGN-17; docs/adr/0093 D4)', () =
     const start = await began();
     const holder = await actorTransaction(user);
     await holder.client.query('SELECT sign_in_lock_account()');
-    // No start: user_session_hardware_key (migration 20261115090000) takes the account's row for every insert, so a
+    // No start: user_session_hardware_key (migration 20261116090000) takes the account's row for every insert, so a
     // removal's confirmation, which holds that row while it removes the keys and ends the sessions, is either before
     // this insert (which then reads the removal) or after it (and ends it). It waits, and goes on when the holder ends.
     const bare = await actorTransaction(user);

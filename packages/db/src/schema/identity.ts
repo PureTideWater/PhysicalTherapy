@@ -103,7 +103,7 @@ export type MutationRequestRow = typeof mutationRequest.$inferSelect;
 
 /**
  * The hardware-key registry, its two-person removal and the provider sign-out's outbox (docs/adr/0095; migration
- * 20261115090000). Platform tables: they describe an account, hold no PHI and no contact detail, and are closed to
+ * 20261116090000). Platform tables: they describe an account, hold no PHI and no contact detail, and are closed to
  * both runtime roles (FORCE ROW LEVEL SECURITY, one policy for the owner, no privilege). Every read and write goes
  * through a definer function of the migration, so nothing queries these tables through Drizzle at runtime.
  */
@@ -113,7 +113,7 @@ export const HARDWARE_KEY_NOTICE_KINDS = ['removed', 'registration_opened', 'reg
 export type HardwareKeyNoticeKind = (typeof HARDWARE_KEY_NOTICE_KINDS)[number];
 export const HARDWARE_KEY_NOTICE_STATES = ['pending', 'sent', 'delivered', 'undelivered', 'failed'] as const;
 export type HardwareKeyNoticeState = (typeof HARDWARE_KEY_NOTICE_STATES)[number];
-export const PROVIDER_SIGN_OUT_REASONS = ['membership_ended', 'password_reset_completed', 'password_reset_outcome_unknown', 'hardware_keys_removed'] as const;
+export const PROVIDER_SIGN_OUT_REASONS = ['membership_ended', 'password_reset_completed', 'password_reset_outcome_unknown', 'hardware_keys_removed', 'password_reset_unrecorded'] as const;
 export type ProviderSignOutReason = (typeof PROVIDER_SIGN_OUT_REASONS)[number];
 
 /** A removal of every key of an account: requested by one platform administrator, confirmed by another inside 24 hours. */

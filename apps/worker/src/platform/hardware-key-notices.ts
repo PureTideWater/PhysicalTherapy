@@ -8,7 +8,7 @@ import { type NoticeClient, asOperator } from './support-notices';
 /**
  * The hardware-key notices (docs/adr/0095): an account's own address is told when its hardware keys were removed, when
  * registration of a new key was opened, and when the first key after a removal was registered. The database writes
- * each notice in the event's own transaction (migration 20261115090000), so the web queues nothing and nothing about
+ * each notice in the event's own transaction (migration 20261116090000), so the web queues nothing and nothing about
  * the person rides in pg-boss. This platform job sends them, every minute, as the operator role (tp_operator), every
  * transaction with no practice in scope. It is the password-changed notice's job (platform/password-notices.ts;
  * docs/adr/0091) with the table, the kinds and the words changed, and one branch more:
@@ -74,7 +74,7 @@ interface Claimed {
 export const KEY_NOTICE_RUN = 100;
 export const KEY_NOTICE_RUN_MS = 8_000;
 export const KEY_NOTICE_RECORD_FAILED = 'RecordFailed';
-/** The database's codes for a notice it failed itself (migration 20261115090000). */
+/** The database's codes for a notice it failed itself (migration 20261116090000). */
 export const KEY_NOTICE_STALE_CODE = 'NoticeStale';
 export const KEY_NOTICE_ADDRESS_CHANGED_CODE = 'AddressChanged';
 

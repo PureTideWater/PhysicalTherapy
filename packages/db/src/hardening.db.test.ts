@@ -366,7 +366,7 @@ describe('the audit log', () => {
       'organization_reinstated',
       'password_notice_sent',
       'password_notice_undelivered',
-      // Since migration 20261115090000: the key registry's and the provider sign-out's records (docs/adr/0095).
+      // Since migration 20261116090000: the key registry's and the provider sign-out's records (docs/adr/0095).
       'hardware_key_removal_requested',
       'hardware_key_removal_confirmed',
       'hardware_key_removal_cancelled',

@@ -1097,7 +1097,7 @@ describe('the record function’s seventh column (docs/adr/0091; DROP and CREATE
     expect(after).toBe(changes.reduce((text, [old, next]) => text.replace(old, next), before));
     const live = (await owner.query<{ body: string }>('SELECT prosrc AS body FROM pg_proc WHERE oid = $1::regprocedure', [RECORD_SIGNATURE])).rows;
     expect(live).toHaveLength(1);
-    // Since migration 20261115090000 (docs/adr/0095) the live body is this migration's with exactly the key notice's
+    // Since migration 20261116090000 (docs/adr/0095) the live body is this migration's with exactly the key notice's
     // additions: one declaration, one lock, one branch. Its arguments and its seven columns are unchanged.
     const keyNotice: readonly (readonly [string, string])[] = [
       ['  touched_password_notice uuid;\n', '  touched_password_notice uuid;\n  touched_key_notice uuid;\n'],

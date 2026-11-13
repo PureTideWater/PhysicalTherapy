@@ -2,7 +2,7 @@
 -- Never edited by hand: change the function in a new migration, then regenerate. CI fails when this file differs.
 
 -- hardware_key_record(bytea,bytea,bytea,timestamp with time zone,text)
--- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: 65c9fbb13ff57708
+-- Body SHA-256 (the text between the dollar quotes only), as Appendix C prints it: c75e97056dd15b46
 -- Trigger function of: (none)
 -- Called by policy: (none)
 CREATE OR REPLACE FUNCTION public.hardware_key_record(new_credential bytea, new_public_key bytea, code_sha256 bytea, began timestamp with time zone, request text)
@@ -39,10 +39,19 @@ BEGIN
   IF closed THEN
     opening := hardware_key_opening_usable(actor, at);
     -- Both sides hashed again before the comparison, so its timing says nothing about the stored digest.
-    IF opening IS NULL OR code_sha256 IS NULL
-       OR NOT EXISTS (SELECT 1 FROM hardware_key_removal r WHERE r.id = opening AND sha256(r.registration_code_sha256) = sha256(code_sha256)) THEN
+    IF opening IS NULL OR code_sha256 IS NULL THEN
       RAISE EXCEPTION 'registration of a hardware key after a removal needs the code an administrator opened it with'
         USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_registration_closed';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM hardware_key_removal r WHERE r.id = opening AND sha256(r.registration_code_sha256) = sha256(code_sha256)) THEN
+      UPDATE hardware_key_removal r SET registration_code_tries = r.registration_code_tries + 1 WHERE r.id = opening;
+      IF NOT EXISTS (SELECT 1 FROM audit_event e
+                      WHERE e.object_type = 'user' AND e.object_id = actor AND e.action = 'security_event' AND e.actor_kind = 'system'
+                        AND e.purpose = 'key_registration_refused' AND e.at > at - interval '1 hour') THEN
+        INSERT INTO audit_event (at, actor_kind, action, object_type, object_id, purpose, request_id)
+        VALUES (at, 'system', 'security_event', 'user', actor, 'key_registration_refused', request);
+      END IF;
+      RETURN;
     END IF;
   END IF;
   INSERT INTO hardware_key (user_id, credential_sha256, public_key, registered_at, registered_request_id)

@@ -534,12 +534,12 @@ a fix rather than staying back. The schema is never rolled back.
 
 ## The key registry (ADR 0095; Queues item 37)
 
-Two migrations, in one deploy: `20261115090000_key_registry.sql` (four tables, the triggers, the functions) and
-`20261115091000_key_registry_validate.sql` (three constraint validations). **Read "What this deploy asks of staff"
+Two migrations, in one deploy: `20261116090000_key_registry.sql` (four tables, the triggers, the functions) and
+`20261116091000_key_registry_validate.sql` (three constraint validations). **Read "What this deploy asks of staff"
 and "Rollback across the key registry" before starting: staff register their hardware keys again in this deploy's
 own session, and a rollback of this release leaves staff unable to sign in until the image rolls forward.**
 
-**The first migration's lock loop.** `20261115090000_key_registry.sql` takes `"user"`'s and `membership`'s SHARE ROW
+**The first migration's lock loop.** `20261116090000_key_registry.sql` takes `"user"`'s and `membership`'s SHARE ROW
 EXCLUSIVE locks and `user_session`'s, `audit_event`'s and `mail_send`'s ACCESS EXCLUSIVE locks together with `NOWAIT`,
 once a second, up to 300 tries, before any of its DDL. A refused try holds and queues nothing. A try is refused by any
 open transaction that has touched `user_session`, `audit_event` or `mail_send` in any way, or has written `"user"` or
@@ -564,19 +564,19 @@ lock timeout with nothing saved (ADR 0092).
 If no moment with the five free comes in five minutes, the deploy fails: cdk reports that the migration task stopped
 without migrating, and `/tp/<env>/migration` ends with
 
-> db:migrate: 20261115090000_key_registry.sql failed: "user", membership, user_session, audit_event or mail_send stayed in use for five minutes; run the deploy again (docs/adr/0095)
+> db:migrate: 20261116090000_key_registry.sql failed: "user", membership, user_session, audit_event or mail_send stayed in use for five minutes; run the deploy again (docs/adr/0095)
 
 (`lock_not_available`, 55P03). This migration runs in one transaction, so it changed nothing, and no service moved
 (step 4). Run the deploy again at a quieter moment. Never take the locks by hand, and never end another session's
 transaction, or cancel a job or a vacuum, to make room.
 
-**The second migration's lock loop.** `20261115091000_key_registry_validate.sql` runs after the first has committed
+**The second migration's lock loop.** `20261116091000_key_registry_validate.sql` runs after the first has committed
 and released its locks. It takes SHARE UPDATE EXCLUSIVE on `user_session` and `mail_send`, the same loop, and then
 validates three constraints with one scan each. That mode blocks no read and no write, so requests and jobs go on
 through it; only a vacuum, an analyze or another schema change on one of the two refuses a try. If one runs for the
 whole five minutes, the deploy fails and `/tp/<env>/migration` ends with
 
-> db:migrate: 20261115091000_key_registry_validate.sql failed: user_session or mail_send stayed under a vacuum or a schema change for five minutes; run the deploy again (docs/adr/0095)
+> db:migrate: 20261116091000_key_registry_validate.sql failed: user_session or mail_send stayed under a vacuum or a schema change for five minutes; run the deploy again (docs/adr/0095)
 
 (`lock_not_available`, 55P03). **The first migration stays applied** (each commits on its own), this one changed
 nothing, and no service moved (step 4): the previous images go on running on the new schema, which is the state
