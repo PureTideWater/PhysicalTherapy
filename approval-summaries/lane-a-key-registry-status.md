@@ -1,21 +1,30 @@
 # Status: Queues item 37, the key registry (Lane A)
 
-## RESUME-BLOCK (2026-11-13, W68, session_019i9ifAYEWMkE9HKeMwZM8p): N-1 TAKEN (proved); WAITING for the two typed /new-migration commands; W67's block below stands for everything else
+## RESUME-BLOCK (2026-11-13, W68, session_019i9ifAYEWMkE9HKeMwZM8p): DRAFT PR #162 IS OPEN with the suggested approval line; WAITING for the founder's commit of the line, then only the merge
 
-**Ref `co-001/wip-key-registry` d3f20357** (one commit on 267d48ac: SGN-31 (g), two owed-red cases; no migration touched).
-**The ONE script is now `designs/lane-a-key-registry-reviews/w68/apply-texts.py`** (W67's whole, then a block "W68": the
-third-administrator EXISTS in both triggers' binding condition, N1's own test with `r.requested_by` and `r.user_id`, and
-the two comments). No new object; the lists gain nothing. Seen: (g) 2 failed on their assertions with W67's texts, green
-with W68's. `pnpm test:db` whole on a scratch worktree with every text (PostgreSQL 18, Node 24): 180 files, 10673
-tests: 10668 passed, 4 failed (the SGN-22 prefix case and the three domain-model/function-file cases), 1 skipped.
-Expected after the rename and regeneration: 10672 passed, 0 failed, 1 skipped.
-**The typed commands, in order:** `/new-migration key_registry` (to `20261116090000_key_registry.sql`, the old file's
-content by `git mv`, then the script, then the header's lists) and `/new-migration key_registry_validate` (to
-`20261116091000_key_registry_validate.sql`). With them: SGN-22's filter to `20261116`; the file names in ADR 0095 (2
-lines) and docs/runbooks/deploy-and-rollback.md (6). The hook guards Edit and Write only and reads the marker
-`.claude/.allow-protected-edit` in the repository's root; set it and trap its removal by absolute path in one command.
-ADR 0095 also takes the N-1 condition; the queue list's N-1 is closed by it. Machine: as W67's notes (pg 18 answers on
-`-h localhost -p 5433`, not on the socket's default directory).
+**PR #162** `co-001/key-registry` db5d9f66 into claude/build-platform (base 17c234d2 merged in), draft. The suggested
+approval line: https://github.com/PureTideWater/PhysicalTherapy/pull/162#discussion_r4563007837 (one comment, line
+7864 of docs/product/domain-model.md; document SHA-256 c06bdce5...b78c765). W68 is subscribed to the PR.
+**Done:** both typed /new-migration commands (a person typed them): `20261116090000_key_registry.sql` (every text by
+`designs/lane-a-key-registry-reviews/w68/apply-texts.py`, byte-equal to the proved copy, then the header's lists) and
+`20261116091000_key_registry_validate.sql`; N-1 taken (both triggers read the third; SGN-31 (g)); SEC-25's lists,
+PROVIDER_SIGN_OUT_REASONS, SGN-22's filter, the owed-red notes dropped, matrix rows SGN-28 to SGN-31, SEC-28, JOB-09
+and their fixtures, ADR 0095's new section and corrected residuals, the domain model and function files regenerated.
+**The full suite, once, on db5d9f66's tree (PostgreSQL 18, Node 24):** unit 14843 passed, 4 skipped; db 10672 passed,
+1 skipped, 0 failed; golden 381; e2e 88; typecheck, lint, lint:logs, verify-content pass.
+**Seen in a browser:** the request form's four refusals, in place with their words. W53's walk (`capture.ts`) is
+stale and was NOT re-run whole: it needs a third administrator aged (N1), `.first()` on the "key removal requested"
+badge (the narrow layout's hidden copy) and the button name "Cancel removal request for ...".
+**Next, after the founder's own commit of the line:** nothing but the merge (required checks green on his commit,
+approval-of-record among them; mark ready; merge; verify on the base; FINAL STATE here; unsubscribe). No commit after
+his unless a required check is red, said first.
+
+### Queue list (none taken)
+- W67 N-2 and N-3; the third counted only if seven days in the role; `hardware_key_removal_target_acts` without words
+  in `KEY_REFUSALS`; `now()` against `clock_timestamp()`; no index on `hardware_key_removal (requested_by)`; a cancel
+  by another administrator untested; the expiry job's lock order and the unwatched columns not verified by review;
+  the screen walk's script to be brought up to date and re-run; SGN-24's matrix row does not name the "user" trigger.
+- N-1 is CLOSED by the ruling of 06:35 UTC (in the PR).
 
 ## Earlier RESUME-BLOCK (2026-11-13, W67; W68's above is the head, session_019i9ifBmZjDFYg8nNE1tL8N): THE PREPARATION IS CLOSED. The rulings of 05:50 UTC (S2, S3, N1; the refusals' closed list) have proved texts, owed-red tests, the web's words and the runbook's lines; the delta review found no blocker; what is left is the typed /new-migration and everything after it
 
