@@ -383,10 +383,11 @@ the console. Then the removal.
 
 **While a request stands, the account it names changes no other account.** From the request until it is confirmed,
 cancelled or 24 hours old, the account whose keys are to be removed cannot disable another account or change another
-account's hardware-key rule in the console, and cannot change a membership of PaidWhole's own organization. That
-keeps it from disabling the requester or the one who would confirm. It ends by the clock at 24 hours, whether or not
-the expiry job has run, and at once if the requester is disabled or leaves the role: a request that can no longer be
-confirmed holds no one.
+account's hardware-key rule in the console, cannot change a membership of PaidWhole's own organization, and cannot
+itself request a key removal, against the requester or anyone. That keeps it from disabling the requester or the one
+who would confirm, and from holding the requester with a request of its own. All of it ends by the clock at 24 hours,
+whether or not the expiry job has run, and at once if the requester is disabled or leaves the role: a request that
+can no longer be confirmed holds no one.
 
 **A request against a platform administrator is limited, because it holds that administrator.** One requester has
 at most one such request open at a time, and cannot ask again against the same administrator for seven days after
@@ -395,9 +396,17 @@ administrator can still request it at once. A request against any other account 
 can hold another for 24 hours at most, once in eight days, and one at a time: of a requester's open requests against
 platform administrators only the earliest holds its account.
 
+**A request against a platform administrator needs a third who could confirm it.** With no platform administrator
+other than the requester and the account who is eligible now (seven days in the role, not disabled), the console
+refuses the request and says so: nobody could confirm it, so it would only hold the account. With exactly two
+platform administrators neither can request against the other; one stops the other by End membership or by disabling
+it, and the keys are then removed by break-glass. PaidWhole keeps three eligible platform administrators from launch
+on, so that a removal between administrators always has a requester, a confirmer and the account.
+
 **Where a platform administrator's account is thought to be in another's hands, disable it or end its membership
-first, and request the removal of its keys second.** An account named in a request can itself request against the
-requester, and each then holds the other for 24 hours.
+first, and request the removal of its keys second.** Whoever requests first holds the other: an account named in a
+request that can still be confirmed is refused a request of its own, so if that account asked first, the
+administrator it named can neither disable it nor request against it, and the steps below apply.
 
 **A platform administrator thought to be in another's hands, who has requested the removal of another
 administrator's keys.** The administrator named in the request cannot disable them while it stands. In this order:
@@ -405,7 +414,8 @@ administrator's keys.** The administrator named in the request cannot disable th
 1. Any **other** eligible platform administrator, one the request does not name, presses End membership on the
    requester's account, or disables it (section 2, "A user or session"). From that moment the request holds no one
    and can no longer be confirmed.
-2. With no such third administrator, **the founder's break-glass, at once: do not wait out the 24 hours.** Give the
+2. With no such third administrator (the console accepts the request only while one exists; one may since have
+   been disabled or left the role), **the founder's break-glass, at once: do not wait out the 24 hours.** Give the
    founder the requester's user ID. The founder's session acts as the owner, with no acting account; the rule binds
    only an acting account, so the owner is never held by it (test SGN-31). As for any account in another's hands
    (section 2, "A user or session"), it ends the account's sessions by user ID and disables the account, in the
@@ -417,7 +427,10 @@ administrator's keys.** The administrator named in the request cannot disable th
 
 **Refused acts are counted in the web's log, not in the security events.** Each refused act on a key removal that
 probes the two-person rule (the requester confirming, the account acting on its own keys, a request whose requester
-has left, an administrator not yet eligible) writes the web's line `a refused act on a key removal` in
+has left, an administrator not yet eligible) or meets a limit on requests (a second request against a platform
+administrator, a repeat inside seven days, a request by an account whose own keys are asked for, a request no third
+administrator could confirm; reasons `one_administrator_request`, `asked_again_too_soon`, `target_asks`,
+`no_third_administrator`) writes the web's line `a refused act on a key removal` in
 `/tp/<env>/web`, with the user ID, the request ID and `error_code` `key_removal_refused_<reason>`: one line for
 every refused act. The security event `key_removal_refused_<reason>` on the audit log is written at most once an hour
 for an account and a reason, so it shows that an account was refused, never how often. To learn whether an account
@@ -427,6 +440,8 @@ tried once or five hundred times, count the lines for its user ID.
 
 - a **platform administrator who requests the removal of another administrator's keys and is then refused a second
   request or a repeat** (the console's two refusals above), unless both administrators confirm by voice why;
+- an **account whose own keys are asked for that then requests a removal** (the security event
+  `key_removal_refused_target_asks`), unless its holder confirms by voice that the try was theirs and why;
 - a **cancelled removal** of an account thought to be in another's hands;
 - **a removed hardware key used** (`RemovedHardwareKeyUsed`: the web's line `security event: removed hardware key
   used`, with the user ID and request ID). Someone still holds a key two administrators removed, and tried it. The

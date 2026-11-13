@@ -30,7 +30,9 @@ const PAGE = '/console/organizations/[organizationId]';
  * already decided may have been confirmed, cancelled or expired: the forms that can meet it read the page again, so
  * the words point at the row and never at a reload. The two limits on requests against a platform administrator
  * (one open request a requester; not again for seven days after its request there expired or was cancelled; test
- * SGN-31) each name who can act now, since the requester cannot.
+ * SGN-31) each name who can act now, since the requester cannot; so does the refusal of a request by an account whose
+ * own keys are asked for. A request against a platform administrator that no third administrator could confirm is
+ * refused with what does stop that account now (End membership), since no request can.
  */
 export const KEY_REFUSALS = {
   not_permitted:
@@ -41,6 +43,10 @@ export const KEY_REFUSALS = {
     'you already have a removal requested for another platform administrator; once that one is confirmed or cancelled, or has expired, you can request this one. Another platform administrator can request it now',
   hardware_key_removal_asked_again_too_soon:
     'your earlier request for this platform administrator expired or was cancelled in the last seven days; another platform administrator can request the removal now, and you can again once seven days have passed',
+  hardware_key_removal_target_asks:
+    'a removal of your own hardware keys is requested, so you cannot request one until that request is confirmed or cancelled, or has expired. Another platform administrator can request this removal now',
+  hardware_key_removal_no_third_administrator:
+    'a removal for a platform administrator needs a third platform administrator to confirm it, one who has held the role for seven days, and there is none now. To stop this account now, end its membership; the removal can be requested once a third platform administrator can confirm it',
   hardware_key_removal_two_people: 'ask another platform administrator to confirm this removal; the one who requested it cannot',
   hardware_key_removal_in_time: 'this request has expired; ask again',
   hardware_key_removal_decided: 'this request was already confirmed or cancelled, or it expired; the row now shows where it stands',
@@ -51,12 +57,17 @@ export const KEY_REFUSALS = {
 
 /**
  * The refusals that leave a security event for the acting account (test SEC-28): the ones a person probing the
- * two-person rule would meet. The others (an open request, a decided one, a closed registration) are states, not probes.
+ * two-person rule would meet, and the four refusals of a request that bound what a request may hold. The others (an
+ * open request, a decided one, a closed registration) are states, not probes.
  */
 const RECORDED_REFUSALS: Partial<Record<keyof typeof KEY_REFUSALS, KeyRemovalRefusal>> = {
   hardware_key_removal_two_people: 'two_people',
   hardware_key_removal_not_own_account: 'not_own_account',
   hardware_key_removal_requester_left: 'requester_left',
+  hardware_key_removal_one_administrator_request: 'one_administrator_request',
+  hardware_key_removal_asked_again_too_soon: 'asked_again_too_soon',
+  hardware_key_removal_target_asks: 'target_asks',
+  hardware_key_removal_no_third_administrator: 'no_third_administrator',
 };
 
 /**

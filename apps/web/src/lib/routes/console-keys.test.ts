@@ -23,4 +23,13 @@ describe('the key registry’s refusal words', () => {
       'your earlier request for this platform administrator expired or was cancelled in the last seven days; another platform administrator can request the removal now, and you can again once seven days have passed',
     );
   });
+
+  it('tells an account whose own keys are asked for who can request instead, and a requester with no third administrator what stops the account now (SGN-31)', () => {
+    expect(KEY_REFUSALS.hardware_key_removal_target_asks).toBe(
+      'a removal of your own hardware keys is requested, so you cannot request one until that request is confirmed or cancelled, or has expired. Another platform administrator can request this removal now',
+    );
+    expect(KEY_REFUSALS.hardware_key_removal_no_third_administrator).toBe(
+      'a removal for a platform administrator needs a third platform administrator to confirm it, one who has held the role for seven days, and there is none now. To stop this account now, end its membership; the removal can be requested once a third platform administrator can confirm it',
+    );
+  });
 });

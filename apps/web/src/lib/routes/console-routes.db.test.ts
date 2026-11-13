@@ -1206,15 +1206,52 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
     const another = await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: second.id });
     expect(another.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_one_administrator_request));
     expect(another.events).toEqual([]);
+    expect(await refusalsOf(another.requestId)).toEqual([{ object_id: requester.id, purpose: 'key_removal_refused_one_administrator_request', actor_kind: 'system', practice_id: null }]);
     expect(await removalOf(second.id)).toBeUndefined();
     const removalId = (await removalOf(first.id))?.id ?? '';
     expect((await act(cancelKeyRemoval, await requester.token(), { organizationId: internal, removalId })).outcome).toMatchObject({ status: 'ok' });
     const again = await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: first.id });
     expect(again.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_asked_again_too_soon));
     expect(again.events).toEqual([]);
+    expect(await refusalsOf(again.requestId)).toEqual([{ object_id: requester.id, purpose: 'key_removal_refused_asked_again_too_soon', actor_kind: 'system', practice_id: null }]);
     expect((await removalOf(first.id))?.state).toBe('cancelled');
     // Another administrator is not held by either limit.
     expect((await act(requestKeyRemoval, await second.token(), { organizationId: internal, userId: first.id })).outcome).toMatchObject({ status: 'ok' });
+  });
+
+  it('SGN-31: a request by an account whose own keys are asked for, and a request against a platform administrator that no third could confirm, are refused in the registry’s words, write nothing and leave the acting account’s security event (owed red until hardware_key_removal_request refuses them and hardware_key_removal_refused takes their reasons)', async () => {
+    const [requester, target, third] = [await keyAdmin(), await keyAdmin(), await keyAdmin()];
+    const internal = admin.internalId;
+    expect((await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: target.id })).outcome).toMatchObject({ status: 'ok' });
+    const counter = await act(requestKeyRemoval, await target.token(), { organizationId: internal, userId: requester.id });
+    expect(counter.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_target_asks));
+    expect(counter.events).toEqual([]);
+    expect(await refusalsOf(counter.requestId)).toEqual([{ object_id: target.id, purpose: 'key_removal_refused_target_asks', actor_kind: 'system', practice_id: null }]);
+    expect(await removalOf(requester.id)).toBeUndefined();
+    // An administrator the request does not name is not held: an honest request with three administrators stands.
+    expect((await act(requestKeyRemoval, await third.token(), { organizationId: internal, userId: requester.id })).outcome).toMatchObject({ status: 'ok' });
+
+    // Exactly two platform administrators: every other live platform_admin membership ended for the length of the act.
+    const [one, other] = [await keyAdmin(), await keyAdmin()];
+    const others = (
+      await owner.query<{ id: string }>("SELECT id FROM membership WHERE role = 'platform_admin' AND ends_at IS NULL AND user_id <> ALL($1::uuid[])", [[one.id, other.id]])
+    ).rows.map((row) => row.id);
+    const setEnds = async (to: string) => {
+      await owner.query('BEGIN');
+      await owner.query("SET LOCAL session_replication_role = 'replica'");
+      await owner.query(`UPDATE membership SET ends_at = ${to} WHERE id = ANY($1::uuid[])`, [others]);
+      await owner.query('COMMIT');
+    };
+    await setEnds("now() - interval '1 minute'");
+    try {
+      const alone = await act(requestKeyRemoval, await one.token(), { organizationId: internal, userId: other.id });
+      expect(alone.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_no_third_administrator));
+      expect(alone.events).toEqual([]);
+      expect(await refusalsOf(alone.requestId)).toEqual([{ object_id: one.id, purpose: 'key_removal_refused_no_third_administrator', actor_kind: 'system', practice_id: null }]);
+      expect(await removalOf(other.id)).toBeUndefined();
+    } finally {
+      await setEnds('NULL');
+    }
   });
 
   /** The security events a refused act on a key removal left, as the database wrote them: the account, the reason, the request. */

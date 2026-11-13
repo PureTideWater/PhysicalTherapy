@@ -149,9 +149,19 @@ export class NotFoundError extends Error {
 /**
  * The refusals of an act on a key removal that leave a security event for the acting account: the database's own
  * closed list (hardware_key_removal_refused; docs/adr/0095, test SEC-28). They are the refusals a person probing the
- * two-person rule would meet.
+ * two-person rule would meet, and the four of a request that bound what a request may hold (test SGN-31): a
+ * requester met by one of those is trying how far a request reaches.
  */
-export const KEY_REMOVAL_REFUSALS = ['not_permitted', 'two_people', 'not_own_account', 'requester_left'] as const;
+export const KEY_REMOVAL_REFUSALS = [
+  'not_permitted',
+  'two_people',
+  'not_own_account',
+  'requester_left',
+  'one_administrator_request',
+  'asked_again_too_soon',
+  'target_asks',
+  'no_third_administrator',
+] as const;
 export type KeyRemovalRefusal = (typeof KEY_REMOVAL_REFUSALS)[number];
 
 /**

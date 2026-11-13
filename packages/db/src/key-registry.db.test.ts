@@ -980,6 +980,15 @@ describe('SEC-28: a refused act on a key removal leaves a security event for the
     expect(await events(user)).toEqual([]);
     expect(await code(asUser(user, "INSERT INTO audit_event (actor_id, actor_kind, action, object_type, object_id, purpose) VALUES ($1, 'user', 'security_event', 'user', $1, 'key_removal_refused_two_people')", [user]))).toBe('42501');
   });
+
+  it('takes the four refusals of a request that bound what a request may hold, one row each (owed red until the closed list has them)', async () => {
+    const user = await createUser(owner);
+    const reasons = ['asked_again_too_soon', 'no_third_administrator', 'one_administrator_request', 'target_asks'];
+    for (const why of reasons) {
+      expect(await failure(refusedAct(user, why))).toBe('accepted');
+    }
+    expect(await events(user)).toEqual(reasons.map((why) => ({ purpose: `key_removal_refused_${why}`, actor_id: null, practice_id: null })));
+  });
 });
 
 describe('SGN-30: a wrong code offered to hardware_key_record is a counted guess (owed red until hardware_key_record counts its check and returns no row)', () => {
@@ -1049,8 +1058,10 @@ describe('SGN-30: a wrong code offered to hardware_key_record is a counted guess
   });
 });
 
-describe('SGN-31: a requested key removal binds its target only while it can still be confirmed, and one requester holds one administrator once (owed red until user_removal_target_holds reads the expiry and the requester, and hardware_key_removal_request limits requests against a platform administrator)', () => {
+describe('SGN-31: a requested key removal binds its target only while it can still be confirmed, and one requester holds one administrator once (owed red until user_removal_target_holds reads the expiry and the requester, and hardware_key_removal_request limits requests against a platform administrator; and until membership_removal_target_holds reads the same, and the request refuses a target’s own request and one no third administrator could confirm)', () => {
   const HOLDS = refusedBy('hardware_key_removal_target_acts');
+  const TARGET_ASKS = refusedBy('hardware_key_removal_target_asks');
+  const NO_THIRD = refusedBy('hardware_key_removal_no_third_administrator');
   const ONE_AT_A_TIME = refusedBy('hardware_key_removal_one_administrator_request');
   const TOO_SOON = refusedBy('hardware_key_removal_asked_again_too_soon');
 
@@ -1075,6 +1086,25 @@ describe('SGN-31: a requested key removal binds its target only while it can sti
       [removal, by],
     );
   const expire = () => as<{ removal_id: string }>(OPERATOR_ROLE, 'SELECT removal_id FROM operator_key_removals_expire($1, $2)', [100, request()]);
+  /** One UPDATE of one membership as the application role acting as `by`, committed: the refusal, or accepted. */
+  const endMembership = (by: string, membership: string) => failure(asUser(by, 'UPDATE membership SET ends_at = now() WHERE id = $1', [membership]));
+  const demote = (by: string, membership: string) => failure(asUser(by, "UPDATE membership SET role = 'support' WHERE id = $1", [membership]));
+  const endsAt = async (membership: string) => (await owner.query<{ ends_at: Date | null }>('SELECT ends_at FROM membership WHERE id = $1', [membership])).rows[0]?.ends_at;
+  /**
+   * Runs `body` in a world whose only platform administrators are `kept`: every other live platform_admin membership
+   * this file has seeded is ended for its length (triggers off, so no session ends) and put back after.
+   */
+  async function onlyAdministrators<T>(kept: readonly Administrator[], body: () => Promise<T>): Promise<T> {
+    const others = (
+      await owner.query<{ id: string }>("SELECT id FROM membership WHERE role = 'platform_admin' AND ends_at IS NULL AND user_id <> ALL($1::uuid[])", [kept.map((each) => each.id)])
+    ).rows.map((row) => row.id);
+    await seeded("UPDATE membership SET ends_at = now() - interval '1 minute' WHERE id = ANY($1::uuid[])", [others]);
+    try {
+      return await body();
+    } finally {
+      await seeded('UPDATE membership SET ends_at = NULL WHERE id = ANY($1::uuid[])', [others]);
+    }
+  }
 
   describe('(a) the trigger binds only while the request can still be confirmed', () => {
     it('binds no one once the request is past its 24 hours by the clock, whatever the expiry job has marked; one minute short of it the request still binds', async () => {
@@ -1195,6 +1225,11 @@ describe('SGN-31: a requested key removal binds its target only while it can sti
       expect(await cancel(requester, first)).toBe('accepted');
       expect(await ask(requester, one.id)).toBe('accepted');
       expect(await count("hardware_key_removal WHERE requested_by = $1 AND state = 'requested'", [requester.id])).toBe(3);
+      // The other order (review W66 N6): open requests against members come first and do not count toward the one.
+      const [later, three, four, admin] = [await administrator(), await member(), await member(), await administrator()];
+      expect(await ask(later, three.id)).toBe('accepted');
+      expect(await ask(later, four.id)).toBe('accepted');
+      expect(await ask(later, admin.id)).toBe('accepted');
     });
 
     it('does not limit asking again after a confirmed removal: two people agreed to that one', async () => {
@@ -1228,7 +1263,7 @@ describe('SGN-31: a requested key removal binds its target only while it can sti
     });
   });
 
-  describe('two platform administrators, one compromised (review W65 S6): the shield lasts one request’s life, once', () => {
+  describe('one compromised administrator and the one it asks against, a third standing by (review W65 S6): the shield lasts one request’s life, once', () => {
     it('A requests against B; B cannot disable A while the request can be confirmed; A can neither renew nor replace it; after its 24 hours B disables A', async () => {
       const [a, b] = [await administrator(), await administrator()];
       const removal = await requestRemoval(a, b.id);
@@ -1254,15 +1289,152 @@ describe('SGN-31: a requested key removal binds its target only while it can sti
       expect(await ask(a, b.id)).toEqual(TOO_SOON);
       expect(await disable(b.id, a.id)).toEqual({ rows: 1 });
     });
+  });
 
-    it('A and B request against each other: each is bound for its request’s life and neither is bound after, with no deadlock', async () => {
+  describe('(d) the membership trigger binds under the same conditions as the account trigger (review W66 S2)', () => {
+    it('still binds a live request: the target ends and demotes no internal membership; past the 24 hours by the clock, the job not run, it ends one', async () => {
+      const [target, requester, third] = [await administrator(), await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, target.id);
+      expect(await endMembership(target.id, requester.membership)).toEqual(HOLDS);
+      expect(await demote(target.id, third.membership)).toEqual(HOLDS);
+      await aged(removal, '23 hours 59 minutes');
+      expect(await endMembership(target.id, requester.membership)).toEqual(HOLDS);
+      expect(await endsAt(requester.membership)).toBeNull();
+      await aged(removal, '2 minutes');
+      expect(await stateOf(removal)).toBe('requested');
+      expect(await endMembership(target.id, requester.membership)).toBe('accepted');
+      expect(await endsAt(requester.membership)).not.toBeNull();
+    });
+
+    it('binds no one once the requester is disabled by another administrator: the target demotes a bystander though the request still says requested', async () => {
+      const [target, requester, third, bystander] = [await administrator(), await administrator(), await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, target.id);
+      expect(await demote(target.id, bystander.membership)).toEqual(HOLDS);
+      expect(await disable(third.id, requester.id)).toEqual({ rows: 1 });
+      expect(await stateOf(removal)).toBe('requested');
+      expect(await demote(target.id, bystander.membership)).toBe('accepted');
+    });
+
+    it('binds only a requester’s earliest request against a platform administrator: a member asked against afterwards and then promoted ends the requester’s membership, and the first target is still held', async () => {
       const [a, b] = [await administrator(), await administrator()];
-      const [onB, onA] = await Promise.all([requestRemoval(a, b.id), requestRemoval(b, a.id)]);
-      expect(await disable(a.id, b.id)).toEqual(HOLDS);
-      expect(await disable(b.id, a.id)).toEqual(HOLDS);
-      await aged(onB, '25 hours');
-      await aged(onA, '25 hours');
-      expect(await disable(b.id, a.id)).toEqual({ rows: 1 });
+      const x = await member();
+      await requestRemoval(a, b.id);
+      await requestRemoval(a, x.id);
+      await seeded(`INSERT INTO membership (id, organization_id, user_id, role) VALUES ($1, $2, $3, 'platform_admin')`, [randomUUID(), internal, x.id]);
+      expect(await endMembership(b.id, a.membership)).toEqual(HOLDS);
+      expect(await endMembership(x.id, a.membership)).toBe('accepted');
+      expect(await endsAt(a.membership)).not.toBeNull();
+    });
+  });
+
+  describe('(e) the target of a request that can still be confirmed requests no removal (review W66 S3)', () => {
+    it('refuses the target asking against its requester or against anyone, by its own name, and writes nothing; a third administrator asks against the requester and the target confirms that', async () => {
+      const [a, b, c] = [await administrator(), await administrator(), await administrator()];
+      const x = await member();
+      await requestRemoval(a, b.id);
+      expect(await ask(b, a.id)).toEqual(TARGET_ASKS);
+      expect(await ask(b, c.id)).toEqual(TARGET_ASKS);
+      expect(await ask(b, x.id)).toEqual(TARGET_ASKS);
+      expect(await count('hardware_key_removal WHERE requested_by = $1', [b.id])).toBe(0);
+      // A is not bound by B: no request against A stands.
+      expect(await disable(a.id, x.id)).toEqual({ rows: 1 });
+      const onA = await requestRemoval(c, a.id);
+      expect(await failure(confirmRemoval(b, onA))).toBe('accepted');
+      expect(await stateOf(onA)).toBe('confirmed');
+    });
+
+    it('lets the target ask once the request against it can no longer be confirmed: past its 24 hours by the clock with the job not run, or its requester disabled', async () => {
+      const [a, b, c, d, e] = [await administrator(), await administrator(), await administrator(), await administrator(), await administrator()];
+      const lapsed = await requestRemoval(a, b.id);
+      await aged(lapsed, '23 hours 59 minutes');
+      expect(await ask(b, a.id)).toEqual(TARGET_ASKS);
+      await aged(lapsed, '2 minutes');
+      expect(await stateOf(lapsed)).toBe('requested');
+      expect(await ask(b, a.id)).toBe('accepted');
+      const left = await requestRemoval(c, d.id);
+      expect(await ask(d, e.id)).toEqual(TARGET_ASKS);
+      expect(await disable(e.id, c.id)).toEqual({ rows: 1 });
+      expect(await stateOf(left)).toBe('requested');
+      expect(await ask(d, e.id)).toBe('accepted');
+    });
+
+    /** `first` asks against `second` and holds its transaction open; `second` asks against `first` meanwhile. */
+    async function mutual(first: Administrator, second: Administrator) {
+      const [sessionFirst, sessionSecond] = [await first.session(), await second.session()];
+      const holder = await app.connect();
+      try {
+        await holder.query('BEGIN');
+        await holder.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', '{}', true)", [first.id]);
+        await holder.query('SELECT hardware_key_removal_request($1, $2, $3)', [second.id, sessionFirst, request()]);
+        let settled = false;
+        const waiting = failure(asUser(second.id, 'SELECT hardware_key_removal_request($1, $2, $3)', [first.id, sessionSecond, request()])).finally(() => {
+          settled = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        expect(settled).toBe(false);
+        await holder.query('COMMIT');
+        return await waiting;
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        holder.release();
+      }
+    }
+
+    it('A and B ask against each other at once, in each order of their accounts: the second waits for the first and is refused, with no deadlock; only the first’s target is bound, and neither after its 24 hours', async () => {
+      const pair = [await administrator(), await administrator()].sort((left, right) => left.id.localeCompare(right.id));
+      const again = [await administrator(), await administrator()].sort((left, right) => right.id.localeCompare(left.id));
+      const bystander = await member();
+      for (const [first, second] of [pair, again]) {
+        if (first === undefined || second === undefined) throw new Error('two administrators');
+        expect(await mutual(first, second)).toEqual(TARGET_ASKS);
+        expect(await count("hardware_key_removal WHERE requested_by = $1", [second.id])).toBe(0);
+        const standing = (await owner.query<{ id: string }>("SELECT id FROM hardware_key_removal WHERE requested_by = $1 AND user_id = $2 AND state = 'requested'", [first.id, second.id])).rows[0]?.id ?? '';
+        expect(standing).not.toBe('');
+        // The second is bound, the first is not.
+        expect(await disable(second.id, first.id)).toEqual(HOLDS);
+        expect(await disable(first.id, bystander.id)).toMatchObject({ rows: 1 });
+        await aged(standing, '25 hours');
+        expect(await disable(second.id, first.id)).toEqual({ rows: 1 });
+      }
+    });
+  });
+
+  describe('(f) a request against a platform administrator needs a third who could confirm it (review W66 N1)', () => {
+    it('refuses it by its own name with exactly two platform administrators, writes nothing and binds no one: the other disables the requester at once', async () => {
+      const [a, b] = [await administrator(), await administrator()];
+      await onlyAdministrators([a, b], async () => {
+        expect(await ask(a, b.id)).toEqual(NO_THIRD);
+        expect(await count('hardware_key_removal WHERE user_id = $1', [b.id])).toBe(0);
+        expect(await disable(b.id, a.id)).toEqual({ rows: 1 });
+      });
+    });
+
+    it('does not count a third administrator under seven days in the role, nor a disabled one: neither could confirm', async () => {
+      const [a, b, young, gone] = [await administrator(), await administrator(), await administrator(3), await administrator()];
+      await seeded(`UPDATE "user" SET status = 'disabled' WHERE id = $1`, [gone.id]);
+      await onlyAdministrators([a, b, young, gone], async () => {
+        expect(await ask(a, b.id)).toEqual(NO_THIRD);
+        expect(await count('hardware_key_removal WHERE user_id = $1', [b.id])).toBe(0);
+      });
+    });
+
+    it('accepts an honest request with exactly three platform administrators, and the third confirms it', async () => {
+      const [a, b, c] = [await administrator(), await administrator(), await administrator()];
+      await onlyAdministrators([a, b, c], async () => {
+        const removal = await requestRemoval(a, b.id);
+        expect(await stateOf(removal)).toBe('requested');
+        expect(await failure(confirmRemoval(c, removal))).toBe('accepted');
+        expect(await stateOf(removal)).toBe('confirmed');
+      });
+    });
+
+    it('does not limit a request against an account that is not a platform administrator: with two administrators one asks and the other confirms', async () => {
+      const [a, b] = [await administrator(), await administrator()];
+      const x = await member();
+      await onlyAdministrators([a, b], async () => {
+        const removal = await requestRemoval(a, x.id);
+        expect(await failure(confirmRemoval(b, removal))).toBe('accepted');
+      });
     });
   });
 });
