@@ -276,5 +276,102 @@ one with spaces, an empty one, by both doors; a fitting one kept; none at all ac
 ### Proof (PostgreSQL 18 on 5433, Node 24; a scratch worktree of the WIP with the migration patched by the script)
 See the status file's RESUME-BLOCK for the counts of the whole `pnpm test:db`.
 
+## W67: the rulings of 2026-11-13 05:50 UTC on review W66 (S2, S3, N1; the refusals' closed list)
+Session session_019i9ifBmZjDFYg8nNE1tL8N. **The record is now `w67/apply-texts.py` (W66's script whole, then a block
+"W67" of seven exact old/new pairs) and `w67/migration.patch`; `w66/` is kept and superseded. ONE command applies
+every text of the item:** `python3 w67/apply-texts.py <copy of the migration> a1-trigger.sql.txt` prints `applied`.
+The W67 pairs match the text W66's pairs leave, so they come after them; in the file's order they sit in section 6
+(S2, `membership_removal_target_holds`) and section 9 (S3 and N1 in `hardware_key_removal_request`; the closed list
+in `hardware_key_removal_refused`, change 7's text). **No new object:** no new function, table, index, trigger, grant
+or reserved action; the two new names are RAISE names. So the preflight's lists, section 14's REVOKE and GRANTs,
+SEC-25's maps and the header's function lists gain nothing from W67. No COMMIT, BEGIN, ROLLBACK, EXCEPTION WHEN
+OTHERS or lock_timeout. Safe to run again from the first line: as before (the preflight refuses; no name added).
+Previous image running: it calls none of these functions (the registry is new in this release), and
+`membership_removal_target_holds` binds it only where a removal row exists, which only the new image writes.
+
+### S2, section 6: `membership_removal_target_holds` binds under `user_removal_target_holds`' conditions
+The EXISTS becomes the account trigger's, word for word: `r.user_id = app_actor_id() AND r.state = 'requested' AND
+r.expires_at > clock_timestamp() AND account_removes_keys(r.requested_by) AND NOT EXISTS (an earlier request of the
+same requester that can still be confirmed, against an account that is a platform administrator now)`. The comment
+says so; the message ends "while the request can be confirmed"; the constraint name
+`hardware_key_removal_target_acts` is unchanged.
+- Why the third clause too (the ruling: "only a requester's earliest request against a platform administrator"):
+  without it a member asked against after an administrator and then promoted could not end the requester's
+  membership, the S1 hole through this door.
+- A multi-row UPDATE by a bound target is refused at its first row: the BEFORE ROW trigger reads the state before
+  that row's change, so ending the requester's membership in the same statement does not unbind the statement.
+- Locks: none, as before; `account_removes_keys` is the STABLE definer of section 4 and reads with no lock.
+- Tests: SGN-31 (d), three cases (a live request still binds an end and a demotion, and one minute either side of
+  the expiry with the job not run; the requester disabled by a third; the promoted member, with the first target
+  still held). SGN-24's membership lines (the confirmation describe) still pass.
+
+### S3, section 9: the target of a request that can still be confirmed requests no removal
+In `hardware_key_removal_request`, directly after `at := clock_timestamp();` and before the lapsed requests are
+marked: `IF EXISTS (SELECT 1 FROM hardware_key_removal r WHERE r.user_id = actor AND r.state = 'requested' AND
+r.expires_at > at AND account_removes_keys(r.requested_by))` then 23514, constraint
+`hardware_key_removal_target_asks`. Against its requester or anyone, an administrator or not.
+- "Can still be confirmed" is the confirmation's own pair of conditions (the clock, the requester), without the
+  earliest-request clause: that clause says which target a requester binds, and a request against a member can
+  still be confirmed; a member cannot request anyway (`account_removes_keys`), and one promoted is seven days from it.
+- **The advisory lock is now taken on both accounts.** W66's one `pg_advisory_xact_lock` on the requester becomes two,
+  on `least(actor, target_user)` and then `greatest(actor, target_user)`, same key text
+  (`hardware_key_removal_requester:<id>`), still before any row lock. Without the second, A against B and B against
+  A at once each see no request against themselves and both insert: the mutual hold S3 refuses. With it the second
+  waits, then reads the first's committed row (a new statement's snapshot at READ COMMITTED, which the function
+  requires) and is refused. `least`/`greatest` skip a NULL target, so the NULL target still ends on `no such account`.
+- **Locks.** Order in this function: advisory (lower ID), advisory (higher ID), the target's "user" row FOR NO KEY
+  UPDATE, the target's lapsed removal rows, the inserts. Only this function takes these advisory keys, always both
+  before any row lock and always in the IDs' order, so no cycle is made of advisory locks alone (three accounts
+  asking in a ring each take their lower ID first; a ring needs one of them to take the higher first). A cycle
+  through a row lock would need a transaction that holds a "user" or removal row and then waits for an advisory
+  key: only a caller that took row locks before calling this function, which the web's request route does not: its
+  handler's one statement is the call; before it the routes' wrapper takes only its own advisory lock on the actor's
+  request key (`request_key:<actor>:<key>`, invoke.ts; another key space, and a second submit of the same key waits
+  there holding nothing). The confirmation and the cancel take
+  the target's row and the removal row and no advisory lock. Cost: two requests that share either account now run
+  one after the other (they mostly did: the same target's row). A hash collision of two IDs' keys (2^-64) could
+  order two pairs differently; PostgreSQL's deadlock detector would end one with 40P01, nothing written.
+- Tests: SGN-31 (e), three cases (the target refused against its requester, a third administrator and a member,
+  nothing written, the requester not bound, and a third's request against the requester confirmed by the target;
+  the target asks again once the request lapsed by the clock or its requester was disabled; A and B at once in each
+  order of their IDs, the first's transaction held open, the second waits and is refused, only the first's target
+  bound, neither after 24 hours). The old mutual case (both accepted) is replaced by the last.
+
+### N1, section 9: a request against a platform administrator needs a third who could confirm it
+First inside the block that already reads "the target holds a live platform_admin membership of an internal
+organization": `IF NOT EXISTS (SELECT 1 FROM membership m JOIN organization o ... WHERE o.kind = 'internal' AND
+m.role = 'platform_admin' AND m.user_id <> actor AND m.user_id <> target_user AND account_removes_keys(m.user_id))`
+then 23514, constraint `hardware_key_removal_no_third_administrator`. Before the two W66 limits, so a team of two
+reads the reason that will not pass with time.
+- "Could confirm" is `account_removes_keys`, the confirmation's own test of the account; the confirmer's key session
+  of the last fifteen minutes cannot be known ahead. An administrator under seven days in the role, disabled, or
+  with a role_escalation event of the last seven days does not count. A third who is itself bound by another
+  request still counts: a bound account may confirm.
+- The refusal writes no row, so it starts no seven-day wait: the request is accepted as soon as a third exists.
+- A request against an account that is not a platform administrator is not limited (two administrators: one asks,
+  the other confirms).
+- Not closed, by design: the third may be disabled or leave after the request is accepted; the request then holds
+  its target until it lapses or the requester is stopped (the runbook's steps; the owner path).
+- Locks: none added; the read takes none.
+- Tests: SGN-31 (f), four cases, in a world of exactly the named administrators (every other live platform_admin
+  membership of the test file ended for the case's length, triggers off, and put back): two administrators refused,
+  nothing written, the other disables the requester at once; a young third and a disabled third do not count;
+  three administrators accepted and the third confirms; a member's removal with two administrators.
+- The scenario describe "two platform administrators, one compromised" (W66) never had exactly two (the file's
+  earlier administrators stood by); it is renamed to say a third stands by, its mutual case replaced by (e)'s.
+
+### The closed list, section 9 (inside change 7's text): `hardware_key_removal_refused` takes four more reasons
+`why NOT IN (...)` gains `'one_administrator_request', 'asked_again_too_soon', 'target_asks',
+'no_third_administrator'`; the comment says why. The web: `KEY_REMOVAL_REFUSALS` (route.ts) and `RECORDED_REFUSALS`
+(console-keys.ts) gain the four, `KEY_REFUSALS` the two new names' words (tested in `console-keys.test.ts`).
+Still one row for an account and a reason in an hour; the web's counted line carries every refused act.
+- Tests: `key-registry.db.test.ts` SEC-28, "takes the four refusals of a request ..."; `console-routes.db.test.ts`
+  SGN-31, two cases (W66's now also reads the two security events; the new one reads `target_asks` and
+  `no_third_administrator` in the registry's words, nothing written, the event for the acting account).
+
+### Proof (PostgreSQL 18 on 5433, Node 24; a scratch worktree of the WIP with the migration patched by the script)
+Each new case seen red on its assertion against W66's texts (11 cases: SGN-31 (d) 3, (e) 3, (f) 2, SEC-28 1, the
+web's 2) and green with W67's. See the status file's RESUME-BLOCK for the counts of the whole `pnpm test:db`.
+
 ## Not done
 The header comment's lists in the migration (by hand in the typed command). Everything in the status file's "Left".

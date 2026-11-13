@@ -1,6 +1,106 @@
 # Status: Queues item 37, the key registry (Lane A)
 
-## RESUME-BLOCK (2026-11-13, W66, session_019i9ifAN8HwXxoQicPm7XvS): the rulings of 04:55 UTC (S6 a, b, c; S4; N2; N4) have proved texts, owed-red tests, the web's words and the runbook's lines; the delta review is done with one fix; what is left is the typed /new-migration and everything after it
+## RESUME-BLOCK (2026-11-13, W67, session_019i9ifBmZjDFYg8nNE1tL8N): THE PREPARATION IS CLOSED. The rulings of 05:50 UTC (S2, S3, N1; the refusals' closed list) have proved texts, owed-red tests, the web's words and the runbook's lines; the delta review found no blocker; what is left is the typed /new-migration and everything after it
+
+**Ref `co-001/wip-key-registry` 267d48ac** (pushed through the hook; no PR; no migration file, no domain-model text, no
+generated function touched). One commit on e1a7ac7e.
+**The ONE command that applies every text of the item** (after the rename, on the first migration; W65's, W66's, W67's):
+`python3 designs/lane-a-key-registry-reviews/w67/apply-texts.py <the first migration, or a copy> designs/lane-a-key-registry-reviews/a1-trigger.sql.txt`
+must print `applied`; the typed result must equal that. `w67/migration.patch` (424 lines) is the same as a diff; `w66/`,
+`w65/`, `w64/` are superseded. The texts and their lock analysis: `w64-migration-texts.md`, section "W67" (and "W66").
+The review: `w67-review.md` (0 blockers, 0 should-fix, 3 notes, all queued below). **W67 adds no object: the
+preflight's lists, section 14, SEC-25's maps and the header's function lists are exactly as W65's block says.**
+
+### What W67 changed in the rules (say these with the migration)
+- **S2:** `membership_removal_target_holds` binds under `user_removal_target_holds`' conditions, word for word (not
+  past `expires_at` by the clock, the requester still passing `account_removes_keys`, only a requester's earliest
+  confirmable request against a current platform administrator). Message: "... while the request can be confirmed".
+- **S3:** `hardware_key_removal_request` refuses a request by an account that is the target of a request that can
+  still be confirmed: 23514, `hardware_key_removal_target_asks`. **The advisory lock is now two, on requester and
+  target, in the order of their IDs** (same key text), so two accounts asking against each other at once run one
+  after the other and the second is refused.
+- **N1:** a request against a platform administrator is refused when no account other than requester and target
+  passes `account_removes_keys`: 23514, `hardware_key_removal_no_third_administrator`. First in the block, before
+  W66's two limits. It writes no row and starts no wait.
+- **The closed list:** `hardware_key_removal_refused` takes `one_administrator_request`, `asked_again_too_soon`,
+  `target_asks`, `no_third_administrator` (eight reasons now). The web: `KEY_REMOVAL_REFUSALS` (route.ts) and
+  `RECORDED_REFUSALS` the four; `KEY_REFUSALS` the two new names' words (`console-keys.test.ts`).
+- The runbook (hardware key section): a named account cannot request; the third administrator and three from
+  launch; who asks first holds the other; the counted reasons; `target_asks` as an incident.
+- Test changes to W66's: the describe "two platform administrators, one compromised" is renamed (a third stood by
+  all along); its mutual case (both accepted) is replaced by (e)'s forced case; the ordinary-accounts case also runs
+  members first, then an administrator.
+
+### Owed red on 267d48ac (each goes green with the texts; none skipped or loosened)
+Everything in W66's and W65's lists below, and:
+`packages/db/src/key-registry.db.test.ts`, in "SGN-31: a requested key removal binds its target only while it can
+still be confirmed, and one requester holds one administrator once" (its parenthesis is longer now):
+- "(d) the membership trigger binds under the same conditions as the account trigger": 3 cases;
+- "(e) the target of a request that can still be confirmed requests no removal": 3 cases;
+- "(f) a request against a platform administrator needs a third who could confirm it": the two-administrator case
+  and the young-or-disabled-third case (its three-administrator case and its member case pin, they do not owe).
+`packages/db/src/key-registry.db.test.ts`: "SEC-28 ... > takes the four refusals of a request that bound what a
+request may hold, one row each" (1).
+`apps/web/src/lib/routes/console-routes.db.test.ts`: "SGN-31: a second open request against another platform
+administrator ..." (W66's, now also reading its two security events) and "SGN-31: a request by an account whose own
+keys are asked for, and a request against a platform administrator that no third could confirm ..." (1 new).
+
+### Proved
+- **`pnpm test:db` whole, once, on a scratch worktree of 267d48ac with every text applied by the one script
+  (PostgreSQL 18 on 5433, Node 24): 180 files, 10671 tests: 10666 passed, 4 failed, 1 skipped.** The four are the
+  expected ones: the SGN-22 prefix case (the rename) and the three domain-model/function-file cases
+  (`domain-model.db.test.ts > matches the schema`, `function-files.db.test.ts > DBF-01` and `> DBF-04 --check`).
+- Each new case was seen red on its assertion against W66's texts (11: (d) 3, (e) 3, (f) 2, SEC-28 1, the web's 2)
+  and green with W67's.
+- On the WIP tree: `pnpm typecheck`, `pnpm lint:logs`, `pnpm lint:copy` pass; eslint passes on every changed file;
+  unit `apps/web/src/lib/routes` and `apps/web/src/lib/http`: 586 passed. The whole unit suite, `pnpm lint` whole,
+  golden and e2e: not run.
+
+### Left for the last session
+1. The two typed /new-migration commands with the rename (after `20261115090000_roi_statement_actionable_lines`;
+   SGN-22's file filter if the prefix changes); in the first, the texts by the one script's order, then the header
+   comment's lists by hand (W65's order, below, step 2; line 24's words on `membership_removal_target_holds` to match S2).
+2. Outside it: SEC-25's lists (W65's step 3, unchanged by W66 and W67); `PROVIDER_SIGN_OUT_REASONS`; every "(owed
+   red ...)" parenthesis dropped (now also SGN-31's longer one, SEC-28's new case, the web's new SGN-31 case); the
+   matrix rows SGN-28 to SGN-31, SEC-28, JOB-09 and `pnpm synth --all`.
+3. ADR 0095's records: W65's and W66's lists, and now S2, S3 (with the second advisory lock and its order), N1 (and
+   that the product keeps three eligible administrators from launch), the closed list's eight reasons.
+4. The domain model and the function files regenerated (never the approval line); the full suite once (unit, db,
+   golden, e2e); the five screens seen in a browser after the fixes (the request form's four refusals among them);
+   the PR from the template; the suggested approval line as one PR comment.
+5. Expected then: `pnpm test:db` 10670 passed, 0 failed, 1 skipped.
+
+### Queue list (lesser findings; none taken; no further preparation round)
+- **W67 review N-1 (proved):** with exactly three administrators, A requests against B and then disables C: B stays
+  bound for the rest of the 24 hours with no one able to confirm or cancel but A, and A may demote B meanwhile.
+  Bounded (24 hours, not renewable against B for seven days; the owner path). Smallest change: N1's own test in both
+  triggers' binding condition (a request no third could confirm binds no one).
+- **W67 review N-2 (reasoned):** while A's request against B stands, neither can request against C (B by
+  `target_asks`, A by `one_administrator_request`); any other administrator can, or A cancels and takes the
+  seven-day wait against B. A runbook line at most.
+- **W67 review N-3 (reasoned):** `membership_removal_target_holds` has no exemption for the target's own membership
+  (the account trigger exempts its own row), so a bound target cannot step down. Older than W67. If not meant: `AND
+  OLD.user_id <> app_actor_id()`.
+- W67's own: N1 counts "could confirm" at the request's moment only; a third six days in the role does not count
+  though it could confirm tomorrow (asked again then, it is accepted). A hash collision of two accounts' advisory
+  keys could order two pairs differently (2^-64; a detected deadlock, nothing written). Not verified by the review:
+  the expiry job's lock order; whether a bound target can void a request through columns the triggers do not watch
+  (`mfa_enrolled`) or a membership INSERT.
+- From W66, still open: `hardware_key_removal_target_acts` has no words in `KEY_REFUSALS`; `account_removes_keys`
+  reads `now()`, the triggers `clock_timestamp()`; N6's rest ((a) would pass with "live membership"; a cancel by
+  another administrator untested); no index on `hardware_key_removal (requested_by)`. Closed by W67: the two
+  refusals' security events; the ordinary-accounts and mutual cases; the wrapper's locks (it takes only its
+  `request_key` advisory lock before the call).
+
+### Machine notes
+Both PostgreSQL servers were down at start (stale postmaster.pid in /root/pgdata and /root/pgdata18: remove, then
+`su postgres -c "<bin>/pg_ctl -D <dir> -l /tmp/pgNN.log -w start"`; 16 in /usr/lib/postgresql/16/bin, 18 in
+/opt/pg18/bin); Node 24 at `/opt/node24/bin`; the checkout started detached at claude/build-platform. Scratch
+worktrees `/home/user/w67-scratch` and `/home/user/w67-full` die with the container. W67 read, beyond its list:
+`console-keys.ts` and `route.ts` around the refusal lists, the web test's `act` and `keyAdmin`, the runbook's
+hardware key section, invoke.ts line 118. W67 holds no PR and no scheduled task; its one subagent has finished.
+
+## Earlier RESUME-BLOCK (2026-11-13, W66; W67's above is the head, session_019i9ifAN8HwXxoQicPm7XvS): the rulings of 04:55 UTC (S6 a, b, c; S4; N2; N4) have proved texts, owed-red tests, the web's words and the runbook's lines; the delta review is done with one fix; what is left is the typed /new-migration and everything after it
 
 **Ref `co-001/wip-key-registry` e1a7ac7e** (pushed through the hook; no PR; no migration file, no domain-model text, no
 generated function touched). Two commits on 055407ae: 91a84d1f (the tests, the web's two refusals and its counted
