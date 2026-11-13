@@ -4,7 +4,96 @@ Design of record: `designs/lane-b-redact-item-34/design.md` (ops 163894a9). Ruli
 one constant; (d) the verifier keeps its reading; A-4's costs accepted; a digit beside the number stays recorded.
 WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. No PR is open.
 
-## RESUME-BLOCK (W56, 2026-11-12 about 23:05 UTC, at the token limit: BOTH REVIEWS DONE, BOTH FIX ROUNDS COMMITTED, ROUND 2 NOT YET MEASURED, NO PR)
+## RESUME-BLOCK (W58, 2026-11-13 about 00:30 UTC: 17028cfa MEASURED; ONE BLOCKER RULED (C); NO PR; A SUCCESSOR GETS ONE BOUNDED FIX)
+
+- **State.** WIP head unchanged: **17028cfa** on `co-001/wip-redact-item-34` (W58 committed nothing there). No PR is
+  open and none may be opened until (C) is fixed. W58 built nothing. Scripts, the gate's report and the delta review
+  are in this commit: `designs/lane-b-redact-item-34/scripts/w58/` and `reviews/review-4-fix-rounds-1-and-2.md`,
+  `reviews/gate-17028cfa-report.md`.
+- **The orchestrator's rulings of 2026-11-12 23:20 and 23:30 UTC (in force):**
+  - **(A) recorded residual, pinned as sent, in the ADR and the PR, added to Queues item 40:** round 1's every-place
+    scan shows the last initial of a chain for a name of one repeated letter. Name `ZZZZZZ`, letter `ZZ/ZZZZ Z.Z.Z`:
+    base a97d73e4 sends `ZZ/[PATIENT_NAME].Z`; 846968af `[PATIENT_NAME] [PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME]`;
+    483ac960 and 17028cfa `[PATIENT_NAME].Z` (the same for `AAAAAAAA`, `AA/AAAAAA A.A.A`). Against the base the head
+    hides more. 1 of 19,000 fuzzed letters; 0 on 22 other name shapes (review-4, R3-1; `scripts/w58/leak.mts`).
+  - **(B) accepted, recorded cost (as item 26's C-PHI-1), since the gate's real-shaped newly refused is 0 and the
+    budget rows did not move:** every-place scanning changes the counted units (review-3, R3-1). Names `['AAAAAAAA']`,
+    member `SYN555001`, claim `ZZ99887`, text `'A '.repeat(49000)`: base and 846968af SENT fully hidden, redaction
+    341,006,350 units, 376,730,640 with the check; 483ac960 and 17028cfa REFUSED by the count (420,000,001). At
+    `'A '.repeat(40000)`: base 307,583,640, head 346,735,808, both sent (`scripts/w58/probe.mts`). Owed: name it in
+    the ADR amendment and the PR with these counts; pin the crafted letter as a refused row. NOT yet pinned.
+  - **(C) BLOCKER, not accepted: a letter the base REFUSES and the head SENDS.** The rule: a letter refused by the
+    base's reading stays refused, whatever a wider reading can now replace. One bounded fix by a successor (outside
+    the two-round cap). The facts:
+    - Letter 1 (minimal): names `['AAAAAAAA']`, memberIds `['7,7,7,7,7']`, claimNumbers `['11111111', 'ZZ12345 01']`,
+      text `Fax 7777,7:1111,7777.7`. Base: `Fax [MEMBER_ID]:1111,7777.7`, REFUSED. Head: `Fax
+      [MEMBER_ID]:1111,[MEMBER_ID]`, SENT (A-5 replaces the second writing). The fuzz letter it was shrunk from:
+      `1 Fax XAAAA\r7,7,7,7,7:a1 1-1/1/1/1/17,7,7,7,7.,7\u00041+`: base REFUSED; head SENT as `1 Fax
+      XAAAA\r[MEMBER_ID]:a1 1-1/1/1/1/17,[MEMBER_ID]\u00041+` (one more `7` beside the number in clear).
+    - Letter 2 (review-3's R3-4): names `['AAAAAAAA']`, memberIds `['12121/2121']`, claimNumbers `['12312312',
+      '000&11']`, text `000&11.12121\u00852121\u0085aaAaaaAa A\u0085A\u0085AaA\u0085Aa\u0085a\r\naaAaA&`: base
+      REFUSED; d438ce76 to 846968af SENT with `aaAaA` (5 of the name's 8 letters) in clear; 483ac960 and 17028cfa SENT
+      as `[CLAIM_1].[MEMBER_ID][PATIENT_NAME] [PATIENT_NAME]&`, nothing in clear.
+    - **Introduced at stage 1, d438ce76 (A-5, a stored number with a run of marks)**, and sent on every commit of the
+      item since (bisected over the eight commits that touch `redact.ts`, `scripts/w58/c.mts`).
+    - **Counts of base-refused, head-sent:** the base-against-head fuzz (`scripts/w58/fuzz.mts`, seeds 301, 302, 303,
+      20,000 letters each): **1 of 60,000** (seed 303, the row in `scripts/w58/fuzz-303-base-refused-head-sent.jsonl`;
+      base refused 3,477, head 6,709, head-only refusals 3,233). **The gate: 0 of 975,489 pairs**: its classes that
+      hold every such pair (PHI, UNPLACED, REVERSE.KEEP; `worker.mts` lines 98 to 112) are all "none", errors 0 on both
+      sides, and refused B 463,002 = refused A 462,984 + the 18 newly refused (so the 462,984 are refused by both).
+      Review-4's fuzz of 846968af against the head: 0 of 19,000. Review-1: 0 of 52,858. Review-3: 1 of 54,702 (letter 2).
+    - **The place:** `packages/redact/src/redact.ts` line 3758 (`redactLetterForScreen`) and its twin at line 3650
+      (`redactionSpans`): the wider matches are applied unless `refusedAsFirstRead(first.text, ...)` refuses, and
+      `refusedAsFirstRead` (line 4078) asks `holdsAsFirstRead`, the check as the first reading alone gives it. The base
+      a97d73e4 already holds item 26's wider reading: it writes `Fax [MEMBER_ID]:1111,7777.7` and its whole check
+      refuses that text. The head's gate asks less than the base's verdict, so A-5 (and any wider rule of item 34)
+      replaces what the base's check refused for, and the letter is sent. Not established by W58: which reading of the
+      base's check refuses letter 1 (the minimal rows `Ref 7,7,7,7.,7 end` and `Ref 17,7,7,7,7.,7 end` are SENT by the
+      base; `scripts/w58/one.mts`).
+- **Measured on 17028cfa against a97d73e4 (W58; machine load 4 to 5 during the gate):**
+  - Budget rows: 403,548,210 and 414,023,090 units, both sent, both sides (unchanged).
+  - Generated set with `a.labeled-separator`: **failures 0 of 14,356**, PHI classes none, refused A 1,680, B 5,789
+    (5,213 + the 576 new letters), differ 9,962, notes 6.
+  - **The full gate, `--no-cache`:** 975,489 letters, differ 21, PHI none, UNPLACED none, reverse classes none;
+    refused A 462,984, **B 463,002**; slowest letter A 1,054 ms, B 1,005 ms. **18 newly refused, all by R1-2, none
+    real-shaped:** every one is a fuzz letter of `harness/rg-review-phi-1__fuzzdob.mts` (8 of `__1`, 10 of `__2`)
+    that glues `01/02/2020` to a letter (`Seen of-June01/02/2020`, `Paid 3rd01/02/2020`); IDs 921580, 922066, 922254,
+    922587, 922726, 923085, 923290, 923413, 924728, 924779, 925268, 926099, 926123, 926742, 926907, 927006, 927239,
+    927298 (classes KEEP.refused.must-stay.other 12, KEEP.refused.letter-with-identifiers 6). **Real-shaped (T3) newly
+    refused: 0; so R1-2 stays** (the ruling's condition for a revert is not met). KEEP.changed.text 1 (A-4's
+    `K.<emoji> RE`, letter 187859). Differ on shard 2: 4 of 121,936.
+  - R3-1's units and the two (C) letters: above.
+  - **Delta review of rounds 1 and 2 (review-4, one subagent, verified by W58 where it found):** its R3-1 is ruling
+    (A). Time is bounded: 77 cases (36 separators, mixed runs, 15 line-ending forms, 12 every-place) at 1,000, 10,000
+    and 100,000 characters, worst 801 ms of 3,000; old and new `CR_LF` match alike on 2,391,484 strings, `runOfMarks`
+    on 4,928,115; `gluedCoresOf` changes 0 of 3,528 letters without "." or "/". **For the queue (lesser):** two of the
+    ten fixed R1-1 rows pass on 846968af too (`'ZEPH+Z E P H Z E'` with rest `ephze`, which should be `phze`, and
+    `'ZZ12: ZZ12/ZZ12/9'`); two 100,000-character every-place rows refuse where the base sent (untraced; ruling (B)'s
+    class). Review-3's R3-2 and R3-3 stay for the queue as W56 wrote them below.
+  - **The battery (four runs, the three trees of battery/README.md laid; the base side ran before a container
+    restart, the head side after):** every verdict line of the head's runs is the base's: SENT_WITHHELD 0, DEPART 0,
+    base flags 0, S1 to S4b counts alike; the time-boxed generators differ only by letters reached. One reproduction
+    row differs, as recorded (A-4): `Dear Zeph<U+0004>yra,` is `Dear [PATIENT_NAME],`. Two module-load errors remain
+    on each side (not traced by W58; W56's block names nine scripts that do not load).
+  - **Suites on 17028cfa, quiet machine, all exit 0:** redaction, packets, synth and model-gateway unit suites 93
+    files, 7,640 tests passed (the four tests that timed out under load for W56 pass); `pnpm test:db` whole (PostgreSQL
+    18 on 5433, migrated) 168 files, 10,287 passed, 1 skipped, the two `.db.test.ts` files among them; typecheck,
+    whole lint, lint:logs, verify-content. Not run: the full `pnpm test`, test:golden, test:e2e (owed once, on the PR
+    branch after the base merge).
+- **Exact next steps for the successor:** (1) the one bounded fix for (C): the gate before the wider replacement must
+  hold the base's verdict (what a97d73e4's whole entry refuses stays refused); tests first, failing on 17028cfa: the
+  two letters above as refused rows and a property (base-refused implies head-refused over `scripts/w58/fuzz.mts`'s
+  shapes). (2) Pin (A) as sent and (B)'s crafted letter as refused. (3) Re-measure: generated set, the full gate
+  `--no-cache` (expect refused A 462,984 and B = A + the 18 named letters or more by named rule; reverse classes none;
+  real-shaped newly refused 0), the budget rows, `scripts/w58/fuzz.mts` (base-refused, head-sent must be 0 of
+  60,000), the battery with the three trees laid, the suites quiet. (4) One delta review of the fix. (5) The ADR 0054
+  amendment made true: the two fix rounds, R1-2 with its 18 gate letters, (A), (B) with its units, R1-3 and R1-4
+  (item 40), the `$300.00USD` line (now refused, no longer a residual), the 9 battery scripts if they still do not
+  load, the count of stored numbers by length owed before real PHI; the matrix row; verify-content. (6) The PR branch,
+  the base merged, the full suite once, one push, the draft PR, the merge, as W58's brief ordered.
+- W56's block below stands for the reviews' findings and the queue list.
+
+## Earlier: RESUME-BLOCK (W56, 2026-11-12 about 23:05 UTC, at the token limit: BOTH REVIEWS DONE, BOTH FIX ROUNDS COMMITTED, ROUND 2 NOT YET MEASURED, NO PR)
 
 - **WIP head: 17028cfa** on `co-001/wip-redact-item-34`, pushed through the hook. On 846968af: 483ac960 (fix round 1),
   17028cfa (fix round 2). No PR is open; `co-001/redact-item-34` exists only locally in W56's container (same commit).
