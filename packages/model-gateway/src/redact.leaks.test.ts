@@ -2753,22 +2753,213 @@ describe('MOD-25: a digits-only number written with a period or a slash and glue
 });
 
 /**
- * Recorded residuals, pinned as SENT (review 1 of Queues item 34, R1-3 and R1-4; the orchestrator's ruling of
- * 2026-11-12 22:55 UTC: new forms outside this item's design, each needing its own measurement; Queues item 40, before
- * any real PHI). When either is closed, these rows turn and are rewritten.
+ * Queues item 40 (before any real PHI; review 1 of Queues item 34, R1-3 and R1-4, and ruling (A)'s initial; the
+ * orchestrator's rulings of 2026-11-13 09:30 UTC on the measured design note). Stage 1 writes the tests and changes no
+ * reader: the first describe is what the base (17c234d2) already does and every stage keeps; the second is OWED RED,
+ * each row seen failing on its assertion on 17c234d2, and the item's stages 2, 3 and 4 turn its three groups green.
+ * The rows this replaces were pinned as SENT here (R1-3, R1-4) and under ruling (A) below.
  */
-describe('MOD-25: forms still sent in clear, recorded for Queues item 40 (review 1, R1-3 and R1-4)', () => {
-  const who = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210']);
+const ITEM_40 = (() => {
+  /** Every number character that is no decimal digit (Nl, No), and the unseen characters probed: controls and format characters the reader neither joins nor drops, one private-use and one unassigned code point. */
+  const numberCharacters: string[] = [];
+  const unseen: string[] = ['', '͸'];
+  for (let codePoint = 0; codePoint <= 0x1ffff; codePoint += 1) {
+    if (codePoint >= 0xd800 && codePoint <= 0xdfff) {
+      continue;
+    }
+    const character = String.fromCodePoint(codePoint);
+    if (/[\p{Nl}\p{No}]/u.test(character)) {
+      numberCharacters.push(character);
+    } else if (/[\p{Cc}\p{Cf}]/u.test(character) && !/[\p{Default_Ignorable_Code_Point}\s]/u.test(character) && (codePoint < 1 || codePoint > 3)) {
+      unseen.push(character);
+    }
+  }
+  /** A digits-only number of five to eight digits (under the pattern numbers' lengths), held as a member ID or as a claim number. */
+  const held = fc.tuple(fc.stringMatching(/^[1-9][0-9]{4,7}$/), fc.boolean()).map(([number, asMember]) => ({
+    number,
+    who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], [asMember ? number : 'SYNMEMBER0042']),
+    numbers: claimsOf(asMember ? 'ZZ99887' : number),
+  }));
+  /** Frames that write no digit, so a sent letter's digits are the number's own (and what NFKC makes of a character beside it). */
+  const frame = fc.constantFrom(['Ref ', ' on file.'], ['Member ID ', ' paid'], ['', ''], ['Fax ', ' ext'], ['(', ')']);
+  /** Whether a letter is sent with the number's digits in it, in a row. */
+  const sentInClear = (sent: string | null, number: string) => sent !== REFUSED && sent.replace(/[^0-9]/gu, '').includes(number);
+  return { numberCharacters, unseen, held, frame, sentInClear };
+})();
+const UNSEEN_ROWS = [
+  ['U+0000', '\u0000'],
+  ['U+001B', '\u001B'],
+  ['U+007F', '\u007F'],
+  ['U+0085', '\u0085'],
+  ['U+0096', '\u0096'],
+  ['U+0600', '؀'],
+  ['U+FFF9', '￹'],
+  ['U+E000', ''],
+] as const;
+/** The row nearest the check's work budget that the base sends (414,023,090 units of 420,000,000). */
+const NEAR_THE_BUDGET = `${'㏾;'.repeat(28_985)}\r\n`;
+const BUDGET_PATIENT: PatientIdentifiers = { pseudonym: 'synthetic-patient-7', names: ['JANE Q VANTREE'], datesOfBirth: ['1961-03-03'], memberIds: ['ZZ1234567'] };
+const BUDGET_CLAIMS: LetterClaim[] = [{ claimId: '00000000-0000-4000-8000-000000000001', patientPseudonym: 'synthetic-patient-7', claimNumbers: ['SYN555001'] }];
+/** The whole entry, as a caller runs it: the redaction, then the check with the work the redaction spent. */
+const refusedByTheEntry = (letter: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]) => {
+  const screened = redactLetterForScreen(letter, patient, claims);
+  return holdsIdentifier(screened.text, patient, claims, checkWorkOf(screened));
+};
+
+describe('MOD-25, Queues item 40: beside its three forms, what the base does and every stage keeps', () => {
+  const who = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210', 'ZZ7654321']);
   const numbers = claimsOf('ZZ99887');
 
   it.each([
-    ['a number character that is no decimal digit right before the number', 'Ref ↀ76543210 on file.'],
-    ['a number character that is no decimal digit right after the number', 'Ref 76543210፩ on file.'],
-    ['U+0085 inside the number after a label', 'Member ID 7654\u00853210 paid'],
-    ['U+0085 inside the number glued to a letter', 'Fax X7654\u00853210 ext'],
-    ['a control character inside the number after a label', 'Member ID 7654\u00003210 paid'],
-  ])('%s: sent unchanged', (_form, letter) => {
-    expect(sentOrRefused(letter, who, numbers)).toBe(letter.normalize('NFKC'));
+    // The floor's residual: a number of four digits is under rule (a)'s floor, whatever stands beside it.
+    sentAs('Ref ↀ7654 on file.', 'Ref ↀ7654 on file.'),
+    // Set apart from the number, a number character is no part of it: the first reading's placeholder, as before.
+    sentAs('Ref ① 76543210 on file.', 'Ref 1 [MEMBER_ID] on file.'),
+    sentAs('Ref 76543210 ² on file.', 'Ref [MEMBER_ID] 2 on file.'),
+    sentAs('Ref ↀ 76543210 on file.', 'Ref ↀ [MEMBER_ID] on file.'),
+    // A number character NFKC writes as letters is a letter glued to the number: rule (a), as before.
+    refused('Ref Ⅷ76543210 on file.'),
+    // Beside a number that holds a letter, or a name: refused, as before.
+    refused('Ref ZZ7654321¹ on file.'),
+    refused('Ref ↀZZ7654321 on file.'),
+    refused('Ms. Zephyra¹ was seen.'),
+  ])('%j %s', (letter, _outcome, sent) => {
+    const call = letter.includes('7654 ') ? patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['7654']) : who;
+    expect(sentOrRefused(letter, call, numbers)).toBe(sent);
+  });
+
+  // Under R1-4's ruling (i), one more reading: an unseen character before or after the number joins nothing, and the
+  // number is replaced as the first reading replaces it. (Under the fallback (ii) these rows are rewritten to refused.)
+  it.each(UNSEEN_ROWS.flatMap(([name, character]) => [sentAs(`Member ID ${character}76543210 paid`, `Member ID ${character}[MEMBER_ID] paid`), sentAs(`Member ID 76543210${character} paid`, `Member ID [MEMBER_ID]${character} paid`)].map((row) => [name, ...row] as const)))(
+    '%s before or after the number: %j %s',
+    (_name, letter, _outcome, sent) => {
+      expect(sentOrRefused(letter, who, numbers)).toBe(sent);
+    },
+  );
+
+  it('an unseen character before or after a number, or between it and a letter, never leaves the number in clear', () => {
+    fc.assert(
+      fc.property(ITEM_40.held, fc.constantFrom(...ITEM_40.unseen), fc.constantFrom(0, 1, 2, 3), ITEM_40.frame, ({ number, who: call, numbers: claims }, character, form, [before, after]) => {
+        const written = [`${character}${number}`, `${number}${character}`, `X${character}${number}`, `${number}${character}B`][form] ?? number;
+        expect(ITEM_40.sentInClear(sentOrRefused(`${before}${written}${after}`, call, claims), number)).toBe(false);
+      }),
+    );
+  });
+
+  it('the period after a name that ends a sentence is no initial’s: the next word’s capital stays', () => {
+    const call = patientOf(['JANE Q ZEPHYRA'], ['1961-03-03'], ['SYN555001']);
+    expect(sentOrRefused('Zephyra. I am', call, numbers)).toBe('[PATIENT_NAME]. I am');
+    expect(sentOrRefused('Dear Zephyra. I am writing', call, numbers)).toBe('Dear [PATIENT_NAME]. I am writing');
+  });
+
+  it('the row nearest the budget is read to its end and sent', () => {
+    expect(refusedByTheEntry(NEAR_THE_BUDGET, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(false);
+  });
+});
+
+describe('OWED RED, Queues item 40 (stage 1 wrote these failing on 17c234d2; the item’s stages 2, 3 and 4 turn them green)', () => {
+  const asMember = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['76543210', 'ZZ7654321']), numbers: claimsOf('ZZ99887') };
+  const asClaim = { who: patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], ['SYNMEMBER0042', 'ZZ7654321']), numbers: claimsOf('76543210') };
+  const CALLS = [
+    ['a member ID', asMember],
+    ['a claim number', asClaim],
+  ] as const;
+
+  describe('stage 2, R1-3 with ruling 3: a number character that is no decimal digit right beside a digits-only number is refused', () => {
+    const ROWS = [
+      // One of each category on each side (Nl U+2180, No U+1369), bare and after a label.
+      'Ref ↀ76543210 on file.',
+      'Ref 76543210ↀ on file.',
+      'Ref ፩76543210 on file.',
+      'Ref 76543210፩ on file.',
+      'Member ID ↀ76543210 paid',
+      'Member ID 76543210፩ paid',
+      // Ruling 3: judged on the letter as its reader sees it, so whether or not NFKC rewrites the character. A circled
+      // or parenthesized list number before the number; a footnote's superscript, or a fraction, after it.
+      'Ref ①76543210 on file.',
+      'Ref ⑴76543210 on file.',
+      'Ref 76543210² on file.',
+      'Member ID: 76543210¹',
+      'Claim 76543210³ was denied.',
+      'Ref 76543210½ on file.',
+    ] as const;
+    const EACH = ROWS.flatMap((letter) => CALLS.map(([kind, call]) => [letter, kind, call] as const));
+
+    it.each(EACH)('%j, the number %s: refused', (letter, _kind, call) => {
+      expect(sentOrRefused(letter, call.who, call.numbers)).toBe(REFUSED);
+    });
+
+    it.each(EACH)('%j, the number %s: refused through redactLetter too', (letter, _kind, call) => {
+      expect(holdsIdentifier(redactLetter(letter, call.who, call.numbers).text, call.who, call.numbers)).toBe(true);
+    });
+
+    it('any such character on either side of any digits-only number: never sent with the number in clear', () => {
+      fc.assert(
+        fc.property(ITEM_40.held, fc.constantFrom(...ITEM_40.numberCharacters), fc.boolean(), ITEM_40.frame, ({ number, who, numbers }, character, first, [before, after]) => {
+          const letter = `${before}${first ? `${character}${number}` : `${number}${character}`}${after}`;
+          expect(ITEM_40.sentInClear(sentOrRefused(letter, who, numbers), number)).toBe(false);
+        }),
+      );
+    });
+  });
+
+  describe('stage 3, R1-4: an unseen character inside a stored number is refused', () => {
+    const FORMS = [
+      ['after a label', (c: string) => `Member ID 7654${c}3210 paid`],
+      ['bare', (c: string) => `7654${c}3210`],
+      ['glued to a letter', (c: string) => `Fax X7654${c}3210 ext`],
+      ['after a dash', (c: string) => `Member ID 7654-${c}3210 paid`],
+      ['twice', (c: string) => `Member ID 7654${c}${c}3210 paid`],
+      ['inside a number that holds letters', (c: string) => `Member ID ZZ76${c}54321 paid`],
+    ] as const;
+
+    it.each(UNSEEN_ROWS.flatMap(([name, character]) => FORMS.map(([form, write]) => [name, form, write(character)] as const)))('%s inside the number, %s: refused', (_name, _form, letter) => {
+      expect(sentOrRefused(letter, asMember.who, asMember.numbers)).toBe(REFUSED);
+    });
+
+    it('any unseen character at any place inside any digits-only number: never sent with the number in clear', () => {
+      fc.assert(
+        fc.property(ITEM_40.held, fc.constantFrom(...ITEM_40.unseen), fc.nat(), fc.boolean(), ITEM_40.frame, ({ number, who, numbers }, character, place, glued, [before, after]) => {
+          const cut = 1 + (place % (number.length - 1));
+          const letter = `${before}${glued ? 'X' : ''}${number.slice(0, cut)}${character}${number.slice(cut)}${after}`;
+          expect(ITEM_40.sentInClear(sentOrRefused(letter, who, numbers), number)).toBe(false);
+        }),
+      );
+    });
+
+    // Ruling 5: the further reading is charged in full and the budget is never raised, so the row nearest the budget
+    // (sent, in the describe above) with one unseen character in it is refused by the count. It stands where no
+    // reading finds anything: after the last line ending.
+    it('the row nearest the budget with one U+0085 added is refused by the count', () => {
+      expect(refusedByTheEntry(`${NEAR_THE_BUDGET}\u0085`, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(true);
+    });
+  });
+
+  describe('stage 4, ruling (A): the initial after a name whose match ends in a letter standing alone is replaced', () => {
+    const who = (name: string) => patientOf([name], ['1961-03-03'], ['SYN555001']);
+    const numbers = claimsOf('ZZ99887');
+
+    it.each([
+      ['ZZZZZZ', 'ZZ/ZZZZ Z.Z.Z', '[PATIENT_NAME].[PATIENT_NAME]'],
+      ['AAAAAAAA', 'AA/AAAAAA A.A.A', '[PATIENT_NAME].[PATIENT_NAME]'],
+      ['ANNA', 'Ann A.A.', '[PATIENT_NAME].[PATIENT_NAME].'],
+      ['ANA ZEPHYRA', 'Zephyr A.A.', '[PATIENT_NAME].[PATIENT_NAME].'],
+      ['JANE Q ZEPHYRA', 'Zephyr A.J.Q.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ])('a name held %s, written %s with its initials after it, is sent as %s', (name, letter, sent) => {
+      expect(sentOrRefused(letter, who(name), numbers)).toBe(sent);
+    });
+
+    it('a name of one letter written in two pieces with a chain of dotted initials after it: no letter of it is sent', () => {
+      fc.assert(
+        fc.property(fc.constantFrom('Z', 'A'), fc.integer({ min: 5, max: 12 }), fc.nat(), fc.constantFrom('/', ' ', '.', '-'), fc.integer({ min: 2, max: 4 }), (letter, length, place, mark, initials) => {
+          const cut = 1 + (place % (length - 1));
+          const written = `${letter.repeat(cut)}${mark}${letter.repeat(length - cut)} ${Array.from({ length: initials }, () => letter).join('.')}`;
+          const sent = sentOrRefused(written, who(letter.repeat(length)), numbers);
+          expect(sent === REFUSED ? '' : sent.replace(/\[PATIENT_NAME\]/gu, '')).not.toMatch(/\p{L}/u);
+        }),
+        { numRuns: 400 },
+      );
+    });
   });
 });
 
@@ -2849,14 +3040,8 @@ describe('MOD-25: two recorded costs of reading at every place (the rulings (A) 
   const who = (name: string) => patientOf([name], ['1961-03-03'], ['SYN555001']);
   const numbers = claimsOf('ZZ99887');
 
-  // (A), a residual for Queues item 40: the last initial of a chain, for a name of one repeated letter, is sent. The base
-  // sent more of it ("ZZ/[PATIENT_NAME].Z").
-  it.each([
-    ['ZZZZZZ', 'ZZ/ZZZZ Z.Z.Z', '[PATIENT_NAME].Z'],
-    ['AAAAAAAA', 'AA/AAAAAA A.A.A', '[PATIENT_NAME].A'],
-  ])('(A) a name held %s, written %s with its initials after it, is sent as %s', (name, letter, sent) => {
-    expect(sentOrRefused(letter, who(name), numbers)).toBe(sent);
-  });
+  // (A) was pinned here as a residual ("[PATIENT_NAME].Z"); Queues item 40 replaces the initial: its rows are in that
+  // item's describes above.
 
   // (B), an accepted cost: the reading at every place counts more work on a letter of nothing but the name's letter, and
   // the count refuses one the base read to its end (341,006,350 units there, 376,730,640 with the check).
