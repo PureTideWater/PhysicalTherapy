@@ -16,7 +16,10 @@ import { REFERENCE_CALIBRATION_MS, SLOWDOWN_FLOOR_PERCENT, timed } from './test-
  * are matched without a pattern built per identifier per check, and what is redacted does not change. SYNTHETIC only.
  */
 
-/** Every code point a form's compact keeps (K): letters and digits, the three APOSTROPHE_LETTERs not. */
+/**
+ * Every code point the skeleton keeps (K): letters and decimal digits, the three APOSTROPHE_LETTERs not, and no number
+ * character that is no decimal digit (\p{Nl}, \p{No}), which a stored number's gap holds since Queues item 40 (S-4).
+ */
 const KEPT: string[] = [];
 for (let code = 0; code <= 0x10ffff; code += 1) {
   if (code >= 0xd800 && code <= 0xdfff) {
@@ -75,7 +78,7 @@ describe('MOD-26: the letter check with many identifiers on the call (Queues ite
     expect(gaps.length).toBeGreaterThanOrEqual(9);
     // Each kept code point alone and after what a gap reads before a letter: a gap's match that holds one is a failure.
     const contexts = ['', ' ', '-', '.', '/', '­', '-\n', "'", 'ʼ', '/'.repeat(3)];
-    const holdsKept = /(?![ʼʹˊ])[\p{L}\p{N}]/u;
+    const holdsKept = { test: (text: string) => [...text].some((codePoint) => matchingForTests.kept(codePoint)) };
     const failures: string[] = [];
     for (const gap of gaps) {
       const pattern = new RegExp(`(?:${gap})`, 'gu');
@@ -92,6 +95,17 @@ describe('MOD-26: the letter check with many identifiers on the call (Queues ite
     expect(KEPT.length).toBeGreaterThan(100_000);
     expect(failures).toEqual([]);
   }, 120_000);
+
+  it('(c) lemma 1 with item 40: a number character is no kept code point, so a stored number with one inside stands', () => {
+    for (const codePoint of ['ↀ', '²', '½', '፩', 'Ⅻ', '\u{10107}', '①']) {
+      expect(matchingForTests.kept(codePoint)).toBe(false);
+    }
+    for (const codePoint of ['7', '٣', 'A', 'é', '\u{1D7CE}']) {
+      expect(matchingForTests.kept(codePoint)).toBe(true);
+    }
+    const text = 'Member ID 7654ↀ3210, ref 7654½\uFFFC3210 and 7654²3210.';
+    expect(matchingForTests.placesOf(text, ['76543210']).get('76543210')).toEqual([10, 25, 40]);
+  });
 
   describe('(d) the automaton finds every place of every word, as indexOf over the letters and digits does', () => {
     // Letters and digits of one and two code units, cased, and marks no compact keeps between them.

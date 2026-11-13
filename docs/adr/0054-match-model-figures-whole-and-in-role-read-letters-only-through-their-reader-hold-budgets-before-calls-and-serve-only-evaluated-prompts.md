@@ -2511,3 +2511,109 @@ base's (no withheld number sent, no departure, no base flag), one reproduction r
 of its scripts fail at load on both sides. The redaction, packets, synth and model-gateway unit suites pass (93 files,
 7,652 tests). With claude/build-platform 979a21b8 merged in, `pnpm test` (509 files, 14,789 tests), `pnpm test:golden`
 (381 tests) and `pnpm test:db` (176 files, 10,375 tests) pass.
+
+## Amendment (`co-001/redact-item-40`, 2026-11-13): a number character or an unseen character at an identifier, and the initials after a name cut before its last letter (MOD-25)
+
+**What was wrong.** Item 34's amendment pinned three forms as still sent, for Queues item 40 (its review 1, R1-3 and
+R1-4, and its residual (A)): a number character that is no decimal digit right beside a stored number (`Ref
+ↀ76543210`, `76543210፩`), which no reading read as a digit, so the number stood apart and was the base's; U+0085 or
+another control character inside the number (`Member ID 7654<U+0085>3210`, `Fax X7654<U+0085>3210 ext`), which the
+folded view keeps as itself, so every reading saw two numbers of four digits; and, for a name whose wider match ends
+in one letter standing alone, the dotted initials after it (`ZZ/ZZZZ Z.Z.Z` for ZZZZZZ was `[PATIENT_NAME].Z`;
+`Zephyr A.J.Q.` for JANE Q ZEPHYRA kept its `J` and `Q`). Each of the three left a letter of the call's own
+identifiers in clear. The construction is item 26's and item 34's, unchanged: the reading of the letter as given
+stands, every further reading only adds or refuses, and every reading counts on the letter check's one counter.
+
+**The rules.**
+
+- *R1-3, a number character that is no decimal digit (stage 2; the orchestrator's rulings of 2026-11-13 09:30 and
+  09:55 UTC, ruling 3).* Rule (a), the digits-only number glued to a letter, is asked for such a character beside the
+  number as for a letter (`digitsGluedToLetter`). Each entry (`redactLetterForScreen`, `redactLetter`,
+  `redactionSpans`) reads the letter once more with every such character written as U+2180 and only refuses, for
+  every kind of identifier, where a reading replaced the identifier there. The reading of the letter as given is not
+  changed. Left, recorded: a number of four digits beside such a character stays under rule (a)'s floor (`Ref ↀ7654
+  on file.` is sent), and such a character written apart from the number is read apart (`Ref 76543210 ² on file.` is
+  `Ref [MEMBER_ID] 2 on file.`).
+- *R1-4, an unseen character (stage 3; the rulings of 09:30, 09:55 and 12:58 UTC).* An unseen character is every
+  `\p{C}` character that is not default-ignorable, not white space and not one of the checks' own three marks. Each
+  entry reads the letter once more with every run of such characters written as U+200B, which every reading joins,
+  and refuses where that reading's whole check refuses or where it wrote anything but what the reading of the letter
+  as given wrote: where an unseen character decides what a reading finds, the boundary cannot be known and the letter
+  is refused. The same reading runs in `refusedAsFirstRead`. The further reading reads the letter before any
+  placeholder, so no wider replacement hides what it refuses. A number with such a character before or after it is
+  replaced as before.
+- *Ruling (A), the initials after a name cut before its last letter (stage 4; ruling (A), question 4 of 09:30 UTC).*
+  In `initialsNextToNames`, in the wider reading alone, the period after a name whose match ends in one letter
+  standing alone (no word character before it) is that letter's period, as the period after a taken initial already
+  was. The initial after it is then taken by the rule that always took one after a name, and the chain after it by
+  the rule for a taken initial. The first reading is not changed by one character, nothing is refused by this rule,
+  and `INITIAL_GAP_AFTER` is unchanged. A name that ends in a word still ends its sentence with its period (`Zephyra.
+  I am` keeps its `I`).
+- *The drafter's check.* `holdsNameOrNumber` takes R1-3 and R1-4, each as a further reading that only adds.
+- *The budget.* Both further readings and their checks are charged in full on the letter's one count, counting on
+  from the count so far. The budget and every weight are unchanged: the two rows nearest it count 403,548,210 and
+  414,023,090 units and are sent, and the second with one U+0085 added is refused by the count, with no text.
+- *Fix round 1 (Lane B's independent reviews, S-2, S-3 and S-4; the orchestrator's rulings for stage 5b).* The check of
+  what R1-3's further reading wrote is now charged on the letter's count too (S-2: it was asked after the count was
+  handed back, so its work reached no budget; every outcome was right, since an uncounted check can only refuse). A
+  crafted row the uncounted check let through (one `½` and one U+0085 before 80,000 characters of prose, 349,830,476
+  units counted) is refused by the count. **The closed joiner list of a member ID or claim number (`NUMBER_JOINERS`) is
+  amended**: U+FFFC (the object replacement character PDF text writes) and every number character that is no decimal
+  digit (`\p{Nl}`, `\p{No}`; those NFKC writes as digits or letters are gone before this list is read, and are
+  read through R1-3's further reading) join a stored number at any place, as the other joiners do. U+FFFC
+  is replaced with the number (`Member ID 7654<U+FFFC>3210` is `Member ID [MEMBER_ID]`); a number character inside
+  one is read in R1-3's further reading as U+2180, which now joins, so the letter is refused as for one beside it
+  (`7654ↀ3210`, `7654½3210`, `7654ⅼ3210`). This one rule changes the reading of the letter as given, and it only adds
+  matches. A letter or any other visible character inside a number (`7654X3210`) is not joined: Queues item 42. The
+  three tests nearest the budget carry the explicit 20 s limit the four older ones carry (S-3: 3.6 to 3.9 s alone,
+  timed out at the 5 s default with two copies in parallel); the product's bound is the counted budget, unchanged.
+
+**Costs, each named and pinned.**
+
+1. Stage 2: 96 real-shaped rows of the item's generated set newly refused, 16 of each of six forms: a footnote mark or
+   list number that is a number character right beside a number (after a member ID, after a claim number, a number
+   at a line end; a circled, parenthesized or full-stop list number before one).
+2. Stage 3: 52 real-shaped letters the base redacted correctly are refused (C1 quotes and dashes 32, U+0085 line
+   endings 20); accepted by the ruling of 14:38 UTC, with Queues item 41 to mend such characters where the text is
+   extracted. 32 more of that set's 84 the base sent in clear: a leak closed.
+3. Stage 3: three rows outside the item's tests rewritten (`Phone<U+0085>900 77.3283150.00` is refused; two letters
+   pinned "as the base wrote it" carry the checks' mark after that same text; MOD-24's crafted budget row passes the
+   budget in the redaction, not the check, and MOD-15's property allows that one mark); accepted at 14:38 UTC.
+4. Stage 3: of 60,000 fuzzed letters 1,685 (2.8%) are newly refused, and 1,731 of the product's fuzzer's 60,000: the
+   further reading's charge, about twice the work for a letter that holds an unseen character.
+5. Stage 4: after a name whose match ends in a letter standing alone, another person's dotted initial that is one of
+   the patient's own initial letters is replaced too (`Mari A. M. Okafor, PT, signed.` for MARIA LOPEZ is
+   `[PATIENT_NAME]. [PATIENT_NAME]. Okafor, PT, signed.`). The letter is sent and nothing of the patient's is; whose
+   initial it is cannot be known there. No letter of the gate, of item 34's set or of 120,000 fuzzed letters changes
+   for it.
+6. Fix round 1, accepted as a recorded cost (Lane B's review S-1): each further reading reads the whole letter again,
+   so an ordinary letter with one fraction and one U+0085 and no identifier is refused on cost from about 77,600
+   characters (the base sends it to about 254,000), under the 100,000 the reader's time budget promises; pinned at
+   100,000. Charged in full (S-2), the further reading's check is one more whole check, and with CR LF every check
+   reads the letter twice: a real-shaped claim letter with one footnote mark (`See note¹.`) and CR LF line endings is
+   refused from about 63,400 characters (stage 5a: about 96,500), with LF from about 98,000 (133,500); without the
+   mark it is sent to about 129,000 (Lane B's delta review C-1, reproduced by its skeptic); pinned at 64,000. Queues
+   item 39 (the reader's time) is the cure.
+
+**Left, each recorded.** A phone number by pattern that is not stored, with a number character beside it, is sent
+as on the base (11,285 rows of the item's set; stage 2's residual). On every tree, not ruling (A)'s form: a name that
+ends in a word with a period and no space after it sends the initials after it (`Maria.M.L.` is
+`[PATIENT_NAME].M.L.`), and an undotted last initial before a word in lower case stays (`Lopez, M L was seen`), the
+first reading's "Vantree, I am" rule; both proposed for a new queue item, measured on the gate first. Queues item 39
+holds the reader's time; this item adds the further readings and shows their time below.
+
+**Measured on 18777df0 (e17c1192 with claude/build-platform 4d40557f merged in) against the base 4d40557f (2026-11-13,
+synthetic letters only).** Measured twice, by the stage-4 session and independently by the stage-5a one, with every
+count equal. Item 40's generated set: 0 failures of 51,833 letters in every family, no PHI class. Item 34's generated
+set: 0 of 14,356 letters differ. The full gate without its cache: 975,489 letters, none differs, 463,002 refused on
+both, PHI, unplaced and reverse classes none, real-shaped letters newly refused 0; the slowest letter is 1,024 ms on
+the base and 931 ms here, of 3,000. The two budget rows count 403,548,210 and 414,023,090 units and are sent on both.
+Of 60,000 fuzzed letters (seeds 301 to 303) none the base refuses is sent; of the product fuzzer's 60,000 (seeds 401 to
+403) none either, 1,731 newly refused (cost 4) and 6 sent with another text, each read: one or two more of the held
+name's initials replaced after a writing of the name that ends in a letter alone, none another person's, nothing newly
+clear. Item 34's cost measure (64 names over 558 texts): no text changed. Over 40 ordinary names cut at every place
+(453,888 letters a tree, none refused), letters with a letter of the name or chain in clear fall from 201,728 to
+176,448; the 5,056 of ruling (A)'s form that stay are the undotted last initial before a word in lower case (Left,
+above). Time: the reader takes 1.07 to 1.10 ms a letter on the base and 1.05 to 1.06 here over 20,000 letters; the
+100-letter property takes 3,268 to 3,504 ms on the base and 3,341 to 3,452 ms here over six alternated runs each (means
+3,353 and 3,393 ms), inside the base's range. The redaction, packets, synth and model-gateway unit suites pass.

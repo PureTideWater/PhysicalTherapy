@@ -15,7 +15,8 @@
  *   dropped (José is JOSE), and a run of invisible characters (soft hyphen, zero-width space) one
  *   character that joins inside a word and still ends one;
  * - a member ID or claim number matches with or without the white space, dashes, invisible characters and
- *   other number joiners (NUMBER_JOINERS: "_", "|", "\\", grouping apostrophes and primes, "~", middle dots, bullets, ";")
+ *   other number joiners (NUMBER_JOINERS: "_", "|", "\\", grouping apostrophes and primes, "~", middle dots, bullets, ";",
+ *   U+FFFC and a number character that is no decimal digit)
  *   a letter puts inside it, and the periods, slashes and colons next to a letter
  *   ("ZZ 1234567", "ZZ-1234567", "ZZ_1234567", "ZZ/1234567", "12'345'678");
  * - a name matches with or without the dashes and apostrophes inside it (O’Brien, Smith–Jones), across a
@@ -669,10 +670,14 @@ const NAME_JOINERS = "\\p{Pd}\\u2212\\u2043'\\u2018\\u2019\\u02BC\\u02B9\\u02CA`
  * R5-1 the apostrophes of digit grouping ("12'345'678", "12’345’678"), "~", the middle dots and bullets ("1234·5678",
  * "1234•5678"), ";" and the double quotes, and since review finding G4 the primes OCR writes for a grouping apostrophe
  * (U+2032, U+2035, and U+2033 as NFKC writes it, two U+2032) and the modifier-letter primes and acute (U+02B9, U+02CA,
- * apostrophes here as U+02BC is: APOSTROPHE_LETTER). None of these is a date separator (DATE_SEPARATOR) or an amount's
- * punctuation, so a number written with one is never read as a date or an amount.
+ * apostrophes here as U+02BC is: APOSTROPHE_LETTER), and since Lane B's review of Queues item 40 (S-4) U+FFFC, which PDF
+ * text writes for an object, and every number character that is no decimal digit (\p{Nl}, \p{No}; one NFKC writes as
+ * digits or letters is gone before the list is read: "7654ↀ3210"; the further reading of R1-3 writes each such
+ * character as U+2180, so one inside a stored number is read there too, and refuses the letter as one beside it does).
+ * None of these is a date separator (DATE_SEPARATOR) or an amount's punctuation, so a number written with one is never
+ * read as a date or an amount.
  */
-const NUMBER_JOINERS = "\\s\\p{Pd}\\u2212\\u2043\\u02D7\\u2796_|\\\\\\u00AD'\\u2018\\u2019\\u02BC\\u02B9\\u02CA\\u2032\\u2035`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022;\"\\u201C\\u201D";
+const NUMBER_JOINERS = "\\s\\p{Pd}\\u2212\\u2043\\u02D7\\u2796_|\\\\\\u00AD'\\u2018\\u2019\\u02BC\\u02B9\\u02CA\\u2032\\u2035`~\\u00B7\\u2027\\u2219\\u22C5\\u30FB\\u2022;\"\\u201C\\u201D\\uFFFC\\p{Nl}\\p{No}";
 /**
  * A line break, and a dash (or VANISHED) before one: a word hyphenated at the end of a line ("Van-⏎tree"). A form feed
  * (the page break pdftotext writes) and a vertical tab are line breaks too (review finding SEC-3).
@@ -1361,8 +1366,8 @@ const MONTH_IN = new RegExp(MONTH_WORD, 'iu');
 // ---------------------------------------------------------------------------------------------------
 // One pass over the call's identifiers (Queues item 39, MOD-26; docs/adr/0054)
 //
-// Every match of a form's writing spells the form's compact, its letters and digits in order and no others, from where
-// it starts (lemma 1: no gap matches a letter or digit a compact keeps, the tests' (c)). So one pass of an automaton of
+// Every match of a form's writing spells the form's compact, its letters and decimal digits in order and no others, from
+// where it starts (lemma 1: no gap matches a code point the skeleton keeps, the tests' (c); KEPT_RUN). So one pass of an automaton of
 // the forms' compacts over the view's letters and digits finds every place a form can match, and the form's own pattern
 // is run, sticky, only there: the first place at or after lastIndex where it matches is the place a global scan finds
 // (lemma 2). A form whose compact stands nowhere is not run at all. Nothing here is charged: every work(...) is the
@@ -1371,17 +1376,25 @@ const MONTH_IN = new RegExp(MONTH_WORD, 'iu');
 /** More places than this and a form is read by one global scan, as the base read it: cheaper than a sticky run at each. */
 const DENSE_PLACES = 16;
 
-/** A run of the letters and digits a compact keeps (compactFolded), from lastIndex: an APOSTROPHE_LETTER is no such letter. */
-const KEPT_RUN = /(?:(?![ʼʹˊ])[\p{L}\p{N}])+/uy;
+/**
+ * A run of the code points the skeleton keeps, from lastIndex: the letters and decimal digits a compact keeps
+ * (compactFolded), an APOSTROPHE_LETTER no such letter. A number character that is no decimal digit (\p{Nl}, \p{No})
+ * is not kept: since Queues item 40 (S-4) a stored number's gap holds one (NUMBER_JOINERS), and lemma 1 asks that no gap
+ * match a kept code point. A compact that holds one is searched whole (allKept).
+ */
+const KEPT_RUN = /(?:(?![ʼʹˊ])[\p{L}\p{Nd}])+/uy;
+
+/** The whole of a text in the skeleton's kept code points (KEPT_RUN), the empty text included. */
+const ALL_KEPT = /^(?:(?![ʼʹˊ])[\p{L}\p{Nd}])*$/u;
 
 /** Whether a UTF-16 code unit is an ASCII letter or digit: in ASCII, exactly the code points a compact keeps. */
 const asciiKept = (unit: number): boolean => (unit >= 48 && unit <= 57) || (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122);
 
-/** Whether every code point of `text` is one a compact keeps: compactFolded(text) === text, with no regular expression run over ASCII. */
+/** Whether every code point of `text` is one the skeleton keeps (ALL_KEPT), with no regular expression run over ASCII. */
 function allKept(text: string): boolean {
   for (let i = 0; i < text.length; i += 1) {
     if (!asciiKept(text.charCodeAt(i))) {
-      return compactFolded(text) === text;
+      return ALL_KEPT.test(text);
     }
   }
   return true;
@@ -1593,7 +1606,7 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
   // does not ask then (the first reading asks as it always did): on a letter of initials that search is most of a
   // reading's counted work, and it would be done, and charged, once more for nothing.
   if (subject.initials && !(wider && names.length === 0)) {
-    for (const initial of initialsNextToNames(view, normal, names, initialsOf(subject.names, wider && !baseReading))) {
+    for (const initial of initialsNextToNames(view, normal, names, initialsOf(subject.names, wider && !baseReading), wider && !baseReading)) {
       found.push({ ...inNormal(view, initial.start, initial.end), kind: 'name', claim: 0 });
     }
   }
@@ -1968,7 +1981,7 @@ const GAP_CHARACTER = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD,]$/u;
  *   ("Vantree, J.", "Vantree, J Q", never "Vantree, I am").
  * It is capitalized as written, or the name it is next to is written in lower case ("j. vantree").
  */
-function initialsNextToNames(view: View, normal: string, names: readonly Range[], letters: ReadonlySet<string>): Range[] {
+function initialsNextToNames(view: View, normal: string, names: readonly Range[], letters: ReadonlySet<string>, wider = false): Range[] {
   const candidates: Range[] = [];
   for (let i = 0; i < view.text.length; ) {
     const codePoint = codePointAt(view.text, i);
@@ -2022,7 +2035,12 @@ function initialsNextToNames(view: View, normal: string, names: readonly Range[]
     const following = after !== undefined && after.start >= resume && (name === undefined || after.start < name.start) ? after : name;
     const preceding = before !== undefined && (earlier === undefined || before.end > earlier.end) ? before : earlier;
     const precedes = following !== undefined && INITIAL_GAP.test(view.text.slice(resume, following.start)) && cased(following);
-    const gapFrom = preceding === undefined ? 0 : preceding.end + (preceding === before && view.text[preceding.end] === '.' ? 1 : 0);
+    // The period after a taken initial is that initial's. In the wider reading alone (Queues item 40, ruling (A)), so is
+    // the period after a name whose match ends in a letter standing alone ("ZZ/ZZZZ Z.Z.Z" for ZZZZZZ, "Zephyr A.J.Q."
+    // for JANE Q ZEPHYRA): under that reading's gaps the name's last letter is written as a dotted initial is, and the
+    // letters after it were sent. A name that ends in a word ends a sentence with its period ("Zephyra. I am").
+    const itsPeriod = preceding !== undefined && view.text[preceding.end] === '.' && (preceding === before || (wider && endsInLetterAlone(view.text, preceding)));
+    const gapFrom = preceding === undefined ? 0 : preceding.end + (itsPeriod ? 1 : 0);
     const follows = preceding !== undefined && (runStart[candidate.start] ?? 0) <= gapFrom && INITIAL_GAP_AFTER.test(view.text.slice(gapFrom, candidate.start)) && cased(preceding) && (dotted || !beforeLowerCaseWord(view, normal, candidate.end, known));
     if (precedes || follows) {
       taken.add(index);
@@ -2035,6 +2053,13 @@ function initialsNextToNames(view: View, normal: string, names: readonly Range[]
     }
   }
   return candidates.filter((_, index) => taken.has(index));
+}
+
+/** Whether a range ends in one letter standing alone as a word: no word character stands before that letter (what stands after the range is the caller's to ask). */
+function endsInLetterAlone(text: string, range: Range): boolean {
+  const last = codePointBefore(text, range.end);
+  const start = range.end - last.length;
+  return start >= range.start && /^\p{L}$/u.test(last) && !WORD_CHARACTER.test(codePointBefore(text, start));
 }
 
 /** The first index of a sorted list at which a monotone test holds (the list's length if it never does). */
@@ -3839,6 +3864,28 @@ function appliedMatches(normal: string, subject: Subject, claims: number): Found
  * as written (gluedBeforeRedaction; MOD-25, rule (a)): the check refuses it whatever a placeholder took of the number.
  */
 export function redactionSpans(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
+  const read = redactionSpansBesideNumberCharacters(text, patient, claims);
+  // An unseen character inside an identifier (Queues item 40, R1-4): the spans as they were read, and the mark the
+  // check refuses. Asked of what these spans write, on a count from nothing, as the reading above is.
+  if (read.text.endsWith(BARRIER) || UNSEEN_CHARACTER.exec(text) === null || !refusedWithUnseenCharactersJoined(text, patient, claims, written(read.text, read.spans), { spent: 0 })) {
+    return read;
+  }
+  return { text: refusedByMarkAfter(read.text), spans: read.spans };
+}
+
+/** redactionSpans' reading with Queues item 40's rule for a number character beside an identifier (R1-3), and no more. */
+function redactionSpansBesideNumberCharacters(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
+  const read = redactionSpansAsGiven(text, patient, claims);
+  // A number character that is no decimal digit right beside a stored identifier in the letter as given (Queues item
+  // 40): the spans as they were read, and the mark the check refuses. A text that ends in the mark is refused already.
+  if (read.text.endsWith(BARRIER) || !refusedWithNumberCharactersAsOne(text, patient, claims, 0)) {
+    return read;
+  }
+  return { text: refusedByMarkAfter(read.text), spans: read.spans };
+}
+
+/** redactionSpans' reading of the letter as it is given: the whole of it before Queues item 40, not changed by it. */
+function redactionSpansAsGiven(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
   const normal = unbracketed(text);
   const subject = letterSubject(patient, claims);
   // The first reading's spans, as before; the wider reading's are added under the rule redactLetterForScreen keeps
@@ -3918,8 +3965,172 @@ export function redactLetter(text: string, patient: PatientIdentifiers, claims: 
  * from the package (index.ts), so it is no part of its public type.
  */
 export function redactLetterForScreen(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
+  const read = redactLetterForScreenBesideNumberCharacters(text, patient, claims);
+  const spent = checkWorkOf(read);
+  // Past the budget, or marked, the letter is refused already, and is read no further.
+  if (spent > CHECK_WORK_BUDGET || read.text.endsWith(BARRIER) || UNSEEN_CHARACTER.exec(text) === null) {
+    return read;
+  }
+  // An unseen character inside an identifier (Queues item 40, R1-4) refuses the letter: what the reading above wrote,
+  // with the mark the check refuses. The further reading and its check are charged in full on this letter's count
+  // whether they refuse or not; past the budget no text of the letter goes back at all, as for any letter there.
+  const further = { spent };
+  const refused = refusedWithUnseenCharactersJoined(text, patient, claims, read.text, further);
+  const redacted = further.spent > CHECK_WORK_BUDGET ? { text: unreadPastTheBudget, claims: read.claims, replaced: 0, candidates: [] } : refused ? { ...read, text: refusedByMarkAfter(read.text) } : read;
+  workOfRedacted.set(redacted, further.spent);
+  return redacted;
+}
+
+/**
+ * Whether the letter is refused once each run of its unseen characters is read as one character every reading joins
+ * (UNSEEN_JOINED): the whole entry, read once more on that writing (redactLetterForScreenBesideNumberCharacters, so the
+ * rule for a number character beside an identifier holds of this reading too), and then the whole check of what it
+ * wrote (holdsIdentifier, as a caller asks it). Refused where, on that reading:
+ *
+ *  - the check refuses what it wrote, or the entry marked it: an identifier is left, in any form the check reads;
+ *  - it wrote anything but what the reading of the letter as given wrote (`wrote`, its unseen characters joined the
+ *    same way): then an unseen character decides what some reading finds. It stands inside an identifier of any kind
+ *    ("7654<U+0085>3210", "03/1<U+0000>4/1980", "900-12-34<U+0096>56"), or in the piece beside one a reading took
+ *    ("[MEMBER_ID] 0<U+0085>1" of a number held "ZZ12345 01"), or between two words of a name; where the boundary
+ *    cannot be known, the letter is refused.
+ *
+ * Where both readings write the same text, the check asked here is the check of that text with the characters joined,
+ * and the caller's is of the text as given: every reading of the check is asked of both writings. So no placeholder of
+ * the wider reading can hide what this reading refuses: it reads the letter before any placeholder is written, and
+ * asks nothing of the gates before a wider replacement (refusedAsFirstRead, refusedAsTheBaseRead), which stand as they
+ * were in each of the two readings. An unseen character before or after an identifier joins nothing: both readings
+ * write the same placeholder there, and the letter is sent as before. It only refuses: nothing of the reading of the
+ * letter as given is changed, and the one who asks writes the mark. A letter with no such character costs one search.
+ *
+ * Charged in full: the further reading counts all a letter of its own does, on from `further.spent`, the letter's
+ * count so far, and its check counts on from there; `further.spent` is then the letter's count with both added, for
+ * the check that follows. Past the budget the reading stops there and refuses, and the count says so.
+ */
+function refusedWithUnseenCharactersJoined(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], wrote: string, further: { spent: number }): boolean {
+  const again = redactLetterForScreenBesideNumberCharacters(text.replace(UNSEEN_CHARACTERS, UNSEEN_JOINED), patient, claims, further.spent);
+  further.spent = checkWorkOf(again);
+  if (further.spent > CHECK_WORK_BUDGET) {
+    return true;
+  }
+  const holds = holdsIdentifierCounted(again.text, patient, claims, further.spent, further);
+  return holds || again.text !== wrote.replace(UNSEEN_CHARACTERS, UNSEEN_JOINED);
+}
+
+/** redactLetterForScreen's reading with Queues item 40's rule for a number character beside an identifier (R1-3), and no more. */
+function redactLetterForScreenBesideNumberCharacters(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], from = 0): Redacted & { readonly candidates: readonly string[] } {
+  const read = redactLetterForScreenAsGiven(text, patient, claims, from);
+  const spent = checkWorkOf(read);
+  // Past the budget the letter is refused already, and is read no further.
+  if (spent > CHECK_WORK_BUDGET || NUMBER_CHARACTER.exec(text) === null) {
+    return read;
+  }
+  // A number character that is no decimal digit right beside a stored identifier in the letter as given (Queues item
+  // 40) refuses the letter: what the reading above wrote, with the mark the check refuses. The further reading is
+  // charged in full on this letter's count whether it refuses or not, so one budget still holds for the whole check.
+  const further = { spent };
+  const refused = refusedWithNumberCharactersAsOne(text, patient, claims, spent, further, read);
+  const redacted = refused && !read.text.endsWith(BARRIER) ? { ...read, text: refusedByMarkAfter(read.text) } : read;
+  workOfRedacted.set(redacted, further.spent);
+  return redacted;
+}
+
+/**
+ * A number character that is no decimal digit (`\p{Nl}`, `\p{No}`: a Roman numeral's own character, a circled or
+ * parenthesized number, a superscript, a fraction) IN THE LETTER AS GIVEN, before NFKC writes many of them as digits
+ * and letters. Queues item 40, R1-3 with ruling 3 (the orchestrator's rulings of 2026-11-13; review 1 of Queues item
+ * 34): one that stands right beside a stored identifier refuses the letter, for every kind of identifier, and whether
+ * or not another reading replaced the identifier there.
+ */
+const NUMBER_CHARACTER = /[\p{Nl}\p{No}]/u;
+const NUMBER_CHARACTERS = /[\p{Nl}\p{No}]/gu;
+/** The one such character every other is read as: U+2180, which NFKC keeps and no fold reads as a letter or a digit. */
+const ONE_NUMBER_CHARACTER = '\u2180';
+
+/** A placeholder with that one character right against it, nothing between them but what no reader sees (marks, format characters). */
+const PLACEHOLDER_BESIDE_ONE_NUMBER_CHARACTER = /\u2180[\p{Cf}\p{Default_Ignorable_Code_Point}\p{M}]*\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|SSN|PHONE|CLAIM_[1-9]\d*)\]|\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|SSN|PHONE|CLAIM_[1-9]\d*)\][\p{Cf}\p{Default_Ignorable_Code_Point}\p{M}]*\u2180/u;
+const countOf = (text: string, character: string) => text.split(character).length - 1;
+
+/**
+ * Whether the letter as given is refused once each of its number characters that is no decimal digit is read as the
+ * one such character NFKC keeps (ONE_NUMBER_CHARACTER): the whole entry, read once more on that writing
+ * (redactLetterForScreenAsGiven). Refused where, on that reading:
+ *
+ *  - one of the call's digits-only numbers stands glued to the character, whatever a placeholder took of it (rule (a)
+ *    on the letter before any placeholder, with no place left out: digitsGluedToLetter);
+ *  - a placeholder is written right against the character ("Claim [MEMBER_ID]ↀ was denied." for a number of nine
+ *    digits a pattern takes with the character after it), or over one (fewer of them sent than the letter holds):
+ *    what a reading replaced there is an identifier with the character beside it, a pattern's number too;
+ *  - the check refuses what it wrote (holdsIdentifier, as a caller asks it): a name, a date or a number that holds a
+ *    letter left in the text, since no reading takes one with that character against it (BEFORE, AFTER).
+ *
+ * The blunt rule: beside a number NFKC would have made of it, the stored number is "another, longer number" no more,
+ * and a letter is refused here though the reading of the letter as given replaced the identifier ("(1)[MEMBER_ID]"
+ * for a parenthesized one before the number). It only refuses: nothing of the reading of the letter as given is
+ * changed by it, and the one who asks writes the mark. A letter with no such character costs one search, and one
+ * whose every such character is that one already is read once by redactLetterForScreen (`given`), the rules above
+ * asked of what that reading wrote.
+ *
+ * Charged in full: the further reading counts all a letter of its own does, on from `spent`, the letter's count so
+ * far, and rule (a) and its check count on from there; past the budget it stops and refuses. `further.spent` is then
+ * the letter's count with the further reading's and rule (a)'s added, for the check that follows.
+ */
+function refusedWithNumberCharactersAsOne(
+  text: string,
+  patient: PatientIdentifiers,
+  claims: readonly LetterClaim[],
+  spent: number,
+  further?: { spent: number },
+  given?: Redacted,
+): boolean {
+  if (NUMBER_CHARACTER.exec(text) === null) {
+    return false;
+  }
+  const asOne = text.replace(NUMBER_CHARACTERS, ONE_NUMBER_CHARACTER);
+  // Where every such character is that one already, the reading of the letter as given is this reading: not read again.
+  const asGiven = asOne === text ? given : undefined;
+  const again = asGiven ?? redactLetterForScreenAsGiven(asOne, patient, claims, spent);
+  let counted = asGiven === undefined ? checkWorkOf(again) : spent;
+  let refused = counted > CHECK_WORK_BUDGET;
+  if (!refused) {
+    const before = checkWorkSpent;
+    checkWorkSpent = counted;
+    try {
+      refused = inOneReading(() => digitsGluedToLetter(unmarked(unbracketed(asOne)), letterSubject(patient, claims)));
+      counted = checkWorkSpent;
+    } catch (error) {
+      if (!(error instanceof PastCheckWorkBudget)) {
+        throw error;
+      }
+      // Past the budget rule (a) has not read the whole letter: refused, as the check answers there.
+      refused = true;
+      counted = CHECK_WORK_BUDGET + 1;
+    } finally {
+      checkWorkSpent = before;
+    }
+  }
+  refused = refused || PLACEHOLDER_BESIDE_ONE_NUMBER_CHARACTER.test(again.text) || countOf(again.text, ONE_NUMBER_CHARACTER) < countOf(asOne, ONE_NUMBER_CHARACTER);
+  // The check of what this reading wrote, charged on the same count (Lane B's review of item 40, S-2: it was asked after
+  // the count was handed back, so its work reached no budget). The check of the reading of the letter as given is its
+  // caller's to ask, with this count.
+  if (!refused && asGiven === undefined) {
+    const check = { spent: counted };
+    refused = holdsIdentifierCounted(again.text, patient, claims, counted, check);
+    counted = check.spent;
+  }
+  if (further !== undefined) {
+    further.spent = counted;
+  }
+  return refused;
+}
+
+/**
+ * redactLetterForScreen's reading of the letter as it is given: the whole of it before Queues item 40, not changed by it.
+ * A further reading of one letter (Queues item 40) counts on `from`, the letter's count so far, so that it stops where
+ * the letter's whole count passes the budget, and no letter is read for longer than the budget allows.
+ */
+function redactLetterForScreenAsGiven(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], from = 0): Redacted & { readonly candidates: readonly string[] } {
   const before = checkWorkSpent;
-  checkWorkSpent = 0;
+  checkWorkSpent = from;
   let redacted: Redacted & { readonly candidates: readonly string[] };
   // Past the budget unless the reading ran to its end within it.
   let spent = CHECK_WORK_BUDGET + 1;
@@ -4187,6 +4398,14 @@ function chainLeft(text: string, subject: Subject, claims: number, strict = true
  * docs/adr/0054, amendment of 2026-11-04, R7).
  */
 export function holdsIdentifier(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], spent = 0): boolean {
+  return holdsIdentifierCounted(text, patient, claims, spent);
+}
+
+/**
+ * holdsIdentifier, the whole of it, with the count it reached written to `counted.spent` where one is given (past the
+ * budget where the check stopped there): what Queues item 40's further reading charges its check (R1-4).
+ */
+function holdsIdentifierCounted(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], spent: number, counted?: { spent: number }): boolean {
   // A letter that itself writes one of the checks' own three marks is refused: ef3e8d20 read a letter's own mark as its
   // placeholder and refused such letters in places ("Total<U+0002>for45.00 ...": the review of the last round's delta,
   // H1-1); this reading reads it as the control character it is (B1-4), and text that holds one is no text to trust.
@@ -4227,8 +4446,12 @@ export function holdsIdentifier(text: string, patient: PatientIdentifiers, claim
       throw error;
     }
     // Past the budget the check has not read the whole letter: it answers as it does for an identifier left.
+    checkWorkSpent = CHECK_WORK_BUDGET + 1;
     return true;
   } finally {
+    if (counted !== undefined) {
+      counted.spent = Math.min(checkWorkSpent ?? CHECK_WORK_BUDGET + 1, CHECK_WORK_BUDGET + 1);
+    }
     checkWorkSpent = before;
   }
 }
@@ -4274,14 +4497,14 @@ function digitsGluedToLetter(normal: string, subject: Subject, hidden?: (range: 
       const places = placesOf(text, numbers.map((form) => form.compact));
       const standing = new Set(numbers.filter((form) => mayStand(form, places)).flatMap(gluedCoresOf));
       if (hidden === undefined) {
-        return [...cores].some((core) => standing.has(core) && new RegExp(`(?<=\\p{L})(?:${core})|(?:${core})(?=\\p{L})`, 'u').test(text));
+        return [...cores].some((core) => standing.has(core) && new RegExp(`(?<=[\\p{L}\\p{Nl}\\p{No}])(?:${core})|(?:${core})(?=[\\p{L}\\p{Nl}\\p{No}])`, 'u').test(text));
       }
       // Every place the number stands so, each asked for by where it is written: one that is not hidden answers.
       return [...cores].some((core) => {
         if (!standing.has(core)) {
           return false;
         }
-        const glued = new RegExp(`(?<=\\p{L})(?:${core})|(?:${core})(?=\\p{L})`, 'gu');
+        const glued = new RegExp(`(?<=[\\p{L}\\p{Nl}\\p{No}])(?:${core})|(?:${core})(?=[\\p{L}\\p{Nl}\\p{No}])`, 'gu');
         for (let match = glued.exec(text); match !== null; match = glued.exec(text)) {
           if (!hidden(inNormal(view, match.index, match.index + match[0].length))) {
             return true;
@@ -4474,6 +4697,19 @@ const NAME_MARK = '\u0002';
 
 /** The checks' own marks, wherever a letter itself writes one (unmarked). */
 const PRIVATE_MARKS = new RegExp(`[${BARRIER}${NAME_MARK}${OWN_MARK}]`, 'gu');
+
+/**
+ * An unseen character: every `\p{C}` character (a control, a format character, a private-use, unassigned or lone
+ * surrogate code point) that is not default-ignorable, not white space and not one of the checks' own three marks,
+ * which the check refuses wherever a letter writes one. Queues item 40, R1-4 (review 1 of Queues item 34; the
+ * orchestrator's rulings of 2026-11-13). The view keeps such a character as itself (buildView): no reading joins a
+ * number, a date or a word of a name across it, and nobody who reads the letter sees it, so "7654<U+0085>3210" was two
+ * numbers of four digits to every reading and was sent.
+ */
+const UNSEEN_CHARACTER = new RegExp(`(?![\\p{Default_Ignorable_Code_Point}\\s${BARRIER}${NAME_MARK}${OWN_MARK}])\\p{C}`, 'u');
+const UNSEEN_CHARACTERS = new RegExp(`(?:${UNSEEN_CHARACTER.source})+`, 'gu');
+/** What each run of them is read as: U+200B, default-ignorable, which every reading joins inside a number, a date or a part of a name, and which ends a word (VANISHED). */
+const UNSEEN_JOINED = '\u200B';
 
 /** What may stand between an initial and the name after it: up to three characters that are no letter, digit or placeholder ("J. ", "O•"). */
 const INITIAL_TO_NAME = new RegExp(`^[^\\p{L}\\p{N}${BARRIER}${NAME_MARK}]{0,3}`, 'u');
@@ -5435,6 +5671,23 @@ const narrativeSubject = (names: readonly string[], numbers: readonly string[]):
  * thousand characters.
  */
 export function holdsNameOrNumber(text: string, identifiers: { readonly names: readonly string[]; readonly numbers: readonly string[] }): boolean {
+  // Queues item 40 (R1-3, R1-4), for what is sent to a model here: the text is read once more with each number
+  // character that is no decimal digit as a space, so that an identifier with one right beside it stands free of it
+  // ("76543210²" is 765432102 to NFKC, another number; "Zephyra¹" is no word of a name), and each of the two once
+  // more with every run of unseen characters dropped, so that an identifier with one inside it is whole
+  // ("7654<U+0085>3210", "Zeph<U+0000>yra"). The reading of the text as given stands; each further one only adds.
+  const apart = NUMBER_CHARACTER.exec(text) === null ? text : text.replace(NUMBER_CHARACTERS, ' ');
+  return [text, apart].some((read, index) => {
+    if (index === 1 && read === text) {
+      return false;
+    }
+    const whole = read.replace(UNSEEN_CHARACTERS, '');
+    return holdsNameOrNumberAsGiven(read, identifiers) || (whole !== read && holdsNameOrNumberAsGiven(whole, identifiers));
+  });
+}
+
+/** holdsNameOrNumber's reading of the text as it is given: the whole of it before Queues item 40, not changed by it. */
+function holdsNameOrNumberAsGiven(text: string, identifiers: { readonly names: readonly string[]; readonly numbers: readonly string[] }): boolean {
   const normal = masked(text);
   const subject = narrativeSubject(identifiers.names, identifiers.numbers);
   // The stored views and the wider reading's answer on the look-alike fold are dropped with the call (inOneReading).
@@ -5992,8 +6245,8 @@ export const matchingForTests = {
     }
     return [...sources];
   },
-  /** Whether a code point is one a form's compact keeps (compactFolded): a letter or a digit, an APOSTROPHE_LETTER not. */
-  kept: (codePoint: string): boolean => codePoint !== '' && compactFolded(codePoint) === codePoint,
+  /** Whether a code point is one the skeleton keeps (KEPT_RUN): a letter or a decimal digit, an APOSTROPHE_LETTER not. */
+  kept: (codePoint: string): boolean => codePoint !== '' && allKept(codePoint),
   /** For each word that stands contiguously in the text's letters and digits, every index of the text where it starts, in order. */
   placesOf,
   /** The source a form keeps for the pattern of `text` (flags 'gu'): V8's own. */
