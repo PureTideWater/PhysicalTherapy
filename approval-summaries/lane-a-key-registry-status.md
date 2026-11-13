@@ -2,6 +2,182 @@
 
 ## RESUME-BLOCK (2026-11-12, W50, session_019i9ifDqnGxZb6EWNt5PoPf): the records, the absence alarm and green are done; the five SCREENS are NOT seen and SGN-22's test is owed; then the reviews, the domain model and the PR
 
+### W53 adds (2026-11-12 to 13, session_019i9ifB1YL441uNkk6Azg9t): the five screens are SEEN, and the e2e journey is written and green
+
+**Ref `co-001/wip-key-registry-screens` 07807b33** (one commit on 656854b1; W52's ref untouched; no PR). It adds
+`apps/web/e2e/key-registry.spec.ts` and three personas of that one spec to `apps/web/scripts/synthetic-personas.ts`
+(`key-removal-requester`, `key-removal-confirmer`, both platform administrators, and `key-removal-member`, a support
+engineer). **No screen was changed: nothing was an outright break** (every screen rendered; every control was reached
+and pressed by Tab and Enter alone).
+
+**The gallery (private; only its owner opens or shares it; no PNG is on any branch):**
+1,280 px, light and dark, 95 shots: https://claude.ai/artifact/88nQ5AtiTVMb5qAQvfiuiw ;
+390 px, 79 shots: https://claude.ai/artifact/AXKH6eZjTSbQw9DtHYTtB8 .
+The manifest is `designs/lane-a-key-registry-screens/shots.json` (174 entries: id, width, theme, state, role); what the
+walk recorded is `observed.json` beside it (every focus order in full, the focus after each press); `capture.ts`,
+`playwright.scratch.config.ts` and `serve.mts` there are the walk itself (copy the first two into `apps/web/e2e` and
+`apps/web`, start the server with `serve.mts`, set `TOUR_DIR`; never commit them to the product). The code in the shots
+is a synthetic one, spent in the same run. Shot ids, each at `--390-light`, `--1280-light`, `--1280-dark`, whole page
+and `--crop` (the member's row, or the sign-in's main region):
+- `c1-request--resting | --refusal | --after-refresh` (Request key removal; the refusal is under seven days in the role)
+- `c2-requested-requester--resting | --refusal | --after-refresh` (the refusal: Cancel after another confirmed)
+- `c3-requested-other--resting | --refusal | --after-refresh` (the refusal: Confirm after the requester cancelled)
+- `c4-keys-removed--resting | --refusal | --after-refresh` (the refusal: Open registration while one is open)
+- `c5-code-panel--once | --after-refresh`, `c5-open--other-administrator`
+- `c0-own-row--resting` (the reader's own row while a request stands for it)
+- `s1-code--resting | --empty | --wrong-shape | --refusal | --after-refresh`, `s2-code-accepted--key-step`
+- `v390-<id>--as-scrolled-down | --actions-in-view` (what a 390 px window shows of the row, not the whole page),
+  `v390-c1-request--focused-by-keyboard | --refusal-by-keyboard | --scroll-region-focused`
+- `focus-c1-request-button`, `focus-c1-after-refusal`, `focus-c3-confirm-button`, `focus-c4-open-button`,
+  `focus-c5-panel-focused`, `focus-s1-code-field`, `focus-s1-after-refusal`
+**W53 itself looked at** (once each, as contact sheets): the 1,280 px light row crops of every console state above, the
+code screen's resting, wrong-shape and refusal at 1,280 and 390 light, the key step after the code at 390, three dark
+crops (c3 refusal, c5 code panel, s1 refusal), six 390 px window shots and three focus crops. **Stored and not looked
+at by W53:** every whole-page shot, the after-refresh shots (their state was read from the page's text instead), the
+other dark shots, the four button focus crops and the scroll region's focus shot.
+
+**Observed focus orders (Tab from a fresh load; `observed.json` has every stop).**
+- **Console, 1,280 px** (103 stops with 40 members): Skip to the content; PaidWhole; the account menu; the 15 console
+  navigation links; Help with this screen; then the Members table row by row in email order, each row "End membership"
+  then its key control; the invitation form (Email, Role, Send invitation); Invitations; Agreements. The member's key
+  control is the 31st stop (30th when the reader's own row, which has no key control, sorts after it). Per state, in the
+  member's row: *no removal*: End membership, Request key removal. *Requested, as the requester*: End membership,
+  Cancel request. *Requested, as another administrator*: End membership, Confirm key removal, Cancel request. *Keys
+  removed*: End membership, Open registration. *Code panel shown*: the panel takes the focus when it appears; it is
+  not a Tab stop (Tab goes on to the next row's End membership; Shift+Tab from there returns to this row's End
+  membership, not the panel). *Registration open, after a reload*: End membership only. *The reader's own row*: End
+  membership only.
+- **Console, 390 px** (91 stops): Skip; PaidWhole; the account menu; Menu; Help with this screen; the region "Members,
+  scrolls sideways"; then the rows as above (the member's Request key removal is the 18th stop). A focused control in
+  the Actions column is scrolled into the window by the browser (seen: left 137, right 307 of 390).
+- **Sign-in, the code screen, 1,280 and 390 px** (3 stops, no skip link, no shell): Code from PaidWhole; Continue; the
+  support address. **The key step after the right code** (1 stop): Register hardware key.
+- **Focus is visible** on every stop of item 37's controls: a 2 px outline, rgb(47, 93, 168), by computed style at every
+  stop, and seen in the crops of the refusal summary, the code panel and the code field. Two things that are **not item
+  37's** read as having no indicator by computed style and were not looked at in a shot: the region "Members, scrolls
+  sideways" at 390 px (`v390-c1-request--scroll-region-focused`), and one segment of each Agreements "Signed on" date
+  field.
+- **Where focus lands.** After a refusal in the console (all four seen): on the form's refusal summary ("Not done" and
+  the rule's sentence, `role="alert"`), inside the member's row. After a wrong code: on the refusal summary. After a
+  code of the wrong shape: on the field. After an empty Continue: the browser's own "Please fill out this field." on
+  the field (the page's "fill this in" is never reached with JavaScript on). After Open registration: on the code
+  panel. **After a press that succeeds** (Request, Cancel request, Confirm key removal) **and after the right code:
+  nowhere** (the document body; the next Tab starts from the top).
+- **What a refresh keeps and loses.** Console: every state is kept (requested, keys removed, registration open); a
+  refusal is lost; the code is lost and the row reads "Registration of a new key is open until … The code was shown
+  once to the administrator who opened it." Code screen: the step is kept, the refusal and the typed code are lost
+  (the field is already emptied by any refusal, shape included); after the right code a refresh shows the key step
+  and never asks for the code again.
+- **The one-time code.** Shown once, in the panel only, as "XXXX XXXX" in the mono face. Not in the URL (the page's
+  address does not change), not in the title ("Organization | PaidWhole"; the code screen's is "Register a hardware
+  key | PaidWhole"), not in a cookie, localStorage or sessionStorage, not in any request's URL from the three browsers,
+  not in the page after a reload, not in the other administrator's page, and after the member typed it not in the
+  member's page, URL or cookies. **Logs: not shown either way.** The local server wrote 8 lines to stdout and stderr
+  over the whole walk, none an application log line, so "never in a log line" is held here by nothing seen; the
+  allowlist (`pnpm lint:logs`, green on 656854b1 by W50) is what holds it.
+
+**Findings for the UX and brand review (W53's F1 to F19; each names screen, state, width, shot). F1 and F2 first.**
+- **F1. At 390 px the row's account and its key controls are never on screen together.** Console, every state, 390:
+  as loaded the table shows Email and Role only, with the state badge and all Actions off to the right
+  (`v390-c5-code-panel--after-refresh--as-scrolled-down`: "registration open" is not visible at all); scrolled to
+  Actions, the email is gone and the window is a column of identical "End membership" and "Request key removal"
+  buttons with nothing saying whose (`v390-c1-request--focused-by-keyboard`), and the badge is cut ("moval
+  requested", `v390-c3-requested-other--resting--actions-in-view`). Confirms and sharpens point 33.
+- **F2. Every row's button has the same accessible name.** Console, all states, all widths: 40 buttons named "Request
+  key removal" (and "End membership"); "Confirm key removal", "Cancel request" and "Open registration" name no account
+  either. A screen-reader user moving by button, and the 390 px reader of F1, cannot tell which account a press acts
+  on; only the paragraph above Confirm names it. (`observed.json`, the focus orders.)
+- **F3. Focus is lost after every press that succeeds** (console: Request, Cancel request, Confirm key removal; 1,280
+  and 390) **and after the right code** (sign-in). The page re-renders, focus is on the body, the row's new state is
+  not announced and the keyboard user starts again from Skip to the content, 30 stops from the row. The code panel is
+  the one success that takes focus.
+- **F4. Nothing says the code was accepted.** Sign-in, after the right code, 390 and 1,280
+  (`s2-code-accepted--key-step`): the card changes to the ordinary first-registration words ("Your role signs in with
+  a hardware key only…") with no "code accepted" and no focus move (F3).
+- **F5. A code of the wrong shape is emptied.** Sign-in, wrong shape (`s1-code--wrong-shape`): the field is cleared
+  and marked "Emptied for your security." beside "enter the eight letters and digits…", so the person cannot see or
+  mend what they mistyped, for a code that never reached the database.
+- **F6. The empty field is answered by the browser, not the page.** Sign-in, empty Continue (`s1-code--empty`):
+  Chromium's "Please fill out this field." bubble; the page's own "fill this in" is not reached. In the headless shots
+  the bubble then stays over the wrong-shape and refusal shots, covering part of "Emptied for your security." and the
+  hint (`s1-code--wrong-shape`, `s1-code--refusal`, 1,280 light and dark); whether it lingers for a person in a
+  headed browser was not seen.
+- **F7. The code panel leaves the old state above it.** Console, code shown, all widths (`c5-code-panel--once`): the
+  badge still reads "keys removed" and the paragraph "Open registration only when you are speaking with the person…"
+  still stands above "Registration is open for … until …", until a reload turns the badge to "registration open".
+- **F8. The code panel cannot be returned to by keyboard.** Console, code shown: once focus leaves the panel no Tab
+  or Shift+Tab stop brings it back (it is `tabindex="-1"`); a screen-reader user who moved on must find it by reading.
+  And a reload to "find it again" destroys the code (point 36: the panel says so, but not what to do when lost).
+- **F9. "Requested, as the requester" offers a refusal the page cannot explain.** Console, requester, after another
+  administrator confirmed (`c2-requested-requester--refusal`): Cancel request answers "This removal is already
+  decided; reload the page" while the row still reads "You asked… Another platform administrator confirms it". Same
+  words for Confirm after a cancel (`c3-requested-other--refusal`): "decided" there means cancelled. The page does not
+  read itself again after these refusals.
+- **F10. The refusal named in W50's list cannot be met in the page.** "The requester pressing Confirm on their own
+  request": the requester is offered no Confirm button in any state seen, so that sentence
+  (`hardware_key_removal_two_people`) was not shot; it is reachable only by a forged post.
+- **F11. The seven-day refusal tells the reader to do something that will not help.** Console, Request key removal,
+  administrator under seven days (`c1-request--refusal`): one sentence covers both causes and ends "sign out, sign in
+  again with your key, then try again", which changes nothing for an administrator five days in the role. Long, three
+  lines at 1,280, seven at 390 (point 35).
+- **F12. End membership and the key text read as one block.** Console, requested and keys removed, 1,280
+  (`c3-requested-other--resting`, `c4-keys-removed--resting`): the "End membership" button sits directly above "… asked
+  to remove this account's hardware keys…" with no heading or rule between, in a cell that grows to 290 px tall
+  (368 px with a refusal; 450 and 568 px at 390) while the other rows stay 90 px.
+- **F13. "Confirm key removal" is a pale tint with red words** (`focus-c3-confirm-button`, `c3-requested-other--resting`,
+  light and dark): the destructive variant, as "End membership" is not. Contrast of the red on the tint was not
+  measured. Point 34 stands: one press, no typed confirmation.
+- **F14. Times are not in the mono face** by eye (`c2`, `c3`, `c4`, `c5` crops: "2026-11-12 20:43 UTC" in the text
+  face; the code is mono). Not checked against computed style.
+- **F15. The typed code is in the text face** (`s1-code--resting`): W45's point 3, seen.
+- **F16. The refusal summary capitalises the rule's sentence** ("Only a platform administrator…", "This removal is
+  already decided; reload the page") and gives it no full stop; the summary's heading is "Not done". Point 35, seen.
+- **F17. The email wraps in the Account column at 1,280 px** once the Actions cell widens
+  ("key-removal-" / "member@synthetic.test", every requested and removed state), and in the code panel's first line
+  at both widths.
+- **F18. The own-row note sits under End membership** (`c0-own-row--resting`): "Another administrator asked to remove
+  your hardware keys. Two others decide it." in muted text below the button; there is no badge reason beyond "key
+  removal requested". "Two others": one has already asked.
+- **F19. Dark (tokens only) held** on the three dark crops looked at: badges, the refusal summary, the code panel and
+  the code read clearly; nothing was found there.
+Points 33 to 38 of W50's list: 33 seen (F1); 34 seen (F13); 35 seen (F11, F16); 36 seen (F8); 37 and 38 seen as
+written ("It cannot be undone", "You asked"), no new observation.
+
+**The e2e spec: `apps/web/e2e/key-registry.spec.ts`, one test, passing.** The journey of section 10: both
+administrators and the member register keys through the app; an administrator under seven days is refused; one
+requests (and is offered no Confirm); the other's second request is refused; the member is still signed in; the other
+confirms; the member's session ends and the removed key is refused; password and authenticator code reach only the
+code step (the console is not there for that cookie); a code before any opening and a code of the wrong shape are
+refused; an administrator opens registration (the panel focused; the code in no URL, title, cookie or storage); a
+second opening from a page read earlier is refused; a reload shows no code to either administrator; a wrong code is
+refused and a refresh keeps the step; the right code, typed lower case with a hyphen, shows the key step; the member
+registers a new key and signs in with it; the console offers Request again; the registry holds one confirmed removal
+by two people and one key registered after it.
+- `pnpm test:e2e e2e/key-registry.spec.ts e2e/hardware-key.spec.ts --trace off` (PostgreSQL 18, a full build):
+  **4 passed** (the journey 10 s). `pnpm typecheck`: 24 projects passed. ESLint on the two files: clean.
+  `apps/web/scripts/seed.db.test.ts`: passed.
+- **Seen failing:** with `answerRegistrationCode` made to accept a refused code (a scratch change to
+  `apps/web/src/lib/auth/sign-in.ts` line 889, reverted, never committed) the same command fails at the first code
+  refusal the spec expects (`expectCodeRefused`).
+- **The one clock it moves:** seven days in the role. As the owner, triggers off for that transaction (the pattern of
+  monitoring, packets and screening specs), it back-dates the two memberships **and the `role_escalation` audit event
+  the seed's insert recorded for each** (the rule reads both; W50's note named only the first). Nothing else is moved.
+- **Not retry-safe after the confirmation:** a retried attempt finds the member closed. CI fails a flaky test anyway.
+- **Not done:** the registry rows (SGN-20 to SGN-27) do not name this spec (`packages/synth/src/cases/registry.ts`
+  and the fixtures are W52's on the other ref); the whole `pnpm test:e2e` and `pnpm test:golden` were not run.
+
+**Not seen, and why.** The 24-hour expiry of a request and "this request has expired; ask again" (needs a second
+moved clock); five wrong codes closing an opening (the spec and the walk type two); the 15-minute key-session refusal
+(the same sentence as the seven-day one); the step timer's warning and closed states on the code screen (the tour's
+own); `hardware_key_removal_requester_left` and `hardware_key_registration_not_closed`; the page without JavaScript;
+a screen reader's own speech; any headed browser; contrast figures. The whole-page and after-refresh shots are in the
+gallery unread by W53, as listed above.
+
+**Machine notes.** PostgreSQL 18 was down again at start (`su postgres -c "/opt/pg18/bin/pg_ctl -D /root/pgdata18 -o
+'-p 5433 -k /tmp' -l /tmp/pg18.log -w start"`); e2e needs `E2E_ADMIN_URL=postgres://postgres:test@localhost:5433/postgres`.
+The standalone server's process is named `next-server`: free port 3100 by the port, not by the script's name. W53
+holds no PR, no subagent, no scheduled task and no running server.
+
 **W52 adds (2026-11-12, session_019i9ifCRjPnsiRtqtB38Vmm): SGN-22's test and W43's item 6 are BUILT and green; WIP
 `co-001/wip-key-registry` is now 3187bda3 (one commit on 656854b1). No migration touched, no PR, no e2e spec or
 screen touched. Items 1 and 4 of the list below are done; the rest of the list stands.**
