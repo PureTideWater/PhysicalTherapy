@@ -1,0 +1,8 @@
+
+> therapy-platform@ test /home/user/PhysicalTherapy
+> vitest run --project unit --coverage
+
+
+ RUN  v5.1.0 /home/user/PhysicalTherapy
+      Coverage enabled with v8
+

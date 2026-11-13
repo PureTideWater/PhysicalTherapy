@@ -1,0 +1,6 @@
+
+> therapy-platform@ verify-content /home/user/PhysicalTherapy
+> tsx tools/verify-content/index.ts
+
+verify-content: every content set passes.
+  content/drafts: 10 record(s), no problems
