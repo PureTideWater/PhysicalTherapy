@@ -1390,7 +1390,7 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
   // does not ask then (the first reading asks as it always did): on a letter of initials that search is most of a
   // reading's counted work, and it would be done, and charged, once more for nothing.
   if (subject.initials && !(wider && names.length === 0)) {
-    for (const initial of initialsNextToNames(view, normal, names, initialsOf(subject.names, wider && !baseReading))) {
+    for (const initial of initialsNextToNames(view, normal, names, initialsOf(subject.names, wider && !baseReading), wider && !baseReading)) {
       found.push({ ...inNormal(view, initial.start, initial.end), kind: 'name', claim: 0 });
     }
   }
@@ -1765,7 +1765,7 @@ const GAP_CHARACTER = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD,]$/u;
  *   ("Vantree, J.", "Vantree, J Q", never "Vantree, I am").
  * It is capitalized as written, or the name it is next to is written in lower case ("j. vantree").
  */
-function initialsNextToNames(view: View, normal: string, names: readonly Range[], letters: ReadonlySet<string>): Range[] {
+function initialsNextToNames(view: View, normal: string, names: readonly Range[], letters: ReadonlySet<string>, wider = false): Range[] {
   const candidates: Range[] = [];
   for (let i = 0; i < view.text.length; ) {
     const codePoint = codePointAt(view.text, i);
@@ -1819,7 +1819,12 @@ function initialsNextToNames(view: View, normal: string, names: readonly Range[]
     const following = after !== undefined && after.start >= resume && (name === undefined || after.start < name.start) ? after : name;
     const preceding = before !== undefined && (earlier === undefined || before.end > earlier.end) ? before : earlier;
     const precedes = following !== undefined && INITIAL_GAP.test(view.text.slice(resume, following.start)) && cased(following);
-    const gapFrom = preceding === undefined ? 0 : preceding.end + (preceding === before && view.text[preceding.end] === '.' ? 1 : 0);
+    // The period after a taken initial is that initial's. In the wider reading alone (Queues item 40, ruling (A)), so is
+    // the period after a name whose match ends in a letter standing alone ("ZZ/ZZZZ Z.Z.Z" for ZZZZZZ, "Zephyr A.J.Q."
+    // for JANE Q ZEPHYRA): under that reading's gaps the name's last letter is written as a dotted initial is, and the
+    // letters after it were sent. A name that ends in a word ends a sentence with its period ("Zephyra. I am").
+    const itsPeriod = preceding !== undefined && view.text[preceding.end] === '.' && (preceding === before || (wider && endsInLetterAlone(view.text, preceding)));
+    const gapFrom = preceding === undefined ? 0 : preceding.end + (itsPeriod ? 1 : 0);
     const follows = preceding !== undefined && (runStart[candidate.start] ?? 0) <= gapFrom && INITIAL_GAP_AFTER.test(view.text.slice(gapFrom, candidate.start)) && cased(preceding) && (dotted || !beforeLowerCaseWord(view, normal, candidate.end, known));
     if (precedes || follows) {
       taken.add(index);
@@ -1832,6 +1837,13 @@ function initialsNextToNames(view: View, normal: string, names: readonly Range[]
     }
   }
   return candidates.filter((_, index) => taken.has(index));
+}
+
+/** Whether a range ends in one letter standing alone as a word: no word character stands before that letter (what stands after the range is the caller's to ask). */
+function endsInLetterAlone(text: string, range: Range): boolean {
+  const last = codePointBefore(text, range.end);
+  const start = range.end - last.length;
+  return start >= range.start && /^\p{L}$/u.test(last) && !WORD_CHARACTER.test(codePointBefore(text, start));
 }
 
 /** The first index of a sorted list at which a monotone test holds (the list's length if it never does). */

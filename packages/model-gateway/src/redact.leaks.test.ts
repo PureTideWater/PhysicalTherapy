@@ -2760,11 +2760,12 @@ describe('MOD-25: a digits-only number written with a period or a slash and glue
 /**
  * Queues item 40 (before any real PHI; review 1 of Queues item 34, R1-3 and R1-4, and ruling (A)'s initial; the
  * orchestrator's rulings of 2026-11-13 09:30 UTC on the measured design note). Stage 1 writes the tests and changes no
- * reader: the first describe is what the base (17c234d2) already does and every stage keeps; the second is OWED RED,
- * each row seen failing on its assertion on 17c234d2, and the item's stages 2, 3 and 4 turn its three groups green.
+ * reader: the first describe is what the base (17c234d2) already does and every stage keeps; the second was OWED RED,
+ * each row seen failing on its assertion on 17c234d2, and the item's stages 2, 3 and 4 turned its three groups green.
  * The rows this replaces were pinned as SENT here (R1-3, R1-4) and under ruling (A) below.
  * Stage 2 (R1-3 with ruling 3, and the rulings of 09:55 UTC) is built: its group is a describe of its own, green.
  * Stage 3 (R1-4, by one more reading of the whole check; the rulings of 12:58 UTC) is built: its group likewise.
+ * Stage 4 (ruling (A), in the wider reading's `initialsNextToNames` alone) is built: its group likewise; none is owed.
  */
 const ITEM_40 = (() => {
   /** Every number character that is no decimal digit (Nl, No), and the unseen characters probed: controls and format characters the reader neither joins nor drops, one private-use and one unassigned code point. */
@@ -3212,32 +3213,83 @@ describe('MOD-25, Queues item 40, stage 3 (R1-4): an unseen character inside an 
   });
 });
 
-describe('OWED RED, Queues item 40 (stage 1 wrote these failing on 17c234d2; the item’s stages 2, 3 and 4 turn them green; stage 4’s group is left)', () => {
-  describe('stage 4, ruling (A): the initial after a name whose match ends in a letter standing alone is replaced', () => {
-    const who = (name: string) => patientOf([name], ['1961-03-03'], ['SYN555001']);
-    const numbers = claimsOf('ZZ99887');
+describe('MOD-25, Queues item 40, stage 4, ruling (A): the initial after a name whose match ends in a letter standing alone is replaced (stage 1 wrote its first rows failing on 17c234d2, stage 4 the rest on 943be057)', () => {
+  const who = (name: string) => patientOf([name], ['1961-03-03'], ['SYN555001']);
+  const numbers = claimsOf('ZZ99887');
 
-    it.each([
-      ['ZZZZZZ', 'ZZ/ZZZZ Z.Z.Z', '[PATIENT_NAME].[PATIENT_NAME]'],
-      ['AAAAAAAA', 'AA/AAAAAA A.A.A', '[PATIENT_NAME].[PATIENT_NAME]'],
-      ['ANNA', 'Ann A.A.', '[PATIENT_NAME].[PATIENT_NAME].'],
-      ['ANA ZEPHYRA', 'Zephyr A.A.', '[PATIENT_NAME].[PATIENT_NAME].'],
-      ['JANE Q ZEPHYRA', 'Zephyr A.J.Q.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
-    ])('a name held %s, written %s with its initials after it, is sent as %s', (name, letter, sent) => {
-      expect(sentOrRefused(letter, who(name), numbers)).toBe(sent);
-    });
+  it.each([
+    ['ZZZZZZ', 'ZZ/ZZZZ Z.Z.Z', '[PATIENT_NAME].[PATIENT_NAME]'],
+    ['AAAAAAAA', 'AA/AAAAAA A.A.A', '[PATIENT_NAME].[PATIENT_NAME]'],
+    ['ANNA', 'Ann A.A.', '[PATIENT_NAME].[PATIENT_NAME].'],
+    ['ANA ZEPHYRA', 'Zephyr A.A.', '[PATIENT_NAME].[PATIENT_NAME].'],
+    ['JANE Q ZEPHYRA', 'Zephyr A.J.Q.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+  ])('a name held %s, written %s with its initials after it, is sent as %s', (name, letter, sent) => {
+    expect(sentOrRefused(letter, who(name), numbers)).toBe(sent);
+  });
 
-    it('a name of one letter written in two pieces with a chain of dotted initials after it: no letter of it is sent', () => {
-      fc.assert(
-        fc.property(fc.constantFrom('Z', 'A'), fc.integer({ min: 5, max: 12 }), fc.nat(), fc.constantFrom('/', ' ', '.', '-'), fc.integer({ min: 2, max: 4 }), (letter, length, place, mark, initials) => {
-          const cut = 1 + (place % (length - 1));
-          const written = `${letter.repeat(cut)}${mark}${letter.repeat(length - cut)} ${Array.from({ length: initials }, () => letter).join('.')}`;
-          const sent = sentOrRefused(written, who(letter.repeat(length)), numbers);
-          expect(sent === REFUSED ? '' : sent.replace(/\[PATIENT_NAME\]/gu, '')).not.toMatch(/\p{L}/u);
-        }),
-        { numRuns: 400 },
-      );
-    });
+  // Names of other shapes (stage 4's rows, each seen failing on its assertion on 943be057): the wider reading's match
+  // ends in the name's last letter, cut from the rest by a space, "/" or "-"; the initials after it are the name's own.
+  it.each([
+    ['MARIA LOPEZ', 'Mari A.M.L.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['OLIVIA BROWN', 'Olivi A.O.B.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['JOSHUA KIM', 'Joshu A.J.K.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['DANIEL OKAFOR', 'Danie L.D.O.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['ROBERT E NGUYEN', 'Rober T.R.E.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['SARAH COHEN', 'Sara H.S.C.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['MIGUEL TORRES', 'Torre S.M.T.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['EMILY WATSON', 'Emil/Y.E.W.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['HANNAH PRICE', 'Hanna-H.H.P.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['MARIA LOPEZ', 'Patient: Mari A.M.L. was seen on the date of service.', 'Patient: [PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME]. was seen on the date of service.'],
+    ['MARIA LOPEZ', 'Mari A. M. L.', '[PATIENT_NAME]. [PATIENT_NAME]. [PATIENT_NAME].'],
+    ['MARIA LOPEZ', 'Lope Z.M', '[PATIENT_NAME].[PATIENT_NAME]'],
+  ])('a name held %s, written %s, is sent as %s', (name, letter, sent) => {
+    expect(sentOrRefused(letter, who(name), numbers)).toBe(sent);
+  });
+
+  it.each([
+    ['MARIA LOPEZ', 'Mari A.M.L.M.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['MARIA LOPEZ', 'Mari A.M.L.M.L.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['JANE Q ZEPHYRA', 'Zephyr A.J.Q.Z.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['JANE Q ZEPHYRA', 'Zephyr A.J.Q.Z.J.', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].'],
+    ['ZZZZZZ', 'ZZ/ZZZZ Z.Z.Z.Z.Z', '[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME].[PATIENT_NAME]'],
+  ])('a chain of three and of four initials after a name held %s, written %s, is sent as %s', (name, letter, sent) => {
+    expect(sentOrRefused(letter, who(name), numbers)).toBe(sent);
+  });
+
+  // What the rule does not take (each of these is sent the same before the change and after it). A name whose match
+  // does not end in a letter standing alone ends a sentence with its period, as the first reading has it: the capital
+  // after it stays, and so does another person's initial, the patient's own letter or not. After a name whose match
+  // does end so, a letter before a word in lower case stays, and so does a letter that is none of the patient's.
+  it.each([
+    ['JANE Q ZEPHYRA', 'Zephyra. I am', '[PATIENT_NAME]. I am'],
+    ['JANE Q ZEPHYRA', 'Dear Zephyra. I am writing', 'Dear [PATIENT_NAME]. I am writing'],
+    ['JANE Q ZEPHYRA', 'Seen with Zephyra. J. Smith, PT, reviewed the plan.', 'Seen with [PATIENT_NAME]. J. Smith, PT, reviewed the plan.'],
+    ['JANE Q ZEPHYRA', 'The claim is for Jane Zephyra. Q. Ostrander, DPT, signed.', 'The claim is for [PATIENT_NAME] [PATIENT_NAME]. Q. Ostrander, DPT, signed.'],
+    ['MARIA LOPEZ', 'Treated Maria Lopez. M. Okafor, PT, signed the note.', 'Treated [PATIENT_NAME]. M. Okafor, PT, signed the note.'],
+    ['MARIA LOPEZ', 'Mari A. A new claim follows.', '[PATIENT_NAME]. A new claim follows.'],
+    ['MARIA LOPEZ', 'Mari A. My claim is unpaid.', '[PATIENT_NAME]. My claim is unpaid.'],
+    ['MARIA LOPEZ', 'Mari A. R. Smith signed.', '[PATIENT_NAME]. R. Smith signed.'],
+  ])('a name held %s: %s is sent as %s', (name, letter, sent) => {
+    expect(sentOrRefused(letter, who(name), numbers)).toBe(sent);
+  });
+
+  it('a name of one letter written in two pieces with a chain of dotted initials after it: no letter of it is sent', () => {
+    fc.assert(
+      fc.property(fc.constantFrom('Z', 'A'), fc.integer({ min: 5, max: 12 }), fc.nat(), fc.constantFrom('/', ' ', '.', '-'), fc.integer({ min: 2, max: 4 }), (letter, length, place, mark, initials) => {
+        const cut = 1 + (place % (length - 1));
+        const written = `${letter.repeat(cut)}${mark}${letter.repeat(length - cut)} ${Array.from({ length: initials }, () => letter).join('.')}`;
+        const sent = sentOrRefused(written, who(letter.repeat(length)), numbers);
+        expect(sent === REFUSED ? '' : sent.replace(/\[PATIENT_NAME\]/gu, '')).not.toMatch(/\p{L}/u);
+      }),
+      { numRuns: 400 },
+    );
+  });
+
+  // The rule's named cost: where the name's match ends in a letter standing alone, whose initial the next dotted
+  // letter is cannot be known ("Mari A.M." is the patient's; so may "Mari A. M." be), so another person's dotted
+  // initial that is one of the patient's own letters is replaced there. The letter is sent; nothing of the patient's is.
+  it('after a name whose match ends in a letter standing alone, another person’s dotted initial that is the patient’s own letter is replaced too', () => {
+    expect(sentOrRefused('Mari A. M. Okafor, PT, signed.', who('MARIA LOPEZ'), numbers)).toBe('[PATIENT_NAME]. [PATIENT_NAME]. Okafor, PT, signed.');
   });
 });
 
