@@ -32,6 +32,26 @@ function memberRow(page: Page, key: string) {
   return page.locator(`tr[data-member="${personaEmail(key)}"]`);
 }
 
+/** A row's button by its exact accessible name: the visible words, then the account (WCAG 2.4.6; UX review U2). */
+function keyButton(page: Page, words: string, key: string) {
+  return page.getByRole('button', { name: `${words} ${personaEmail(key)}`, exact: true });
+}
+
+/** The key-state badge in the row's Account cell (the copy a phone shows above the buttons is `narrowAccount`). */
+function keyBadge(page: Page, key: string, words: string) {
+  return memberRow(page, key).locator('td[data-cell="account"]').getByText(words, { exact: true });
+}
+
+/** The row's key-state words, which take the focus after a request, a cancellation, a confirmation or a refusal (U3, U7). */
+function keyState(page: Page, key: string) {
+  return memberRow(page, key).locator('[data-key-state]');
+}
+
+/** The account's email and key-state badge at the top of the Actions cell, shown below the `sm` breakpoint only (U1). */
+function narrowAccount(page: Page, key: string) {
+  return memberRow(page, key).locator('[data-narrow-account]');
+}
+
 /**
  * Seven days in the role, which the test cannot wait for: as the database's owner, with the triggers off for this one
  * transaction (as the other journeys move a clock), the two administrators' memberships and the role escalation the
@@ -70,6 +90,8 @@ async function memberReachesTheCodeStep(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/sign-in\/register-key$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Register a hardware key' })).toBeVisible();
   await expect(page.getByLabel('Code from PaidWhole')).toBeVisible();
+  // A code is set in the mono face, as the console shows it (U11).
+  expect(await page.getByLabel('Code from PaidWhole').evaluate((input) => getComputedStyle(input).fontFamily)).toMatch(/mono/i);
   // The code comes first: no key is registered by a password and an authenticator code alone.
   await expect(page.getByRole('button', { name: 'Register hardware key' })).toHaveCount(0);
 }
@@ -105,29 +127,53 @@ test('two administrators remove a member’s hardware keys, registration stays c
     const consoleUrl = requester.page.url();
     await expect(requester.page.getByText('Removing an account’s hardware keys takes two platform administrators, neither of them the account')).toBeVisible();
     // No one is offered their own keys.
-    await expect(memberRow(requester.page, REQUESTER).getByRole('button', { name: 'Request key removal' })).toHaveCount(0);
+    await expect(keyButton(requester.page, 'Request key removal for', REQUESTER)).toHaveCount(0);
+    // Every row's buttons name their account, and the email is the row's header (U2).
+    await expect(requester.page.getByRole('rowheader', { name: personaEmail(MEMBER), exact: true })).toBeVisible();
+    await expect(keyButton(requester.page, 'Request key removal for', MEMBER)).toHaveCount(1);
+    await expect(keyButton(requester.page, 'End membership of', MEMBER)).toHaveCount(1);
+    await expect(requester.page.getByRole('button', { name: 'Request key removal', exact: true })).toHaveCount(0);
+    await expect(requester.page.getByRole('button', { name: 'End membership', exact: true })).toHaveCount(0);
+    // At a desktop's width the Email column names the row: the phone's copy above the buttons is not shown.
+    await expect(narrowAccount(requester.page, MEMBER)).toBeHidden();
 
     // Refused: an administrator not yet seven days in the role. Nothing is requested.
-    await memberRow(requester.page, MEMBER).getByRole('button', { name: 'Request key removal' }).click();
+    await keyButton(requester.page, 'Request key removal for', MEMBER).click();
     await expect(refusal(requester.page).filter({ hasText: 'only a platform administrator who has held the role for seven days' })).toBeVisible();
-    await expect(memberRow(requester.page, MEMBER).getByText('key removal requested')).toHaveCount(0);
+    await expect(refusal(requester.page).filter({ hasText: 'If you have held the role for less than seven days, ask another platform administrator.' })).toBeVisible();
+    await expect(keyBadge(requester.page, MEMBER, 'key removal requested')).toHaveCount(0);
 
     await sevenDaysInTheRole();
     // The second administrator's page, read before any request stands.
     await confirmer.page.goto(consoleUrl);
-    await expect(memberRow(confirmer.page, MEMBER).getByRole('button', { name: 'Request key removal' })).toBeVisible();
+    await expect(keyButton(confirmer.page, 'Request key removal for', MEMBER)).toBeVisible();
 
     // One requests. The requester is told another confirms, and is offered no confirmation.
     await requester.page.reload();
-    await memberRow(requester.page, MEMBER).getByRole('button', { name: 'Request key removal' }).click();
-    await expect(memberRow(requester.page, MEMBER).getByText('key removal requested')).toBeVisible();
+    await keyButton(requester.page, 'Request key removal for', MEMBER).click();
+    await expect(keyBadge(requester.page, MEMBER, 'key removal requested')).toBeVisible();
+    // The focus lands on the row's new state, which is what a screen reader then reads (U3).
+    await expect(keyState(requester.page, MEMBER)).toBeFocused();
+    await expect(keyState(requester.page, MEMBER)).toContainText('You asked to remove this account’s hardware keys');
+    // The requester cancels: the focus lands on the row's state again, and nothing stands. Then asks again.
+    await keyButton(requester.page, 'Cancel removal request for', MEMBER).click();
+    await expect(keyState(requester.page, MEMBER)).toContainText('No key removal stands');
+    await expect(keyState(requester.page, MEMBER)).toBeFocused();
+    await expect(keyBadge(requester.page, MEMBER, 'key removal requested')).toHaveCount(0);
+    await keyButton(requester.page, 'Request key removal for', MEMBER).click();
+    await expect(keyBadge(requester.page, MEMBER, 'key removal requested')).toBeVisible();
+    await expect(keyState(requester.page, MEMBER)).toBeFocused();
     await expect(memberRow(requester.page, MEMBER)).toContainText('You asked to remove this account’s hardware keys');
     await expect(memberRow(requester.page, MEMBER)).toContainText('You cannot confirm your own request.');
-    await expect(memberRow(requester.page, MEMBER).getByRole('button', { name: 'Confirm key removal' })).toHaveCount(0);
-    await expect(memberRow(requester.page, MEMBER).getByRole('button', { name: 'Cancel request' })).toBeVisible();
+    await expect(keyButton(requester.page, 'Confirm key removal for', MEMBER)).toHaveCount(0);
+    await expect(keyButton(requester.page, 'Cancel removal request for', MEMBER)).toBeVisible();
+    // A second page of the requester's, read while the request stands: its Cancel is pressed after the confirmation.
+    const late = await requester.context.newPage();
+    await late.goto(consoleUrl);
+    await expect(keyButton(late, 'Cancel removal request for', MEMBER)).toBeVisible();
 
     // Refused: a second request for the same account, from the page the other administrator read earlier.
-    await memberRow(confirmer.page, MEMBER).getByRole('button', { name: 'Request key removal' }).click();
+    await keyButton(confirmer.page, 'Request key removal for', MEMBER).click();
     await expect(refusal(confirmer.page).filter({ hasText: 'a removal is already requested for this account; confirm or cancel that one' })).toBeVisible();
 
     // A request changes nothing by itself: the member is still signed in.
@@ -137,9 +183,49 @@ test('two administrators remove a member’s hardware keys, registration stays c
     // Another confirms. The keys are removed and the member's session ends at once.
     await confirmer.page.reload();
     await expect(memberRow(confirmer.page, MEMBER)).toContainText(`${personaEmail(REQUESTER)} asked to remove this account’s hardware keys`);
-    await memberRow(confirmer.page, MEMBER).getByRole('button', { name: 'Confirm key removal' }).click();
-    await expect(memberRow(confirmer.page, MEMBER).getByText('keys removed', { exact: true })).toBeVisible();
-    await expect(memberRow(confirmer.page, MEMBER).getByRole('button', { name: 'Open registration' })).toBeVisible();
+    await expect(memberRow(confirmer.page, MEMBER)).toContainText('the removed keys cannot be restored');
+    // At a phone's width (390 px) the row's account is on screen with its buttons: the email and the key-state badge
+    // stand above them in the Actions cell, inside the table's own sideways-scrolling region (U1, the small form).
+    await confirmer.page.setViewportSize({ width: 390, height: 844 });
+    const confirm = keyButton(confirmer.page, 'Confirm key removal for', MEMBER);
+    await confirm.scrollIntoViewIfNeeded();
+    await expect(confirm).toBeInViewport({ ratio: 1 });
+    const account = narrowAccount(confirmer.page, MEMBER);
+    await expect(account).toBeVisible();
+    await expect(account).toContainText(personaEmail(MEMBER));
+    await expect(account).toContainText('key removal requested');
+    // Both inside the viewport and inside the table's scrolling region (to a pixel: the region's edge falls on a fraction).
+    const email = account.getByText(personaEmail(MEMBER), { exact: true });
+    await expect(email).toBeInViewport({ ratio: 0.99 });
+    const region = await account.locator('xpath=ancestor::*[@role="region"][1]').boundingBox();
+    expect(region).not.toBeNull();
+    for (const box of [await confirm.boundingBox(), await email.boundingBox()]) {
+      expect(box).not.toBeNull();
+      if (box === null || region === null) {
+        continue;
+      }
+      expect(box.x).toBeGreaterThanOrEqual(Math.max(0, region.x - 1));
+      expect(box.x + box.width).toBeLessThanOrEqual(Math.min(390, region.x + region.width + 1));
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(844);
+    }
+    await confirmer.page.setViewportSize({ width: 1280, height: 720 });
+    await expect(account).toBeHidden();
+    // The pending request's badge is a state, not a failure: no danger ground (U10).
+    await expect(keyBadge(confirmer.page, MEMBER, 'key removal requested')).not.toHaveClass(/bg-danger-bg/);
+    await confirm.click();
+    await expect(keyBadge(confirmer.page, MEMBER, 'keys removed')).toBeVisible();
+    await expect(keyState(confirmer.page, MEMBER)).toBeFocused();
+    await expect(keyState(confirmer.page, MEMBER)).toContainText('Keys removed at');
+    await expect(keyButton(confirmer.page, 'Open key registration for', MEMBER)).toBeVisible();
+    // Refused: a cancellation after the confirmation, from the page read before it. The refusal says where to look,
+    // the row reads itself again with no reload, and the focus lands on what now stands (U7).
+    await keyButton(late, 'Cancel removal request for', MEMBER).click();
+    await expect(keyBadge(late, MEMBER, 'keys removed')).toBeVisible();
+    await expect(keyState(late, MEMBER)).toContainText('Keys removed at');
+    await expect(keyState(late, MEMBER)).toBeFocused();
+    await expect(keyButton(late, 'Cancel removal request for', MEMBER)).toHaveCount(0);
+    await late.close();
     await member.page.goto('/');
     await expect(member.page).toHaveURL(/\/sign-in(?:\?|$)/);
 
@@ -173,11 +259,16 @@ test('two administrators remove a member’s hardware keys, registration stays c
     // An administrator opens registration: the code is shown once, in the page only.
     const stale = await confirmer.context.newPage();
     await stale.goto(consoleUrl);
-    await expect(memberRow(stale, MEMBER).getByRole('button', { name: 'Open registration' })).toBeVisible();
-    await memberRow(confirmer.page, MEMBER).getByRole('button', { name: 'Open registration' }).click();
+    await expect(keyButton(stale, 'Open key registration for', MEMBER)).toBeVisible();
+    await expect(memberRow(confirmer.page, MEMBER).getByText('Open registration only when')).toBeVisible();
+    await keyButton(confirmer.page, 'Open key registration for', MEMBER).click();
     const panel = confirmer.page.getByRole('group', { name: `Registration code for ${personaEmail(MEMBER)}` });
     await expect(panel).toBeFocused();
     await expect(panel).toContainText(`Registration is open for ${personaEmail(MEMBER)} until`);
+    // The panel has a heading to find it by, its lead-in is gone, and the lost-code words agree with the database (U5, U13).
+    await expect(panel.getByRole('heading', { name: `Registration code for ${personaEmail(MEMBER)}`, exact: true })).toBeVisible();
+    await expect(panel).toContainText('registration cannot be opened again until');
+    await expect(memberRow(confirmer.page, MEMBER).getByText('Open registration only when')).toHaveCount(0);
     const shown = (await panel.locator('span.font-mono').innerText()).trim();
     expect(shown).toMatch(/^[0-9A-Z]{4} [0-9A-Z]{4}$/);
     const code = shown.replace(' ', '');
@@ -188,14 +279,24 @@ test('two administrators remove a member’s hardware keys, registration stays c
     expect(await confirmer.page.evaluate(() => JSON.stringify([{ ...localStorage }, { ...sessionStorage }]))).not.toContain(code);
 
     // Refused: a second opening while one stands, from a page read before it.
-    await memberRow(stale, MEMBER).getByRole('button', { name: 'Open registration' }).click();
+    await keyButton(stale, 'Open key registration for', MEMBER).click();
     await expect(refusal(stale).filter({ hasText: 'registration is already open for this account; it can be opened again once that hour has passed' })).toBeVisible();
     await stale.close();
 
+    // The keyboard finds the panel's one control, which ends the display on purpose; the focus then lands on what stands.
+    await confirmer.page.keyboard.press('Tab');
+    await expect(confirmer.page.getByRole('button', { name: 'Hide the code', exact: true })).toBeFocused();
+    await confirmer.page.keyboard.press('Enter');
+    await expect(confirmer.page.getByText(shown)).toHaveCount(0);
+    await expect(keyState(confirmer.page, MEMBER)).toBeFocused();
+    await expect(keyState(confirmer.page, MEMBER)).toContainText('open registration again after');
+    expect(await confirmer.page.content()).not.toContain(code);
+
     // A reload keeps the opening and never the code; the other administrator sees the same.
     await confirmer.page.reload();
-    await expect(memberRow(confirmer.page, MEMBER).getByText('registration open', { exact: true })).toBeVisible();
+    await expect(keyBadge(confirmer.page, MEMBER, 'registration open')).toBeVisible();
     await expect(memberRow(confirmer.page, MEMBER)).toContainText('The code was shown once to the administrator who opened it.');
+    await expect(memberRow(confirmer.page, MEMBER)).toContainText('If it was lost, open registration again after');
     await expect(confirmer.page.getByText(shown)).toHaveCount(0);
     expect(await confirmer.page.content()).not.toContain(code);
     await requester.page.reload();
@@ -213,6 +314,9 @@ test('two administrators remove a member’s hardware keys, registration stays c
     await enterCode(returning.page, `${code.slice(0, 4).toLowerCase()}-${code.slice(4).toLowerCase()}`);
     await expect(returning.page.getByRole('button', { name: 'Register hardware key' })).toBeVisible();
     await expect(returning.page.getByLabel('Code from PaidWhole')).toHaveCount(0);
+    // The screen says the code was taken, and the focus is on its heading (U4).
+    await expect(returning.page.getByText('Code accepted.')).toBeVisible();
+    await expect(returning.page.getByRole('heading', { level: 1 })).toBeFocused();
     expect(returning.page.url()).not.toContain(code);
     // A refresh after the right code shows the key step, not the code again.
     await returning.page.reload();
@@ -226,9 +330,9 @@ test('two administrators remove a member’s hardware keys, registration stays c
 
     // The opening is spent and the account is as any other's: the console offers a request again, and no badge.
     await confirmer.page.reload();
-    await expect(memberRow(confirmer.page, MEMBER).getByRole('button', { name: 'Request key removal' })).toBeVisible();
-    await expect(memberRow(confirmer.page, MEMBER).getByText('registration open', { exact: true })).toHaveCount(0);
-    await expect(memberRow(confirmer.page, MEMBER).getByText('keys removed', { exact: true })).toHaveCount(0);
+    await expect(keyButton(confirmer.page, 'Request key removal for', MEMBER)).toBeVisible();
+    await expect(keyBadge(confirmer.page, MEMBER, 'registration open')).toHaveCount(0);
+    await expect(keyBadge(confirmer.page, MEMBER, 'keys removed')).toHaveCount(0);
 
     // The registry's own record: one removal confirmed by another than its requester, and one live key registered after it.
     const record = await withDatabase(async (client) => {

@@ -347,7 +347,7 @@ the console. Then the removal.
 4. If the account was locked for a key registered across a reset ("A hardware key registered across a password
    reset", below), the confirmation records that hold as cleared; a platform administrator then presses Unlock.
 5. **Opening registration.** Only while speaking with the member, by phone, on a number PaidWhole already holds: an
-   eligible administrator presses **Open registration**. The console shows a one-time code once; read it to the
+   eligible administrator presses **Open key registration**. The console shows a one-time code once; read it to the
    member. It is good for one hour and five tries. The member signs in with password and authenticator code, types
    the code, and registers one key. The member is emailed when registration is opened and again when the key is
    registered. A lost code is not shown again, and the database gives no second code while the first is good: wait out its

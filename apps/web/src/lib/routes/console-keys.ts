@@ -23,15 +23,21 @@ import { opaqueId } from './schemas';
 
 const PAGE = '/console/organizations/[organizationId]';
 
-/** The words of each refusal, by the database's constraint name; `not_permitted` is its 42501. */
+/**
+ * The words of each refusal, by the database's constraint name; `not_permitted` is its 42501. The database raises that
+ * one code, with no constraint name, for both of its causes (under seven days in the role; no key session of the last
+ * 15 minutes), so the route cannot tell them apart and the one sentence gives each cause its own next step. A request
+ * already decided may have been confirmed, cancelled or expired: the forms that can meet it read the page again, so
+ * the words point at the row and never at a reload.
+ */
 export const KEY_REFUSALS = {
   not_permitted:
-    'only a platform administrator who has held the role for seven days, signed in with their registered hardware key in the last 15 minutes, does this; sign out, sign in again with your key, then try again',
+    'only a platform administrator who has held the role for seven days and signed in with their hardware key in the last 15 minutes can do this. If you signed in with your key more than 15 minutes ago, sign out and sign in again with it. If you have held the role for less than seven days, ask another platform administrator.',
   hardware_key_removal_not_own_account: 'no one acts on the hardware keys of their own account; another platform administrator does',
   hardware_key_removal_open_once: 'a removal is already requested for this account; confirm or cancel that one',
   hardware_key_removal_two_people: 'ask another platform administrator to confirm this removal; the one who requested it cannot',
   hardware_key_removal_in_time: 'this request has expired; ask again',
-  hardware_key_removal_decided: 'this removal is already decided; reload the page',
+  hardware_key_removal_decided: 'this request was already confirmed, cancelled or has expired; the row now shows where it stands',
   hardware_key_removal_requester_left: 'the administrator who requested this removal no longer may; cancel it and ask again',
   hardware_key_registration_not_closed: 'registration is opened only for an account whose keys were removed and that has registered no key since',
   hardware_key_registration_open_once: 'registration is already open for this account; it can be opened again once that hour has passed',

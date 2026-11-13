@@ -569,8 +569,10 @@ export const registerKeyPage = publicRoute({
     // After a removal the step first asks for the one-time code (docs/adr/0095): the same screen whether or not an
     // administrator has opened registration, read from the sealed step alone, so showing it asks the database nothing
     // and counts no try. The support address is for the screen's line on having no code.
-    const code: { readonly codeRequired?: true; readonly supportEmail?: string } =
-      pending?.codeRequired === true && pending.code === undefined ? { codeRequired: true, supportEmail: context.services.supportEmail } : {};
+    // `codeAccepted`: the step holds a code the database took, so the screen says so (a state of the step, kept on a
+    // refresh; the code itself is never returned).
+    const code: { readonly codeRequired?: true; readonly codeAccepted?: true; readonly supportEmail?: string } =
+      pending?.codeRequired !== true ? {} : pending.code === undefined ? { codeRequired: true, supportEmail: context.services.supportEmail } : { codeAccepted: true };
     return Promise.resolve(pending === undefined ? RESTART : { email: pending.email, ...stepPage(pending, now), ...code });
   },
 });

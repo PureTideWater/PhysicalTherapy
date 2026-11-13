@@ -133,12 +133,13 @@ export default async function OrganizationPage(props: { readonly params: Promise
                 <tbody>
                   {members.map((member) => (
                     <tr key={member.membershipId} className="border-t align-top" data-member={member.email}>
-                      <td className="py-1 pr-3">
-                        <span className="block min-w-40 wrap-anywhere">{member.email}</span>
-                      </td>
+                      {/* The email is the row's header, so a screen reader names the row in each of its cells (WCAG 1.3.1). */}
+                      <th scope="row" className="py-1 pr-3 text-left font-normal">
+                        <span className="block min-w-40 wrap-break-word">{member.email}</span>
+                      </th>
                       <td className="py-1 pr-3">{roleName(member.role)}</td>
                       {/* The flex boxes sit inside the cells: a td that is itself a flex box is no longer a table cell. */}
-                      <td className="py-1 pr-3">
+                      <td className="py-1 pr-3" data-cell="account">
                         <div className="flex flex-wrap gap-1">
                           <Badge variant="outline">{member.userStatus}</Badge>
                           {member.mfaEnrolled ? null : <Badge variant="outline">no MFA yet</Badge>}
@@ -148,7 +149,13 @@ export default async function OrganizationPage(props: { readonly params: Promise
                         </div>
                       </td>
                       <td className="py-1">
-                        <div className="flex flex-wrap gap-2">
+                        {/* A floor below `sm`, where the table scrolls sideways: without it the cell is a column some 12rem wide, a state's words run to a screen's height and its buttons leave the account behind. */}
+                        <div className="flex min-w-72 flex-wrap gap-2 sm:min-w-0">
+                          {/* At a phone's width the Email and Account columns are scrolled away when the buttons are in view, so the row's account and key state stand above them here; from `sm` up the columns say it. */}
+                          <div data-narrow-account className="flex basis-full flex-wrap items-center gap-1 text-sm font-medium sm:hidden">
+                            <span className="wrap-break-word">{member.email}</span>
+                            <KeyRemovalState member={member} now={now} />
+                          </div>
                           {member.locked ? (
                             <ActionForm action={unlockUserAction} submit="Unlock" variant="outline" className="flex flex-col gap-1">
                               <FormKeys />
@@ -157,7 +164,16 @@ export default async function OrganizationPage(props: { readonly params: Promise
                             </ActionForm>
                           ) : null}
                           {member.current ? (
-                            <ActionForm action={endMembershipAction} submit="End membership" variant="outline" className="flex flex-col gap-1">
+                            <ActionForm
+                              action={endMembershipAction}
+                              submit={
+                                <>
+                                  End membership<span className="sr-only"> of {member.email}</span>
+                                </>
+                              }
+                              variant="outline"
+                              className="flex flex-col gap-1"
+                            >
                               <FormKeys />
                               <input type="hidden" name="membershipId" value={member.membershipId} />
                             </ActionForm>
