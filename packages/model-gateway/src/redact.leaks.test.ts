@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { CHECK_WORK_BUDGET, type LetterClaim, type PatientIdentifiers, checkWorkOf, holdsIdentifier, holdsNameOrNumber, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
 
+import { BASE_REFUSED, refusedPlaces } from './test-support/base-refused';
+import { fuzzLetters, sumOf } from './test-support/fuzz-letters';
 import { timed } from './test-support/time-budget';
 
 /**
@@ -2766,5 +2768,95 @@ describe('MOD-25: forms still sent in clear, recorded for Queues item 40 (review
     ['a control character inside the number after a label', 'Member ID 7654\u00003210 paid'],
   ])('%s: sent unchanged', (_form, letter) => {
     expect(sentOrRefused(letter, who, numbers)).toBe(letter.normalize('NFKC'));
+  });
+});
+
+describe('MOD-25: a letter the base refuses stays refused, whatever the wider reading can now replace (the ruling on finding (C))', () => {
+  const held = (names: string[], memberIds: string[], claimNumbers: string[]) =>
+    [
+      { pseudonym: 'synthetic-patient-r3', names, datesOfBirth: ['1961-03-03'], memberIds },
+      [{ claimId: '00000000-0000-4000-8000-000000000001', patientPseudonym: 'synthetic-patient-r3', claimNumbers }],
+    ] as const;
+  /** The whole entry, as a caller runs it: the redaction, then the check with the work the redaction spent. */
+  const entry = (letter: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]) => {
+    const screened = redactLetterForScreen(letter, patient, claims);
+    return { text: screened.text, refused: holdsIdentifier(screened.text, patient, claims, checkWorkOf(screened)) };
+  };
+
+  // Each of these the base refused: its wider reading replaced one writing of a number, and the first reading's check,
+  // on the text so written, refused the letter for what stood beside the placeholder. MOD-25's wider reading (A-5, a run
+  // of marks where the records write a separator) replaced that too, and the letter was sent.
+  it.each([
+    ['the second writing of a member ID held "7,7,7,7,7", with a period', held(['AAAAAAAA'], ['7,7,7,7,7'], ['11111111', 'ZZ12345 01']), 'Fax 7777,7:1111,7777.7', 'Fax [MEMBER_ID]:1111,7777.7'],
+    [
+      'the fuzzed letter that one was cut from',
+      held(['AAAAAAAA'], ['7,7,7,7,7'], ['11111111', 'ZZ12345 01']),
+      '1 Fax XAAAA\r7,7,7,7,7:a1 1-1/1/1/1/17,7,7,7,7.,7\u00041+',
+      '1 Fax XAAAA\r[MEMBER_ID]:a1 1-1/1/1/1/17,7,7,7,7.,7\u00041+',
+    ],
+    [
+      'a member ID held "12121/2121" written over U+0085, and five letters of the name after a CR LF (review 3, R3-4)',
+      held(['AAAAAAAA'], ['12121/2121'], ['12312312', '000&11']),
+      '000&11.12121\u00852121\u0085aaAaaaAa A\u0085A\u0085AaA\u0085Aa\u0085a\r\naaAaA&',
+      '[CLAIM_1].12121\u00852121\u0085[PATIENT_NAME] [PATIENT_NAME]\r\naaAaA&',
+    ],
+  ] as const)('%s: refused, as the base wrote it', (_what, [patient, claims], letter, written) => {
+    const read = entry(letter, patient, claims);
+    expect(read.refused).toBe(true);
+    expect(read.text).toBe(written);
+  });
+
+  it('the letters beside them that the base sent are sent as before', () => {
+    const [patient, claims] = held(['AAAAAAAA'], ['7,7,7,7,7'], ['11111111', 'ZZ12345 01']);
+    expect(entry('Fax 7777,7:1111 paid', patient, claims)).toEqual({ text: 'Fax [MEMBER_ID]:1111 paid', refused: false });
+    expect(entry('Fax 7777.7 paid', patient, claims)).toEqual({ text: 'Fax [MEMBER_ID] paid', refused: false });
+  });
+
+  it.each(BASE_REFUSED)('seed $seed: every one of the $refused letters of $letters that the base refused is refused (the base’s recorded verdicts)', ({ seed, letters, sum, refused, bits }) => {
+    const all = fuzzLetters(seed, letters);
+    // The letters are the ones the verdicts were recorded for.
+    expect(sumOf(all)).toBe(sum);
+    const places = refusedPlaces(bits);
+    expect(places).toHaveLength(refused);
+    const sent = places.filter((place) => {
+      const letter = all[place];
+      if (letter === undefined) {
+        return true;
+      }
+      const [patient, claims] = held([...letter.names], [...letter.memberIds], [...letter.claimNumbers]);
+      return !entry(letter.text, patient, claims).refused;
+    });
+    // The places alone: a letter's text is no part of a failure's message.
+    expect(sent).toEqual([]);
+  }, 120_000);
+});
+
+describe('MOD-25: two recorded costs of reading at every place (the rulings (A) and (B) on review 3, R3-1)', () => {
+  const who = (name: string) => patientOf([name], ['1961-03-03'], ['SYN555001']);
+  const numbers = claimsOf('ZZ99887');
+
+  // (A), a residual for Queues item 40: the last initial of a chain, for a name of one repeated letter, is sent. The base
+  // sent more of it ("ZZ/[PATIENT_NAME].Z").
+  it.each([
+    ['ZZZZZZ', 'ZZ/ZZZZ Z.Z.Z', '[PATIENT_NAME].Z'],
+    ['AAAAAAAA', 'AA/AAAAAA A.A.A', '[PATIENT_NAME].A'],
+  ])('(A) a name held %s, written %s with its initials after it, is sent as %s', (name, letter, sent) => {
+    expect(sentOrRefused(letter, who(name), numbers)).toBe(sent);
+  });
+
+  // (B), an accepted cost: the reading at every place counts more work on a letter of nothing but the name's letter, and
+  // the count refuses one the base read to its end (341,006,350 units there, 376,730,640 with the check).
+  it('(B) 49,000 writings of the one letter of a name are refused by the count, with no text of the letter', () => {
+    const screened = redactLetterForScreen('A '.repeat(49_000), who('AAAAAAAA'), numbers);
+    expect(checkWorkOf(screened)).toBe(CHECK_WORK_BUDGET + 1);
+    expect(screened.text).toHaveLength(1);
+    expect(holdsIdentifier(screened.text, who('AAAAAAAA'), numbers, checkWorkOf(screened))).toBe(true);
+  });
+
+  it('(B) 40,000 of them are read to the end and sent, the whole letter hidden', () => {
+    const screened = redactLetterForScreen('A '.repeat(40_000), who('AAAAAAAA'), numbers);
+    expect(checkWorkOf(screened)).toBeLessThanOrEqual(CHECK_WORK_BUDGET);
+    expect(holdsIdentifier(screened.text, who('AAAAAAAA'), numbers, checkWorkOf(screened))).toBe(false);
+    expect(screened.text.replace(/\[PATIENT_NAME\]/g, '')).not.toMatch(/[\p{L}\p{N}]/u);
   });
 });

@@ -568,6 +568,15 @@ let storeScope: object | null = null;
 let widerReading = false;
 
 /**
+ * Whether the wider reading reads as the base of Queues item 34 read it (a97d73e4, MOD-23 alone; asTheBaseRead): none of
+ * what MOD-25 widened. Inside a name's part a space, a joiner, a period or U+0085 and no other mark (A-4); where the
+ * records write a separator, what joins a number anywhere and that separator, no run of marks (A-5); no piece of a
+ * stored number (rule (c)); a name's words as the first reading splits them (rule (b)); each form read on from the end
+ * of the match before (R1-1). Only the gate of the two entries sets it (refusedAsTheBaseRead), inside stores of its own.
+ */
+let baseReading = false;
+
+/**
  * Whether a stored answer is taken again, counting what building it cost (Stored); with `oncePerCheck`, nothing where
  * the check that is running has paid for it. False for an answer built with no counter running when one runs now
  * (redactionSpans' first reading, then the check it asks): its cost is not known, so it is built again and counted.
@@ -677,7 +686,7 @@ const GAP = {
    * sent in clear. Read when a form is built, since runOfMarks names marks declared further down the file.
    */
   get apart(): string {
-    return runOfMarks();
+    return baseReading ? `[${NAME_JOINERS}\\s\\u0085.]*` : runOfMarks();
   },
   /** Between the parts the records hold apart: any joiner, white space, a period or a comma. */
   part: `[${NAME_JOINERS}\\s.,]*`,
@@ -788,7 +797,10 @@ function numberForm(value: string, kind: 'claim' | 'member', claim: number, asSt
   const gaps = characters.slice(1).map((next, i) => {
     const gap = letter(characters[i]) || letter(next) ? GAP.numberNearLetter : GAP.number;
     const own = stored[i + 1] ?? '';
-    return own === '' ? gap : runOfMarks(own);
+    if (own === '') {
+      return gap;
+    }
+    return baseReading ? `${gap.slice(0, -2)}${own}]*` : runOfMarks(own);
   });
   const digitsOnly = /^\p{N}+$/u.test(compact);
   return { compact, kind, claim, pattern: patternOf(characters, gaps), insidePart: [], digitsOnly, labeled: digitsOnly ? patternOf(characters, gaps.map(() => GAP.labeledNumber)) : null };
@@ -876,7 +888,7 @@ function formsOf(subject: Subject, wider = false): readonly Form[] {
   if (formsOfCheck === null) {
     return formsBuiltOf(subject, wider);
   }
-  const key = `${ownFold}${wider ? '+' : ''}`;
+  const key = `${ownFold}${wider ? '+' : ''}${baseReading ? '<' : ''}`;
   let known = formsOfCheck.get(subject);
   if (known === undefined) {
     known = new Map();
@@ -907,7 +919,7 @@ function formsBuiltOf(subject: Subject, wider: boolean): Form[] {
   // number of its kind; where two numbers share a piece, the first in the call's order.
   const pieces = new Set<string>();
   const addPieces = (value: string, kind: 'claim' | 'member', claim: number) => {
-    for (const piece of wider ? piecesOf(value) : []) {
+    for (const piece of wider && !baseReading ? piecesOf(value) : []) {
       const form = numberForm(piece, kind, claim);
       if (form !== null && !pieces.has(form.pattern.source)) {
         pieces.add(form.pattern.source);
@@ -926,7 +938,7 @@ function formsBuiltOf(subject: Subject, wider: boolean): Form[] {
     addPieces(memberId, 'member', 0);
   }
   for (const name of subject.names) {
-    const words = nameWords(name, wider);
+    const words = nameWords(name, wider && !baseReading);
     add(nameForm(words.flat(), wider));
     for (const word of words) {
       add(nameForm(word, wider));
@@ -1319,7 +1331,7 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
       const start = match.index;
       const end = start + match[0].length;
       const range = inNormal(view, start, end);
-      if (wider) {
+      if (wider && !baseReading) {
         // The wider reading asks at every place, not from the end of the match before: under its gaps (a run of marks,
         // MOD-25 A-4 and A-5) a match can begin at a cut form of the value, cross a mark and end inside the real writing
         // after it ("ZEPHYRA: Z E P H Y R A Z" for ZEPHYRAZ), and a scan that went on from there sent the rest of that
@@ -1378,7 +1390,7 @@ function ownMatchesIn(normal: string, subject: Subject, wider = false): Found[] 
   // does not ask then (the first reading asks as it always did): on a letter of initials that search is most of a
   // reading's counted work, and it would be done, and charged, once more for nothing.
   if (subject.initials && !(wider && names.length === 0)) {
-    for (const initial of initialsNextToNames(view, normal, names, initialsOf(subject.names, wider))) {
+    for (const initial of initialsNextToNames(view, normal, names, initialsOf(subject.names, wider && !baseReading))) {
       found.push({ ...inNormal(view, initial.start, initial.end), kind: 'name', claim: 0 });
     }
   }
@@ -3644,13 +3656,18 @@ export function redactionSpans(text: string, patient: PatientIdentifiers, claims
       if (first.length + wider.length > 0 && gluedBeforeRedaction(raw, subject, first)) {
         return { text: refusedByMarkAfter(normal), spans: first };
       }
-      if (wider.length === 0) {
+      const asFirstWrote = written(normal, first);
+      if (wider.length > 0 && refusedAsFirstRead(asFirstWrote, patient, claims)) {
         return { text: normal, spans: first };
       }
-      if (refusedAsFirstRead(written(normal, first), patient, claims)) {
-        return { text: normal, spans: first };
+      // What the base's whole entry refuses stays refused, with the spans the base wrote (refusedAsTheBaseRead).
+      const both = wider.length === 0 ? first : merge([...found, ...wider]);
+      const sent = wider.length === 0 ? asFirstWrote : written(normal, both);
+      const base = refusedAsTheBaseRead(normal, raw, subject, { found, spans: first, text: asFirstWrote }, wider.length > 0 ? false : undefined, sent, patient, claims);
+      if (base !== null) {
+        return { text: base.byFirstRead ? normal : refusedByMarkAfter(normal), spans: base.spans };
       }
-      return { text: normal, spans: merge([...found, ...wider]) };
+      return { text: normal, spans: both };
     } catch (error) {
       if (!(error instanceof PastCheckWorkBudget)) {
         throw error;
@@ -3755,14 +3772,120 @@ function screenAsBothRead(text: string, patient: PatientIdentifiers, claims: rea
   }
   // Both the wider reading and the check asked again here count their work on this letter's counter, the check as a
   // check of its own is charged (holdsAsFirstRead): past the budget the entry refuses the letter, with no text of it.
-  if (wider.length === 0 || refusedAsFirstRead(first.text, patient, claims)) {
-    return { text: first.text, claims: first.claims, replaced: first.replaced, candidates: first.candidates };
+  const asFirstWrote = { text: first.text, claims: first.claims, replaced: first.replaced, candidates: first.candidates };
+  if (wider.length > 0 && refusedAsFirstRead(first.text, patient, claims)) {
+    return asFirstWrote;
   }
-  const spans = merge([...first.found, ...wider]);
-  const sent = written(normal, spans);
-  const own = new Set(formsOf(subject).flatMap((form) => (form.kind === 'claim' || form.kind === 'member' ? [form.compact] : [])));
-  const candidates = new Set([...first.candidates, ...identifierCandidates(sent).filter((candidate) => !own.has(candidate))]);
-  return { text: sent, claims: first.claims, replaced: spans.length, candidates: [...candidates].sort() };
+  const widened = (spans: readonly PlacedSpan[]) => {
+    const sent = written(normal, spans);
+    const own = new Set(formsOf(subject).flatMap((form) => (form.kind === 'claim' || form.kind === 'member' ? [form.compact] : [])));
+    const candidates = new Set([...first.candidates, ...identifierCandidates(sent).filter((candidate) => !own.has(candidate))]);
+    return { text: sent, claims: first.claims, replaced: spans.length, candidates: [...candidates].sort() };
+  };
+  // What the base's whole entry refuses stays refused (the ruling on finding (C) of Queues item 34's reviews): the letter
+  // is returned as the base wrote it, which the check refuses again, and nothing MOD-25 widened replaces what the base's
+  // check refused it for ("Fax 7777,7:1111,7777.7" for a member ID held "7,7,7,7,7": the base wrote "Fax
+  // [MEMBER_ID]:1111,7777.7" and refused it; with the second writing replaced too, the letter was sent). Asked on a
+  // counter and stores of its own (asTheBaseRead): it changes nothing of what this entry counts.
+  const both = wider.length === 0 ? first.spans : merge([...first.found, ...wider]);
+  const base = refusedAsTheBaseRead(normal, raw, subject, first, wider.length > 0 ? false : undefined, wider.length === 0 ? first.text : written(normal, both), patient, claims);
+  if (base !== null) {
+    const wrote = base.spans === first.spans ? asFirstWrote : widened(base.spans);
+    return base.byFirstRead ? wrote : { ...wrote, text: refusedByMarkAfter(wrote.text) };
+  }
+  return wider.length === 0 ? asFirstWrote : widened(both);
+}
+
+/**
+ * A reading as the base of Queues item 34 gave it (baseReading), apart from the entry that asks: on a counter of its own
+ * that starts from nothing, with stores of its own, so that the entry's count and stores are, after it, what they were
+ * before it. Past the budget on its own counter it throws as any reading does (PastCheckWorkBudget), for the one who
+ * asks to catch.
+ */
+function asTheBaseRead<T>(read: () => T): T {
+  const kept = { viewsOfCheck, datesOfCheck, formsOfCheck, alikeOfWider, storeScope, widerReading, checkWorkSpent };
+  viewsOfCheck = null;
+  datesOfCheck = null;
+  formsOfCheck = null;
+  alikeOfWider = null;
+  storeScope = null;
+  widerReading = false;
+  checkWorkSpent = 0;
+  baseReading = true;
+  try {
+    return inOneReading(read);
+  } finally {
+    baseReading = false;
+    ({ viewsOfCheck, datesOfCheck, formsOfCheck, alikeOfWider, storeScope, widerReading, checkWorkSpent } = kept);
+  }
+}
+
+/**
+ * Whether the base's whole entry refuses the letter (a97d73e4: the first reading, MOD-23's wider reading, and the check
+ * on the text those wrote), and the spans and text it wrote; null where the base sent it. The rule of the ruling on
+ * finding (C): refuse on either reading. A letter refused by the base's whole verdict stays refused, whatever a wider
+ * reading can now replace. The blunt rule and no cleverer one: the base's own steps are run again, in order.
+ *
+ * 1. The base's wider matches on the letter as written, those the first reading's spans do not cover. With none, its
+ *    text is the first reading's.
+ * 2. Its gate: where the first reading's check refuses the first reading's text, as written or with its CR LF line
+ *    endings as line feeds, that text stands (`firstRefused` is false where the entry's own gate, which reads those
+ *    two writings and one more, has just answered no).
+ * 3. Otherwise its text is the letter with the first reading's matches and those wider ones replaced.
+ * 4. Its check of that text in both writings: the first reading's check, then the call's own identifiers left in the
+ *    base's wider reading.
+ *
+ * The first reading's check of step 4 is asked here only where the base's text is not `sent`, the text the entry
+ * returns if this answers null: of that very text holdsIdentifier asks the same check in the same writings itself, so
+ * the letter is refused there as the base refused it, and asking here would read the letter once more for nothing.
+ *
+ * `byFirstRead` says the refusal is the first reading's check's, of the text the spans returned write: holdsIdentifier
+ * asks that same check of it first, so the text refuses itself and goes back as the base wrote it. Where only the
+ * base's wider reading refuses, or this reading passes the budget on its own counter (it counts no more than the base's
+ * entry counted on the same steps, and the base counted its first reading besides), the one who asks marks the text
+ * (refusedByMarkAfter): this reading's wider forms are not the base's, and nothing is assumed of them.
+ *
+ * The first reading is not run again: MOD-25 changed nothing of it, so its matches, spans and text are the base's.
+ */
+function refusedAsTheBaseRead(
+  normal: string,
+  raw: string,
+  subject: Subject,
+  first: { readonly found: readonly Found[]; readonly spans: readonly PlacedSpan[]; readonly text: string },
+  firstRefused: false | undefined,
+  sent: string,
+  patient: PatientIdentifiers,
+  claims: readonly LetterClaim[],
+): { readonly spans: readonly PlacedSpan[]; readonly byFirstRead: boolean } | null {
+  return asTheBaseRead(() => {
+    let spans = first.spans;
+    try {
+      const inBothWritings = (text: string, holds: (read: string) => boolean) => {
+        const lineFeeds = asLineFeeds(text);
+        return holds(text) || (lineFeeds !== text && holds(lineFeeds));
+      };
+      const firstReadHolds = (read: string) => holdsAsFirstRead(read, patient, claims);
+      const covered = within([...first.spans]);
+      const wider = widerMatchesIn(raw, subject).filter((match) => !covered(match));
+      let text = first.text;
+      if (wider.length > 0) {
+        if (firstRefused ?? inBothWritings(first.text, firstReadHolds)) {
+          return { spans, byFirstRead: true };
+        }
+        spans = merge([...first.found, ...wider]);
+        text = written(normal, spans);
+      }
+      if (text !== sent && inBothWritings(text, firstReadHolds)) {
+        return { spans, byFirstRead: true };
+      }
+      return inBothWritings(text, (read) => widerMatchesIn(masked(read, claims.length), subject).length > 0) ? { spans, byFirstRead: false } : null;
+    } catch (error) {
+      if (!(error instanceof PastCheckWorkBudget)) {
+        throw error;
+      }
+      return { spans, byFirstRead: false };
+    }
+  });
 }
 
 /** redactLetterForScreen as the first reading alone gives it (matchesIn, appliedMatches), with the matches it applied and their spans. */
