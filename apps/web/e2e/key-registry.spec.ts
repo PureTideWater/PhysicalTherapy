@@ -134,6 +134,16 @@ test('two administrators remove a member’s hardware keys, registration stays c
     await expect(keyButton(requester.page, 'End membership of', MEMBER)).toHaveCount(1);
     await expect(requester.page.getByRole('button', { name: 'Request key removal', exact: true })).toHaveCount(0);
     await expect(requester.page.getByRole('button', { name: 'End membership', exact: true })).toHaveCount(0);
+    // The row's hardware-key group is named by its caption and its account, in the singular (V3).
+    await expect(requester.page.getByRole('group', { name: `Hardware key of ${personaEmail(MEMBER)}`, exact: true })).toBeVisible();
+    // A locked account's Unlock names its account as the row's other buttons do (V2). The lock is set as the
+    // database's owner, as ten failed sign-ins set it, and the button itself lifts it.
+    await withDatabase((client) => client.query('UPDATE "user" SET failed_sign_ins = 10, locked_at = now() WHERE email = $1', [personaEmail(MEMBER)]));
+    await requester.page.reload();
+    await expect(keyButton(requester.page, 'Unlock', MEMBER)).toHaveCount(1);
+    await expect(requester.page.getByRole('button', { name: 'Unlock', exact: true })).toHaveCount(0);
+    await keyButton(requester.page, 'Unlock', MEMBER).click();
+    await expect(keyButton(requester.page, 'Unlock', MEMBER)).toHaveCount(0);
     // At a desktop's width the Email column names the row: the phone's copy above the buttons is not shown.
     await expect(narrowAccount(requester.page, MEMBER)).toBeHidden();
 
@@ -157,7 +167,7 @@ test('two administrators remove a member’s hardware keys, registration stays c
     await expect(keyState(requester.page, MEMBER)).toContainText('You asked to remove this account’s hardware keys');
     // The requester cancels: the focus lands on the row's state again, and nothing stands. Then asks again.
     await keyButton(requester.page, 'Cancel removal request for', MEMBER).click();
-    await expect(keyState(requester.page, MEMBER)).toContainText('No key removal stands');
+    await expect(keyState(requester.page, MEMBER)).toContainText('was cancelled. This account’s hardware key is unchanged.');
     await expect(keyState(requester.page, MEMBER)).toBeFocused();
     await expect(keyBadge(requester.page, MEMBER, 'key removal requested')).toHaveCount(0);
     await keyButton(requester.page, 'Request key removal for', MEMBER).click();
@@ -192,6 +202,8 @@ test('two administrators remove a member’s hardware keys, registration stays c
     await expect(confirm).toBeInViewport({ ratio: 1 });
     const account = narrowAccount(confirmer.page, MEMBER);
     await expect(account).toBeVisible();
+    // Seen, not heard: the row's header and each button's name already say the account to a screen reader (V1).
+    await expect(account).toHaveAttribute('aria-hidden', 'true');
     await expect(account).toContainText(personaEmail(MEMBER));
     await expect(account).toContainText('key removal requested');
     // Both inside the viewport and inside the table's scrolling region (to a pixel: the region's edge falls on a fraction).
@@ -267,7 +279,7 @@ test('two administrators remove a member’s hardware keys, registration stays c
     await expect(panel).toContainText(`Registration is open for ${personaEmail(MEMBER)} until`);
     // The panel has a heading to find it by, its lead-in is gone, and the lost-code words agree with the database (U5, U13).
     await expect(panel.getByRole('heading', { name: `Registration code for ${personaEmail(MEMBER)}`, exact: true })).toBeVisible();
-    await expect(panel).toContainText('registration cannot be opened again until');
+    await expect(panel).toContainText('If the code is lost, registration can be opened again, with a new code, only after');
     await expect(memberRow(confirmer.page, MEMBER).getByText('Open registration only when')).toHaveCount(0);
     const shown = (await panel.locator('span.font-mono').innerText()).trim();
     expect(shown).toMatch(/^[0-9A-Z]{4} [0-9A-Z]{4}$/);
@@ -289,7 +301,7 @@ test('two administrators remove a member’s hardware keys, registration stays c
     await confirmer.page.keyboard.press('Enter');
     await expect(confirmer.page.getByText(shown)).toHaveCount(0);
     await expect(keyState(confirmer.page, MEMBER)).toBeFocused();
-    await expect(keyState(confirmer.page, MEMBER)).toContainText('open registration again after');
+    await expect(keyState(confirmer.page, MEMBER)).toContainText('The code is hidden for good. If it was lost, open registration again after');
     expect(await confirmer.page.content()).not.toContain(code);
 
     // A reload keeps the opening and never the code; the other administrator sees the same.

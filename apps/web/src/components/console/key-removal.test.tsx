@@ -73,7 +73,11 @@ describe('the hardware-key actions of a member', () => {
   });
 
   it('groups them under the account’s name (U14)', () => {
-    expect(actions(member(null))).toContain(`role="group" aria-label="Hardware keys of ${EMAIL}"`);
+    // The group's name is its visible caption, then the account for a screen reader: one name, in the singular (V3).
+    const text = actions(member(null));
+    expect(text).toContain(`role="group" aria-labelledby="key-caption-${USER}"`);
+    expect(text).toMatch(new RegExp(`<p id="key-caption-${USER}"[^>]*>Hardware key<span class="sr-only"> of ${EMAIL}</span></p>`));
+    expect(text).not.toContain('Hardware keys of');
   });
 
   it('says what a confirmation removes for good, and what mends the account (U6)', () => {
@@ -92,8 +96,12 @@ describe('the hardware-key actions of a member', () => {
   it('lets each state’s words take the focus, under the account’s id (U3)', () => {
     const focusable = `id="key-state-${USER}" tabindex="-1"`;
     expect(actions(member(removal({ mine: true })))).toMatch(new RegExp(`<p ${focusable}[^>]*data-key-state="requested"[^>]*>You asked to remove`));
-    expect(actions(member(removal({ state: 'cancelled', decidedAt: new Date('2026-11-12T20:45:00Z') })))).toMatch(new RegExp(`<p ${focusable}[^>]*data-key-state="cancelled"[^>]*>No key removal stands for this account: the request of 2026-11-12 20:43 UTC was cancelled\\.`));
-    expect(actions(member(removal({ state: 'expired' })))).toContain('No key removal stands for this account: the request of 2026-11-12 20:43 UTC expired.');
+    expect(actions(member(removal({ state: 'cancelled', decidedAt: new Date('2026-11-12T20:45:00Z') })))).toMatch(new RegExp(`<p ${focusable}[^>]*data-key-state="cancelled"[^>]*>The key removal requested at 2026-11-12 20:43 UTC was cancelled\\. This account’s hardware key is unchanged\\.`));
+    // An expiry is dated by its own time, the request's end, as well as by the request's (V4).
+    expect(actions(member(removal({ state: 'expired', requestedAt: new Date('2026-11-11T20:43:00Z'), expiresAt: new Date('2026-11-12T20:43:00Z') })))).toContain(
+      'The key removal requested at 2026-11-11 20:43 UTC expired at 2026-11-12 20:43 UTC unconfirmed. This account’s hardware key is unchanged.',
+    );
+    expect(actions(member(removal({ state: 'cancelled' })))).not.toContain('stands');
     expect(actions(member(removal(CONFIRMED)))).toMatch(new RegExp(`<p ${focusable}[^>]*data-key-state="removed"[^>]*>Keys removed at 2026-11-12 20:50 UTC\\.`));
     // Registered again since: the account is as any other's, and nothing is said of the old removal.
     expect(actions(member(removal({ ...CONFIRMED, registrationClosed: false })))).not.toContain('data-key-state');

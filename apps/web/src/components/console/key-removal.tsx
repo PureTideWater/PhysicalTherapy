@@ -137,7 +137,8 @@ export function KeyRemovalActions({ member, organizationId, now }: { readonly me
     <KeyGroup account={member.userId} email={member.email}>
       {removal?.state === 'cancelled' || removal?.state === 'expired' ? (
         <KeyStateText key={removal.state} account={member.userId} state={removal.state} className="text-sm text-muted-foreground">
-          No key removal stands for this account: the request of {utc(removal.requestedAt)} {removal.state === 'cancelled' ? 'was cancelled' : 'expired'}.
+          {/* Shown while the summary carries the request: hardware_key_removals() lists a decided one for 30 days, so these words leave with it. */}
+          The key removal requested at {utc(removal.requestedAt)} {removal.state === 'cancelled' ? 'was cancelled' : `expired at ${utc(removal.expiresAt)} unconfirmed`}. This account’s hardware key is unchanged.
         </KeyStateText>
       ) : null}
       <ActionForm

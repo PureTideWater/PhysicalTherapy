@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { HARDWARE_KEY_NOTICE_KINDS, HARDWARE_KEY_NOTICE_SUBJECTS, hardwareKeyNoticeLines } from './words';
+import { HARDWARE_KEY_NOTICE_KINDS, HARDWARE_KEY_NOTICE_SUBJECTS, hardwareKeyNoticeLines, utcMinute } from './words';
 
 /**
  * The three hardware-key notices' words (docs/adr/0095; UX review U18 to U20): true to what the account can do next,
@@ -21,7 +21,10 @@ describe('the hardware-key notices', () => {
 
   it('says on an opening that the code is never sent by email or text (U19)', () => {
     const text = hardwareKeyNoticeLines('registration_opened', AT, SUPPORT).join(' ');
-    expect(text).toContain('at 2026-11-12 20:43 UTC, for 1 hour.');
+    // The notice's time is the opening's own, and the database ends it exactly one hour later (V9).
+    expect(text).toContain('at 2026-11-12 20:43 UTC. It is open until 2026-11-12 21:43 UTC.');
+    expect(text).toContain(utcMinute(new Date(AT.getTime() + 3_600_000)));
+    expect(text).not.toContain('for 1 hour');
     expect(text).toContain('PaidWhole never sends this code by email or text.');
   });
 

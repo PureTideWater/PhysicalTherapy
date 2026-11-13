@@ -167,7 +167,7 @@ export const HARDWARE_KEY_NOTICE_SUBJECTS: Readonly<Record<HardwareKeyNoticeKind
   registered_after_removal: 'A new hardware key was registered',
 };
 
-/** How long an opened registration lasts, in the email's words (the database's hour: hardware_key_removal_opening). */
+/** How long an opened registration lasts (the database's hour: hardware_key_removal_opening), from which the email computes its end. */
 export const KEY_REGISTRATION_OPEN_HOURS = 1;
 
 /** Said wherever a notice names the one-time code: a message that carries one, or asks for one, is not the product's. */
@@ -182,8 +182,10 @@ const NEVER_BY_EMAIL = `${brandName} never sends this code by email or text.`;
  *
  * - `removed`: the key was removed by two of the product's administrators; the account cannot sign in until it
  *   registers a new key, which it does only once support opens registration and reads it a one-time code by phone.
- * - `registration_opened`: registration is open for one hour from the time; with the one-time code. The notice's row
- *   carries the opening's time and not its end, so the email says the hour and computes no closing time.
+ * - `registration_opened`: registration is open until a time; with the one-time code. The notice's row carries the
+ *   opening's own time (hardware_key_registration_open() writes one clock reading to registration_opened_at and to
+ *   the notice's event_at), and the database's check holds the end to exactly one hour after it, so the email
+ *   computes the end from the event's time and it is the row's own.
  * Both say the code is never sent by email or text, so a message that carries or asks for one is not the product's.
  * The key is named in the singular throughout, as the sign-in screens name it: an account holds one live key.
  * - `registered_after_removal`: a new key was registered; signing in asks for it from now on.
@@ -199,7 +201,7 @@ export function hardwareKeyNoticeLines(kind: HardwareKeyNoticeKind, eventAt: Dat
       ];
     case 'registration_opened':
       return [
-        `${brandName} opened registration of a new hardware key on your ${brandName} account at ${at}, for ${KEY_REGISTRATION_OPEN_HOURS} hour.`,
+        `${brandName} opened registration of a new hardware key on your ${brandName} account at ${at}. It is open until ${utcMinute(new Date(eventAt.getTime() + KEY_REGISTRATION_OPEN_HOURS * 3_600_000))}.`,
         `To register the key, sign in with your password and your authenticator code, then enter the one-time code ${brandName} support read to you by phone. ${NEVER_BY_EMAIL}`,
         `If you did not ask for this, write to ${supportEmail} at once from the address you sign in with.`,
       ];

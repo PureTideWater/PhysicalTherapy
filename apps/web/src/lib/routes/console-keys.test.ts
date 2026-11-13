@@ -11,7 +11,7 @@ describe('the key registry’s refusal words', () => {
   });
 
   it('says a decided request may be confirmed, cancelled or expired, and where to look (U7)', () => {
-    expect(KEY_REFUSALS.hardware_key_removal_decided).toBe('this request was already confirmed, cancelled or has expired; the row now shows where it stands');
+    expect(KEY_REFUSALS.hardware_key_removal_decided).toBe('this request was already confirmed or cancelled, or it expired; the row now shows where it stands');
     expect(KEY_REFUSALS.hardware_key_removal_decided).not.toContain('reload');
   });
 });

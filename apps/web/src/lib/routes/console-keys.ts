@@ -37,7 +37,7 @@ export const KEY_REFUSALS = {
   hardware_key_removal_open_once: 'a removal is already requested for this account; confirm or cancel that one',
   hardware_key_removal_two_people: 'ask another platform administrator to confirm this removal; the one who requested it cannot',
   hardware_key_removal_in_time: 'this request has expired; ask again',
-  hardware_key_removal_decided: 'this request was already confirmed, cancelled or has expired; the row now shows where it stands',
+  hardware_key_removal_decided: 'this request was already confirmed or cancelled, or it expired; the row now shows where it stands',
   hardware_key_removal_requester_left: 'the administrator who requested this removal no longer may; cancel it and ask again',
   hardware_key_registration_not_closed: 'registration is opened only for an account whose keys were removed and that has registered no key since',
   hardware_key_registration_open_once: 'registration is already open for this account; it can be opened again once that hour has passed',

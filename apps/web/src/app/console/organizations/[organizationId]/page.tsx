@@ -151,13 +151,13 @@ export default async function OrganizationPage(props: { readonly params: Promise
                       <td className="py-1">
                         {/* A floor below `sm`, where the table scrolls sideways: without it the cell is a column some 12rem wide, a state's words run to a screen's height and its buttons leave the account behind. */}
                         <div className="flex min-w-72 flex-wrap gap-2 sm:min-w-0">
-                          {/* At a phone's width the Email and Account columns are scrolled away when the buttons are in view, so the row's account and key state stand above them here; from `sm` up the columns say it. */}
-                          <div data-narrow-account className="flex basis-full flex-wrap items-center gap-1 text-sm font-medium sm:hidden">
+                          {/* At a phone's width the Email and Account columns are scrolled away when the buttons are in view, so the row's account and key state stand above them here; from `sm` up the columns say it. Seen, not heard: the row's header and each button's name already say the account, and nothing here takes the focus. */}
+                          <div data-narrow-account aria-hidden="true" className="flex basis-full flex-wrap items-center gap-1 text-sm font-medium sm:hidden">
                             <span className="wrap-break-word">{member.email}</span>
                             <KeyRemovalState member={member} now={now} />
                           </div>
                           {member.locked ? (
-                            <ActionForm action={unlockUserAction} submit="Unlock" variant="outline" className="flex flex-col gap-1">
+                            <ActionForm action={unlockUserAction} submit={<>Unlock<span className="sr-only"> {member.email}</span></>} variant="outline" className="flex flex-col gap-1">
                               <FormKeys />
                               <input type="hidden" name="organizationId" value={organization.id} />
                               <input type="hidden" name="userId" value={member.userId} />

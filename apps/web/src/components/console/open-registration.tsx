@@ -17,20 +17,23 @@ const ARRIVAL_MS = 15_000;
 let pressed: { readonly account: string; readonly at: number } | null = null;
 
 /**
- * A row's hardware-key part, set off from the membership's own buttons and named for its account. It notes a press of
+ * A row's hardware-key part, set off from the membership's own buttons and named by its visible caption, then its
+ * account in a span only a screen reader meets: one name, the caption's own words. It notes a press of
  * any of its forms (the account's opaque ID and the time), so the state that press brings can take the focus.
  */
 export function KeyGroup({ account, email, children }: { readonly account: string; readonly email: string; readonly children: ReactNode }) {
   return (
     <div
       role="group"
-      aria-label={`Hardware keys of ${email}`}
+      aria-labelledby={`key-caption-${account}`}
       className="flex max-w-sm basis-full flex-col gap-2 border-t pt-2"
       onSubmitCapture={() => {
         pressed = { account, at: Date.now() };
       }}
     >
-      <p className="text-xs font-medium text-muted-foreground">Hardware key</p>
+      <p id={`key-caption-${account}`} className="text-xs font-medium text-muted-foreground">
+        Hardware key<span className="sr-only"> of {email}</span>
+      </p>
       {children}
     </div>
   );
@@ -88,7 +91,7 @@ export function OpenRegistration({ organizationId, removalId, email, lead, child
   if (opened !== null && opened.code === null) {
     return (
       <p ref={hidden} tabIndex={-1} data-key-state="open" className={`text-sm ${FOCUSABLE}`}>
-        Registration of a new key is open until {utc(opened.until)}. The code is hidden and cannot be shown again. If it was lost, open registration again after {utc(opened.until)}.
+        Registration of a new key is open until {utc(opened.until)}. The code is hidden for good. If it was lost, open registration again after {utc(opened.until)} for a new code.
       </p>
     );
   }
@@ -102,7 +105,7 @@ export function OpenRegistration({ organizationId, removalId, email, lead, child
           Code: <span className="font-mono text-base font-semibold tracking-widest">{`${code.slice(0, 4)} ${code.slice(4)}`}</span>
         </p>
         <p>
-          Read it to the person by phone, on a number you already hold for them. It is shown once: PaidWhole keeps no copy, and it goes when you leave or reload this page. If the code is lost, it cannot be shown again, and registration cannot be opened again until {utc(until)}. Then open it again for a new code.
+          Read it to the person by phone, on a number you already hold for them. It is shown once: PaidWhole keeps no copy, and it goes when you leave or reload this page. If the code is lost, registration can be opened again, with a new code, only after {utc(until)}.
         </p>
         <p className="text-muted-foreground">Never send the code by email or chat. They enter it after their password and authenticator code, then register the new key. Five wrong codes close this opening.</p>
         <div>
