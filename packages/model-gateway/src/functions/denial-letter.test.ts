@@ -414,7 +414,9 @@ describe('one pass over one folded view: every placeholder survives and no ident
     ['a digit and a CRLF, repeated', ['JANE Q VANTREE'], fill('1\r\n'), 'check'],
     ['a digit, a dash and a bare line break, repeated', ['JANE Q VANTREE'], fill('5-\n'), 'check'],
     ['another script’s digit and a line separator, repeated', ['JANE Q VANTREE'], fill('\u0665\u2028'), 'check'],
-    ['another script’s digit and a next-line character, repeated', ['JANE Q VANTREE'], fill('\u0665\u0085'), 'check'],
+    // U+0085 is an unseen character (Queues item 40, stage 3, R1-4): the letter is read once more with each joined, that
+    // reading is charged in full on the letter's one count, and the count passes the budget there, in the redaction.
+    ['another script’s digit and a next-line character, repeated', ['JANE Q VANTREE'], fill('\u0665\u0085'), 'redaction'],
   ])('refuses a letter past the check’s work budget, by the count and within the 3 s: %s', { timeout: HANG_GUARD_MS }, (_case, names, text, pastIn) => {
     const run = timed(BUDGET_MS, () => checked(names, text));
     expect(run.value.held).toBe(true);

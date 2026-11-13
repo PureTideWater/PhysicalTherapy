@@ -1461,9 +1461,16 @@ function sendsNoSsnOrPhoneIn({ patient, claims, segments, refused }: PatternCase
     }
     text += segment.text;
   }
-  const { text: normal, spans } = redactionSpans(text, patient, claims);
+  const { text: read, spans } = redactionSpans(text, patient, claims);
+  // Queues item 40, stage 3 (R1-4): a letter that holds an unseen character (the generator writes U+0085 as a gap) is
+  // read once more with it joined, and where that reading refuses, each entry's text goes back with the checks' mark
+  // after it, which the check refuses. Not one character before the mark is changed, and only such a letter is marked.
+  const unseen = text.includes('\u0085');
+  const unmarked = (written: string) => (unseen && written.endsWith('\u0001') ? written.slice(0, -1) : written);
+  const normal = unmarked(read);
   expect(normal).toBe(text);
-  const screened = redactLetterForScreen(text, patient, claims);
+  const entry = redactLetterForScreen(text, patient, claims);
+  const screened = { ...entry, text: unmarked(entry.text) };
   let rebuilt = '';
   let kept = 0;
   for (const span of spans) {
@@ -1471,8 +1478,8 @@ function sendsNoSsnOrPhoneIn({ patient, claims, segments, refused }: PatternCase
     kept = span.end;
   }
   const applied = rebuilt + text.slice(kept);
-  expect(redactLetter(text, patient, claims).text).toBe(applied);
-  const held = holdsIdentifier(screened.text, patient, claims);
+  expect(unmarked(redactLetter(text, patient, claims).text)).toBe(applied);
+  const held = holdsIdentifier(entry.text, patient, claims);
   if (held) {
     // Refused: every span is replaced where it stands, each by its own placeholder, or [PHONE] for an [SSN].
     let at = 0;
