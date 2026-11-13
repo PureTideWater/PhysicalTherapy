@@ -2459,4 +2459,35 @@ figures above are the earlier trees'; the last paragraph here gives them for the
 - *Owed before any real PHI, unchanged:* the count of stored member IDs and claim numbers by length, from the first
   practice's records.
 
-MEASURES-PLACEHOLDER
+- *One further fix after the delta review (95529e85).* The unit suites on 287c68d3 failed MOD-15's property on seed
+  1568248446: a letter with the patient's name glued to a number (`RE: Zephyra900-12-3456.`) came back with the
+  refusal mark, where the base wrote it without. The verdict was the same and the text was not the base's. Where the
+  base's text is the text this reader returns anyway and only the base's wider reading refuses it, this reader's own
+  whole check of that text is now asked apart from the entry, and the mark is written only where that check does not
+  refuse. Pinned by the property's counterexample and its shortest form. The delta review read 287c68d3 and did not
+  read this further fix.
+- *The delta review of the fix (review 5: no blocker, three lesser findings, none built, all for the queue).*
+  R5-1: a refusal the base gave by its count of work alone is not reproduced, because the base's reading is run again
+  on a count from nothing; on 41 of 313 sampled letters it counts fewer units than the base did, by up to 238,226, so a
+  letter within about 240,000 units above the budget on the base could be sent here. No such letter was built. R5-2:
+  the entry's counted units move on 6 of 10,500 letters, every one refused by the base and here (650,506 to 659,506
+  on one); no sent letter's count moved. R5-3: every letter pays for the base's reading a second time, at most one
+  more budget a call.
+- *What the fix costs in time.* The gate's whole run of 975,489 letters took 1,311 s on the base's reader and 1,534 s
+  on this one (17% more, for the whole item). The battery's generators that run for a fixed 120 s reached between 20%
+  and 37% fewer letters on this reader. The slowest gate letter is 1,169 ms on the base and 1,110 ms here, of 3,000.
+- *Three more refusals in the battery's generator k-gen-A, from before the fix rounds.* Of its 20,000 letters this
+  reader refuses three the base sends, each with a line break written LF CR between a Social Security or phone word
+  and a number; the base refuses the same letters written with a line feed alone. 846968af, before the fix rounds,
+  refuses them already, and 17028cfa and 95529e85 give the generator's output line for line. They were not named in
+  the stage 6 or stage 7 records, whose comparison read the battery's summary lines only.
+
+**Measured on 95529e85 against a97d73e4 (2026-11-13, synthetic letters only).** The generated set: 0 failures of
+14,356 letters, no PHI class. The full gate without its cache: 975,489 letters, PHI none, unplaced none, reverse
+classes none; refused 462,984 on the base and 463,002 here, the 18 more being exactly the harness letters named above
+under R1-2, none real-shaped; one letter's text changed (187859, A-4, as recorded). The two budget rows count
+403,548,210 and 414,023,090 units and are sent, on both. Of 60,000 fuzzed letters (seeds 301, 302 and 303) the base
+refuses 3,477 and every one is refused here. The battery, on its recorded and fresh seeds: every summary line is the
+base's (no withheld number sent, no departure, no base flag), one reproduction row differs as recorded (A-4), and nine
+of its scripts fail at load on both sides. The redaction, packets, synth and model-gateway unit suites pass (93 files,
+7,652 tests), and `pnpm test:db` passes.
