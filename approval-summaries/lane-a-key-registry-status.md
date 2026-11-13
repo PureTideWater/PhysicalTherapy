@@ -1,5 +1,223 @@
 # Status: Queues item 37, the key registry (Lane A)
 
+## RESUME-BLOCK (2026-11-13, W61, session_019i9ifD4ZD9pKYb8nEukCQm): the two refs are merged, the three reviews and two fix rounds are DONE; one BLOCKER is owed to the migration (a trigger, its text below, its test committed RED); then PR 5's base, the rename, the domain model and the PR
+
+**Ref `co-001/wip-key-registry` 282895dd** (pushed; no PR; no migration touched; the screens ref 07807b33 is merged in by
+914ad07b and is no longer needed). Commits on 3187bda3, in order: 914ad07b the merge; ad684695 SGN-20, 21, 23, 24 and 27
+name `apps/web/e2e/key-registry.spec.ts` in `registry.ts` (5 `expected.json` rewritten by `pnpm synth --all`); 9d55a61a
+the dev twin's algorithms; 980d5e7b the owed-red test; fe7047bc, e3406211, 288740e7, c505ad28 fix round 1; 07019b19,
+282895dd fix round 2. The reviews' reports, the scratch test and the trigger's text are in
+`designs/lane-a-key-registry-reviews/` (seven files).
+
+### What is green (PostgreSQL 18 on 5433, Node 24; ONE run, on the tree of 282895dd, typecheck cold)
+- `pnpm verify-content`: passes. `pnpm typecheck`: passed, 24 projects. `pnpm lint`: 1,964 files, 0 errors, 0 warnings.
+  `pnpm lint:logs`: 1,210 files, every call allowlisted.
+- `pnpm test`: **513 files; 14,404 passed, 4 skipped, 0 failed.**
+- `pnpm test:db` whole: **175 files; 10,586 passed, 1 skipped, 3 FAILED: exactly the three owed-red cases** of
+  `packages/db/src/key-registry.db.test.ts`, the describe "SGN-24: the target of a requested key removal changes no
+  other account (owed red until the trigger hardware_key_removal_target_acts is in the migration)". Nothing else fails.
+- `pnpm test:e2e --trace off`: **88 passed, 0 failed.** `pnpm test:golden`: 5 files, 381 passed.
+- The baseline before any fix (ad684695): the same suites green (14,376 unit; 10,572 db) **except e2e, 67 passed and 21
+  failed**, every one at key registration; the cause and its mend are the first finding below.
+- e2e needs `E2E_ADMIN_URL=postgres://postgres:test@localhost:5433/postgres`; test:db and golden were run with
+  `DATABASE_URL` of the same. `/tmp/setup-container.sh` re-run starts both PostgreSQL servers **and moves the checkout to
+  claude/build-platform**: check the branch after it.
+
+### THE BLOCKER (the orchestrator's ruling, 2026-11-13 02:05 UTC): review A1, fixed in this item's own migration before the PR
+**Verified** (scratch test, `a1-scratch.db.test.ts.txt`): while a removal of T's keys requested by B is `requested`, T,
+as tp_app with `app.actor_id` = T, runs `UPDATE "user" SET status = 'disabled' WHERE id = B` (accepted, 1 row) and C's
+confirmation is then refused `hardware_key_removal_requester_left`. `hardware_key_required` of B is accepted too
+(tp_app holds the column; `user_guarded_columns` passes a platform administrator). `mfa_enrolled` is refused already
+(42501, `20261015180000_tenancy_hardening.sql:481`). Ruling 16.4 closed this through `membership` only. No web route
+makes the change today. DELETE of a membership is not a way round: tp_app holds INSERT and UPDATE (role, ends_at) only.
+**The test is committed (980d5e7b), 8 cases, 3 red today on their assertion** (`expected { rows: 1 } to deeply equal
+{ code: '23514', constraint: 'hardware_key_removal_target_acts' }`), 5 green (the account's own row; an unrelated
+administrator; after cancel, confirm, expiry). **With the trigger below applied in a scratch database: 8 passed.** Do
+not skip or loosen it; when the trigger lands, drop the title's parenthesis.
+**The exact text** (also `a1-trigger.sql.txt`, with its conventions, lock analysis and proof). It belongs in
+`20261115090000_key_registry.sql` section 6, directly after `CREATE TRIGGER membership_removal_target_holds …`, applied
+by the co-founder's typed `/new-migration` in the last session, together with the rename (one command a file):
+```sql
+
+-- While a removal of an account's keys is requested, that account changes the status and the hardware-key rule of no
+-- other account: as a platform administrator it could otherwise disable the requester, which voids the request
+-- (hardware_key_removal_requester_left), or any administrator who could confirm it. Its own row it may still change,
+-- and once the request is decided (confirmed, cancelled or marked expired) the rules that stood before decide alone.
+-- It takes no lock. By name it fires after user_guarded_columns and before user_updated_at; the order changes no
+-- outcome, since only a platform administrator reaches another account's row and user_guarded_columns passes one.
+CREATE FUNCTION user_removal_target_holds() RETURNS trigger
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp AS $$
+BEGIN
+  IF app_actor_id() IS NOT NULL
+     AND OLD.id <> app_actor_id()
+     AND EXISTS (SELECT 1 FROM hardware_key_removal r WHERE r.user_id = app_actor_id() AND r.state = 'requested') THEN
+    RAISE EXCEPTION 'an account whose key removal is requested changes no other account''s status or hardware-key rule until the request is decided'
+      USING ERRCODE = 'check_violation', CONSTRAINT = 'hardware_key_removal_target_acts';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+REVOKE ALL ON FUNCTION user_removal_target_holds() FROM PUBLIC;
+CREATE TRIGGER user_removal_target_holds BEFORE UPDATE ON "user" FOR EACH ROW
+  WHEN (NEW.status IS DISTINCT FROM OLD.status OR NEW.hardware_key_required IS DISTINCT FROM OLD.hardware_key_required)
+  EXECUTE FUNCTION user_removal_target_holds();
+
+```
+**With it, in the same migration:** the header's trigger list (about line 24); the preflight's `proname IN (...)` (about
+line 80); section 14's `REVOKE ALL ON FUNCTION … FROM PUBLIC` list (about line 1537; the REVOKE above is then folded
+in). **And outside it:** SEC-25 in `key-registry.db.test.ts` (the functions map, `'user_removal_target_holds()':
+forNone`, about line 230; the trigger name array and expected list, about line 260); `packages/db/functions/
+user_removal_target_holds.sql` and `docs/product/domain-model.md` by the generator, never by hand; one sentence in ADR
+0095 beside `membership_removal_target_holds` (lines 78 and 239). **Residual, as the membership trigger's:** a request
+not yet committed when the target's statement takes its snapshot does not bind it (closing it needs a second row lock
+that can deadlock; not proposed). The delta review attacked the text and found no bypass and nothing legitimate
+blocked; the target can still change another account's email (it redirects notices, voids nothing).
+
+### Each review's findings and what became of each
+**Found by the suite, not a review.** No key registered in e2e on this machine's Chromium (156): the dev twin offered
+the library's default algorithms, ML-DSA-44 first, and the registry refused the public key (`hardware_key_public_key`,
+1,024 bytes). **Fixed** 9d55a61a (the twin), fe7047bc (the product: `KEY_REGISTRATION_ALGORITHMS = [-7, -257]`,
+`auth/provider.ts`; the flow sends the intersection with the provider's list, refuses an empty one with
+`KEY_ALGORITHMS_NOT_OFFERED`, verifies with the same list), 07019b19 (the completion's test, an Ed25519 key; the alarm).
+**The ruling: the cap stays; recorded for the queue:** a post-quantum algorithm needs a verifier and a wider CHECK
+together, in a later schema PR.
+
+**Review A, auth and tenant isolation (`review-a-auth.md`; every two-person bypass on its list, the code's
+generation and expiry, every session-insert path and the four tables' isolation were found sound).**
+- A1 high: **the blocker above; needs the migration.**
+- A2 medium (the judge counts a try with no code): **fixed** fe7047bc: a step with no code judges with `began = NULL`,
+  which the function answers without counting. Said plainly: an ordinary sign-in already counted none (its step carries
+  `codeRequired`); the counting path was a step without the flag, and the test strips the flag rather than building a
+  removal of an account with no key row. **Recorded, needs a migration (delta D7):** that call still writes one
+  `key_registration_refused` security event at the code screen; return before the INSERT when `began` is NULL.
+- A3 medium (an unsalted SHA-256 of a 40-bit code): **fixed** fe7047bc: HMAC-SHA-256 under a key derived by HKDF from
+  the sealing key (`Sealer.deriveKey`, label `paidwhole registration-code digest v1`), one value in
+  `Services.registrationCodeKey` for the console's route and the sign-in flow; 32 bytes, the database untouched.
+  Replacing the sealing key inside an opening's hour refuses that code like a wrong one. **Not checked:** whether
+  PostgreSQL logs bind parameters for the app role in infra.
+- A4 low (`hardware_key_record` an uncounted check for the app role): **recorded, needs a migration** (W47's point 3).
+- A5 low, the orchestrator's point (a refused act leaves no trace): the review's answer: **neither the note's 4.5 and 6
+  nor the rules require a trace of a refused removal.** Two ways need no migration (an IDs-only line in `refused()`,
+  `console-keys.ts`, with a metric filter and alarm; a second transaction writing an audit row under a new,
+  non-reserved action); a `security_event` row needs one. **Needs the orchestrator's ruling; not built.**
+- A6 low (point 49): **fixed** fe7047bc, e3406211, 07019b19: the line carries `RELYING_PARTY_MISMATCH`, is written at
+  every refused step, and `RelyingPartyMismatch` alarms on the web group.
+- A7 low (point 50): **fixed** fe7047bc: options with no rpId are compared by the origin's host.
+- A8 medium (`writtenBy: 'database'` unguarded): **fixed** fe7047bc: a registry test pins the four routes and their
+  actions; their object type is now `'user'`, as the functions write. Note (delta D9): their `objectId` is still the
+  removal's ID. **For the queue.**
+- A9 to A11 notes (Postgres trusts the app role for which session acts, accepted by 16.5; `organizationId` is a UUID in
+  a fixed redirect path, no open redirect; `sign_in_hardware_keys` and `sign_in_key_refused` act for any user id with
+  no actor): **recorded.**
+- The orchestrator's other points: the pool count 5 to 7 in `lock-timeout.test.ts` counts two new transaction sites in
+  `sign-in.ts` (the judge, the record), not a pool size and not a leak (read from the diff, the test body not read).
+  The marker that outlived one command is `.claude/.allow-protected-edit`: absent in both checkouts, and the diff
+  changes nothing under `.claude/` or `tools/hooks`.
+- **Not reached by review A:** the `routes/sign-in.ts` diff and `authenticated()`; the React component that holds the
+  code; the timestamp `record_security_event` writes.
+
+**Review B, the job, the outbox and deploy safety (`review-b-job-deploy.md`; the claim, lease and try logic, the
+payloads (empty), the log lines (IDs and codes only) and the migrations' locks were found sound; W33's figures still
+apply, no migration changed since).**
+- B1 high (a slow provider with a backlog pages nobody for hours; an untried row is never given up): **partly fixed**
+  e3406211: `ProviderSignOutAttemptsFailing` (3 failed tries in 15 minutes) and the run stops at its first timed-out
+  call. **The full fix needs a migration, recorded:** the sweep marks a row LATE by age (undone and queued more than 15
+  minutes ago, whatever `attempts` says) and GAVE_UP by age with no minimum of tries.
+- B2 high, point 20 (a reset whose transaction fails twice queues no sign-out): **confirmed; needs a migration,
+  recorded:** widen the outbox reason's CHECK with `password_reset_unrecorded`; a function
+  `provider_sign_out_unrecorded_reset(request)` for tp_app that writes its own audit row so the trigger queues the
+  sign-out; an operator function for the case where the database is unreachable. What is lost meanwhile: the provider's
+  tokens issued before the reset, a key-registration grant begun before it included. The runbook's step covers it only
+  through End membership. **Needs the orchestrator's ruling on whether it rides this item's migration.**
+- B3 medium (two operator connections, one held through the provider's call): **fixed** e3406211: a connection a step,
+  none during the call; a step that cannot connect is a failed step and the run line is still written.
+  **For the queue:** `hardware-key-notices` (and probably `password_notices`, not opened) still send mail inside the
+  claim-to-sent transaction.
+- B4 medium ("no such user" counts as done): **partly fixed** e3406211: `ProviderSignOutNoSuchUser` (3 in 15 minutes).
+  **For the queue (delta D1):** a wrong pool ID at low volume stays under it; a pool check at the worker's start needs
+  an IAM action.
+- B5 medium, B8 note: **fixed** e3406211 (the runbooks): expect `ProviderSignOutsNotRunning` to page twice in the
+  deploy that creates it; a rollback also stops removal requests expiring, sends key notices late and leaves the
+  previous web's failed provider call unpaged by name. The first-deploy page rests on how CloudWatch evaluates a new
+  alarm with only missing data: not checked against its documentation.
+- B6 low (the failed-try warning has no cause request_id; a database failure's SQLSTATE is lost): **recorded, needs a
+  migration** (the claim returns the request_id). B7 note (two overlapping sweeps can deadlock; nothing is lost):
+  **recorded.**
+- **Suspected, not proven:** in a rolling deploy the previous image's session insert takes the device row then the
+  account row; no path was found that takes them the other way, and W33's run did not mix images.
+
+**The UX and brand review (`review-ux-brand.md`, `review-delta-ux.md`). Said plainly: the reviewer could not open the
+two private galleries, so every judgement is from the markup or from W53's record; none is "seen". No shot was taken
+after the fixes.** Contrast of "Confirm key removal" passes from the tokens (light 4.71:1, dark 5.86:1).
+- U1 (F1, 390 px): **the small form fixed** c505ad28, 282895dd: below `sm` the Actions cell begins with the account
+  and its key state (`[data-narrow-account]`, hidden from assistive technology), and e2e holds the account and the
+  button in the window together. **For the queue:** the stacked list. The table and its scrolling region stay because
+  TBL-02 and TBL-03 require them.
+- U2 (F2): **fixed**: the email is the row's header; every key button, End membership and Unlock name their account;
+  "Cancel removal request", "Open key registration".
+- U3, U4 (F3, F4): **fixed**: focus on the row's state after Request, Cancel and Confirm (by a note of the press in
+  memory, no fragment and no new input: the fragment redirect did not re-render the page), and "Code accepted." with
+  focus on the heading.
+- U5 to U8, U10 to U14, V1 to V6: **fixed** (the panel's heading and "Hide the code"; the lost-code, decided,
+  cancelled, expired and seven-day words; the pending badge; the code in the mono face). U8 is one sentence, not two:
+  the functions raise one 42501 for both causes.
+- U18 to U20, V9 (the emails): **fixed**: "Your hardware key was removed"; never by email or text; "It is open until
+  {time}" (the opening function writes the notice's time and the end from one clock reading).
+- **For the queue:** U9 (the words when a key step fails for a fault of ours: `hardware-key.tsx` can tell 5xx from
+  4xx); U15 (the page answering an empty code itself); U16, U17, V7 (shared form components; the refusals' full
+  stops); V8 (a refresh of the key step moves focus to the heading); U20 for the console (it still says "hardware
+  keys", "keys removed"; pinned widely); who cancelled, in the cancelled sentence; the opening's notice is written at
+  the first opening only, so a second opening sends no email; whether an expired request gets a `decided_at` (if not,
+  the page never lists it and the expired sentence never shows): not checked.
+- **Two e2e assertions passed without being seen red:** the narrow copy's `aria-hidden` and Unlock's name.
+- **Not judged by anyone:** a screen reader's speech, a headed browser, the page without JavaScript, the emails'
+  rendered HTML, the 24-hour expiry and five-wrong-codes screens.
+
+**The security delta review (`review-delta-security.md`): nothing in the fixes breaks a rule in force; every claimed
+fix judged sound.** D1 (queue, above), D2, D3, D4 **fixed** 07019b19 (`KeyAlgorithmsNotOffered`; the line at every
+step; the completion's test), D5 is the owed-red test, D6 the trigger (no bypass found), D7 (needs a migration, above),
+D8 (the code key is a Buffer on `Services`; no path to a log, JSON or a client was found), D9 (above).
+**Metric filters: 42 to 46** (`ProviderSignOutAttemptsFailing`, `ProviderSignOutNoSuchUser`, `RelyingPartyMismatch`,
+`KeyAlgorithmsNotOffered`), each with its paragraph in `incident-response.md`.
+
+### Needs a migration, in one list (none made here; the co-founder's typed command starts each)
+1. **The trigger `user_removal_target_holds` (the blocker; this item's own migration; text above).**
+2. Point 20 / B2: the unrecorded reset's sign-out (text above). 3. B1: LATE and GAVE_UP by age. 4. D7: no security
+event for a step judged with no beginning. 5. A4: `hardware_key_record` counts its check. 6. B6: the claim returns the
+cause's request_id. 7. For a later schema PR: `hardware_key_public_key` wider, with a post-quantum verifier.
+**Needs the orchestrator's ruling:** whether 2 to 6 ride this item's migration or the contract migration; A5.
+
+### Records the fix rounds left behind (the last session writes them, with the papers)
+ADR 0095 does not yet say: the keyed digest (it says SHA-256); ES256 and RS256 only; the four alarms and the count 46;
+the sign-out run's connection a step and its stop at a timeout; the "user" trigger. The test matrix rows were not
+reworded (SGN-27's row says nothing false; SGN-24's does not name the "user" trigger: add it with the trigger and run
+`pnpm synth --all`). `apps/web/e2e/key-registry.spec.ts` now also cancels and requests again, presses a late Cancel,
+locks and unlocks the member (as the owner) and checks 390 px.
+
+### What the last session does, after schema PR 5 has merged
+1. Merge the base (`origin/claude/build-platform`) into `co-001/wip-key-registry`.
+2. By the co-founder's typed `/new-migration`, one command a file: the two migrations renamed to sort after PR 5's
+   `20261115090000_roi_statement_actionable_lines`, **and the trigger above added to the first** with its three lists;
+   then SEC-25's lists, the describe's title, ADR 0095 and SGN-24's row. `pnpm test:db` must then be whole green
+   (10,589 passed and 1 skipped on this tree, before PR 5's own tests).
+3. The domain model regenerated (`pnpm db:domain-model`; `packages/db/functions/user_removal_target_holds.sql` comes
+   from it), never the approval line.
+4. The full local suite once (the commands and counts above).
+5. The PR from `.github/pull_request_template.md`, opened with `pnpm -s db:domain-model --summary-since
+   origin/claude/build-platform --function-diffs list`, with **"What the founder should know before approving"**: at
+   least three platform administrators named before launch (two must confirm a removal and neither may be the account);
+   a rollback of this release leaves staff unable to sign in until roll-forward (and stops removal requests expiring,
+   sends key notices late); staff register their keys once at deploy; expect `ProviderSignOutsNotRunning` to page twice
+   in that deploy; after a removal the account opens no session until an administrator reads it a one-time code; every
+   session insert takes the account's row lock; W50's list below stands. The suggested approval line as ONE PR comment
+   through the GitHub API, never a review; never approve, never merge before the founder's review of the latest commit.
+
+### Machine notes
+W61 read, beyond its list: the registry rows SGN-20 to 27 and their matrix lines; `registration-code.ts`; about 60
+lines of `dev-provider.ts`, `e2e/helpers.ts` and two test files to mend type errors a fix left (288740e7); the reviews'
+reports. Every fix and review ran as a subagent with its report read here, not its code. W61 holds nothing: no PR, no
+subagent, no scheduled task, no running server or suite.
+
 ## RESUME-BLOCK (2026-11-12, W50, session_019i9ifDqnGxZb6EWNt5PoPf): the records, the absence alarm and green are done; the five SCREENS are NOT seen and SGN-22's test is owed; then the reviews, the domain model and the PR
 
 ### W53 adds (2026-11-12 to 13, session_019i9ifB1YL441uNkk6Azg9t): the five screens are SEEN, and the e2e journey is written and green
