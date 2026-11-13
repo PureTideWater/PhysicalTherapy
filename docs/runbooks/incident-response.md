@@ -392,7 +392,12 @@ confirmed holds no one.
 at most one such request open at a time, and cannot ask again against the same administrator for seven days after
 their request there expired or was cancelled; the console says so and names who can act. Another eligible
 administrator can still request it at once. A request against any other account is not limited. So one administrator
-can hold another for 24 hours at most, once in eight days, and never two at once.
+can hold another for 24 hours at most, once in eight days, and one at a time: of a requester's open requests against
+platform administrators only the earliest holds its account.
+
+**Where a platform administrator's account is thought to be in another's hands, disable it or end its membership
+first, and request the removal of its keys second.** An account named in a request can itself request against the
+requester, and each then holds the other for 24 hours.
 
 **A platform administrator thought to be in another's hands, who has requested the removal of another
 administrator's keys.** The administrator named in the request cannot disable them while it stands. In this order:

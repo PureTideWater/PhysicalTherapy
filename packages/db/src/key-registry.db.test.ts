@@ -1110,6 +1110,19 @@ describe('SGN-31: a requested key removal binds its target only while it can sti
     });
   });
 
+  describe('one requester binds one account at a time, whatever is promoted afterwards (review W66 S1)', () => {
+    it('A requests against administrator B and then against a member; B makes the member a platform administrator; the member is not held and disables A, and B is still held', async () => {
+      const [a, b] = [await administrator(), await administrator()];
+      const x = await member();
+      await requestRemoval(a, b.id);
+      await requestRemoval(a, x.id);
+      await seeded(`INSERT INTO membership (id, organization_id, user_id, role) VALUES ($1, $2, $3, 'platform_admin')`, [randomUUID(), internal, x.id]);
+      expect(await disable(b.id, a.id)).toEqual(HOLDS);
+      expect(await disable(x.id, a.id)).toEqual({ rows: 1 });
+      expect(await statusOf(a.id)).toBe('disabled');
+    });
+  });
+
   describe('(c) the owner path, with no acting account, is never bound (the runbook’s break-glass)', () => {
     it('disables the requester as the owner while its request stands, and the target is then bound no longer', async () => {
       const [target, requester, third] = [await administrator(), await administrator(), await administrator()];
