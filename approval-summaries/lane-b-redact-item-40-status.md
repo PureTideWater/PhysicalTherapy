@@ -1,5 +1,101 @@
 # Queues item 40 (letter redaction: R1-3, R1-4, ruling (A)'s initial): status
 
+## RESUME-BLOCK (W72, 2026-11-13: STAGE 2 IS BUILT AND MEASURED, GREEN AND PUSHED; NEXT IS STAGE 3)
+
+- **Head:** `co-001/wip-redact-item-40` at 07670552 (two commits over stage 1's 3c856166, which is over the base
+  17c234d2): `packages/redact/src/redact.ts` (+75, -2) and `packages/model-gateway/src/redact.leaks.test.ts`. No PR.
+- **The rule, as built** (R1-3 with ruling 3 and the rulings of 09:55 UTC; the first reading is not changed by one
+  character, and each rule only ADDS a refusal):
+  1. Rule (a) (`digitsGluedToLetter`) asks for `[\p{L}\p{Nl}\p{No}]` on one side, not `\p{L}` alone (P1, two lines).
+  2. Each of the three entries (`redactLetterForScreen`, `redactLetter` through `redactionSpans`, `redactionSpans`)
+     reads the letter AS GIVEN once more with every `\p{Nl}`/`\p{No}` character written as U+2180
+     (`refusedWithNumberCharactersAsOne`), and only refuses, with the mark the check refuses after what the reading of
+     the letter as given wrote (`refusedByMarkAfter`); the spans are that reading's, unchanged. Refused where, on that
+     writing: rule (a) finds a digits-only number glued to the character (whatever a placeholder took of it); a
+     placeholder stands right against the character, or over one (fewer U+2180 sent than the letter holds) — this is
+     what catches a nine- or ten-digit number a PATTERN takes (`Claim 496736367<U+00B2>`, sent `Claim [MEMBER_ID]2` on
+     the base); or the check refuses what that reading wrote (a name, a date, a number that holds a letter).
+  3. A letter with no such character costs one search; one whose every such character is U+2180 already is read ONCE
+     (the entry's own reading is passed in as `given`) and only rule (a) is added. The further reading is charged in
+     full on the letter's count, and `checkWorkOf` carries the sum, so one budget holds for the whole check.
+- **Green:** the stage-2 group is a describe of its own, `MOD-25, Queues item 40, stage 2 (R1-3 with ruling 3) ...`,
+  the "owed red" mark gone for it alone; the groups of stages 3 and 4 stay inside the OWED RED describe, untouched
+  (56 tests, each still failing on its assertion). redact.leaks.test.ts: 1,247 passed, 56 failed (those 56 alone).
+  eslint and tsc clean on both files.
+- **Rows added before the change, each seen failing on its assertion on 3c856166** (84 failed, 6 passed on the base):
+  17 of `EVERY_KIND` through all three entries (a name, a name with the character NFKC writes as a letter, a lettered
+  number, a date of birth in three writings, a pattern's number, the nine- and ten-digit numbers, the rows the first
+  reading already replaces); the 12 ROWS through `redactionSpans`; a property over 11 written values x 1,154
+  characters x 2 sides x 5 frames x 3 entries; the work row (`work(noted) === work(plain) + work(asOne)`); 5 rows set
+  apart, sent as before.
+- **Measurements** (`designs/lane-b-redact-item-40/stage-2/`: `measure-stage-2.sh`, `every.mts`,
+  `summarize-stage-2.mjs`, `after-stage-2.sh`; counts in `stage-2/measure/`). Trees: base 17c234d2 (redact.ts
+  3b34d2a284c9) against the head's file as committed (28cb0f16f860, `measure/trees.sha256`).
+  - **Item 40's generated set** (seed 40, 51,833 letters, `generated-set-40.stage-2.counts.md`): **failures 0 in every
+    family this stage builds; PHI classes none; errors 0/0; spanMismatch 0.** Refused 2,366 on the base, 7,020 on the
+    head. R1-3 families, clear / hidden / refused: `r13.stable` (NFKC keeps, 3,812) base 3,780 / 0 / 32, head 0 / 0 /
+    3,812; `r13.nfkc` (804) base 345 / 263 / 196, head 0 / 0 / 804; `r13.control.name` and `r13.control.lettered`
+    (1,154 each) head 0 / 0 / 1,154 (newly refused 96 and 74: W71's 49 and 27 still clear on the base, plus the rows
+    it sent hidden). `r13.apart` (60) and `r13.left` (30, the recorded residual) unchanged. The families of stages 3
+    and 4 (`r14.*`, `A.*`) and the `probe.*` rows are untouched, each count the same on both trees.
+  - **Every newly refused REAL-SHAPED row, by form (96, each named):** `real.r3.footnote-after-member-id` 16,
+    `real.r3.footnote-after-claim-number` 16, `real.r3.footnote-after-number-at-line-end` 16,
+    `real.r3.circled-list-number-before` 16, `real.r3.parenthesized-list-number-before` 16,
+    `real.r3.list-number-with-full-stop-before` 16. Of them the base sent 42 in clear and 54 hidden (the named cost of
+    ruling 3). Refused 0 of: set apart (3 forms, 48), after a period (16), superscripts with no number beside (16), no
+    identifier (16), and every `real.c1`, `real.nel`, `real.nul` row (320) — those are stage 3's.
+  - **Item 34's generated set** (14,356): **differ 0**, failures 0, refused 5,789 on both, notes 6 as before.
+  - **The full uncached gate, 4 workers** (`gate-base-head.report.md`): 975,489 letters, **same 975,489, differ 0**,
+    refused **463,002 on both** (as #161 left it), errors 0/0, spanMismatch 0; **PHI none, UNPLACED none, KEEP none,
+    reverse PHI and reverse KEEP none. Real-shaped newly refused 0** (no letter of the gate holds such a character).
+  - **The two budget rows unchanged:** 403,548,210 and 414,023,090, both sent, on base and head (`units-*.out`).
+  - **Fuzzed 60,000** (item 34's `w58/fuzz.mts`, seeds 301 to 303): **base-refused, head-sent 0** in all three
+    (2,198 / 2,238 / 2,274 refused, identical on both trees); base-sent, head-refused 0; both sent differently 0.
+  - **Every number character beside every KIND of identifier** (`every.mts`: 1,154 characters x 2 sides x 5 frames x
+    14 kinds, through `redactLetterForScreen` and through `redactLetter`, each with its check):
+    base clear / hidden / refused 34,549 / 38,466 / 88,545 per entry; **head 11,285 / 0 / 150,275**. Every one of the
+    12 stored kinds (two digits-only numbers, the nine- and ten-digit ones a pattern takes, two lettered numbers,
+    three writings of the name, three of the date of birth) and a Social Security number by pattern: **11,540 of
+    11,540 refused, both entries.** The 11,285 still clear are the one NOT-STORED kind named below.
+  - **Time:** the reader `timing.mts` (20,000 letters of shard 0, one thread, two runs each): base 1.2301 and 1.2965
+    ms per letter, head 1.3047 and 1.3176 (+1.6% to +6.1%). The gate's own timing: max A 1,326 ms, B 1,167 ms. The
+    **100-letter property** (`denial-letter.test.ts`, three runs each, alternating on a quiet machine,
+    `property-100-letters.out`): base 4,463 / 3,920 / 3,974 ms, **head 3,764 / 3,625 / 3,790 ms — inside the base's
+    range, and below it.**
+  - **Unit suites:** redact 54 passed; packets 1,825 passed; synth 192 passed; model-gateway 5,746 passed with the 56
+    owed-red tests failing and `gateway.db.test.ts` and `patient-records.db.test.ts` not running for want of
+    DATABASE_URL (`pnpm test:db`'s, not this session's: they fail at import on the base too).
+- **Named costs of this stage (nothing else changed):**
+  1. The 96 real-shaped rows above, 42 of them sent in clear by the base. Why refused where the first reading already
+     hides the number: the orchestrator's ruling of 09:30 UTC, one blunt rule with no case for what another reading
+     happened to replace.
+  2. **Five rows pinned SENT in the reviews' describe (docs/adr/0054, the withheld match, L-1)** held their look-alike
+     digit as U+A6EF, which is `\p{No}`, and a pattern's number stands right after it
+     (`ID ZZ76543<U+A6EF>1\n01-02-2020`): the letter is now refused. The rows keep their mechanism rewritten with
+     **U+A75A**, a LETTER that folds to 2 (the same five outcomes, verified on the base and the head), and the three
+     refused forms are pinned in this stage's describe as the cost. `ID ZZ76543<U+A6EF>1\nPaid 01/02/2020`, where
+     nothing a reading takes stands after the character, is still sent as before.
+  3. **Still sent in clear, and NOT this item's: a phone number by pattern that is not stored** (11,285 of 11,540
+     rows; `Call 555-0123<U+00B9>` is sent `Call 555-01231`). The first reading takes no pattern number there at all,
+     so there is no identifier for the rule to find beside the character; a STORED number of the same digits is
+     refused, and a Social Security number by pattern is refused (its reading takes it). Named here, not fixed: the
+     fix would be a change to the first reading, which this item's construction forbids.
+- **Unexplained differences: none.** Every difference between the trees in every gate is named above.
+- **Next stage, exactly: stage 3, R1-4** (an unseen character inside a stored number), by one more reading of the
+  WHOLE check, charged in full, with rows written first and seen failing for the unseen character inside a date of
+  birth, a Social Security number and a phone number (W71 measured those clear on the base: 294 of 294, 194 of 196,
+  194 of 196); the drafter's check takes R1-3 and R1-4 there. The group `stage 3, R1-4` (50 tests) is owed red inside
+  the OWED RED describe, with `stage 4, ruling (A)` (6). Stage 2's entry point for it:
+  `refusedWithNumberCharactersAsOne` is the shape a further reading takes, and `redactLetterForScreenAsGiven` is where
+  the reading of the letter as given now ends.
+- **Questions for a ruling (one line each, with the recommendation):**
+  1. The five pinned rows of the withheld match now read with U+A75A instead of U+A6EF, keeping their mechanism, and
+     the U+A6EF forms are pinned refused: recommend accept (the mechanism is the look-alike digit, not which one).
+  2. A phone number by pattern that is NOT stored is still sent with such a character beside it (11,285 rows):
+     recommend leave to the item that may widen the first reading; refusing it needs the first reading changed.
+  3. Stage 3 can reuse stage 2's further-reading shape (one more reading of the whole entry, charged in full) rather
+     than P2's reading inside `holdsIdentifier`: recommend the former, one construction for both.
+
 ## RESUME-BLOCK (W71, 2026-11-13: STAGE 1 IS DONE: THE TESTS ARE OWED RED ON THE WIP REF, THE GENERATED SET IS RUN; NO READER CHANGE; NEXT IS STAGE 2)
 
 - **Head:** `co-001/wip-redact-item-40` at 3c856166 (one commit over the base 17c234d2; only

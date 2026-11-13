@@ -1,0 +1,32 @@
+== through redactLetterForScreen and the check
+digits-only member ID: {"clear":9692,"hidden":1278,"refused":570}
+digits-only claim number: {"clear":10133,"hidden":837,"refused":570}
+digits-only member ID of nine digits (a pattern takes it): {"clear":594,"hidden":10946,"refused":0}
+digits-only claim number of ten digits (a pattern takes it): {"clear":1045,"hidden":10495,"refused":0}
+lettered member ID: {"clear":0,"hidden":720,"refused":10820}
+lettered claim number: {"clear":0,"hidden":460,"refused":11080}
+surname: {"clear":490,"hidden":460,"refused":10590}
+full name: {"clear":245,"hidden":705,"refused":10590}
+surname, first: {"clear":245,"hidden":705,"refused":10590}
+date of birth, slashes: {"clear":0,"hidden":460,"refused":11080}
+date of birth, ISO: {"clear":0,"hidden":460,"refused":11080}
+date of birth, in words: {"clear":0,"hidden":460,"refused":11080}
+NOT STORED, a Social Security number by pattern: {"clear":820,"hidden":10480,"refused":240}
+NOT STORED, a phone number by pattern: {"clear":11285,"hidden":0,"refused":255}
+all kinds: {"clear":34549,"hidden":38466,"refused":88545} of 1154 characters x 2 sides x 5 frames x 14 kinds
+== through redactLetter and the check
+digits-only member ID: {"clear":9692,"hidden":1278,"refused":570}
+digits-only claim number: {"clear":10133,"hidden":837,"refused":570}
+digits-only member ID of nine digits (a pattern takes it): {"clear":594,"hidden":10946,"refused":0}
+digits-only claim number of ten digits (a pattern takes it): {"clear":1045,"hidden":10495,"refused":0}
+lettered member ID: {"clear":0,"hidden":720,"refused":10820}
+lettered claim number: {"clear":0,"hidden":460,"refused":11080}
+surname: {"clear":490,"hidden":460,"refused":10590}
+full name: {"clear":245,"hidden":705,"refused":10590}
+surname, first: {"clear":245,"hidden":705,"refused":10590}
+date of birth, slashes: {"clear":0,"hidden":460,"refused":11080}
+date of birth, ISO: {"clear":0,"hidden":460,"refused":11080}
+date of birth, in words: {"clear":0,"hidden":460,"refused":11080}
+NOT STORED, a Social Security number by pattern: {"clear":820,"hidden":10480,"refused":240}
+NOT STORED, a phone number by pattern: {"clear":11285,"hidden":0,"refused":255}
+all kinds: {"clear":34549,"hidden":38466,"refused":88545} of 1154 characters x 2 sides x 5 frames x 14 kinds

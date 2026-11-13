@@ -1,0 +1,6 @@
+base:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 4463ms
+head:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 3764ms
+base:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 3920ms
+head:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 3625ms
+base:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 3974ms
+head:  ✓ src/functions/denial-letter.test.ts > PHI minimization before the call > leaves no identifier in any letter, whatever its synthetic names and numbers (property) 3790ms
