@@ -4,7 +4,25 @@ Design of record: `designs/lane-b-redact-item-34/design.md` (ops 163894a9). Ruli
 one constant; (d) the verifier keeps its reading; A-4's costs accepted; a digit beside the number stays recorded.
 WIP ref: `co-001/wip-redact-item-34`, cut from claude/build-platform a97d73e4. No PR is open.
 
-## RESUME-BLOCK (W63, 2026-11-13 about 06:30 UTC: (C) FIXED AND MEASURED ON 95529e85; THE PR IS THE NEXT STEP)
+## RESUME-BLOCK (W63, 2026-11-13 08:30 UTC: DRAFT PR #161 OPEN, `unit` RED ON FOUR 5 s TIMEOUTS, RE-RUN ONCE, A RULING ASKED)
+
+- **State.** Draft PR #161 into claude/build-platform, branch `co-001/redact-item-34`, head 85819a81 (the WIP
+  450ac67d + base 979a21b8 merged + one records commit). Locally on that head: `pnpm test` 509 files 14,789 passed,
+  `test:golden` 381, `test:db` 176 files 10,375, typecheck, lint, lint:logs, verify-content exit 0. W63 is subscribed
+  to the PR; a check-in is set for 18:10 UTC (trig_018aZcK112Msp9k7Ry9w75oQ).
+- **CI.** `unit` failed on 85819a81 on four timeouts at the 5,000 ms default, no assertion: denial-letter.test.ts:435
+  and :447 (unchanged from the base; they timed out once on the base's own run), denial-letter.test.ts:71 (the
+  100-letter property: 2.3-3.3 s on the base's reader, 2.7-3.1 s at 846968af, 4.1 s at 17028cfa, 4.1-4.8 s with the
+  (C) fix) and redact.leaks.test.ts:2557 (a MOD-25 test, 2.3-2.5 s). The failed jobs were re-run ONCE (the one re-run
+  is spent); the measurement is one comment on the PR; no limit was touched. The orchestrator was asked for a ruling
+  (08:25 UTC): the property runs at 80-95% of its limit and will go red again on slow runners.
+- **Exact next step.** If the re-run is green: the brief's step 8 (fetch `co-001/wip-schema-pr5`, list open PRs for a
+  schema PR carrying the founder's approval-line commit, mark ready, merge, verify on the base, this block, push ops,
+  one line to the orchestrator, unsubscribe, cancel the check-in). If red again: no second re-run; wait for the ruling.
+  Never loosen the timeout.
+- Everything below (measures, reviews, queue list) stands.
+
+## Earlier today: RESUME-BLOCK (W63, 2026-11-13 about 06:30 UTC: (C) FIXED AND MEASURED ON 95529e85; THE PR IS THE NEXT STEP)
 
 - **State.** WIP `co-001/wip-redact-item-34`: 287c68d3 (the fix of (C), tests first), 6fc83f83 (draft records),
   95529e85 (one further small fix, test first), then records. Base to merge before the PR's push: claude/build-platform
