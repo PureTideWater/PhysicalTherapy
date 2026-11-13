@@ -1,5 +1,111 @@
 # Status: Queues item 37, the key registry (Lane A)
 
+## RESUME-BLOCK (2026-11-13, W65, session_019i9if9qjSJt3AGpHV86RSa): every ruling now has a proved text and an owed-red test (ruling 3 REFINED, change 5 done), the app-side code is built, the adversarial review and its one fix round are done; what is left is the typed /new-migration and everything after it
+
+**Ref `co-001/wip-key-registry` 055407ae** (pushed through the hook; no PR; no migration file, no domain-model text and
+no generated function touched). On 77ded21e, nine commits: edb3929d (JOB-09 and JOB-07 to the refined ruling 3),
+then SGN-30, the web, the worker, the console, the runbook, a lint mend, aee95a66 (the source-contract tests),
+the fix round's tests, 055407ae (the runbook's wording).
+**The texts:** `designs/lane-a-key-registry-reviews/w64-migration-texts.md` (revised in place; read its head and "The
+adversarial review's fix round" first), **`w65/apply-texts.py`** (the record: exact old/new pairs; scratch copies only)
+and `w65/migration.patch` (the same as a diff, 289 lines). `w64/` is superseded. The review: `w65-review.md`.
+
+### What changed in the rules (say these to the co-founder with the migration)
+- **Ruling 3 as refined, and one step stricter after the review (S2):** LATE by age (undone, queued over 15 minutes,
+  whatever tries or lease). GAVE_UP at 30 tries, or at 24 hours **only once one try was ANSWERED as failed**
+  (`last_error_code IS NOT NULL`), never under a running lease. The claim counts a try before the provider is called,
+  so "attempts >= 1" was true of a row whose worker stopped before sending anything; the answered try closes that. A
+  row never tried is never given up. Oldest first needed no text change (the claim's order; JOB-09 holds it).
+- **A waiting row is paged LATE again every day (S3):** the sweep clears `late_reported_at` 24 hours after the
+  acknowledgement for a row neither done nor given up. Not in the ruling's words; it is what stops an untried row
+  being paged once and then silent for ever. **The orchestrator may want the founder to see this one.**
+- **The unrecorded reset's guard (S1):** a waiting row covers a later call only if it was never tried (`attempts = 0`).
+- **Change 5 (A4):** a wrong code against a usable opening counts a try in `hardware_key_record`, records the refusal
+  once an hour and returns NO ROW (no raise, so the count commits); no code or no opening still raises. The web
+  treats no row as the refusal (built).
+- **Change 7 is not built as W64 sketched it:** a signed-in handler has no pool by design, so `refused()` names the
+  reason on its `InputError` and the routes' wrapper (`refusal()` in `apps/web/src/lib/http/invoke.ts`) calls
+  `hardware_key_removal_refused` after the rollback, bounded, as the acting account.
+- **A new log field `sqlstate_code`** (`packages/observability/src/fields.ts`; five upper-case letters or digits from
+  a database error's code, on the worker's step-failed line). A reviewed list: name it in the PR.
+
+### Owed red on 055407ae (each goes green with the texts; none skipped or loosened)
+`packages/db/src/key-registry.db.test.ts`: "SGN-24: the target of a requested key removal changes no other account"
+(3); "SGN-29: a step judged with no beginning is no guess ..." (1); "SEC-28: a refused act on a key removal leaves a
+security event ..." (2); "SGN-30: a wrong code offered to hardware_key_record is a counted guess" (4); and "SGN-22 >
+adds nothing to the request path in the database ..." (the shared `20261115` prefix; goes with the rename).
+`packages/db/src/provider-sign-out.db.test.ts`: "SGN-28: a reset whose own transaction was never recorded ..." (4);
+"JOB-09: the sweep judges late by the row's age whatever its tries, and gives up by age only a row whose try was
+answered" (4); "JOB-07: the claim names the cause" (1); "JOB-07: the answers and the sweep > gives up at 30 tries, and
+at 24 hours only a row that had a try ..." (1; its lines are already reworded).
+`apps/web/src/lib/auth/sign-in.db.test.ts`: "SGN-28: a reset whose own transaction fails twice still queues the
+provider sign-out, alone, and the line says it did" (1).
+`apps/web/src/lib/routes/console-routes.db.test.ts`: "SEC-28: a refused act on a key removal leaves a security event
+for the acting account, in a transaction of its own ..." (1).
+`apps/worker/src/platform/provider-sign-outs.db.test.ts`: "JOB-07: a failed try's line names the request of the event
+that queued the row ..." (1).
+
+### Proved
+- **`pnpm test:db` whole, once, on a scratch copy of 055407ae's tree with every text applied by the script
+  (PostgreSQL 18 on 5433, Node 24): 180 files, 10641 tests: 10636 passed, 4 failed, 1 skipped.** The four, all
+  expected: the SGN-22 prefix case (the rename); `domain-model.db.test.ts > docs/product/domain-model.md (CO-02) >
+  matches the schema ...`, `function-files.db.test.ts > DBF-01 ... matches the functions ...` and `DBF-04: the CLI
+  (T5) > --check passes ...` (the domain model and `packages/db/functions` are stale against the patched migration
+  and are regenerated with it). Every owed-red case above is green there.
+- On 055407ae itself: `pnpm typecheck`, `pnpm lint` and `pnpm lint:logs` pass. `pnpm test` (unit) ran whole once
+  before the last three commits: 14400 passed, 7 failed, all seven source-contract tests my changes moved
+  (`infra/test/monitoring.test.ts`, `fields.test.ts`, `lock-timeout.test.ts`); they are updated and their five files
+  pass (229). The whole unit suite was NOT run again after that. e2e and golden: not run.
+
+### The order for the next session (the co-founder's typed /new-migration, one command a file)
+1. Rename the two migrations to sort after `20261115090000_roi_statement_actionable_lines`; if the new names leave
+   the `20261115` prefix, change SGN-22's file filter with them.
+2. In the first, apply the texts in the script's order (it is the file's order): the reason CHECK (section 1); A1's
+   trigger (6); the trigger's WHEN and the two functions (7); `hardware_key_record`'s comment and check (8, change 5);
+   the judge's early return (8); `hardware_key_removal_refused` (9); the claim's fifth column, the sweep's two
+   conditions, its re-arm statement and its comment (10); the reserved action (13); the preflight's two names;
+   section 14's REVOKE and two GRANTs. Then the header comment's lists, by hand in that command.
+   Check: `python3 w65/apply-texts.py <a copy of the unrenamed file> a1-trigger.sql.txt` must print `applied`, and the
+   typed result must equal that copy.
+3. Outside it: SEC-25's maps (`user_removal_target_holds()` forNone and the trigger arrays;
+   `provider_sign_out_unrecorded_reset(text)` and `hardware_key_removal_refused(text,text)` forApp;
+   `operator_provider_sign_out_request(uuid,text)` forOperator); `PROVIDER_SIGN_OUT_REASONS` in
+   `packages/db/src/schema/identity.ts`; every "(owed red ...)" parenthesis dropped (five test files); the worker's
+   `Claimed.cause_request_id` made required if wanted; the matrix rows SGN-28, SGN-29, SGN-30, SEC-28, JOB-09 and
+   `pnpm synth --all`; `pnpm db:domain-model` and the function files regenerated (never the approval line).
+4. Expected then: the two db files 66 passed, 0 failed; `pnpm test:db` 10640 passed, 0 failed, 1 skipped.
+
+### Left
+- The rename and the texts by the typed command (above); SEC-25's lists; ADR 0095's missing records (the keyed
+  digest, the algorithms, alarm filters 42 to 46, the "user" trigger, and now: the refined ruling 3 with the answered
+  try and the daily LATE line, change 5's no-row answer, the wrapper's record of a refused act, `outcome_code` on the
+  reset's paging line, `sqlstate_code`); the domain model regenerated; the full suite once (unit, db, golden, e2e);
+  the five screens seen in a browser after the fixes; the PR from the template; the suggested approval line as one
+  PR comment.
+- **For the founder (review S6, not changed here: it is A1's ruled design):** while a removal request is open, its
+  target can change no other account, so with two platform administrators a compromised one can request the other's
+  removal and cannot then be disabled by them until the request expires (longer if the expiry job stalls), and
+  nothing seen limits asking again. The reviewer's smallest change: the trigger binds only while the request can
+  still be confirmed (`expires_at > now()` and the requester still able). `w65-review.md`, S6.
+
+### Queued (the review's lesser findings; none taken into the texts)
+- S4: a web test through a real closed registration that reads `registration_code_tries = 1` after the web refused a
+  wrong code. By reading: `recorded()` throws after `withActor` returned, so the count has committed.
+- N1: two concurrent unrecorded-reset calls can queue two rows (bounded, harmless). N2: the two request functions
+  raise 23514 on a request ID that fails the outbox CHECK. N3: the once-an-hour guard hides the count, not the fact,
+  of later probes. N5: after a day's outage a throttled backlog gets one answered try each and is then GAVE_UP (the
+  runbook says so). N6: SGN-24 does not test a bound administrator confirming another removal through a definer
+  door, nor that a bound target cannot write another account's `locked_at`, `sign_in_not_before` or email.
+- No metric filter counts `security event: a refused act on a key removal was not recorded`, the `outcome_code` of
+  the reset's line, or `provider sign-out step failed`; whether any should page is for the alarm records (ADR 0095).
+
+### Machine notes
+Both PostgreSQL servers were down again at this session's start (HANDOFF.md's `pg_ctl` recipe, as `runuser -u postgres
+--`); Node 24 is `/opt/node24/bin`. A bare `npx eslint <files>` runs out of memory here: use `pnpm lint`. A db test run
+without `DATABASE_URL=postgres://postgres:test@localhost:5433/postgres` in the same shell reports its tests skipped,
+not failed. W65 read, beyond its list: the worker job's file, `console-keys.ts`, parts of `invoke.ts`, `services.ts`
+and the three contract tests. W65 holds no PR, no scheduled task; its one subagent has finished.
+
 ## RESUME-BLOCK (2026-11-13, W64, session_019i9ifBKYJayza89rg9KE3j): the base is merged, five of the six rulings have a proved migration text and an owed-red test; the app-side code, A4 and the adversarial review are NOT done (handed over at the token limit)
 
 **Ref `co-001/wip-key-registry` 77ded21e** (pushed through the hook; no PR; no migration, domain-model hunk beyond the
