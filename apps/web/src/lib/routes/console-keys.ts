@@ -28,13 +28,19 @@ const PAGE = '/console/organizations/[organizationId]';
  * one code, with no constraint name, for both of its causes (under seven days in the role; no key session of the last
  * 15 minutes), so the route cannot tell them apart and the one sentence gives each cause its own next step. A request
  * already decided may have been confirmed, cancelled or expired: the forms that can meet it read the page again, so
- * the words point at the row and never at a reload.
+ * the words point at the row and never at a reload. The two limits on requests against a platform administrator
+ * (one open request a requester; not again for seven days after its request there expired or was cancelled; test
+ * SGN-31) each name who can act now, since the requester cannot.
  */
 export const KEY_REFUSALS = {
   not_permitted:
     'only a platform administrator who has held the role for seven days and signed in with their hardware key in the last 15 minutes can do this. If you signed in with your key more than 15 minutes ago, sign out and sign in again with it. If you have held the role for less than seven days, ask another platform administrator.',
   hardware_key_removal_not_own_account: 'no one acts on the hardware keys of their own account; another platform administrator does',
   hardware_key_removal_open_once: 'a removal is already requested for this account; confirm or cancel that one',
+  hardware_key_removal_one_administrator_request:
+    'you already have a removal requested for another platform administrator; once that one is confirmed or cancelled, or has expired, you can request this one. Another platform administrator can request it now',
+  hardware_key_removal_asked_again_too_soon:
+    'your earlier request for this platform administrator expired or was cancelled in the last seven days; another platform administrator can request the removal now, and you can again once seven days have passed',
   hardware_key_removal_two_people: 'ask another platform administrator to confirm this removal; the one who requested it cannot',
   hardware_key_removal_in_time: 'this request has expired; ask again',
   hardware_key_removal_decided: 'this request was already confirmed or cancelled, or it expired; the row now shows where it stands',

@@ -1199,6 +1199,24 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
     expect(again.events).toEqual([]);
   });
 
+  it('SGN-31: a second open request against another platform administrator, and the same request again inside seven days of a cancel, are refused in the registry’s words and write nothing (owed red until hardware_key_removal_request limits requests against a platform administrator)', async () => {
+    const [requester, first, second] = [await keyAdmin(), await keyAdmin(), await keyAdmin()];
+    const internal = admin.internalId;
+    expect((await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: first.id })).outcome).toMatchObject({ status: 'ok' });
+    const another = await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: second.id });
+    expect(another.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_one_administrator_request));
+    expect(another.events).toEqual([]);
+    expect(await removalOf(second.id)).toBeUndefined();
+    const removalId = (await removalOf(first.id))?.id ?? '';
+    expect((await act(cancelKeyRemoval, await requester.token(), { organizationId: internal, removalId })).outcome).toMatchObject({ status: 'ok' });
+    const again = await act(requestKeyRemoval, await requester.token(), { organizationId: internal, userId: first.id });
+    expect(again.outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_asked_again_too_soon));
+    expect(again.events).toEqual([]);
+    expect((await removalOf(first.id))?.state).toBe('cancelled');
+    // Another administrator is not held by either limit.
+    expect((await act(requestKeyRemoval, await second.token(), { organizationId: internal, userId: first.id })).outcome).toMatchObject({ status: 'ok' });
+  });
+
   /** The security events a refused act on a key removal left, as the database wrote them: the account, the reason, the request. */
   const refusalsOf = async (requestId: string) =>
     (
@@ -1272,6 +1290,21 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
     expect(lines.filter((line) => line.msg === 'security event: a refused act on a key removal was not recorded')).toEqual([
       expect.objectContaining({ level: 'error', user_id: requester.id, request_id: refused.requestId, error_code: 'key_removal_refused_two_people' }),
     ]);
+  });
+
+  it('SEC-28: every refused act writes the web’s line, by IDs and the reason’s code, though the security event is one an hour for an account and a reason: the lines are the count (review W65 N3; the event is owed red until hardware_key_removal_refused is in the migration)', async () => {
+    const [requester, target] = [await keyAdmin(), await keyAdmin()];
+    await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id });
+    const input = { organizationId: admin.internalId, removalId: (await removalOf(target.id))?.id };
+    const lines: Record<string, unknown>[] = [];
+    const listening: Services = { ...services, logger: createLogger({ sink: (line) => lines.push(JSON.parse(line) as Record<string, unknown>) }) };
+    const tries = [await act(confirmKeyRemoval, await requester.token(), input, listening), await act(confirmKeyRemoval, await requester.token(), input, listening), await act(confirmKeyRemoval, await requester.token(), input, listening)];
+    expect(tries.map((each) => each.outcome)).toEqual(tries.map(() => refusedWith(KEY_REFUSALS.hardware_key_removal_two_people)));
+    expect(lines.filter((line) => line.msg === 'a refused act on a key removal')).toEqual(
+      tries.map((each): unknown => expect.objectContaining({ level: 'warn', user_id: requester.id, request_id: each.requestId, error_code: 'key_removal_refused_two_people' })),
+    );
+    expect(JSON.stringify(lines)).not.toContain(target.id);
+    expect((await Promise.all(tries.map((each) => refusalsOf(each.requestId)))).map((rows) => rows.length)).toEqual([1, 0, 0]);
   });
 
   it('confirms only with a second person: the requester, the account itself, an administrator under seven days and a session other than the acting key session are refused; then the keys, the sessions and the provider’s outbox', async () => {

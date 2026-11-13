@@ -2597,3 +2597,70 @@ describe('key registration offers ES256 and RS256 only, whatever the provider li
     expect(JSON.stringify(logged(lines, LINE))).not.toContain(staff.email);
   });
 });
+
+describe('SGN-30: the count of a wrong code refused at the registry’s row is committed when the web then refuses (review W65 S4; owed red until hardware_key_record counts its check and returns no row)', () => {
+  /** The application's pool, with the one-time code's digest on its way to hardware_key_record swapped for another: the judge said open, and the code that reaches the row is wrong. */
+  function offering(digest: Buffer): ScopePool<ScopeClient> {
+    return {
+      connect: async () => {
+        const client = await app.connect();
+        return new Proxy(client, {
+          get(target, property) {
+            if (property === 'query') {
+              return (text: unknown, values?: unknown[]) =>
+                typeof text === 'string' && /hardware_key_record/.test(text) && values !== undefined
+                  ? target.query(text, [values[0], values[1], digest, ...values.slice(3)])
+                  : target.query(text as string, values);
+            }
+            const value = Reflect.get(target, property, target) as unknown;
+            return typeof value === 'function' ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+          },
+        });
+      },
+    };
+  }
+
+  it('SGN-30: through a real opening, a wrong code at hardware_key_record is one counted try and one refusal on record after the web has thrown, the key is removed at the provider, and the right code then still registers', async () => {
+    const { staff, key } = await staffWithKey();
+    const { removal, opener } = await keysRemoved(staff.id);
+    await pastTheMark();
+    const code = await registrationOpened(removal, opener);
+    const tries = async (): Promise<number | undefined> =>
+      (await owner.query<{ tries: number }>('SELECT registration_code_tries AS tries FROM hardware_key_removal WHERE id = $1', [removal])).rows[0]?.tries;
+    const lines: string[] = [];
+    const wrong = new SignInFlow({
+      registrationCodeKey: CODE_KEY,
+      webauthn: WEBAUTHN,
+      pool: offering(registrationCodeDigest(CODE_KEY, newRegistrationCode())),
+      provider,
+      logger: createLogger({ sink: (line) => lines.push(line) }),
+    });
+    const step = pendingOf(await codeSignIn(staff.email, wrong));
+    const open = pendingOf(await wrong.answerRegistrationCode(step, code, context()));
+    const begun = await wrong.beginKeyRegistration(open, context());
+    if ('kind' in begun) {
+      throw new Error('expected options');
+    }
+    expect(await tries()).toBe(0);
+    const with_ = context();
+    const next = new SoftAuthenticator(ORIGIN);
+    expect(await wrong.completeKeyRegistration(begun.pending, next.create(begun.options), with_)).toEqual({ kind: 'refused', reason: 'key_not_registered' });
+    // The web threw after the registry's transaction returned: the try it counted and the refusal it recorded are committed.
+    expect(await tries()).toBe(1);
+    expect((await securityEvents(staff.id)).filter((event) => event === 'key_registration_refused')).toHaveLength(1);
+    expect(logged(lines, 'hardware key registered at the provider but not recorded')).toEqual([
+      expect.objectContaining({ level: 'error', user_id: staff.id, request_id: with_.requestId, error_code: 'registration_code_refused', outcome_code: 'removed' }),
+    ]);
+    expect(await keyRows(staff.id)).toEqual([{ digest: sha(key.credentialId).toString('hex'), live: false }]);
+    expect(await storedIds(staff.sub)).not.toContain(B64(next.credentialId));
+    // The opening is not spent by one wrong code: the right one, through the flow as it is, still registers.
+    const again = pendingOf(await codeSignIn(staff.email));
+    const reopened = pendingOf(await flow.answerRegistrationCode(again, code, context()));
+    const second = await flow.beginKeyRegistration(reopened, context());
+    if ('kind' in second) {
+      throw new Error('expected options');
+    }
+    expect(await flow.completeKeyRegistration(second.pending, new SoftAuthenticator(ORIGIN).create(second.options), context())).toEqual({ kind: 'key_registered' });
+    expect(await tries()).toBe(1);
+  });
+});

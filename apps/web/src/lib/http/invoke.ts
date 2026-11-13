@@ -392,6 +392,9 @@ async function transacted<R>(
  * changes nothing the person is told; its line carries IDs and the reason's code, and is the operator's signal instead.
  */
 async function keyRemovalRefused(services: Services, userId: string, why: KeyRemovalRefusal, requestId: string): Promise<void> {
+  // Every refused act writes this line; the security event is at most one an hour for an account and a reason, so the
+  // event says that an account was refused and these lines say how often (review W65 N3). IDs and the reason's code.
+  services.logger.warn('a refused act on a key removal', { user_id: userId, request_id: requestId, error_code: `key_removal_refused_${why}` });
   try {
     await withActor(services.pool, userId, (scope) => scope.client.query('SELECT hardware_key_removal_refused($1, $2)', [why, requestId]), BOUNDED);
   } catch {

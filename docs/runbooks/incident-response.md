@@ -381,8 +381,47 @@ the console. Then the removal.
    hour, then open again.
    Never send the code by email or message.
 
+**While a request stands, the account it names changes no other account.** From the request until it is confirmed,
+cancelled or 24 hours old, the account whose keys are to be removed cannot disable another account or change another
+account's hardware-key rule in the console, and cannot change a membership of PaidWhole's own organization. That
+keeps it from disabling the requester or the one who would confirm. It ends by the clock at 24 hours, whether or not
+the expiry job has run, and at once if the requester is disabled or leaves the role: a request that can no longer be
+confirmed holds no one.
+
+**A request against a platform administrator is limited, because it holds that administrator.** One requester has
+at most one such request open at a time, and cannot ask again against the same administrator for seven days after
+their request there expired or was cancelled; the console says so and names who can act. Another eligible
+administrator can still request it at once. A request against any other account is not limited. So one administrator
+can hold another for 24 hours at most, once in eight days, and never two at once.
+
+**A platform administrator thought to be in another's hands, who has requested the removal of another
+administrator's keys.** The administrator named in the request cannot disable them while it stands. In this order:
+
+1. Any **other** eligible platform administrator, one the request does not name, presses End membership on the
+   requester's account, or disables it (section 2, "A user or session"). From that moment the request holds no one
+   and can no longer be confirmed.
+2. With no such third administrator, **the founder's break-glass, at once: do not wait out the 24 hours.** Give the
+   founder the requester's user ID. The founder's session acts as the owner, with no acting account; the rule binds
+   only an acting account, so the owner is never held by it (test SGN-31). As for any account in another's hands
+   (section 2, "A user or session"), it ends the account's sessions by user ID and disables the account, in the
+   database and at the identity provider. From the moment the account is disabled the request holds no one. The
+   founder records in the incident record who asked, the user ID, the time and why. Nobody else uses the owner path,
+   and it is used for this only when no third eligible administrator can act.
+3. Then cancel the request (any eligible administrator but the account it names), and treat every act of the
+   requester's account since it was last known good as an incident (section 1).
+
+**Refused acts are counted in the web's log, not in the security events.** Each refused act on a key removal that
+probes the two-person rule (the requester confirming, the account acting on its own keys, a request whose requester
+has left, an administrator not yet eligible) writes the web's line `a refused act on a key removal` in
+`/tp/<env>/web`, with the user ID, the request ID and `error_code` `key_removal_refused_<reason>`: one line for
+every refused act. The security event `key_removal_refused_<reason>` on the audit log is written at most once an hour
+for an account and a reason, so it shows that an account was refused, never how often. To learn whether an account
+tried once or five hundred times, count the lines for its user ID.
+
 **Each of these is an incident** (section 1):
 
+- a **platform administrator who requests the removal of another administrator's keys and is then refused a second
+  request or a repeat** (the console's two refusals above), unless both administrators confirm by voice why;
 - a **cancelled removal** of an account thought to be in another's hands;
 - **a removed hardware key used** (`RemovedHardwareKeyUsed`: the web's line `security event: removed hardware key
   used`, with the user ID and request ID). Someone still holds a key two administrators removed, and tried it. The

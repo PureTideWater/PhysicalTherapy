@@ -14,4 +14,13 @@ describe('the key registry’s refusal words', () => {
     expect(KEY_REFUSALS.hardware_key_removal_decided).toBe('this request was already confirmed or cancelled, or it expired; the row now shows where it stands');
     expect(KEY_REFUSALS.hardware_key_removal_decided).not.toContain('reload');
   });
+
+  it('tells a requester held by a limit on requests against a platform administrator who can act now and when they can again (SGN-31)', () => {
+    expect(KEY_REFUSALS.hardware_key_removal_one_administrator_request).toBe(
+      'you already have a removal requested for another platform administrator; once that one is confirmed or cancelled, or has expired, you can request this one. Another platform administrator can request it now',
+    );
+    expect(KEY_REFUSALS.hardware_key_removal_asked_again_too_soon).toBe(
+      'your earlier request for this platform administrator expired or was cancelled in the last seven days; another platform administrator can request the removal now, and you can again once seven days have passed',
+    );
+  });
 });

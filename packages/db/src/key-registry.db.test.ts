@@ -915,7 +915,7 @@ describe('SGN-24: the target of a requested key removal changes no other account
     it('expired by the job', async () => {
       await after(async ({ removal }) => {
         await seeded("UPDATE hardware_key_removal SET requested_at = requested_at - interval '25 hours', expires_at = expires_at - interval '25 hours' WHERE id = $1", [removal]);
-        // Past its 24 hours and not yet marked, the request still binds the account (docs/adr/0095: until the job marks it).
+        // Past its 24 hours the request binds no one, marked or not (SGN-31); here the job marks it and the state is read.
         const rows = await as<{ removal_id: string }>(OPERATOR_ROLE, 'SELECT removal_id FROM operator_key_removals_expire($1, $2)', [100, request()]);
         expect(rows.map((row) => row.removal_id)).toContain(removal);
       }, 'expired');
@@ -1046,5 +1046,210 @@ describe('SGN-30: a wrong code offered to hardware_key_record is a counted guess
     expect(await tries(mine.removal)).toBe(0);
     expect(await tries(theirs.removal)).toBe(1);
     expect(await refusals(mine.target)).toBe(0);
+  });
+});
+
+describe('SGN-31: a requested key removal binds its target only while it can still be confirmed, and one requester holds one administrator once (owed red until user_removal_target_holds reads the expiry and the requester, and hardware_key_removal_request limits requests against a platform administrator)', () => {
+  const HOLDS = refusedBy('hardware_key_removal_target_acts');
+  const ONE_AT_A_TIME = refusedBy('hardware_key_removal_one_administrator_request');
+  const TOO_SOON = refusedBy('hardware_key_removal_asked_again_too_soon');
+
+  /** The status UPDATE of `on` as the application role acting as `by`, committed: the refusal, or the rows it changed. */
+  async function disable(by: string, on: string): Promise<Failure | { readonly rows: number }> {
+    let rows = -1;
+    const outcome = await failure(
+      asUser(by, `UPDATE "user" SET status = 'disabled' WHERE id = $1 RETURNING id`, [on]).then((changed) => {
+        rows = changed.length;
+      }),
+    );
+    return outcome === 'accepted' ? { rows } : outcome;
+  }
+  const statusOf = async (id: string) => (await owner.query<{ status: string }>('SELECT status FROM "user" WHERE id = $1', [id])).rows[0]?.status;
+  const stateOf = async (removal: string) => (await owner.query<{ state: string }>('SELECT state FROM hardware_key_removal WHERE id = $1', [removal])).rows[0]?.state;
+  const ask = (by: Administrator, target: string) => failure(requestRemoval(by, target));
+  const cancel = async (by: Administrator, removal: string) => failure(asUser(by.id, 'SELECT hardware_key_removal_cancel($1, $2, $3)', [removal, await by.session(), request()]));
+  /** Moves a removal into the past whole (its request, its expiry and its decision together), as the clock would. */
+  const aged = (removal: string, by: string) =>
+    seeded(
+      `UPDATE hardware_key_removal SET requested_at = requested_at - $2::interval, expires_at = expires_at - $2::interval, decided_at = decided_at - $2::interval WHERE id = $1`,
+      [removal, by],
+    );
+  const expire = () => as<{ removal_id: string }>(OPERATOR_ROLE, 'SELECT removal_id FROM operator_key_removals_expire($1, $2)', [100, request()]);
+
+  describe('(a) the trigger binds only while the request can still be confirmed', () => {
+    it('binds no one once the request is past its 24 hours by the clock, whatever the expiry job has marked; one minute short of it the request still binds', async () => {
+      const [target, requester] = [await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, target.id);
+      await aged(removal, '23 hours 59 minutes');
+      expect(await disable(target.id, requester.id)).toEqual(HOLDS);
+      expect(await statusOf(requester.id)).toBe('active');
+      await aged(removal, '2 minutes');
+      // The job has not run: the row still says requested, and it binds no one.
+      expect(await stateOf(removal)).toBe('requested');
+      expect(await disable(target.id, requester.id)).toEqual({ rows: 1 });
+      expect(await statusOf(requester.id)).toBe('disabled');
+    });
+
+    it('binds no one once the requester no longer holds the role: its membership ended, the target acts again though the request still says requested', async () => {
+      const [target, requester, third] = [await administrator(), await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, target.id);
+      expect(await disable(target.id, third.id)).toEqual(HOLDS);
+      await seeded("UPDATE membership SET ends_at = now() - interval '1 minute' WHERE id = $1", [requester.membership]);
+      expect(await stateOf(removal)).toBe('requested');
+      expect(await disable(target.id, third.id)).toEqual({ rows: 1 });
+      expect(await statusOf(third.id)).toBe('disabled');
+    });
+
+    it('binds no one once the requester is disabled by another administrator: the request it left behind protects no one', async () => {
+      const [target, requester, third, bystander] = [await administrator(), await administrator(), await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, target.id);
+      expect(await disable(target.id, bystander.id)).toEqual(HOLDS);
+      expect(await disable(third.id, requester.id)).toEqual({ rows: 1 });
+      expect(await stateOf(removal)).toBe('requested');
+      expect(await disable(target.id, bystander.id)).toEqual({ rows: 1 });
+    });
+  });
+
+  describe('(c) the owner path, with no acting account, is never bound (the runbook’s break-glass)', () => {
+    it('disables the requester as the owner while its request stands, and the target is then bound no longer', async () => {
+      const [target, requester, third] = [await administrator(), await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, target.id);
+      expect(await disable(target.id, requester.id)).toEqual(HOLDS);
+      expect(await as(OWNER_ROLE, `UPDATE "user" SET status = 'disabled' WHERE id = $1 RETURNING id`, [requester.id])).toHaveLength(1);
+      expect(await statusOf(requester.id)).toBe('disabled');
+      expect(await stateOf(removal)).toBe('requested');
+      expect(await disable(target.id, third.id)).toEqual({ rows: 1 });
+      expect(await failure(confirmRemoval(third, removal))).not.toBe('accepted');
+    });
+  });
+
+  describe('(b) one requester, one open request against a platform administrator, and no asking again for seven days', () => {
+    it('refuses a second open request against another platform administrator, by its own name; another requester is not held by it, and once the first is decided the next is accepted', async () => {
+      const [requester, first, second, other] = [await administrator(), await administrator(), await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, first.id);
+      expect(await ask(requester, second.id)).toEqual(ONE_AT_A_TIME);
+      expect(await count("hardware_key_removal WHERE user_id = $1", [second.id])).toBe(0);
+      expect(await ask(other, second.id)).toBe('accepted');
+      expect(await cancel(requester, removal)).toBe('accepted');
+      const third = await administrator();
+      expect(await ask(requester, third.id)).toBe('accepted');
+    });
+
+    it('does not count an open request already past its 24 hours by the clock: it holds no one, so it holds back no request', async () => {
+      const [requester, first, second] = [await administrator(), await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, first.id);
+      await aged(removal, '25 hours');
+      expect(await stateOf(removal)).toBe('requested');
+      expect(await ask(requester, second.id)).toBe('accepted');
+    });
+
+    it('refuses the same requester asking again against the same administrator inside seven days of a cancelled request, and accepts it on the eighth day; another requester may ask at once', async () => {
+      const [requester, target, other] = [await administrator(), await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, target.id);
+      expect(await cancel(requester, removal)).toBe('accepted');
+      expect(await ask(requester, target.id)).toEqual(TOO_SOON);
+      await aged(removal, '6 days 23 hours');
+      expect(await ask(requester, target.id)).toEqual(TOO_SOON);
+      expect(await count("hardware_key_removal WHERE user_id = $1 AND state = 'requested'", [target.id])).toBe(0);
+      const others = await requestRemoval(other, target.id);
+      expect(await cancel(other, others)).toBe('accepted');
+      await aged(removal, '2 hours');
+      expect(await ask(requester, target.id)).toBe('accepted');
+    });
+
+    it('refuses it inside seven days of an expired request, counted from the expiry and not from the job’s mark, marked or not; and accepts it on the eighth day', async () => {
+      const [requester, target] = [await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, target.id);
+      await aged(removal, '25 hours');
+      // Not yet marked by the job: the request marks it and then refuses, and the refusal undoes the mark.
+      expect(await ask(requester, target.id)).toEqual(TOO_SOON);
+      expect(await stateOf(removal)).toBe('requested');
+      // The job marks it six days late: the seven days still run from the expiry.
+      await aged(removal, '6 days');
+      expect((await expire()).map((row) => row.removal_id)).toContain(removal);
+      expect(await stateOf(removal)).toBe('expired');
+      expect(await ask(requester, target.id)).toEqual(TOO_SOON);
+      await aged(removal, '1 day');
+      expect(await ask(requester, target.id)).toBe('accepted');
+    });
+
+    it('does not limit a request against an account that is not a platform administrator: two open at once beside one against an administrator, and asked again at once after a cancel', async () => {
+      const requester = await administrator();
+      const [one, two, peer] = [await member(), await member(), await administrator()];
+      expect(await ask(requester, peer.id)).toBe('accepted');
+      const first = await requestRemoval(requester, one.id);
+      expect(await ask(requester, two.id)).toBe('accepted');
+      expect(await cancel(requester, first)).toBe('accepted');
+      expect(await ask(requester, one.id)).toBe('accepted');
+      expect(await count("hardware_key_removal WHERE requested_by = $1 AND state = 'requested'", [requester.id])).toBe(3);
+    });
+
+    it('does not limit asking again after a confirmed removal: two people agreed to that one', async () => {
+      const [requester, target, confirmer] = [await administrator(), await administrator(), await administrator()];
+      const removal = await requestRemoval(requester, target.id);
+      expect(await failure(confirmRemoval(confirmer, removal))).toBe('accepted');
+      expect(await ask(requester, target.id)).toBe('accepted');
+    });
+
+    it('holds two concurrent requests of one requester against two administrators to one: the second waits for the first and is refused', async () => {
+      const [requester, first, second] = [await administrator(), await administrator(), await administrator()];
+      const [sessionOne, sessionTwo] = [await requester.session(), await requester.session()];
+      const holder = await app.connect();
+      try {
+        await holder.query('BEGIN');
+        await holder.query("SELECT set_config('app.actor_id', $1, true), set_config('app.practice_ids', '{}', true)", [requester.id]);
+        await holder.query('SELECT hardware_key_removal_request($1, $2, $3)', [first.id, sessionOne, request()]);
+        let settled = false;
+        const waiting = failure(asUser(requester.id, 'SELECT hardware_key_removal_request($1, $2, $3)', [second.id, sessionTwo, request()])).finally(() => {
+          settled = true;
+        });
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        expect(settled).toBe(false);
+        await holder.query('COMMIT');
+        expect(await waiting).toEqual(ONE_AT_A_TIME);
+      } finally {
+        await holder.query('ROLLBACK').catch(() => undefined);
+        holder.release();
+      }
+      expect(await count("hardware_key_removal WHERE requested_by = $1 AND state = 'requested'", [requester.id])).toBe(1);
+    });
+  });
+
+  describe('two platform administrators, one compromised (review W65 S6): the shield lasts one request’s life, once', () => {
+    it('A requests against B; B cannot disable A while the request can be confirmed; A can neither renew nor replace it; after its 24 hours B disables A', async () => {
+      const [a, b] = [await administrator(), await administrator()];
+      const removal = await requestRemoval(a, b.id);
+      expect(await disable(b.id, a.id)).toEqual(HOLDS);
+      // A asks again while its request stands: the one open request an account.
+      expect(await ask(a, b.id)).toEqual({ code: '23505', constraint: 'hardware_key_removal_open_once' });
+      await aged(removal, '23 hours 59 minutes');
+      expect(await disable(b.id, a.id)).toEqual(HOLDS);
+      await aged(removal, '2 minutes');
+      // The request has lapsed and the job has not run. A asks again to renew the shield: refused for seven days.
+      expect(await ask(a, b.id)).toEqual(TOO_SOON);
+      expect(await count("hardware_key_removal WHERE user_id = $1 AND expires_at > clock_timestamp()", [b.id])).toBe(0);
+      expect(await disable(b.id, a.id)).toEqual({ rows: 1 });
+      expect(await statusOf(a.id)).toBe('disabled');
+      expect(await ask(a, b.id)).not.toBe('accepted');
+    });
+
+    it('A cancels and asks again to start a fresh 24 hours: refused, and B is free from the cancel on', async () => {
+      const [a, b] = [await administrator(), await administrator()];
+      const removal = await requestRemoval(a, b.id);
+      expect(await disable(b.id, a.id)).toEqual(HOLDS);
+      expect(await cancel(a, removal)).toBe('accepted');
+      expect(await ask(a, b.id)).toEqual(TOO_SOON);
+      expect(await disable(b.id, a.id)).toEqual({ rows: 1 });
+    });
+
+    it('A and B request against each other: each is bound for its request’s life and neither is bound after, with no deadlock', async () => {
+      const [a, b] = [await administrator(), await administrator()];
+      const [onB, onA] = await Promise.all([requestRemoval(a, b.id), requestRemoval(b, a.id)]);
+      expect(await disable(a.id, b.id)).toEqual(HOLDS);
+      expect(await disable(b.id, a.id)).toEqual(HOLDS);
+      await aged(onB, '25 hours');
+      await aged(onA, '25 hours');
+      expect(await disable(b.id, a.id)).toEqual({ rows: 1 });
+    });
   });
 });

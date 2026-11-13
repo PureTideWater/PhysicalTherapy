@@ -308,6 +308,8 @@ describe('SGN-28: a reset whose own transaction was never recorded still queues 
     }
     expect(await rowsOf(user)).toEqual([{ reason: 'password_reset_unrecorded', actor_kind: 'user', actor_id: user, action: 'password_reset_unrecorded', traced: true }]);
     expect(await rowsOf(other)).toEqual([]);
+    // The trigger's row is due from the moment it was queued, as the operator's is (review W65 N4).
+    expect(await count('provider_sign_out WHERE user_id = $1 AND attempts = 0 AND next_attempt_at = queued_at', [user])).toBe(1);
     // It moves no mark: the reset's own record does that, and this is not it.
     expect((await owner.query<{ mark: Date | null }>('SELECT sign_in_not_before AS mark FROM "user" WHERE id = $1', [user])).rows[0]?.mark).toBeNull();
   });
@@ -327,6 +329,25 @@ describe('SGN-28: a reset whose own transaction was never recorded still queues 
     expect(await unrecorded(user)).toBe(true);
     expect((await rowsOf(user)).length).toBe(3);
     expect(await unrecorded(user)).toBe(false);
+  });
+
+  it('is never lost to its trace ID: a request ID the outbox would refuse is stored as none, by the account’s door and by the operator’s (review W65 N2)', async () => {
+    const traces = async (user: string) =>
+      (await owner.query<{ outbox: string | null; event: string | null }>('SELECT p.request_id AS outbox, e.request_id AS event FROM provider_sign_out p JOIN audit_event e ON e.id = p.source_event_id WHERE p.user_id = $1', [user])).rows;
+    for (const unfit of ['x'.repeat(129), 'a forwarded header, with spaces', '']) {
+      const [own, named] = [await createUser(owner), await createUser(owner)];
+      expect(await code(withActor(app, own, (scope) => scope.client.query('SELECT provider_sign_out_unrecorded_reset($1)', [unfit])))).toBe('accepted');
+      expect(await traces(own)).toEqual([{ outbox: null, event: null }]);
+      expect(await code(operator('SELECT operator_provider_sign_out_request($1, $2)', [named, unfit]))).toBe('accepted');
+      expect(await traces(named)).toEqual([{ outbox: null, event: null }]);
+    }
+    // A fitting one is kept, and no ID at all is no error.
+    const [kept, none] = [await createUser(owner), await createUser(owner)];
+    const fitting = request();
+    await withActor(app, kept, (scope) => scope.client.query('SELECT provider_sign_out_unrecorded_reset($1)', [fitting]));
+    expect(await traces(kept)).toEqual([{ outbox: fitting, event: fitting }]);
+    expect(await code(operator('SELECT operator_provider_sign_out_request($1, $2)', [none, null]))).toBe('accepted');
+    expect(await traces(none)).toEqual([{ outbox: null, event: null }]);
   });
 
   it('is the account’s own act only: no actor is refused, the application role cannot write the action itself, and the operator role cannot call it', async () => {
