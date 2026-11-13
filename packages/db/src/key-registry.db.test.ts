@@ -1437,4 +1437,33 @@ describe('SGN-31: a requested key removal binds its target only while it can sti
       });
     });
   });
+
+  describe('(g) a request no third administrator could still confirm binds no one (review W67 N-1; owed red until both triggers read the third)', () => {
+    it('A requests against B with C the only third and then disables C: B, held until then, disables A though the request still says requested', async () => {
+      const [a, b, c] = [await administrator(), await administrator(), await administrator()];
+      await onlyAdministrators([a, b, c], async () => {
+        const removal = await requestRemoval(a, b.id);
+        expect(await disable(b.id, a.id)).toEqual(HOLDS);
+        expect(await demote(b.id, a.membership)).toEqual(HOLDS);
+        expect(await disable(a.id, c.id)).toEqual({ rows: 1 });
+        expect(await stateOf(removal)).toBe('requested');
+        expect(await disable(b.id, a.id)).toEqual({ rows: 1 });
+        expect(await statusOf(a.id)).toBe('disabled');
+      });
+    });
+
+    it('A ends C’s membership instead: B, held until then, ends A’s membership; and with a fourth who could confirm B stays held', async () => {
+      const [a, b, c, d] = [await administrator(), await administrator(), await administrator(), await administrator()];
+      await onlyAdministrators([a, b, c, d], async () => {
+        const removal = await requestRemoval(a, b.id);
+        expect(await endMembership(a.id, c.membership)).toBe('accepted');
+        expect(await endMembership(b.id, a.membership)).toEqual(HOLDS);
+        expect(await disable(b.id, a.id)).toEqual(HOLDS);
+        expect(await endMembership(a.id, d.membership)).toBe('accepted');
+        expect(await stateOf(removal)).toBe('requested');
+        expect(await endMembership(b.id, a.membership)).toBe('accepted');
+        expect(await endsAt(a.membership)).not.toBeNull();
+      });
+    });
+  });
 });
