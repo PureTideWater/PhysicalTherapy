@@ -1,5 +1,70 @@
 # Status: Queues item 37, the key registry (Lane A)
 
+## RESUME-BLOCK (2026-11-13, W64, session_019i9ifBKYJayza89rg9KE3j): the base is merged, five of the six rulings have a proved migration text and an owed-red test; the app-side code, A4 and the adversarial review are NOT done (handed over at the token limit)
+
+**Ref `co-001/wip-key-registry` 77ded21e** (pushed through the hook; no PR; no migration, domain-model hunk beyond the
+merge's conflict, or generated function touched). On 282895dd: 04a62fed the merge of 979a21b8 (schema PR 5); 3dbf14ec
+the owed-red tests; 77ded21e a lint mend in one of them.
+**The merge:** one conflict, `docs/product/domain-model.md`, three generated hunks (header counts, migration rows 53 and
+54, the approval paragraph). Resolved to THIS ref's side, so the approval line is blank (`Approved by: ________`) and
+the founder's line for PR 5 is not carried onto a text it does not describe. The file is stale and is regenerated.
+**The texts:** `designs/lane-a-key-registry-reviews/w64-migration-texts.md` (a section a change, the lists, locks,
+proof), `w64/apply-texts.py` (exact old/new pairs; scratch copies only) and `w64/migration.patch` (the same as a diff).
+
+### What is red on 77ded21e and why (the two files run alone: 46 passed, 14 failed)
+`packages/db/src/key-registry.db.test.ts`:
+- "SGN-24: the target of a requested key removal changes no other account (owed red ...)": 3 cases, A1's trigger.
+- "SGN-29: a step judged with no beginning is no guess ... (owed red ...)": 1 case (`expected 1 to be +0`), change 4.
+- "SEC-28: a refused act on a key removal leaves a security event ... (owed red ...)": 2 cases, change 7 (one fails on
+  `function hardware_key_removal_refused(unknown, unknown) does not exist`, thrown, not on an assertion).
+- "SGN-22 > adds nothing to the request path in the database ...": **red only because PR 5's
+  `20261115090000_roi_statement_actionable_lines.sql` shares the item's `20261115` prefix** (3 files, 2 expected). Goes
+  with the rename; if the new names leave that prefix, change the test's filter with them.
+`packages/db/src/provider-sign-out.db.test.ts`:
+- "SGN-28: a reset whose own transaction was never recorded ... (owed red ...)": 4 cases, change 2 (two throw 42883).
+- "JOB-09: the sweep judges late and given up by the row's age ... (owed red ...)": 2 cases, change 3.
+- "JOB-07: the claim names the cause (owed red ...)": 1 case, change 6.
+**With the texts applied in a scratch copy: 58 passed, 2 failed:** the SGN-22 prefix case above, and "JOB-07 > gives up
+at 30 tries, and at 24 hours only a row that had its four tries", whose first five lines assert the rule ruling 3
+replaced; the next session rewords them with the migration (JOB-09 holds the new rule).
+**Not known:** the whole `pnpm test:db` on the merged tree. One run was started on 04a62fed and had not finished at
+hand-over (its files were edited under it, so its counts would not be clean anyway). `pnpm typecheck` passed on
+04a62fed (24 projects) before the tests were added; `eslint` on the two test files is clean. The migration-order check
+was not run by name. Unit, e2e, golden: not run.
+
+### The order for the next session (the co-founder's typed /new-migration, one command a file)
+1. Rename the two migrations to sort after `20261115090000_roi_statement_actionable_lines`.
+2. In the first, apply the texts in file order (the script's order is the file's): the reason CHECK (section 1); A1's
+   trigger (6); the trigger's WHEN and the two functions (7); the judge's early return (8); `hardware_key_removal_refused`
+   (9); the claim's fifth column and the sweep's two conditions and comment (10); the reserved action (13); the
+   preflight's two names; section 14's REVOKE and two GRANTs. Then the header comment's lists, by hand in that command.
+3. Outside it: SEC-25's maps (`user_removal_target_holds()` forNone and the trigger arrays;
+   `provider_sign_out_unrecorded_reset(text)` and `hardware_key_removal_refused(text,text)` forApp;
+   `operator_provider_sign_out_request(uuid,text)` forOperator); `PROVIDER_SIGN_OUT_REASONS` in
+   `packages/db/src/schema/identity.ts`; the old JOB-07 case's five lines; every "(owed red ...)" parenthesis dropped;
+   the matrix rows SGN-28, SGN-29, SEC-28, JOB-09 and `pnpm synth --all`.
+4. Expected then, the two files: 60 passed, 0 failed.
+
+### Left
+- **Change 5 (A4), not started:** no text, no test; the design reached is in the texts file.
+- **App-side code, not started:** the web's third transaction in `endedByReset` calling
+  `provider_sign_out_unrecorded_reset` and the runbook's step naming `operator_provider_sign_out_request`; the worker's
+  warn line with the cause's request_id and a `sqlstate` field (a reviewed change to `fields.ts`); `refused()` in
+  `console-keys.ts` calling `hardware_key_removal_refused` in its own transaction. Each needs its own failing-first test.
+- **The adversarial review of the texts and tests (step 4): not run.** It should run before the texts are applied.
+- **A consequence of ruling 3 for the founder:** after a day's outage of the job, rows older than 24 hours that the
+  first run does not reach are given up untried and paged, where before they were claimed late.
+- As before: ADR 0095's missing records (the keyed digest, the algorithms, alarm filters 42 to 46, the "user" trigger,
+  and now these changes); the domain model regenerated (never the approval line); the full suite once; the PR from the
+  template; the suggested approval line as one PR comment.
+
+### Machine notes
+Both PostgreSQL servers were down at this session's start and were started by hand (`runuser -u postgres -- pg_ctl ...
+-w start`, HANDOFF.md's recipe); Node 24 is `/opt/node24/bin`, not on the default PATH. W64 read, beyond its list: ten
+lines of review A (A4, A5) and the worker job's file. W64 holds no PR, no subagent, no scheduled task; one background
+`pnpm test:db` may still be running in this container and can be ignored.
+
+
 ## RESUME-BLOCK (2026-11-13, W61, session_019i9ifD4ZD9pKYb8nEukCQm): the two refs are merged, the three reviews and two fix rounds are DONE; one BLOCKER is owed to the migration (a trigger, its text below, its test committed RED); then PR 5's base, the rename, the domain model and the PR
 
 **Ref `co-001/wip-key-registry` 282895dd** (pushed; no PR; no migration touched; the screens ref 07807b33 is merged in by
