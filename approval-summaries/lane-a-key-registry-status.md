@@ -1,41 +1,16 @@
 # Status: Queues item 37, the key registry (Lane A)
 
-## RESUME-BLOCK (2026-11-13, W68, session_019i9ifAYEWMkE9HKeMwZM8p; HANDED OVER at 12:45 UTC past the token mark): DRAFT PR #162 IS OPEN with the suggested approval line; a fresh session takes ONLY THE MERGE after the founder's commit of the line
+## FINAL STATE: MERGED (2026-11-13, W73, session_019i9ifCeFxYtnwjkqi85DCw)
 
-**PR #162** `co-001/key-registry` db5d9f66 into claude/build-platform (base 17c234d2 merged in), draft. The suggested
-approval line: https://github.com/PureTideWater/PhysicalTherapy/pull/162#discussion_r4563007837 (one comment, line
-7864 of docs/product/domain-model.md; document SHA-256 c06bdce5...b78c765). W68 is subscribed to the PR.
-**Done:** both typed /new-migration commands (a person typed them): `20261116090000_key_registry.sql` (every text by
-`designs/lane-a-key-registry-reviews/w68/apply-texts.py`, byte-equal to the proved copy, then the header's lists) and
-`20261116091000_key_registry_validate.sql`; N-1 taken (both triggers read the third; SGN-31 (g)); SEC-25's lists,
-PROVIDER_SIGN_OUT_REASONS, SGN-22's filter, the owed-red notes dropped, matrix rows SGN-28 to SGN-31, SEC-28, JOB-09
-and their fixtures, ADR 0095's new section and corrected residuals, the domain model and function files regenerated.
-**The full suite, once, on db5d9f66's tree (PostgreSQL 18, Node 24):** unit 14843 passed, 4 skipped; db 10672 passed,
-1 skipped, 0 failed; golden 381; e2e 88; typecheck, lint, lint:logs, verify-content pass.
-**Seen in a browser:** the request form's four refusals, in place with their words. W53's walk (`capture.ts`) is
-stale and was NOT re-run whole: it needs a third administrator aged (N1), `.first()` on the "key removal requested"
-badge (the narrow layout's hidden copy) and the button name "Cancel removal request for ...".
-**CI on db5d9f66 (12:20 UTC):** green but for `domain model` (the blank approval line only; its log says the
-document and the 431 function files match the schema, hash c06bdce5...) and `all green`, which follows it; unit, db
-4/4, e2e 2/2, build, lint, static, images, approval-of-record and the finished stryker shards pass; `capacity` and
-`stryker (packets-scan)` were still running. W68 is unsubscribed, holds no scheduled task and no subagent.
-**THE MERGE SESSION, exactly:**
-1. Wait for the founder's OWN commit of the approval line on `co-001/key-registry` (the suggestion on line 7864 of
-   docs/product/domain-model.md: `Approved by: Tyler Williams  Date: <the day he commits>  Document SHA-256:`
-   `c06bdce55841bac4551a6f33b150b71c3bca6d7e23105bc60e6424e42b78c765`). Never write it; never approve or review.
-2. On HIS commit: the required checks green (`all green`, `mutation`, `screening-capacity gate`,
-   `approval-of-record`), `domain model` now green. If claude/build-platform moved past 17c234d2 and GitHub asks
-   for an up-to-date branch, say so to the orchestrator first: a merge commit after his dismisses the approval.
-   A unit job red only on redact.leaks.test.ts:1027 or denial-letter.test.ts:435/:447 timeouts: re-run once, note it.
-3. Mark #162 ready, merge it (a merge commit, as #160 and #161), verify on the base: the two migrations
-   `20261116090000_key_registry.sql` and `20261116091000_key_registry_validate.sql` are in
-   origin/claude/build-platform and its domain model's last line carries his line.
-4. Write here, at the top: FINAL STATE: MERGED (the merge commit, the time) and the queue list below unchanged;
-   `lanes/STATE.md` as the orchestrator says; push ops from the hooked checkout
-   (`cd /home/user/PhysicalTherapy && git push origin claude/build-ops`; pull --rebase on a refusal); one line to
-   the orchestrator; unsubscribe; stand down. The WIP ref `co-001/wip-key-registry` (db5d9f66, the same commit) and
-   `co-001/wip-key-registry-screens` are left for the orchestrator to delete.
-No commit after his unless a required check is red, said first.
+**PR #162** `co-001/key-registry` is merged into claude/build-platform as merge commit
+`4d40557fb014da8f9b219dce94f97f5db600f228` (parents 17c234d2, the base, and b88b45a1, the founder's commit).
+The founder committed the approval line himself through GitHub at 12:58 UTC (b88b45a1, committer GitHub, one line of
+`docs/product/domain-model.md`, the document SHA-256 unchanged: `Approved by: Tyler Williams  Date: 2026-11-13`).
+All 38 checks were green on his commit, `domain model`, `all green` and `approval-of-record` among them; the base had
+not moved from 17c234d2, so no base merge and no commit of ours on the branch. Marked ready, merged (a merge commit),
+and verified on the base: `git ls-remote` 4d40557f, the two parents, the approval line in the merged document.
+The WIP refs `co-001/wip-key-registry` (db5d9f66) and `co-001/wip-key-registry-screens` are left for the orchestrator
+to delete. The queue list below is unchanged and none of it is taken.
 
 ### Queue list (none taken)
 - W67 N-2 and N-3; the third counted only if seven days in the role; `hardware_key_removal_target_acts` without words
