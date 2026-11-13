@@ -1260,7 +1260,7 @@ describe('hardware key removals from the console (SGN-23, SGN-24, SGN-25, SGN-27
             },
           });
         },
-      } as Services['pool'],
+      },
     };
     expect((await act(confirmKeyRemoval, await requester.token(), { ...input, removalId: randomUUID() }, watching)).outcome).toEqual({ status: 'not_found' });
     expect((await act(requestKeyRemoval, await requester.token(), { organizationId: admin.internalId, userId: target.id }, watching)).outcome).toEqual(refusedWith(KEY_REFUSALS.hardware_key_removal_open_once));
