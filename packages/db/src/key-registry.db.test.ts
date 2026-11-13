@@ -930,8 +930,16 @@ describe('SGN-29: a step judged with no beginning is no guess and records no ref
 
   it('answers refused and writes no security event at the code screen, counts no try, and still records a wrong code once', async () => {
     const target = await member();
-    const { removal } = await removed(target.id);
+    const { removal, requester } = await removed(target.id);
     expect(await judge(target.id, null, null)).toBe('refused');
+    expect(await refusals(target.id)).toBe(0);
+    expect(await count('hardware_key_removal WHERE id = $1 AND registration_code_tries = 0', [removal])).toBe(1);
+    // No beginning is never an oracle for the code (review W65 S5): with registration open, the right code and a
+    // wrong one are both answered refused, uncounted and unrecorded, exactly alike.
+    const secret = sha256('SYNTHETIC-CODE-29');
+    await asUser(requester.id, 'SELECT hardware_key_registration_open($1, $2, $3, $4)', [removal, await requester.session(), secret, request()]);
+    expect(await judge(target.id, secret, null)).toBe('refused');
+    expect(await judge(target.id, digest(), null)).toBe('refused');
     expect(await refusals(target.id)).toBe(0);
     expect(await count('hardware_key_removal WHERE id = $1 AND registration_code_tries = 0', [removal])).toBe(1);
     // A real guess (a step with its beginning and a code) is still recorded, once an hour.

@@ -250,9 +250,9 @@ describe('JOB-07: the answers and the sweep', () => {
     expect(await linesFor(untried.id)).toEqual(['LATE']);
     expect(await row(untried.id)).toMatchObject({ late: true, gave_up: false });
     expect((await claim())[0]).toMatchObject({ sign_out_id: untried.id, try: 1 });
-    // Four tries and 24 hours old: late and given up, one line each.
+    // Four tries the provider failed and 24 hours old: late and given up, one line each.
     const old = await queued();
-    await rewind("attempts = 4, queued_at = now() - interval '25 hours', next_attempt_at = now() + interval '1 hour'", old.id);
+    await rewind("attempts = 4, last_error_code = 'TooManyRequestsException', queued_at = now() - interval '25 hours', next_attempt_at = now() + interval '1 hour'", old.id);
     expect(await linesFor(old.id)).toEqual(['GAVE_UP', 'LATE']);
     await linesFor(old.id);
     expect(await count("audit_event WHERE action = 'provider_sign_out_undelivered' AND actor_kind = 'system' AND object_type = 'user' AND object_id = $1", [old.user])).toBe(1);
@@ -321,6 +321,12 @@ describe('SGN-28: a reset whose own transaction was never recorded still queues 
     await owner.query("UPDATE provider_sign_out SET leased_until = now() + interval '2 minutes' WHERE user_id = $1", [user]);
     expect(await unrecorded(user)).toBe(true);
     expect((await rowsOf(user)).length).toBe(2);
+    // Nor does a row whose try failed (review W65 S1): its lease is cleared and its next try is up to an hour away, so
+    // it must not hold back the sign-out of a later reset. Only a row never yet tried, due at once, covers a new call.
+    await owner.query("UPDATE provider_sign_out SET attempts = 1, leased_until = NULL, last_error_code = 'TooManyRequestsException', next_attempt_at = now() + interval '60 minutes' WHERE user_id = $1", [user]);
+    expect(await unrecorded(user)).toBe(true);
+    expect((await rowsOf(user)).length).toBe(3);
+    expect(await unrecorded(user)).toBe(false);
   });
 
   it('is the account’s own act only: no actor is refused, the application role cannot write the action itself, and the operator role cannot call it', async () => {
@@ -339,13 +345,18 @@ describe('SGN-28: a reset whose own transaction was never recorded still queues 
     expect((await operator<{ id: string | null }>('SELECT operator_provider_sign_out_request($1, $2) AS id', [user, request()]))[0]?.id).toBeNull();
     expect(await code(operator('SELECT operator_provider_sign_out_request($1, $2)', [randomUUID(), request()]))).toBe('P0002');
     expect(await code(withActor(app, user, (scope) => scope.client.query('SELECT operator_provider_sign_out_request($1, $2)', [user, request()])))).toBe('42501');
+    // Due from the moment it was queued, as the oldest-first order of the claim needs (review W65 N4).
+    expect(await count('provider_sign_out WHERE user_id = $1 AND attempts = 0 AND next_attempt_at = queued_at', [user])).toBe(1);
     // The job claims it like any other row.
     await owner.query("UPDATE provider_sign_out SET next_attempt_at = now() + interval '1 day' WHERE done_at IS NULL AND gave_up_at IS NULL AND user_id <> $1", [user]);
     expect((await claim())[0]).toMatchObject({ sign_out_id: first[0]?.id, account_id: user, try: 1 });
+    // Once it has been tried it covers no later call: the operator may queue another (review W65 S1).
+    await owner.query('UPDATE provider_sign_out SET leased_until = NULL WHERE user_id = $1', [user]);
+    expect((await operator<{ id: string | null }>('SELECT operator_provider_sign_out_request($1, $2) AS id', [user, request()]))[0]?.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 });
 
-describe('JOB-09: the sweep judges late by the row’s age whatever its tries, and gives up by age only a row that had a try (owed red until operator_provider_sign_outs_overdue reads queued_at)', () => {
+describe('JOB-09: the sweep judges late by the row’s age whatever its tries, and gives up by age only a row whose try was answered (owed red until operator_provider_sign_outs_overdue reads queued_at)', () => {
   it('marks a row late 15 minutes after it was queued, tried or not, leased or not; and not a minute sooner', async () => {
     const [untried, leased, young] = [await queued(), await queued(), await queued()];
     await rewind("queued_at = now() - interval '16 minutes'", untried.id);
@@ -361,21 +372,27 @@ describe('JOB-09: the sweep judges late by the row’s age whatever its tries, a
     expect((await claim())[0]).toMatchObject({ sign_out_id: untried.id, try: 1 });
   });
 
-  it('gives a row up 24 hours after it was queued once it has had one try, once, never under a running lease, never a done row, and never a row not yet tried', async () => {
+  it('gives a row up 24 hours after it was queued once one try has been answered as failed, once, never under a running lease, never a done row, never a row not yet tried, and never one only claimed', async () => {
     const [untried, inFlight, finished, tried] = [await queued(), await queued(), await queued(), await queued()];
     await rewind("queued_at = now() - interval '25 hours'", untried.id);
     await rewind("queued_at = now() - interval '25 hours', attempts = 1, leased_until = now() + interval '1 minute'", inFlight.id);
     await rewind("queued_at = now() - interval '25 hours', done_at = now() - interval '24 hours'", finished.id);
-    await rewind("queued_at = now() - interval '25 hours', attempts = 1", tried.id);
-    // One try and no running lease: given up, one audit row, however often the sweep runs.
+    await rewind("queued_at = now() - interval '25 hours', attempts = 1, last_error_code = 'TooManyRequestsException'", tried.id);
+    // One answered try and no running lease: given up, one audit row, however often the sweep runs.
     expect(await linesFor(tried.id)).toEqual(['GAVE_UP', 'LATE']);
     await linesFor(tried.id);
     expect(await count("audit_event WHERE action = 'provider_sign_out_undelivered' AND actor_kind = 'system' AND object_type = 'user' AND object_id = $1", [tried.user])).toBe(1);
     expect(await linesFor(finished.id)).toEqual([]);
-    // Its one try still running: late, not given up; its lease over, the next sweep gives it up.
+    // Its one try still running: late, not given up. Its lease over with no answer (the worker was stopped between
+    // the claim and the call: nothing may have been sent, review W65 S2): still not given up, and claimed again.
     expect(await linesFor(inFlight.id)).toEqual(['LATE']);
     expect(await row(inFlight.id)).toMatchObject({ late: true, gave_up: false });
-    await rewind("leased_until = now() - interval '1 second'", inFlight.id);
+    await rewind("leased_until = now() - interval '1 second', next_attempt_at = now()", inFlight.id);
+    expect(await linesFor(inFlight.id)).toEqual(['LATE']);
+    expect(await row(inFlight.id)).toMatchObject({ gave_up: false });
+    expect((await claim())[0]).toMatchObject({ sign_out_id: inFlight.id, try: 2 });
+    // That try answered as failed: now its age gives it up.
+    await failed(inFlight.id, 2);
     expect(await linesFor(inFlight.id)).toEqual(['GAVE_UP', 'LATE']);
     // Never tried: late and paged on every sweep, never given up, whatever its age, and no audit row says it was.
     await rewind("queued_at = now() - interval '30 days'", untried.id);
@@ -383,6 +400,29 @@ describe('JOB-09: the sweep judges late by the row’s age whatever its tries, a
     expect(await linesFor(untried.id)).toEqual(['LATE']);
     expect(await row(untried.id)).toMatchObject({ attempts: 0, late: true, gave_up: false });
     expect(await count("audit_event WHERE action = 'provider_sign_out_undelivered' AND object_id = $1", [untried.user])).toBe(0);
+  });
+
+  it('pages a row still waiting again a day after its LATE line was acknowledged, so one no run reaches is never paged once and then silent', async () => {
+    const waiting = await queued();
+    // Due from the moment it was queued, as the oldest-first order of the claim needs (review W65 N4).
+    expect(await count('provider_sign_out WHERE id = $1 AND attempts = 0 AND next_attempt_at = queued_at', [waiting.id])).toBe(1);
+    await rewind("queued_at = now() - interval '16 minutes'", waiting.id);
+    expect(await linesFor(waiting.id)).toEqual(['LATE']);
+    await operator('SELECT operator_provider_sign_out_reported($1, $2)', [waiting.id, 'LATE']);
+    expect(await linesFor(waiting.id)).toEqual([]);
+    await rewind("late_reported_at = now() - interval '23 hours'", waiting.id);
+    expect(await linesFor(waiting.id)).toEqual([]);
+    await rewind("late_reported_at = now() - interval '25 hours'", waiting.id);
+    expect(await linesFor(waiting.id)).toEqual(['LATE']);
+    expect(await linesFor(waiting.id)).toEqual(['LATE']);
+    await operator('SELECT operator_provider_sign_out_reported($1, $2)', [waiting.id, 'LATE']);
+    expect(await linesFor(waiting.id)).toEqual([]);
+    // A done row and a given-up row owe no second line, however old the acknowledgement.
+    const [finished, given] = [await queued(), await queued()];
+    await rewind("done_at = now(), late_at = now() - interval '2 days', late_reported_at = now() - interval '2 days'", finished.id);
+    await rewind("gave_up_at = now() - interval '2 days', gave_up_reported_at = now() - interval '2 days', late_at = now() - interval '2 days', late_reported_at = now() - interval '2 days'", given.id);
+    expect(await linesFor(finished.id)).toEqual([]);
+    expect(await linesFor(given.id)).toEqual([]);
   });
 
   it('after an outage tries the oldest rows first; a row a run does not reach stays late and is tried by a later run, and is given up only after its own try', async () => {
