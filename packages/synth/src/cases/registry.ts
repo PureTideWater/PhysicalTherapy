@@ -3,20 +3,16 @@
  * Each entry says which milestone completes its expected outcome, which existing tests already assert
  * it, and either generates its files and expected.json or says why it needs no file.
  */
-import { type CaseModule } from "../expected/types";
-import { CODE_LIST_RELEASE } from "../expected/parse";
-import { CaseBuilder, type GeneratedCase } from "./builder";
-import { LARGE_CLAIMS, LARGE_TRANSACTIONS, largeFixtureFacts } from "./large";
-import { TEST_MATRIX } from "./matrix";
-import * as par from "./par";
-import * as pricing from "./pricing";
-import { VARIANTS } from "./variants";
-import * as workflow from "./workflow";
-import {
-  addContractSet,
-  addContractSetV2,
-  addNarrativeSet,
-} from "../eval/cases";
+import { type CaseModule } from '../expected/types';
+import { CODE_LIST_RELEASE } from '../expected/parse';
+import { CaseBuilder, type GeneratedCase } from './builder';
+import { LARGE_CLAIMS, LARGE_TRANSACTIONS, largeFixtureFacts } from './large';
+import { TEST_MATRIX } from './matrix';
+import * as par from './par';
+import * as pricing from './pricing';
+import { VARIANTS } from './variants';
+import * as workflow from './workflow';
+import { addContractSet, addContractSetV2, addNarrativeSet } from '../eval/cases';
 
 type Build = (b: CaseBuilder) => void;
 
@@ -30,48 +26,15 @@ interface Entry {
   readonly notes?: readonly string[];
 }
 
-const none = (
-  completesIn: number,
-  noFile: string,
-  assertedBy?: readonly string[],
-  notes?: readonly string[],
-): Entry => ({
-  completesIn,
-  noFile,
-  assertedBy,
-  ...(notes === undefined ? {} : { notes }),
-});
+const none = (completesIn: number, noFile: string, assertedBy?: readonly string[], notes?: readonly string[]): Entry => ({ completesIn, noFile, assertedBy, ...(notes === undefined ? {} : { notes }) });
 
 function par29(b: CaseBuilder): void {
   const facts = largeFixtureFacts();
-  b.noFiles(
-    `The ${String(LARGE_CLAIMS)}-claim file is generated when a test needs it, by writeLargeFixture() from @tp/synth, into fixtures/synthetic/${facts.path} (ignored by git); its size, hash and counts are recorded here.`,
-  );
-  b.generatedFile({
-    path: facts.path,
-    sha256: facts.sha256,
-    bytes: facts.bytes,
-    description: `${String(LARGE_CLAIMS)} claims in ${String(LARGE_TRANSACTIONS)} transaction sets of one interchange, a line feed after every segment.`,
-    oracle: {
-      valid: true,
-      rejections: [],
-      summary: null,
-      summarySha256: facts.summarySha256,
-    },
-  });
-  b.scenario({
-    claims: facts.claims,
-    lines: facts.lines,
-    transactions: facts.transactions,
-    paidCents: facts.paidCents,
-    perTransaction: facts.perTransaction,
-  });
-  b.outcome({
-    parse: `all ${String(LARGE_CLAIMS)} claims load, balanced`,
-    target:
-      "10,000 claims a minute on one worker vCPU (PRD section 10); memory bounded per transaction set",
-  });
-  b.addAuxiliary(".gitignore", "generated/\n");
+  b.noFiles(`The ${String(LARGE_CLAIMS)}-claim file is generated when a test needs it, by writeLargeFixture() from @tp/synth, into fixtures/synthetic/${facts.path} (ignored by git); its size, hash and counts are recorded here.`);
+  b.generatedFile({ path: facts.path, sha256: facts.sha256, bytes: facts.bytes, description: `${String(LARGE_CLAIMS)} claims in ${String(LARGE_TRANSACTIONS)} transaction sets of one interchange, a line feed after every segment.`, oracle: { valid: true, rejections: [], summary: null, summarySha256: facts.summarySha256 } });
+  b.scenario({ claims: facts.claims, lines: facts.lines, transactions: facts.transactions, paidCents: facts.paidCents, perTransaction: facts.perTransaction });
+  b.outcome({ parse: `all ${String(LARGE_CLAIMS)} claims load, balanced`, target: '10,000 claims a minute on one worker vCPU (PRD section 10); memory bounded per transaction set' });
+  b.addAuxiliary('.gitignore', 'generated/\n');
 }
 
 /**
@@ -92,2992 +55,1235 @@ export const CODE_BUILT_THROUGH_MILESTONE = 10;
 
 /** Every test-matrix case, by ID. */
 const ENTRIES: Readonly<Record<string, Entry>> = {
-  "PAR-01": {
-    completesIn: 2,
-    build: par.par01,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "tools/test-oracle/parser.test.ts",
-      "apps/worker/src/parse/parse.db.test.ts",
-    ],
-  },
-  "PAR-02": {
-    completesIn: 2,
-    build: par.par02,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "apps/worker/src/parse/parse.db.test.ts",
-    ],
-  },
-  "PAR-03": {
-    completesIn: 2,
-    build: par.par03,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "tools/test-oracle/parser.test.ts",
-    ],
-  },
-  "PAR-04": {
-    completesIn: 2,
-    build: par.par04,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "apps/worker/src/intake/sniff.test.ts",
-    ],
-  },
-  "PAR-05": {
-    completesIn: 2,
-    build: par.par05,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "tools/test-oracle/parser.test.ts",
-    ],
-  },
-  "PAR-06": {
-    completesIn: 2,
-    build: par.par06,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "packages/db/src/documents.db.test.ts",
-      "apps/worker/src/intake/intake.db.test.ts",
-    ],
-  },
-  "PAR-07": {
-    completesIn: 2,
-    build: par.par07,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "apps/worker/src/parse/parse.db.test.ts",
-    ],
-  },
-  "PAR-08": {
-    completesIn: 2,
-    build: par.par08,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "apps/worker/src/parse/plan.test.ts",
-      "apps/worker/src/parse/parse.db.test.ts",
-    ],
-  },
-  "PAR-09": {
-    completesIn: 2,
-    build: par.par09,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-    ],
-  },
-  "PAR-10": {
-    completesIn: 2,
-    build: par.par10,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "apps/worker/src/parse/plan.test.ts",
-    ],
-  },
-  "PAR-11": {
-    completesIn: 2,
-    build: par.par11,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-    ],
-  },
-  "PAR-12": {
-    completesIn: 2,
-    build: par.par12,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-    ],
-  },
-  "PAR-13": {
-    completesIn: 2,
-    build: par.par13,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-    ],
-  },
-  "PAR-14": {
-    completesIn: 5,
-    build: par.par14,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "tools/test/remittance-pricing.test.ts",
-    ],
-  },
-  "PAR-15": {
-    completesIn: 5,
-    build: par.par15,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "tools/test/remittance-pricing.test.ts",
-    ],
-  },
-  "PAR-16": {
-    completesIn: 2,
-    build: par.par16,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "apps/worker/src/parse/plan.test.ts",
-    ],
-  },
-  "PAR-17": {
-    completesIn: 2,
-    build: par.par17,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-    ],
-  },
-  "PAR-18": {
-    completesIn: 2,
-    build: par.par18,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-    ],
-  },
-  "PAR-19": {
-    completesIn: 2,
-    build: par.par19,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-    ],
-  },
-  "PAR-20": {
-    completesIn: 2,
-    build: par.par20,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "tools/test-oracle/parser.test.ts",
-      "apps/worker/src/parse/parse.db.test.ts",
-    ],
-  },
-  "PAR-21": {
-    completesIn: 2,
-    build: par.par21,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "apps/worker/src/parse/parse.db.test.ts",
-    ],
-  },
-  "PAR-22": {
-    completesIn: 2,
-    build: par.par22,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "apps/worker/src/parse/parse.db.test.ts",
-    ],
-  },
-  "PAR-23": {
-    completesIn: 2,
-    build: par.par23,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "tools/test-oracle/parser.test.ts",
-    ],
-  },
-  "PAR-24": {
-    completesIn: 2,
-    build: par.par24,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "tools/test-oracle/parser.test.ts",
-      "apps/worker/src/intake/sniff.test.ts",
-    ],
-  },
-  "PAR-25": {
-    completesIn: 2,
-    build: par.par25,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "tools/test-oracle/parser.test.ts",
-      "apps/worker/src/parse/parse.db.test.ts",
-    ],
-  },
-  "PAR-26": {
-    completesIn: 2,
-    build: par.par26,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "tools/test-oracle/parser.test.ts",
-    ],
-  },
-  "PAR-27": {
-    completesIn: 3,
-    build: par.par27,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "apps/worker/src/intake/intake.db.test.ts",
-      "apps/worker/src/intake/zip.test.ts",
-    ],
-  },
-  "PAR-28": {
-    completesIn: 3,
-    build: par.par28,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "apps/worker/src/intake/intake.db.test.ts",
-      "apps/worker/src/intake/zip.test.ts",
-    ],
-  },
-  "PAR-29": {
-    completesIn: 2,
-    build: par29,
-    assertedBy: [
-      "packages/edi835/src/performance.test.ts",
-      "packages/synth/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-    ],
-  },
-  "PAR-30": {
-    completesIn: 2,
-    build: par.par30,
-    assertedBy: [
-      "packages/edi835/src/fixtures.test.ts",
-      "apps/web/src/lib/routes/remittances.db.test.ts",
-      "packages/db/src/documents.db.test.ts",
-      "apps/worker/src/intake/intake.db.test.ts",
-      "apps/worker/src/parse/parse.db.test.ts",
-    ],
-  },
-  "MAP-01": {
-    completesIn: 3,
-    build: pricing.map01,
-    assertedBy: [
-      "packages/contracts/src/resolver.test.ts",
-      "packages/contracts/src/coverage.test.ts",
-      "packages/contracts/src/contracts.db.test.ts",
-      "apps/web/src/lib/routes/contracts-routes.db.test.ts",
-      "apps/web/e2e/mapping.spec.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "apps/worker/src/price/price.db.test.ts",
-      "apps/web/src/lib/routes/pricing-routes.db.test.ts",
-      "apps/web/src/lib/routes/mapping-routes.db.test.ts",
-    ],
-  },
-  "MAP-02": {
-    completesIn: 5,
-    build: pricing.map02,
-    assertedBy: [
-      "packages/contracts/src/resolver.test.ts",
-      "packages/contracts/src/coverage.test.ts",
-      "packages/contracts/src/contracts.db.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "apps/worker/src/price/price.db.test.ts",
-    ],
-  },
-  "MAP-03": {
-    completesIn: 7,
-    build: pricing.map03,
-    assertedBy: [
-      "packages/contracts/src/resolver.test.ts",
-      "packages/contracts/src/contracts.db.test.ts",
-      "apps/web/src/lib/routes/contracts-routes.db.test.ts",
-      "apps/worker/src/price/price.db.test.ts",
-      "apps/web/src/lib/routes/pricing-routes.db.test.ts",
-      "apps/worker/src/price/rerun.db.test.ts",
-    ],
-  },
-  "MAP-04": {
-    completesIn: 6,
-    build: pricing.map04,
-    assertedBy: [
-      "packages/contracts/src/resolver.test.ts",
-      "packages/contracts/src/contracts.db.test.ts",
-      "apps/web/src/lib/routes/contracts-routes.db.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "apps/worker/src/price/price.db.test.ts",
-      "apps/web/src/lib/routes/pricing-routes.db.test.ts",
-    ],
-  },
-  "MAP-05": {
-    completesIn: 5,
-    build: pricing.map05,
-    assertedBy: [
-      "packages/contracts/src/resolver.test.ts",
-      "packages/contracts/src/contracts.db.test.ts",
-      "packages/pricing/src/engine.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "apps/worker/src/price/price.db.test.ts",
-      "apps/web/src/lib/routes/pricing-routes.db.test.ts",
-      "apps/web/e2e/pricing.spec.ts",
-    ],
-  },
+  'PAR-01': { completesIn: 2, build: par.par01, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-02': { completesIn: 2, build: par.par02, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-03': { completesIn: 2, build: par.par03, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts'] },
+  'PAR-04': { completesIn: 2, build: par.par04, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/intake/sniff.test.ts'] },
+  'PAR-05': { completesIn: 2, build: par.par05, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts'] },
+  'PAR-06': { completesIn: 2, build: par.par06, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'packages/db/src/documents.db.test.ts', 'apps/worker/src/intake/intake.db.test.ts'] },
+  'PAR-07': { completesIn: 2, build: par.par07, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-08': { completesIn: 2, build: par.par08, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/plan.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-09': { completesIn: 2, build: par.par09, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-10': { completesIn: 2, build: par.par10, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/plan.test.ts'] },
+  'PAR-11': { completesIn: 2, build: par.par11, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-12': { completesIn: 2, build: par.par12, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-13': { completesIn: 2, build: par.par13, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-14': { completesIn: 5, build: par.par14, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test/remittance-pricing.test.ts'] },
+  'PAR-15': { completesIn: 5, build: par.par15, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test/remittance-pricing.test.ts'] },
+  'PAR-16': { completesIn: 2, build: par.par16, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/plan.test.ts'] },
+  'PAR-17': { completesIn: 2, build: par.par17, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-18': { completesIn: 2, build: par.par18, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-19': { completesIn: 2, build: par.par19, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-20': { completesIn: 2, build: par.par20, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-21': { completesIn: 2, build: par.par21, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-22': { completesIn: 2, build: par.par22, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-23': { completesIn: 2, build: par.par23, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts'] },
+  'PAR-24': { completesIn: 2, build: par.par24, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts', 'apps/worker/src/intake/sniff.test.ts'] },
+  'PAR-25': { completesIn: 2, build: par.par25, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'PAR-26': { completesIn: 2, build: par.par26, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'tools/test-oracle/parser.test.ts'] },
+  'PAR-27': { completesIn: 3, build: par.par27, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/intake/intake.db.test.ts', 'apps/worker/src/intake/zip.test.ts'] },
+  'PAR-28': { completesIn: 3, build: par.par28, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'apps/worker/src/intake/intake.db.test.ts', 'apps/worker/src/intake/zip.test.ts'] },
+  'PAR-29': { completesIn: 2, build: par29, assertedBy: ['packages/edi835/src/performance.test.ts', 'packages/synth/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts'] },
+  'PAR-30': { completesIn: 2, build: par.par30, assertedBy: ['packages/edi835/src/fixtures.test.ts', 'apps/web/src/lib/routes/remittances.db.test.ts', 'packages/db/src/documents.db.test.ts', 'apps/worker/src/intake/intake.db.test.ts', 'apps/worker/src/parse/parse.db.test.ts'] },
+  'MAP-01': { completesIn: 3, build: pricing.map01, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/coverage.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/mapping.spec.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts', 'apps/web/src/lib/routes/mapping-routes.db.test.ts'] },
+  'MAP-02': { completesIn: 5, build: pricing.map02, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/coverage.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts'] },
+  'MAP-03': { completesIn: 7, build: pricing.map03, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts', 'apps/worker/src/price/rerun.db.test.ts'] },
+  'MAP-04': { completesIn: 6, build: pricing.map04, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts'] },
+  'MAP-05': { completesIn: 5, build: pricing.map05, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'packages/pricing/src/engine.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/web/src/lib/routes/pricing-routes.db.test.ts', 'apps/web/e2e/pricing.spec.ts'] },
   // Combined audit #32 (`co-001/unmapped-plan`; docs/adr/0075): one unmapped plan no longer freezes a whole month.
-  "MAP-06": {
+  'MAP-06': {
     completesIn: 3,
     build: pricing.map06,
     assertedBy: [
-      "apps/worker/src/price/price.db.test.ts",
-      "apps/worker/src/monitor/monitor.db.test.ts",
-      "apps/web/src/lib/routes/mapping-routes.db.test.ts",
-      "apps/web/e2e/mapping.spec.ts",
+      'apps/worker/src/price/price.db.test.ts',
+      'apps/worker/src/monitor/monitor.db.test.ts',
+      'apps/web/src/lib/routes/mapping-routes.db.test.ts',
+      'apps/web/e2e/mapping.spec.ts',
     ],
   },
-  "MAP-07": none(
-    7,
-    "No file of its own: MAP-01's and MAP-06's files, loaded with no plan mapped.",
-    [
-      "apps/worker/src/price/price.db.test.ts",
-      "apps/worker/src/monitor/job.test.ts",
-      "apps/worker/src/monitor/monitor.db.test.ts",
-      "apps/worker/src/jobs/registry.test.ts",
-      "apps/web/src/lib/pricing/mapped-plan.db.test.ts",
-      "apps/web/src/lib/routes/mapping-routes.db.test.ts",
-      "apps/web/src/lib/routes/pricing-routes.db.test.ts",
-      "apps/web/src/lib/routes/audit-e2e.db.test.ts",
-      "apps/web/e2e/mapping.spec.ts",
-    ],
-  ),
-  "MAP-08": none(7, "No file of their own: MAP-06's file.", [
-    "apps/web/src/lib/pricing/mapped-plan.db.test.ts",
-    "apps/web/src/lib/pricing/mapped-plan-content.db.test.ts",
-    "apps/web/src/lib/routes/mapping-routes.db.test.ts",
-    "apps/web/src/components/mapping/months.test.tsx",
-    "apps/web/e2e/mapping.spec.ts",
+  'MAP-07': none(7, "No file of its own: MAP-01's and MAP-06's files, loaded with no plan mapped.", [
+    'apps/worker/src/price/price.db.test.ts',
+    'apps/worker/src/monitor/job.test.ts',
+    'apps/worker/src/monitor/monitor.db.test.ts',
+    'apps/worker/src/jobs/registry.test.ts',
+    'apps/web/src/lib/pricing/mapped-plan.db.test.ts',
+    'apps/web/src/lib/routes/mapping-routes.db.test.ts',
+    'apps/web/src/lib/routes/pricing-routes.db.test.ts',
+    'apps/web/src/lib/routes/audit-e2e.db.test.ts',
+    'apps/web/e2e/mapping.spec.ts',
   ]),
-  "MAP-09": none(7, "No file of their own: MAP-06's file.", [
-    "apps/web/src/lib/routes/mapping-routes.db.test.ts",
+  'MAP-08': none(7, "No file of their own: MAP-06's file.", [
+    'apps/web/src/lib/pricing/mapped-plan.db.test.ts',
+    'apps/web/src/lib/pricing/mapped-plan-content.db.test.ts',
+    'apps/web/src/lib/routes/mapping-routes.db.test.ts',
+    'apps/web/src/components/mapping/months.test.tsx',
+    'apps/web/e2e/mapping.spec.ts',
   ]),
-  "CON-01": {
-    completesIn: 4,
-    build: pricing.con01,
-    assertedBy: [
-      "packages/contracts/src/contracts.db.test.ts",
-      "apps/web/src/lib/routes/contracts-routes.db.test.ts",
-      "apps/web/e2e/contracts.spec.ts",
-    ],
-  },
-  "CON-02": {
-    completesIn: 4,
-    build: pricing.con02,
-    assertedBy: [
-      "packages/contracts/src/contracts.db.test.ts",
-      "apps/web/src/lib/routes/contracts-routes.db.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-    ],
-  },
-  "CON-03": {
-    completesIn: 4,
-    build: pricing.con03,
-    assertedBy: [
-      "packages/contracts/src/contracts.db.test.ts",
-      "apps/web/src/lib/routes/contracts-routes.db.test.ts",
-    ],
-  },
-  "CON-04": none(
-    4,
-    "A rate record without a page reference is entered by hand against any version; no document of its own is involved.",
-    [
-      "packages/contracts/src/contracts.db.test.ts",
-      "packages/contracts/src/terms.test.ts",
-      "packages/contracts/src/evidence/evidence.test.ts",
-      "apps/web/src/lib/routes/contracts-routes.db.test.ts",
-      "apps/web/e2e/contracts.spec.ts",
-    ],
-  ),
-  "CON-05": {
-    completesIn: 10,
-    build: pricing.con05,
-    assertedBy: [
-      "packages/contracts/src/evidence/evidence.test.ts",
-      "packages/contracts/src/contracts.db.test.ts",
-      "apps/web/src/lib/routes/contracts-routes.db.test.ts",
-      "apps/web/e2e/contracts.spec.ts",
-    ],
-  },
-  "CON-06": {
-    completesIn: 5,
-    build: pricing.con06,
-    assertedBy: [
-      "packages/contracts/src/resolver.test.ts",
-      "packages/contracts/src/contracts.db.test.ts",
-      "apps/web/src/lib/routes/contracts-routes.db.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-    ],
-  },
-  "CON-07": {
-    completesIn: 5,
-    build: pricing.con07,
-    assertedBy: [
-      "packages/contracts/src/resolver.test.ts",
-      "packages/contracts/src/contracts.db.test.ts",
-      "packages/pricing/src/engine.test.ts",
-      "apps/web/src/lib/routes/contracts-routes.db.test.ts",
-      "apps/web/e2e/contracts.spec.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-    ],
-  },
-  "PRC-01": {
-    completesIn: 5,
-    build: pricing.prc01,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-    ],
-  },
-  "PRC-02": {
-    completesIn: 5,
-    build: pricing.prc02,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-    ],
-  },
-  "PRC-03": {
-    completesIn: 5,
-    build: pricing.prc03,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-    ],
-  },
-  "PRC-04": {
-    completesIn: 5,
-    build: pricing.prc04,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-    ],
-  },
-  "PRC-05": {
-    completesIn: 7,
-    build: pricing.prc05,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-    ],
-  },
-  "PRC-06": {
-    completesIn: 7,
-    build: pricing.prc06,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-    ],
-  },
-  "PRC-07": {
-    completesIn: 7,
-    build: pricing.prc07,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-      "tools/golden-worksheet/triage.golden.test.ts",
-      "apps/worker/src/triage/triage.db.test.ts",
-    ],
-  },
-  "PRC-08": {
-    completesIn: 5,
-    build: pricing.prc08,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-    ],
-  },
-  "PRC-09": {
-    completesIn: 5,
-    build: pricing.prc09,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-    ],
-  },
-  "PRC-10": {
-    completesIn: 7,
-    build: pricing.prc10,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-    ],
-  },
-  "PRC-11": {
-    completesIn: 7,
-    build: pricing.prc11,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-      "tools/golden-worksheet/triage.golden.test.ts",
-      "apps/worker/src/triage/triage.db.test.ts",
-    ],
-  },
-  "PRC-12": {
-    completesIn: 5,
-    build: pricing.prc12,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/contracts/src/resolver.test.ts",
-      "apps/worker/src/price/price.db.test.ts",
-    ],
-  },
-  "PRC-13": {
-    completesIn: 5,
-    build: pricing.prc13,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-      "packages/money/src/rounding.test.ts",
-    ],
-  },
-  "PRC-14": {
-    completesIn: 6,
-    build: pricing.prc14,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-      "packages/pricing/src/properties.test.ts",
-      "apps/worker/src/price/price.db.test.ts",
-      "apps/worker/src/triage/triage.db.test.ts",
-    ],
-  },
-  "PRC-15": {
-    completesIn: 6,
-    build: pricing.prc15,
-    assertedBy: [
-      "tools/golden-worksheet/worksheet.golden.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "packages/pricing/src/engine.test.ts",
-      "apps/worker/src/price/price.db.test.ts",
-      "apps/worker/src/triage/triage.db.test.ts",
-    ],
-  },
-  "PRC-16": none(
-    5,
-    "Recomputes the trace of every golden line in fixtures/golden; no fixture of its own.",
-    [
-      "packages/pricing/src/recompute.test.ts",
-      "packages/pricing/src/properties.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-    ],
-  ),
-  "PRC-17": none(
-    7,
-    "A property test over generated line facts (fast-check), for the fixed and percent methods; no fixture.",
-    ["packages/pricing/src/properties.test.ts"],
-  ),
-  "PRC-18": none(
-    5,
-    "A property test over generated line facts and flag settings (fast-check); no fixture.",
-    ["packages/pricing/src/properties.test.ts"],
-  ),
-  "PRC-19": {
-    completesIn: 7,
-    build: pricing.prc19,
-    assertedBy: [
-      "apps/worker/src/price/rerun.db.test.ts",
-      "tools/release/dry-run.db.test.ts",
-      "apps/web/src/lib/routes/reruns-routes.db.test.ts",
-    ],
-  },
-  "PRC-20": none(
-    7,
-    "The 100,000 lines are generated in memory by the performance test; nothing is committed.",
-    ["packages/pricing/src/performance.test.ts"],
-  ),
+  'MAP-09': none(7, "No file of their own: MAP-06's file.", ['apps/web/src/lib/routes/mapping-routes.db.test.ts']),
+  'CON-01': { completesIn: 4, build: pricing.con01, assertedBy: ['packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/contracts.spec.ts'] },
+  'CON-02': { completesIn: 4, build: pricing.con02, assertedBy: ['packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts'] },
+  'CON-03': { completesIn: 4, build: pricing.con03, assertedBy: ['packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts'] },
+  'CON-04': none(4, 'A rate record without a page reference is entered by hand against any version; no document of its own is involved.', ['packages/contracts/src/contracts.db.test.ts', 'packages/contracts/src/terms.test.ts', 'packages/contracts/src/evidence/evidence.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/contracts.spec.ts']),
+  'CON-05': { completesIn: 10, build: pricing.con05, assertedBy: ['packages/contracts/src/evidence/evidence.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/contracts.spec.ts'] },
+  'CON-06': { completesIn: 5, build: pricing.con06, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'tools/golden-worksheet/engine.golden.test.ts'] },
+  'CON-07': { completesIn: 5, build: pricing.con07, assertedBy: ['packages/contracts/src/resolver.test.ts', 'packages/contracts/src/contracts.db.test.ts', 'packages/pricing/src/engine.test.ts', 'apps/web/src/lib/routes/contracts-routes.db.test.ts', 'apps/web/e2e/contracts.spec.ts', 'tools/golden-worksheet/engine.golden.test.ts'] },
+  'PRC-01': { completesIn: 5, build: pricing.prc01, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-02': { completesIn: 5, build: pricing.prc02, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-03': { completesIn: 5, build: pricing.prc03, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-04': { completesIn: 5, build: pricing.prc04, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-05': { completesIn: 7, build: pricing.prc05, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-06': { completesIn: 7, build: pricing.prc06, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-07': { completesIn: 7, build: pricing.prc07, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'tools/golden-worksheet/triage.golden.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },
+  'PRC-08': { completesIn: 5, build: pricing.prc08, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-09': { completesIn: 5, build: pricing.prc09, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-10': { completesIn: 7, build: pricing.prc10, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts'] },
+  'PRC-11': { completesIn: 7, build: pricing.prc11, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'tools/golden-worksheet/triage.golden.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },
+  'PRC-12': { completesIn: 5, build: pricing.prc12, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/contracts/src/resolver.test.ts', 'apps/worker/src/price/price.db.test.ts'] },
+  'PRC-13': { completesIn: 5, build: pricing.prc13, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'packages/money/src/rounding.test.ts'] },
+  'PRC-14': { completesIn: 6, build: pricing.prc14, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'packages/pricing/src/properties.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },
+  'PRC-15': { completesIn: 6, build: pricing.prc15, assertedBy: ['tools/golden-worksheet/worksheet.golden.test.ts', 'tools/golden-worksheet/engine.golden.test.ts', 'packages/pricing/src/engine.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/triage/triage.db.test.ts'] },
+  'PRC-16': none(5, 'Recomputes the trace of every golden line in fixtures/golden; no fixture of its own.', ['packages/pricing/src/recompute.test.ts', 'packages/pricing/src/properties.test.ts', 'tools/golden-worksheet/engine.golden.test.ts']),
+  'PRC-17': none(7, 'A property test over generated line facts (fast-check), for the fixed and percent methods; no fixture.', ['packages/pricing/src/properties.test.ts']),
+  'PRC-18': none(5, 'A property test over generated line facts and flag settings (fast-check); no fixture.', ['packages/pricing/src/properties.test.ts']),
+  'PRC-19': { completesIn: 7, build: pricing.prc19, assertedBy: ['apps/worker/src/price/rerun.db.test.ts', 'tools/release/dry-run.db.test.ts', 'apps/web/src/lib/routes/reruns-routes.db.test.ts'] },
+  'PRC-20': none(7, 'The 100,000 lines are generated in memory by the performance test; nothing is committed.', ['packages/pricing/src/performance.test.ts']),
   // Release 900006 and golden claims G196-G199 (docs/adr/0064); PR 6b-2's location.db.test.ts prices the ZIP+4 in the database.
-  "PRC-21": {
+  'PRC-21': {
     completesIn: 6,
     build: pricing.prc21,
     assertedBy: [
-      "packages/pricing/src/engine.test.ts",
-      "packages/pricing/src/recompute.test.ts",
-      "packages/pricing/src/properties.test.ts",
-      "tools/golden-worksheet/engine.golden.test.ts",
-      "tools/release/release.test.ts",
-      "packages/db/src/location.db.test.ts",
+      'packages/pricing/src/engine.test.ts',
+      'packages/pricing/src/recompute.test.ts',
+      'packages/pricing/src/properties.test.ts',
+      'tools/golden-worksheet/engine.golden.test.ts',
+      'tools/release/release.test.ts',
+      'packages/db/src/location.db.test.ts',
     ],
   },
-  "PRC-22": none(
-    6,
-    "A differential test over generated claims and the golden lines; no fixture.",
-    [
-      "tools/engine-freeze/differential.test.ts",
-      "tools/engine-freeze/check.test.ts",
-      "tools/engine-freeze/rule-tables.db.test.ts",
-    ],
-  ),
-  "PRC-23": none(
-    6,
-    "Practices and their locations are set by the tests; the 835 is the monitoring fixture.",
-    [
-      "apps/worker/src/monitor/monitor.db.test.ts",
-      "apps/worker/src/price/price.db.test.ts",
-      "apps/worker/src/price/price.test.ts",
-      "packages/contracts/src/location.test.ts",
-      "packages/db/src/location.db.test.ts",
-      "apps/web/src/lib/routes/settings-routes.db.test.ts",
-      "apps/web/e2e/onboarding.spec.ts",
-    ],
-  ),
-  "PRC-24": none(6, "A setting; any Medicare line will do.", [
-    "apps/worker/src/price/settings.test.ts",
-    "apps/worker/src/price/price.db.test.ts",
-    "packages/db/src/location.db.test.ts",
-    "apps/web/e2e/onboarding.spec.ts",
+  'PRC-22': none(6, 'A differential test over generated claims and the golden lines; no fixture.', ['tools/engine-freeze/differential.test.ts', 'tools/engine-freeze/check.test.ts', 'tools/engine-freeze/rule-tables.db.test.ts']),
+  'PRC-23': none(6, 'Practices and their locations are set by the tests; the 835 is the monitoring fixture.', [
+    'apps/worker/src/monitor/monitor.db.test.ts',
+    'apps/worker/src/price/price.db.test.ts',
+    'apps/worker/src/price/price.test.ts',
+    'packages/contracts/src/location.test.ts',
+    'packages/db/src/location.db.test.ts',
+    'apps/web/src/lib/routes/settings-routes.db.test.ts',
+    'apps/web/e2e/onboarding.spec.ts',
+  ]),
+  'PRC-24': none(6, 'A setting; any Medicare line will do.', [
+    'apps/worker/src/price/settings.test.ts',
+    'apps/worker/src/price/price.db.test.ts',
+    'packages/db/src/location.db.test.ts',
+    'apps/web/e2e/onboarding.spec.ts',
   ]),
   // Combined audit #10 (`co-001/superseded-rerun`; docs/adr/0037, amendment of 2026-10-26): an older re-run is not accepted over newer pricing.
-  "PRC-25": none(
-    7,
-    "No file of its own: SYNTHETIC 835s the pricing world already loads.",
-    [
-      "apps/worker/src/price/rerun.db.test.ts",
-      "apps/worker/src/price/rerun-rule.property.test.ts",
-      "apps/web/src/lib/routes/reruns-routes.db.test.ts",
-      "apps/web/e2e/pricing.spec.ts",
-    ],
-  ),
-  "PRC-26": none(
-    7,
-    "No file of its own: SYNTHETIC 835s the pricing world already loads.",
-    [
-      "apps/worker/src/price/rerun.db.test.ts",
-      "apps/worker/src/price/rerun-rule.property.test.ts",
-      "apps/web/src/lib/routes/reruns-routes.db.test.ts",
-    ],
-  ),
-  "PRC-27": none(
-    7,
-    "No file of its own: SYNTHETIC 835s the pricing world already loads.",
-    [
-      "apps/worker/src/price/rerun.db.test.ts",
-      "apps/worker/src/price/rerun-rule.property.test.ts",
-      "apps/web/src/lib/routes/reruns-routes.db.test.ts",
-    ],
-  ),
-  "PRC-28": none(
-    7,
-    "No file of its own: SYNTHETIC 835s the pricing world already loads.",
-    [
-      "apps/worker/src/price/rerun.db.test.ts",
-      "apps/worker/src/price/rerun-rule.property.test.ts",
-      "apps/web/src/lib/routes/reruns-routes.db.test.ts",
-      "apps/web/e2e/pricing.spec.ts",
-    ],
-  ),
+  'PRC-25': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+    'apps/web/e2e/pricing.spec.ts',
+  ]),
+  'PRC-26': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+  ]),
+  'PRC-27': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+  ]),
+  'PRC-28': none(7, 'No file of its own: SYNTHETIC 835s the pricing world already loads.', [
+    'apps/worker/src/price/rerun.db.test.ts',
+    'apps/worker/src/price/rerun-rule.property.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+    'apps/web/e2e/pricing.spec.ts',
+  ]),
   // Combined audit #32 (`co-001/unmapped-plan`; docs/adr/0075): the months priced around a plan with no mapping, and pricing them again.
-  "PRC-29": none(7, "No file of their own: MAP-06's file.", [
-    "apps/web/src/lib/pricing/mapped-plan.db.test.ts",
+  'PRC-29': none(7, "No file of their own: MAP-06's file.", ['apps/web/src/lib/pricing/mapped-plan.db.test.ts']),
+  'PRC-30': none(3, "No file of its own: MAP-06's and MAP-01's files.", [
+    'apps/worker/src/price/price.test.ts',
+    'apps/worker/src/price/price.db.test.ts',
+    'apps/web/src/components/pricing/display.test.tsx',
+    'apps/worker/src/report/documents.test.ts',
+    'apps/worker/src/report/report.test.ts',
+    'apps/worker/src/report/unmapped-report.db.test.ts',
+    'apps/web/src/components/reports/display.test.tsx',
+    'apps/web/src/lib/routes/report-documents-routes.db.test.ts',
   ]),
-  "PRC-30": none(3, "No file of its own: MAP-06's and MAP-01's files.", [
-    "apps/worker/src/price/price.test.ts",
-    "apps/worker/src/price/price.db.test.ts",
-    "apps/web/src/components/pricing/display.test.tsx",
-    "apps/worker/src/report/documents.test.ts",
-    "apps/worker/src/report/report.test.ts",
-    "apps/worker/src/report/unmapped-report.db.test.ts",
-    "apps/web/src/components/reports/display.test.tsx",
-    "apps/web/src/lib/routes/report-documents-routes.db.test.ts",
-  ]),
-  "PRC-31": none(3, "No file of their own: MAP-06's file.", [
-    "apps/web/src/lib/pricing/mapped-plan.db.test.ts",
-    "apps/web/src/lib/routes/mapping-routes.db.test.ts",
-    "apps/web/e2e/mapping.spec.ts",
+  'PRC-31': none(3, "No file of their own: MAP-06's file.", [
+    'apps/web/src/lib/pricing/mapped-plan.db.test.ts',
+    'apps/web/src/lib/routes/mapping-routes.db.test.ts',
+    'apps/web/e2e/mapping.spec.ts',
   ]),
   // co-001/pricing-run-cutoff: a run's cut-off and creation compared to the microsecond, at creation and after.
-  "PRC-32": none(
-    3,
-    "No file of its own: PRC-19's file, with lines and times the tests set.",
-    [
-      "apps/worker/src/price/cut-off.db.test.ts",
-      "apps/web/src/lib/pricing/location.db.test.ts",
-    ],
-  ),
-  "CAS-01": {
-    completesIn: 6,
-    build: workflow.cas01,
-    assertedBy: [
-      "apps/worker/src/triage/triage.db.test.ts",
-      "packages/triage/src/anomaly.test.ts",
-    ],
-  },
-  "CAS-02": {
-    completesIn: 6,
-    build: workflow.cas02,
-    assertedBy: [
-      "apps/worker/src/triage/triage.db.test.ts",
-      "packages/triage/src/anomaly.test.ts",
-      "apps/worker/src/report/report.db.test.ts",
-      "apps/web/src/lib/routes/audit-e2e.db.test.ts",
-    ],
-  },
-  "CAS-03": {
-    completesIn: 6,
-    build: workflow.cas03,
-    assertedBy: [
-      "apps/worker/src/triage/triage.db.test.ts",
-      "packages/triage/src/patterns.test.ts",
-      "apps/worker/src/report/report.db.test.ts",
-      "apps/web/src/lib/routes/audit-e2e.db.test.ts",
-    ],
-  },
-  "CAS-04": {
-    completesIn: 6,
-    build: workflow.cas04,
-    assertedBy: [
-      "apps/worker/src/triage/triage.db.test.ts",
-      "packages/triage/src/patterns.test.ts",
-      "apps/web/src/lib/routes/audit-e2e.db.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/e2e/triage.spec.ts",
-    ],
-  },
-  "CAS-05": {
-    completesIn: 6,
-    build: workflow.cas05,
-    assertedBy: [
-      "apps/worker/src/triage/triage.db.test.ts",
-      "packages/triage/src/actionable.test.ts",
-      "apps/web/src/lib/routes/audit-e2e.db.test.ts",
-    ],
-  },
-  "CAS-06": none(
-    6,
-    "Writes off a line of a case built from the CAS-03 fixture; no file of its own.",
-    [
-      "apps/worker/src/triage/triage.db.test.ts",
-      "packages/triage/src/cases.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/e2e/triage.spec.ts",
-    ],
-  ),
-  "CAS-07": none(
-    6,
-    "Reopens a line written off in CAS-06; no file of its own.",
-    [
-      "apps/worker/src/triage/triage.db.test.ts",
-      "apps/worker/src/report/report.db.test.ts",
-      "packages/triage/src/stages.test.ts",
-      "apps/web/e2e/triage.spec.ts",
-    ],
-  ),
-  "CAS-08": {
-    completesIn: 8,
-    build: workflow.cas08,
-    assertedBy: [
-      "apps/worker/src/packets/packets.db.test.ts",
-      "packages/packets/src/verifier.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  },
-  "CAS-09": none(
-    8,
-    "The drafter of any packet attempts its approval: an action, no file.",
-    [
-      "apps/worker/src/packets/packets.db.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  ),
-  "CAS-10": none(
-    8,
-    "A practice with one user, a setting; any packet will do.",
-    [
-      "apps/worker/src/packets/packets.db.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-    ],
-  ),
-  "CAS-11": none(
-    8,
-    "Identifier placeholders belong to every draft built from the CAS-03 or CAS-08 lines; no file of its own.",
-    [
-      "apps/worker/src/packets/packets.db.test.ts",
-      "packages/packets/src/placeholders.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  ),
-  "CAS-12": none(
-    8,
-    "Exports any approved packet; the PDF and CSV are outputs, not fixtures.",
-    [
-      "apps/worker/src/packets/packets.db.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  ),
-  "CAS-13": none(8, "Edits any approved packet: an action, no file.", [
-    "apps/worker/src/packets/packets.db.test.ts",
-    "apps/web/src/lib/routes/workbench-routes.db.test.ts",
+  'PRC-32': none(3, "No file of its own: PRC-19's file, with lines and times the tests set.", [
+    'apps/worker/src/price/cut-off.db.test.ts',
+    'apps/web/src/lib/pricing/location.db.test.ts',
   ]),
-  "CAS-14": none(
-    8,
-    "A submission logged 45 days before the test date with no response: dates, no file.",
-    [
-      "apps/worker/src/packets/packets.db.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-    ],
-  ),
-  "CAS-15": {
-    completesIn: 8,
-    build: workflow.cas15,
-    assertedBy: [
-      "apps/worker/src/packets/packets.db.test.ts",
-      "packages/packets/src/interest.test.ts",
-    ],
-  },
+  'CAS-01': { completesIn: 6, build: workflow.cas01, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts'] },
+  'CAS-02': { completesIn: 6, build: workflow.cas02, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/anomaly.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
+  'CAS-03': { completesIn: 6, build: workflow.cas03, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/worker/src/report/report.db.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
+  'CAS-04': { completesIn: 6, build: workflow.cas04, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/patterns.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/triage.spec.ts'] },
+  'CAS-05': { completesIn: 6, build: workflow.cas05, assertedBy: ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/actionable.test.ts', 'apps/web/src/lib/routes/audit-e2e.db.test.ts'] },
+  'CAS-06': none(6, 'Writes off a line of a case built from the CAS-03 fixture; no file of its own.', ['apps/worker/src/triage/triage.db.test.ts', 'packages/triage/src/cases.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/triage.spec.ts']),
+  'CAS-07': none(6, 'Reopens a line written off in CAS-06; no file of its own.', ['apps/worker/src/triage/triage.db.test.ts', 'apps/worker/src/report/report.db.test.ts', 'packages/triage/src/stages.test.ts', 'apps/web/e2e/triage.spec.ts']),
+  'CAS-08': { completesIn: 8, build: workflow.cas08, assertedBy: ['apps/worker/src/packets/packets.db.test.ts', 'packages/packets/src/verifier.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts'] },
+  'CAS-09': none(8, 'The drafter of any packet attempts its approval: an action, no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
+  'CAS-10': none(8, 'A practice with one user, a setting; any packet will do.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts']),
+  'CAS-11': none(8, 'Identifier placeholders belong to every draft built from the CAS-03 or CAS-08 lines; no file of its own.', [
+    'apps/worker/src/packets/packets.db.test.ts',
+    'packages/packets/src/placeholders.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-12': none(8, 'Exports any approved packet; the PDF and CSV are outputs, not fixtures.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
+  'CAS-13': none(8, 'Edits any approved packet: an action, no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts']),
+  'CAS-14': none(8, 'A submission logged 45 days before the test date with no response: dates, no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/web/src/lib/routes/workbench-routes.db.test.ts']),
+  'CAS-15': { completesIn: 8, build: workflow.cas15, assertedBy: ['apps/worker/src/packets/packets.db.test.ts', 'packages/packets/src/interest.test.ts'] },
   // Audit item #37 part 1 (the founder's rulings of 2026-10-20; ADR 0061): the payer's copy, the contact, the reference.
-  "CAS-26": none(
-    8,
-    "Prints any approved packet as the payer receives it: an output, not a fixture.",
-    [
-      "apps/worker/src/packets/export.test.ts",
-      "apps/worker/src/packets/payer-copy.db.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  ),
-  "CAS-27": none(8, "A practice setting with no contact: no file.", [
-    "apps/worker/src/packets/export-attempts.db.test.ts",
-    "apps/worker/src/packets/packets.db.test.ts",
-    "apps/web/src/lib/routes/payer-copy-routes.db.test.ts",
-    "apps/web/e2e/packets.spec.ts",
+  'CAS-26': none(8, 'Prints any approved packet as the payer receives it: an output, not a fixture.', [
+    'apps/worker/src/packets/export.test.ts',
+    'apps/worker/src/packets/payer-copy.db.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/e2e/packets.spec.ts',
   ]),
-  "CAS-28": none(8, "Looks up any approved packet by its reference: no file.", [
-    "packages/packets/src/reference.test.ts",
-    "apps/web/src/lib/routes/payer-copy-routes.db.test.ts",
-    "apps/web/e2e/packets.spec.ts",
+  'CAS-27': none(8, 'A practice setting with no contact: no file.', [
+    'apps/worker/src/packets/export-attempts.db.test.ts',
+    'apps/worker/src/packets/packets.db.test.ts',
+    'apps/web/src/lib/routes/payer-copy-routes.db.test.ts',
+    'apps/web/e2e/packets.spec.ts',
   ]),
+  'CAS-28': none(8, 'Looks up any approved packet by its reference: no file.', ['packages/packets/src/reference.test.ts', 'apps/web/src/lib/routes/payer-copy-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
   // The founder's ruling of 2026-10-20 (ADR 0061): a stale export sent before its attestation is logged unattested.
-  "CAS-29": none(
-    8,
-    "Prices CAS-08 again after its export: an action on its lines, no file of its own.",
-    [
-      "apps/worker/src/packets/unattested-submission.db.test.ts",
-      "apps/web/src/lib/routes/unattested-submission-routes.db.test.ts",
-      "apps/web/src/lib/packets/unattested.test.ts",
-      "apps/web/e2e/unattested.spec.ts",
-    ],
-  ),
+  'CAS-29': none(8, 'Prices CAS-08 again after its export: an action on its lines, no file of its own.', [
+    'apps/worker/src/packets/unattested-submission.db.test.ts',
+    'apps/web/src/lib/routes/unattested-submission-routes.db.test.ts',
+    'apps/web/src/lib/packets/unattested.test.ts',
+    'apps/web/e2e/unattested.spec.ts',
+  ]),
   // Combined audit #38 (adopted by the founder on 2026-10-20; ADR 0072): every figure explained in words, from the stored trace.
-  "CAS-30": none(
-    8,
-    "Words any priced or unpriced line from its stored trace: an output, not a fixture.",
-    [
-      "packages/packets/src/explain/line.test.ts",
-      "packages/packets/src/explain/figures.property.test.ts",
-      "packages/packets/src/explain/golden.test.ts",
-      "apps/web/src/components/pricing/line-words.test.tsx",
-      "apps/web/src/lib/routes/line-words-routes.db.test.ts",
-      "apps/web/e2e/pricing.spec.ts",
-    ],
-  ),
-  "CAS-31": none(8, "Opens any line’s trace as a viewer: a role, no file.", [
-    "apps/web/src/lib/routes/pricing-routes.db.test.ts",
-    "apps/web/src/lib/routes/line-words-routes.db.test.ts",
-    "apps/web/src/components/pricing/line-words.test.tsx",
-    "apps/web/e2e/viewer-phi.spec.ts",
+  'CAS-30': none(8, 'Words any priced or unpriced line from its stored trace: an output, not a fixture.', [
+    'packages/packets/src/explain/line.test.ts',
+    'packages/packets/src/explain/figures.property.test.ts',
+    'packages/packets/src/explain/golden.test.ts',
+    'apps/web/src/components/pricing/line-words.test.tsx',
+    'apps/web/src/lib/routes/line-words-routes.db.test.ts',
+    'apps/web/e2e/pricing.spec.ts',
   ]),
-  "CAS-32": none(
-    8,
-    "Reviews and exports any approved packet from its stored traces: an output, not a fixture.",
-    [
-      "packages/packets/src/explain.test.ts",
-      "apps/worker/src/packets/export.test.ts",
-      "apps/worker/src/packets/export-attempts.db.test.ts",
-      "apps/web/src/lib/routes/payer-copy-routes.db.test.ts",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  ),
-  "CAS-33": none(
-    8,
-    "Renders from any percent-of-Medicare or Medicare Advantage line’s trace: an output, not a fixture.",
-    [
-      "packages/packets/src/explain/worksheet.test.ts",
-      "packages/packets/src/explain/golden.test.ts",
-      "apps/worker/src/packets/export.test.ts",
-    ],
-  ),
-  "CAS-34": none(
-    8,
-    "A code outside a closed list, set in a test’s trace: no file.",
-    [
-      "packages/packets/src/explain/words.test.ts",
-      "apps/worker/src/packets/export.test.ts",
-      "apps/web/src/components/packets/calculation-words.test.tsx",
-      "apps/web/src/components/pricing/line-words.test.tsx",
-    ],
-  ),
+  'CAS-31': none(8, 'Opens any line’s trace as a viewer: a role, no file.', [
+    'apps/web/src/lib/routes/pricing-routes.db.test.ts',
+    'apps/web/src/lib/routes/line-words-routes.db.test.ts',
+    'apps/web/src/components/pricing/line-words.test.tsx',
+    'apps/web/e2e/viewer-phi.spec.ts',
+  ]),
+  'CAS-32': none(8, 'Reviews and exports any approved packet from its stored traces: an output, not a fixture.', [
+    'packages/packets/src/explain.test.ts',
+    'apps/worker/src/packets/export.test.ts',
+    'apps/worker/src/packets/export-attempts.db.test.ts',
+    'apps/web/src/lib/routes/payer-copy-routes.db.test.ts',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-33': none(8, 'Renders from any percent-of-Medicare or Medicare Advantage line’s trace: an output, not a fixture.', [
+    'packages/packets/src/explain/worksheet.test.ts',
+    'packages/packets/src/explain/golden.test.ts',
+    'apps/worker/src/packets/export.test.ts',
+  ]),
+  'CAS-34': none(8, 'A code outside a closed list, set in a test’s trace: no file.', [
+    'packages/packets/src/explain/words.test.ts',
+    'apps/worker/src/packets/export.test.ts',
+    'apps/web/src/components/packets/calculation-words.test.tsx',
+    'apps/web/src/components/pricing/line-words.test.tsx',
+  ]),
   // Lane B (co-001/materiality-cents): settings stored in cents are shown and entered in dollars, and a form saved unchanged keeps them.
-  "CAS-38": none(8, "A practice setting read and shown: no file.", [
-    "apps/web/src/components/settings/defaults.test.tsx",
-    "apps/web/src/lib/routes/console-routes.db.test.ts",
-    "apps/web/e2e/triage.spec.ts",
-  ]),
-  "CAS-39": none(8, "A practice setting read and saved: no file.", [
-    "apps/web/src/lib/money-input.test.ts",
-    "apps/web/src/lib/routes/defaults-routes.db.test.ts",
-    "apps/web/src/lib/routes/console-routes.db.test.ts",
-    "apps/web/e2e/triage.spec.ts",
+  'CAS-38': none(8, 'A practice setting read and shown: no file.', ['apps/web/src/components/settings/defaults.test.tsx', 'apps/web/src/lib/routes/console-routes.db.test.ts', 'apps/web/e2e/triage.spec.ts']),
+  'CAS-39': none(8, 'A practice setting read and saved: no file.', [
+    'apps/web/src/lib/money-input.test.ts',
+    'apps/web/src/lib/routes/defaults-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/triage.spec.ts',
   ]),
   // Lane B (co-001/suite-cap-1-bounded-reads, SUITE-CAP-1a): triage and the audit report read a month in batches and give the whole read's answers; docs/adr/0083.
-  "CAS-41": none(8, "Generated at size by the test: no file.", [
-    "apps/worker/src/triage/batched.db.test.ts",
-    "apps/worker/src/report/streamed.db.test.ts",
-    "apps/worker/src/report/csv-arena.test.ts",
-    "apps/worker/src/reconcile/patient-share.test.ts",
+  'CAS-41': none(8, 'Generated at size by the test: no file.', [
+    'apps/worker/src/triage/batched.db.test.ts',
+    'apps/worker/src/report/streamed.db.test.ts',
+    'apps/worker/src/report/csv-arena.test.ts',
+    'apps/worker/src/reconcile/patient-share.test.ts',
   ]),
   // SUITE-CAP-1b (co-001/suite-cap-1-triage-locks, ADR 0083): a line's stage lock is its head row, so a real-size month triages and reports.
-  "CAS-40": none(8, "Concurrent stage events on generated lines: no file.", [
-    "packages/db/src/line-status.db.test.ts",
-    "apps/worker/src/reconcile/stage-head.db.test.ts",
+  'CAS-40': none(8, 'Concurrent stage events on generated lines: no file.', ['packages/db/src/line-status.db.test.ts', 'apps/worker/src/reconcile/stage-head.db.test.ts']),
+  'CAS-42': none(8, 'Generated at size by the test, and release 900110 built outside the repository by the weekly run: no file.', [
+    'apps/worker/src/triage/triage.large.db.test.ts',
+    'apps/worker/src/reconcile/reconcile.large.db.test.ts',
+    'tools/release-capacity/checks.test.ts',
+    'tools/release-capacity/scenario.test.ts',
   ]),
-  "CAS-42": none(
-    8,
-    "Generated at size by the test, and release 900110 built outside the repository by the weekly run: no file.",
-    [
-      "apps/worker/src/triage/triage.large.db.test.ts",
-      "apps/worker/src/reconcile/reconcile.large.db.test.ts",
-      "tools/release-capacity/checks.test.ts",
-      "tools/release-capacity/scenario.test.ts",
-    ],
-  ),
   // Lane B (co-001/packet-day-counts; docs/adr/0086): every narrative figure in the role its words give it.
-  "CAS-43": none(
-    8,
-    "Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.",
-    [
-      "packages/packets/src/verifier.test.ts",
-      "packages/packets/src/roles.test.ts",
-      "packages/packets/src/roles.property.test.ts",
-      "packages/model-gateway/src/functions/narrative-roles.test.ts",
-      "apps/worker/src/packets/packets.db.test.ts",
-      "apps/worker/src/packets/verifier-now.test.ts",
-      "apps/web/src/lib/packets/view.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/src/components/packets/stored-narrative.test.tsx",
-      "apps/web/src/components/packets/narrative-editor.browser.test.tsx",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  ),
-  "CAS-44": none(
-    8,
-    "Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.",
-    [
-      "packages/packets/src/verifier.test.ts",
-      "packages/packets/src/roles.test.ts",
-      "packages/packets/src/roles.property.test.ts",
-      "packages/model-gateway/src/functions/narrative-roles.test.ts",
-    ],
-  ),
+  'CAS-43': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
+    'packages/packets/src/verifier.test.ts',
+    'packages/packets/src/roles.test.ts',
+    'packages/packets/src/roles.property.test.ts',
+    'packages/model-gateway/src/functions/narrative-roles.test.ts',
+    'apps/worker/src/packets/packets.db.test.ts',
+    'apps/worker/src/packets/verifier-now.test.ts',
+    'apps/web/src/lib/packets/view.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/src/components/packets/stored-narrative.test.tsx',
+    'apps/web/src/components/packets/narrative-editor.browser.test.tsx',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-44': none(8, 'Narratives against the SYNTHETIC packets of @tp/packets/testing (role-examples.ts): no file.', [
+    'packages/packets/src/verifier.test.ts',
+    'packages/packets/src/roles.test.ts',
+    'packages/packets/src/roles.property.test.ts',
+    'packages/model-gateway/src/functions/narrative-roles.test.ts',
+  ]),
   // Lane B (co-001/ux-payer-response): a choice that records a fact starts unchosen, and the payer’s letter is uploaded with its response, apart from the contract documents.
-  "CAS-45": none(
-    8,
-    "A case line on a synthetic practice the test creates, written off: no file.",
-    [
-      "apps/web/src/lib/cases/write-off.test.ts",
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/e2e/triage.spec.ts",
-      "packages/db/src/payer-response-db-mirrors.db.test.ts",
-    ],
-  ),
-  "CAS-46": none(
-    8,
-    "A response and a submission logged on a synthetic practice the test creates: no file.",
-    [
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  ),
-  "CAS-47": none(
-    8,
-    "A SYNTHETIC payer letter the test builds as a PDF and uploads in the browser: no file.",
-    [
-      "apps/web/src/components/packets/response-letter.browser.test.tsx",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  ),
-  "CAS-48": none(
-    8,
-    "Documents the test inserts in each intake state, and a response recorded with one: no file.",
-    [
-      "apps/web/src/lib/routes/workbench-routes.db.test.ts",
-      "apps/web/src/components/packets/response-letter.browser.test.tsx",
-      "apps/web/e2e/packets.spec.ts",
-      "packages/db/src/document-use-rules.db.test.ts",
-      "packages/db/src/payer-response-db-mirrors.db.test.ts",
-      "packages/db/src/payer-response-document-rules-migration.db.test.ts",
-    ],
-  ),
+  'CAS-45': none(8, 'A case line on a synthetic practice the test creates, written off: no file.', [
+    'apps/web/src/lib/cases/write-off.test.ts',
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/e2e/triage.spec.ts',
+    'packages/db/src/payer-response-db-mirrors.db.test.ts',
+  ]),
+  'CAS-46': none(8, 'A response and a submission logged on a synthetic practice the test creates: no file.', ['apps/web/src/lib/routes/workbench-routes.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
+  'CAS-47': none(8, 'A SYNTHETIC payer letter the test builds as a PDF and uploads in the browser: no file.', [
+    'apps/web/src/components/packets/response-letter.browser.test.tsx',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'CAS-48': none(8, 'Documents the test inserts in each intake state, and a response recorded with one: no file.', [
+    'apps/web/src/lib/routes/workbench-routes.db.test.ts',
+    'apps/web/src/components/packets/response-letter.browser.test.tsx',
+    'apps/web/e2e/packets.spec.ts',
+    'packages/db/src/document-use-rules.db.test.ts',
+    'packages/db/src/payer-response-db-mirrors.db.test.ts',
+    'packages/db/src/payer-response-document-rules-migration.db.test.ts',
+  ]),
   // Lane B (co-001/suite-cap-3-reconcile, SUITE-CAP-3; docs/adr/0087): a reconcile pass compared with the per-line pass, its reads bounded
   // per pass, and a pass at real size.
-  "CAS-49": none(
-    8,
-    "Generated passes and LED worlds, compared with the per-line pass: no file.",
-    [
-      "apps/worker/src/reconcile/pass-equality.db.test.ts",
-      "apps/worker/src/reconcile/pass-equality-led.db.test.ts",
-    ],
-  ),
-  "CAS-50": none(8, "Generated at two sizes by the test: no file.", [
-    "apps/worker/src/reconcile/pass-bounds.db.test.ts",
-  ]),
-  "CAS-51": none(
-    8,
-    "Generated at size by the test from LED-06's synthetic segments: no file.",
-    ["apps/worker/src/reconcile/pass.large.db.test.ts"],
-  ),
+  'CAS-49': none(8, 'Generated passes and LED worlds, compared with the per-line pass: no file.', ['apps/worker/src/reconcile/pass-equality.db.test.ts', 'apps/worker/src/reconcile/pass-equality-led.db.test.ts']),
+  'CAS-50': none(8, 'Generated at two sizes by the test: no file.', ['apps/worker/src/reconcile/pass-bounds.db.test.ts']),
+  'CAS-51': none(8, 'Generated at size by the test from LED-06\'s synthetic segments: no file.', ['apps/worker/src/reconcile/pass.large.db.test.ts']),
   // Lane B (co-001/packet-figure-placeholders, slice 2): verifier format /3 behind an explicit format (VERIFIER_FORMAT stays /2): pass 1's
   // strict scan and fact ids, pass 2's contradiction in both directions, the code draft's tokens. The model's half comes with slice 6.
-  "CAS-52": none(
+  'CAS-52': none(
     8,
-    "Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.",
+    'Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.',
+    ['packages/packets/src/scan-strict.test.ts', 'packages/packets/src/verifier-template.test.ts', 'packages/packets/src/draft-template.test.ts', 'packages/packets/src/serialize.test.ts'],
     [
-      "packages/packets/src/scan-strict.test.ts",
-      "packages/packets/src/verifier-template.test.ts",
-      "packages/packets/src/draft-template.test.ts",
-      "packages/packets/src/serialize.test.ts",
-    ],
-    [
-      "Pending, slice 6 (the gateway prompt and schema): a model’s draft with a /3 mismatch not written (not_drafted, misstated), a text segment with a brace or a bracket as invalid_output, a model’s line.* or claim.* id as unknown_fact, and the pre-call guard. The tests listed assert the verifier’s and serializeDraft’s half.",
+      'Pending, slice 6 (the gateway prompt and schema): a model’s draft with a /3 mismatch not written (not_drafted, misstated), a text segment with a brace or a bracket as invalid_output, a model’s line.* or claim.* id as unknown_fact, and the pre-call guard. The tests listed assert the verifier’s and serializeDraft’s half.',
     ],
   ),
-  "CAS-53": none(
+  'CAS-53': none(
     8,
-    "Templates verified over the named SYNTHETIC fact packets of the packets tests: no file.",
+    'Templates verified over the named SYNTHETIC fact packets of the packets tests: no file.',
+    ['packages/packets/src/verifier-template.test.ts', 'packages/packets/src/fact-catalog.test.ts'],
     [
-      "packages/packets/src/verifier-template.test.ts",
-      "packages/packets/src/fact-catalog.test.ts",
-    ],
-    [
-      "Pending, slice 5 (the web picker and preview): a typed subset sum opening the picker. Pending, slice 4 (the worker’s export, approval and verifier of now): schedule_changed. The tests listed assert the ids’ half; fact-catalog.test.ts holds the off-shape code’s.",
+      'Pending, slice 5 (the web picker and preview): a typed subset sum opening the picker. Pending, slice 4 (the worker’s export, approval and verifier of now): schedule_changed. The tests listed assert the ids’ half; fact-catalog.test.ts holds the off-shape code’s.',
     ],
   ),
-  "CAS-54": none(
-    8,
-    "Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.",
-    [
-      "packages/packets/src/draft-template.test.ts",
-      "packages/packets/src/verifier-template.test.ts",
-      "packages/packets/src/verifier-contradiction.test.ts",
-    ],
-  ),
+  'CAS-54': none(8, 'Templates verified over the generated and the named SYNTHETIC fact packets of the packets tests: no file.', [
+    'packages/packets/src/draft-template.test.ts',
+    'packages/packets/src/verifier-template.test.ts',
+    'packages/packets/src/verifier-contradiction.test.ts',
+  ]),
   // Lane B (co-001/packet-figure-placeholders, slice 1): a narrative’s figures as fact tokens rendered by code; the render half, in the worker
   // and in a browser (formatUsdPlain against formatUsd en-US, and renderFacts, in both). The approval and export half come with later slices.
-  "CAS-55": none(
-    8,
-    "Templates rendered over the SYNTHETIC packets of @tp/packets/testing and the named fact packets of the catalog tests: no file.",
-    [
-      "packages/packets/src/render.test.ts",
-      "packages/packets/src/fact-catalog.test.ts",
-      "packages/packets/src/fact-catalog.property.test.ts",
-      "packages/packets/src/render-golden.test.ts",
-      "packages/money/src/usd-plain.test.ts",
-      "apps/web/src/components/packets/fact-render.browser.test.ts",
-    ],
-  ),
+  'CAS-55': none(8, 'Templates rendered over the SYNTHETIC packets of @tp/packets/testing and the named fact packets of the catalog tests: no file.', [
+    'packages/packets/src/render.test.ts',
+    'packages/packets/src/fact-catalog.test.ts',
+    'packages/packets/src/fact-catalog.property.test.ts',
+    'packages/packets/src/render-golden.test.ts',
+    'packages/money/src/usd-plain.test.ts',
+    'apps/web/src/components/packets/fact-render.browser.test.ts',
+  ]),
   // Acting Lane B (co-001/web-ledger-try-lock; docs/adr/0092): a person's ledger action takes the ledger lock only if it is free.
-  "CAS-56": none(
-    8,
-    "The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding the lock: no file.",
-    ["apps/web/src/lib/routes/reconciliation-routes.db.test.ts"],
-  ),
-  "CAS-57": none(
-    8,
-    "The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding a case’s row, a request key’s lock or a table: no file.",
-    [
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
-      "apps/web/src/lib/server/lock-timeout.test.ts",
-      "apps/web/src/lib/server/lock-timeout.db.test.ts",
-      "apps/web/src/lib/http/http.test.ts",
-      "apps/web/src/lib/http/next.test.ts",
-      "apps/web/src/lib/http/busy-words.test.ts",
-      "apps/web/src/components/action-form.test.tsx",
-      "apps/web/src/components/action-form.browser.test.tsx",
-      "apps/web/src/components/uploads/uploader.test.tsx",
-    ],
-  ),
+  'CAS-56': none(8, 'The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding the lock: no file.', ['apps/web/src/lib/routes/reconciliation-routes.db.test.ts']),
+  'CAS-57': none(8, 'The reconciliation routes’ SYNTHETIC LED-06 practice, with a second session holding a case’s row, a request key’s lock or a table: no file.', [
+    'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
+    'apps/web/src/lib/server/lock-timeout.test.ts',
+    'apps/web/src/lib/server/lock-timeout.db.test.ts',
+    'apps/web/src/lib/http/http.test.ts',
+    'apps/web/src/lib/http/next.test.ts',
+    'apps/web/src/lib/http/busy-words.test.ts',
+    'apps/web/src/components/action-form.test.tsx',
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/uploads/uploader.test.tsx',
+  ]),
   // Lane A (co-001/payer-response-db-rules; docs/adr/0085's amendment of 2026-11-11): the upload-time link, in Postgres.
-  "CAS-58": none(
-    8,
-    "Documents and submissions the test inserts on synthetic practices it creates: no file.",
-    ["packages/db/src/payer-response-db-mirrors.db.test.ts"],
-  ),
-  "LED-01": none(
-    9,
-    "A packet marked submitted: an action that must create no entry; no file.",
-    [
-      "apps/worker/src/packets/packets.db.test.ts",
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  ),
-  "LED-02": {
-    completesIn: 9,
-    build: workflow.led02,
-    assertedBy: [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "packages/ledger/src/matching.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
-    ],
-  },
-  "LED-03": {
-    completesIn: 9,
-    build: workflow.led03,
-    assertedBy: [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "packages/ledger/src/matching.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-    ],
-  },
-  "LED-04": {
+  'CAS-58': none(8, 'Documents and submissions the test inserts on synthetic practices it creates: no file.', ['packages/db/src/payer-response-db-mirrors.db.test.ts']),
+  'LED-01': none(9, 'A packet marked submitted: an action that must create no entry; no file.', ['apps/worker/src/packets/packets.db.test.ts', 'apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/e2e/packets.spec.ts']),
+  'LED-02': { completesIn: 9, build: workflow.led02, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
+  'LED-03': { completesIn: 9, build: workflow.led03, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/matching.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
+  'LED-04': {
     completesIn: 9,
     build: workflow.led04,
     assertedBy: [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "packages/ledger/src/matching.test.ts",
-      "packages/ledger/src/templates.test.ts",
-      "packages/ledger/src/pairing.test.ts",
-      "apps/worker/src/reconcile/lines.db.test.ts",
-      "apps/worker/src/reconcile/exports.db.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
+      'apps/worker/src/reconcile/ledger.db.test.ts',
+      'packages/ledger/src/matching.test.ts',
+      'packages/ledger/src/templates.test.ts',
+      'packages/ledger/src/pairing.test.ts',
+      'apps/worker/src/reconcile/lines.db.test.ts',
+      'apps/worker/src/reconcile/exports.db.test.ts',
+      'apps/worker/src/reconcile/chain.db.test.ts',
+      'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
     ],
   },
-  "LED-05": {
-    completesIn: 9,
-    build: workflow.led05,
-    assertedBy: [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-      "packages/ledger/src/matching.test.ts",
-      "packages/ledger/src/templates.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
-    ],
-  },
-  "LED-06": {
-    completesIn: 9,
-    build: workflow.led06,
-    assertedBy: [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-      "packages/ledger/src/totals.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
-    ],
-  },
-  "LED-07": {
+  'LED-05': { completesIn: 9, build: workflow.led05, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts', 'packages/ledger/src/matching.test.ts', 'packages/ledger/src/templates.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
+  'LED-06': { completesIn: 9, build: workflow.led06, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts', 'packages/ledger/src/totals.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts'] },
+  'LED-07': {
     completesIn: 9,
     build: workflow.led07,
     assertedBy: [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-      "packages/ledger/src/totals.test.ts",
-      "packages/ledger/src/stages.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
+      'apps/worker/src/reconcile/ledger.db.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+      'packages/ledger/src/totals.test.ts',
+      'packages/ledger/src/stages.test.ts',
+      'apps/worker/src/reconcile/chain.db.test.ts',
+      'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
     ],
   },
-  "LED-08": {
-    completesIn: 9,
-    build: workflow.led08,
-    assertedBy: [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-      "packages/ledger/src/templates.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-    ],
-  },
-  "LED-09": {
+  'LED-08': { completesIn: 9, build: workflow.led08, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts', 'packages/ledger/src/templates.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts'] },
+  'LED-09': {
     completesIn: 9,
     build: workflow.led09,
     assertedBy: [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-      "packages/ledger/src/allocation.test.ts",
-      "packages/ledger/src/matching.test.ts",
-      "apps/worker/src/reconcile/lines.db.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
+      'apps/worker/src/reconcile/ledger.db.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+      'packages/ledger/src/allocation.test.ts',
+      'packages/ledger/src/matching.test.ts',
+      'apps/worker/src/reconcile/lines.db.test.ts',
+      'apps/worker/src/reconcile/chain.db.test.ts',
     ],
   },
-  "LED-10": none(
-    9,
-    "A direct UPDATE or DELETE on ledger_entry by the application role: a database test, no file.",
-    [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-    ],
-  ),
-  "LED-11": none(
-    9,
-    "Recomputes the ROI statement from the entries the LED-02 to LED-09 scenarios create; no file of its own.",
-    [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "packages/ledger/src/roi.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
-      "packages/ledger/src/statement.test.ts",
-    ],
-  ),
-  "LED-12": {
-    completesIn: 9,
-    build: workflow.led12,
-    assertedBy: [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-    ],
-  },
+  'LED-10': none(9, 'A direct UPDATE or DELETE on ledger_entry by the application role: a database test, no file.', ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts']),
+  'LED-11': none(9, 'Recomputes the ROI statement from the entries the LED-02 to LED-09 scenarios create; no file of its own.', ['apps/worker/src/reconcile/ledger.db.test.ts', 'packages/ledger/src/roi.test.ts', 'apps/worker/src/reconcile/chain.db.test.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts', 'packages/ledger/src/statement.test.ts']),
+  'LED-12': { completesIn: 9, build: workflow.led12, assertedBy: ['apps/worker/src/reconcile/ledger.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts'] },
   // CO-09's LED-13 is LED-06's recoupment after the deposit (reconciliation-001, section 18 and item 15).
-  "LED-13": none(
-    9,
-    "LED-06: its recoupment after the deposit is the later recoupment; no file of its own.",
-    [
-      "apps/worker/src/reconcile/ledger.db.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-      "packages/ledger/src/totals.test.ts",
-      "apps/worker/src/reconcile/chain.db.test.ts",
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
-    ],
-  ),
+  'LED-13': none(9, 'LED-06: its recoupment after the deposit is the later recoupment; no file of its own.', [
+    'apps/worker/src/reconcile/ledger.db.test.ts',
+    'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+    'packages/ledger/src/totals.test.ts',
+    'apps/worker/src/reconcile/chain.db.test.ts',
+    'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
+  ]),
   // PR 15b (combined audit #12, docs/adr/0067): the payment-terms cases, each case line with a patient's share.
-  "LED-14": {
+  'LED-14': {
     completesIn: 9,
     build: workflow.led14,
     assertedBy: [
-      "apps/worker/src/reconcile/payment-terms.db.test.ts",
-      "packages/ledger/src/payment.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-      "apps/web/e2e/ledger-patient-share.spec.ts",
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+      'apps/web/e2e/ledger-patient-share.spec.ts',
     ],
   },
-  "LED-15": {
+  'LED-15': {
     completesIn: 9,
     build: workflow.led15,
     assertedBy: [
-      "apps/worker/src/reconcile/payment-terms.db.test.ts",
-      "packages/ledger/src/payment.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-      "apps/web/e2e/ledger-patient-share.spec.ts",
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
+      'apps/web/e2e/ledger-patient-share.spec.ts',
     ],
   },
-  "LED-16": {
+  'LED-16': {
     completesIn: 9,
     build: workflow.led16,
     assertedBy: [
-      "apps/worker/src/reconcile/payment-terms.db.test.ts",
-      "packages/ledger/src/payment.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
     ],
   },
-  "LED-17": {
+  'LED-17': {
     completesIn: 9,
     build: workflow.led17,
     assertedBy: [
-      "apps/worker/src/reconcile/payment-terms.db.test.ts",
-      "packages/ledger/src/payment.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
+      'apps/worker/src/reconcile/payment-terms.db.test.ts',
+      'packages/ledger/src/payment.test.ts',
+      'apps/worker/src/reconcile/ledger-oracle.db.test.ts',
     ],
   },
-  "LED-18": {
-    completesIn: 9,
-    build: workflow.led18,
-    assertedBy: [
-      "apps/worker/src/reconcile/payment-terms.db.test.ts",
-      "packages/ledger/src/payment.test.ts",
-    ],
-  },
-  "LED-23": {
-    completesIn: 9,
-    build: workflow.led23,
-    assertedBy: [
-      "apps/web/e2e/ledger-interest.spec.ts",
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
-      "apps/worker/src/reconcile/interest.db.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-      "packages/ledger/src/interest.test.ts",
-    ],
-  },
-  "LED-24": {
-    completesIn: 9,
-    build: workflow.led24,
-    assertedBy: [
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
-      "apps/worker/src/reconcile/interest.db.test.ts",
-      "apps/worker/src/reconcile/ledger-oracle.db.test.ts",
-      "packages/ledger/src/interest.test.ts",
-    ],
-  },
-  "LED-25": none(9, "database tests", [
-    "apps/worker/src/reconcile/chain.db.test.ts",
-    "apps/worker/src/reconcile/chain.large.db.test.ts",
+  'LED-18': { completesIn: 9, build: workflow.led18, assertedBy: ['apps/worker/src/reconcile/payment-terms.db.test.ts', 'packages/ledger/src/payment.test.ts'] },
+  'LED-23': { completesIn: 9, build: workflow.led23, assertedBy: ['apps/web/e2e/ledger-interest.spec.ts', 'apps/web/src/lib/routes/reconciliation-routes.db.test.ts', 'apps/worker/src/reconcile/interest.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts', 'packages/ledger/src/interest.test.ts'] },
+  'LED-24': { completesIn: 9, build: workflow.led24, assertedBy: ['apps/web/src/lib/routes/reconciliation-routes.db.test.ts', 'apps/worker/src/reconcile/interest.db.test.ts', 'apps/worker/src/reconcile/ledger-oracle.db.test.ts', 'packages/ledger/src/interest.test.ts'] },
+  'LED-25': none(9, 'database tests', ['apps/worker/src/reconcile/chain.db.test.ts', 'apps/worker/src/reconcile/chain.large.db.test.ts']),
+  'LED-26': none(9, 'database tests', ['apps/web/src/lib/reconciliation/statement-readers.db.test.ts', 'apps/worker/src/reconcile/statement-lines.db.test.ts', 'apps/worker/src/reconcile/statement-paths.db.test.ts', 'apps/worker/src/triage/actionable-now.db.test.ts', 'apps/worker/src/triage/actionable-now.test.ts']),
+  'LED-27': none(9, 'database tests', ['apps/worker/src/reconcile/statement-lines.db.test.ts', 'packages/db/src/catalog.db.test.ts', 'packages/db/src/roi-statement-actionable-lines-migration.db.test.ts']),
+  'LED-28': none(9, 'database tests', ['apps/worker/src/reconcile/statement-lines.db.test.ts', 'packages/db/src/catalog.db.test.ts', 'packages/db/src/migrate.test.ts', 'packages/db/src/roi-statement-actionable-lines-migration.db.test.ts']),
+  'SEC-01': none(1, 'The catalog test reads the migrated schema.', ['packages/db/src/catalog.db.test.ts']),
+  'SEC-02': none(1, 'Cross-tenant tests are generated from the schema catalog and the route registry.', ['packages/db/src/cross-tenant.db.test.ts', 'apps/web/src/lib/routes/route-tests/define.ts']),
+  'SEC-03': none(1, 'Grant expiry is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
+  'SEC-04': none(1, 'Grant revocation is a database and route property.', ['packages/db/src/access.db.test.ts', 'apps/web/src/lib/routes/revocation.db.test.ts']),
+  'SEC-05': none(1, 'Support grants expire in the database; the notice is a worker job.', ['packages/db/src/access.db.test.ts', 'apps/worker/src/platform/support-notices.db.test.ts', 'apps/web/e2e/hardware-key.spec.ts']),
+  'SEC-06': none(1, 'One practice per job is enforced by the job scope.', ['packages/db/src/authz/scope.test.ts']),
+  'SEC-07': none(1, 'The log lint reads source; the canary test logs a synthetic record built in memory.', ['tools/lint-logs/scan.test.ts', 'packages/observability/src/logger.test.ts']),
+  'SEC-08': none(1, 'URL and S3 key checks run on values built in the tests.', ['packages/observability/src/phi-guard.test.ts', 'apps/web/src/lib/routes/registry.test.ts']),
+  'SEC-09': none(0, 'The lint rule is tested on files it builds in memory.', ['tools/test/eslint-rules.test.ts']),
+  'SEC-10': none(1, 'Audit triggers are a database property.', ['packages/db/src/audit.db.test.ts']),
+  'SEC-11': none(12, 'The deletion workflow runs on a practice seeded with synthetic data; its certificate arrives with milestone 12 (key destruction is tested now).', ['apps/worker/src/storage/practice-objects.db.test.ts', 'packages/db/src/crypto/practice-keys.db.test.ts']),
+  'SEC-12': none(12, 'A legal hold is a lifecycle record; no file.'),
+  'SEC-13': none(1, 'The restore drill restores a database and counts its rows.', ['apps/worker/src/platform/restore-drill.db.test.ts']),
+  'SEC-14': none(2, 'The test builds a non-synthetic interchange in memory and hands it to the hook; it is never written as a file.', ['packages/synth/src/fixture-guard.test.ts']),
+  'SEC-15': none(1, 'Session expiry is a session and route property.', ['packages/db/src/identity.db.test.ts', 'apps/web/src/lib/routes/route-tests/define.ts', 'apps/web/e2e/sign-in.spec.ts']),
+  'SEC-17': none(6, 'The screening tables are read from the migrated catalog; no file.', ['packages/db/src/screening.db.test.ts']),
+  'SEC-18': none(6, "The mail scenarios run on synthetic addresses at SES's simulator and on the migrated catalog, built in memory; no file.", [
+    'packages/db/src/mail.db.test.ts',
+    'packages/db/src/hardening.db.test.ts',
+    'packages/db/src/screening.db.test.ts',
+    'infra/test/mail-streams.test.ts',
+    'apps/worker/src/mail/mail.test.ts',
+    'apps/worker/src/platform/mail-events.db.test.ts',
+    'apps/web/src/lib/screening/validation.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
   ]),
-  "LED-26": none(9, "database tests", [
-    "apps/web/src/lib/reconciliation/statement-readers.db.test.ts",
-    "apps/worker/src/reconcile/statement-lines.db.test.ts",
-    "apps/worker/src/reconcile/statement-paths.db.test.ts",
-    "apps/worker/src/triage/actionable-now.db.test.ts",
-    "apps/worker/src/triage/actionable-now.test.ts",
+  'SEC-19': none(6, "The notices and invitations are sent to synthetic administrators at SES's simulator by the tests and the journey; no file.", [
+    'packages/db/src/mail.db.test.ts',
+    'apps/worker/src/platform/support-notices.db.test.ts',
+    'apps/worker/src/billing/billing.db.test.ts',
+    'apps/web/src/components/monitoring/display.test.tsx',
+    'apps/web/src/lib/routes/mail-routes.db.test.ts',
+    'infra/test/monitoring.test.ts',
+    'apps/web/e2e/mail-notices.spec.ts',
   ]),
-  "LED-27": none(9, "database tests", [
-    "apps/worker/src/reconcile/statement-lines.db.test.ts",
-    "packages/db/src/catalog.db.test.ts",
-    "packages/db/src/roi-statement-actionable-lines-migration.db.test.ts",
-  ]),
-  "LED-28": none(9, "database tests", [
-    "apps/worker/src/reconcile/statement-lines.db.test.ts",
-    "packages/db/src/catalog.db.test.ts",
-    "packages/db/src/migrate.test.ts",
-    "packages/db/src/roi-statement-actionable-lines-migration.db.test.ts",
-  ]),
-  "SEC-01": none(1, "The catalog test reads the migrated schema.", [
-    "packages/db/src/catalog.db.test.ts",
-  ]),
-  "SEC-02": none(
-    1,
-    "Cross-tenant tests are generated from the schema catalog and the route registry.",
-    [
-      "packages/db/src/cross-tenant.db.test.ts",
-      "apps/web/src/lib/routes/route-tests/define.ts",
-    ],
-  ),
-  "SEC-03": none(1, "Grant expiry is a database and route property.", [
-    "packages/db/src/access.db.test.ts",
-    "apps/web/src/lib/routes/revocation.db.test.ts",
-  ]),
-  "SEC-04": none(1, "Grant revocation is a database and route property.", [
-    "packages/db/src/access.db.test.ts",
-    "apps/web/src/lib/routes/revocation.db.test.ts",
-  ]),
-  "SEC-05": none(
-    1,
-    "Support grants expire in the database; the notice is a worker job.",
-    [
-      "packages/db/src/access.db.test.ts",
-      "apps/worker/src/platform/support-notices.db.test.ts",
-      "apps/web/e2e/hardware-key.spec.ts",
-    ],
-  ),
-  "SEC-06": none(1, "One practice per job is enforced by the job scope.", [
-    "packages/db/src/authz/scope.test.ts",
-  ]),
-  "SEC-07": none(
-    1,
-    "The log lint reads source; the canary test logs a synthetic record built in memory.",
-    [
-      "tools/lint-logs/scan.test.ts",
-      "packages/observability/src/logger.test.ts",
-    ],
-  ),
-  "SEC-08": none(1, "URL and S3 key checks run on values built in the tests.", [
-    "packages/observability/src/phi-guard.test.ts",
-    "apps/web/src/lib/routes/registry.test.ts",
-  ]),
-  "SEC-09": none(0, "The lint rule is tested on files it builds in memory.", [
-    "tools/test/eslint-rules.test.ts",
-  ]),
-  "SEC-10": none(1, "Audit triggers are a database property.", [
-    "packages/db/src/audit.db.test.ts",
-  ]),
-  "SEC-11": none(
-    12,
-    "The deletion workflow runs on a practice seeded with synthetic data; its certificate arrives with milestone 12 (key destruction is tested now).",
-    [
-      "apps/worker/src/storage/practice-objects.db.test.ts",
-      "packages/db/src/crypto/practice-keys.db.test.ts",
-    ],
-  ),
-  "SEC-12": none(12, "A legal hold is a lifecycle record; no file."),
-  "SEC-13": none(
-    1,
-    "The restore drill restores a database and counts its rows.",
-    ["apps/worker/src/platform/restore-drill.db.test.ts"],
-  ),
-  "SEC-14": none(
-    2,
-    "The test builds a non-synthetic interchange in memory and hands it to the hook; it is never written as a file.",
-    ["packages/synth/src/fixture-guard.test.ts"],
-  ),
-  "SEC-15": none(1, "Session expiry is a session and route property.", [
-    "packages/db/src/identity.db.test.ts",
-    "apps/web/src/lib/routes/route-tests/define.ts",
-    "apps/web/e2e/sign-in.spec.ts",
-  ]),
-  "SEC-17": none(
-    6,
-    "The screening tables are read from the migrated catalog; no file.",
-    ["packages/db/src/screening.db.test.ts"],
-  ),
-  "SEC-18": none(
-    6,
-    "The mail scenarios run on synthetic addresses at SES's simulator and on the migrated catalog, built in memory; no file.",
-    [
-      "packages/db/src/mail.db.test.ts",
-      "packages/db/src/hardening.db.test.ts",
-      "packages/db/src/screening.db.test.ts",
-      "infra/test/mail-streams.test.ts",
-      "apps/worker/src/mail/mail.test.ts",
-      "apps/worker/src/platform/mail-events.db.test.ts",
-      "apps/web/src/lib/screening/validation.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-    ],
-  ),
-  "SEC-19": none(
-    6,
-    "The notices and invitations are sent to synthetic administrators at SES's simulator by the tests and the journey; no file.",
-    [
-      "packages/db/src/mail.db.test.ts",
-      "apps/worker/src/platform/support-notices.db.test.ts",
-      "apps/worker/src/billing/billing.db.test.ts",
-      "apps/web/src/components/monitoring/display.test.tsx",
-      "apps/web/src/lib/routes/mail-routes.db.test.ts",
-      "infra/test/monitoring.test.ts",
-      "apps/web/e2e/mail-notices.spec.ts",
-    ],
-  ),
   // The confidential Cognito client and second-factor enrolment only inside a live invitation (docs/adr/0088). Its
   // first pull request's tests are named here; the confidential client, the secret's custody in Secrets Manager and its
   // rotation are its second pull request's (release N+1), which adds their infra tests, and the staging checks are
   // the founder's (the design's F1 to F5).
-  "SEC-20": none(
-    1,
-    "A hash-checking twin of the Cognito endpoint, a synthetic client ID and secret, and synthetic personas through the local identity provider; no file.",
-    [
-      "apps/web/src/lib/auth/secret-hash.test.ts",
-      "apps/web/src/lib/auth/cognito-provider.test.ts",
-      "apps/web/src/lib/auth/credential-probe.test.ts",
-      "apps/web/src/lib/http/http.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-    ],
-  ),
-  "SEC-21": none(
-    1,
-    "The client modules are scanned from source, the wrapper is serialised with a synthetic secret, and the stacks are synthesized in memory; no file.",
-    [
-      "apps/web/src/lib/auth/client-secret.test.ts",
-      "apps/web/src/lib/auth/client-bundle.test.ts",
-      "apps/web/src/lib/auth/secret-hash.test.ts",
-      "infra/test/pull-request-diff-role.test.ts",
-    ],
-  ),
-  "SEC-22": none(
-    1,
-    "Synthetic invited, active, enrolled, locked and orphan personas answer the enrolment challenge through the local identity provider and the Cognito twin; no file.",
-    [
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/src/lib/auth/cognito-provider.test.ts",
-      "apps/web/src/lib/auth/dev-provider.test.ts",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/src/lib/routes/console-routes.db.test.ts",
-      "apps/web/src/lib/routes/onboarding-routes.db.test.ts",
-    ],
-  ),
-  "SEC-23": none(
-    1,
-    "The monitoring stack is synthesized in memory and its messages are read from the web source; synthetic personas ask for resets; no file.",
-    [
-      "infra/test/monitoring.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-    ],
-  ),
+  'SEC-20': none(1, 'A hash-checking twin of the Cognito endpoint, a synthetic client ID and secret, and synthetic personas through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/secret-hash.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/credential-probe.test.ts',
+    'apps/web/src/lib/http/http.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+  ]),
+  'SEC-21': none(1, 'The client modules are scanned from source, the wrapper is serialised with a synthetic secret, and the stacks are synthesized in memory; no file.', [
+    'apps/web/src/lib/auth/client-secret.test.ts',
+    'apps/web/src/lib/auth/client-bundle.test.ts',
+    'apps/web/src/lib/auth/secret-hash.test.ts',
+    'infra/test/pull-request-diff-role.test.ts',
+  ]),
+  'SEC-22': none(1, 'Synthetic invited, active, enrolled, locked and orphan personas answer the enrolment challenge through the local identity provider and the Cognito twin; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/src/lib/routes/onboarding-routes.db.test.ts',
+  ]),
+  'SEC-23': none(1, 'The monitoring stack is synthesized in memory and its messages are read from the web source; synthetic personas ask for resets; no file.', [
+    'infra/test/monitoring.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
   // The page reader in a child process of its own (docs/adr/0033's amendment of 2026-11-05; docs/adr/0071).
-  "SEC-24": none(
-    1,
-    "Every document is SYNTHETIC and built in memory by the tests (PDFs, a deflate bomb, workbooks, CSVs); the stand-in readers send frames, not files; no file.",
-    [
-      "packages/contracts/src/evidence/pages.test.ts",
-      "packages/contracts/src/evidence/evidence.test.ts",
-      "infra/test/heap.test.ts",
-      "infra/test/compute.test.ts",
-      "apps/worker/src/bundle.test.ts",
-    ],
-  ),
-  "SEC-25": none(
-    1,
-    "Synthetic accounts of two synthetic practices the test inserts; no file.",
-    ["packages/db/src/key-registry.db.test.ts"],
-  ),
-  "SEC-26": none(
-    1,
-    "Synthetic accounts of two synthetic practices the test inserts; no file.",
-    ["packages/db/src/key-registry.db.test.ts"],
-  ),
-  "SEC-27": none(
-    1,
-    "Synthetic accounts of two synthetic practices the test inserts; no file.",
-    ["packages/db/src/key-registry.db.test.ts"],
-  ),
-  "SEC-28": none(1, "Synthetic accounts the tests insert; no file.", [
-    "packages/db/src/key-registry.db.test.ts",
-    "apps/web/src/lib/routes/console-routes.db.test.ts",
+  'SEC-24': none(1, 'Every document is SYNTHETIC and built in memory by the tests (PDFs, a deflate bomb, workbooks, CSVs); the stand-in readers send frames, not files; no file.', [
+    'packages/contracts/src/evidence/pages.test.ts',
+    'packages/contracts/src/evidence/evidence.test.ts',
+    'infra/test/heap.test.ts',
+    'infra/test/compute.test.ts',
+    'apps/worker/src/bundle.test.ts',
   ]),
-  "SCR-01": none(
-    6,
-    "A screening upload is built in memory by the tests from synthetic rows and refused headers; no file is committed.",
-    [
-      "apps/worker/src/screening/format.test.ts",
-      "apps/web/src/lib/screening/parse.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-02": none(
-    6,
-    "Screening rows are built in memory and priced under SYNTHETIC release 900001; no file.",
-    [
-      "apps/worker/src/screening/adapter.test.ts",
-      "apps/worker/src/screening/screening.db.test.ts",
-      "apps/web/src/components/screening/result.test.tsx",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/src/lib/screening/screening.large.db.test.ts",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-03": none(
-    6,
-    "Expiry is a database and platform-job property; no file.",
-    [
-      "packages/db/src/screening.db.test.ts",
-      "apps/worker/src/screening/screening.db.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-04": none(
-    6,
-    "Rate limits are counted in the database per request; no file.",
-    [
-      "apps/web/src/lib/screening/rate.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-    ],
-  ),
-  "SCR-05": none(
-    6,
-    "Wording is held by the copy lint and by tests of what the routes, components and emails return; no file.",
-    [
-      "tools/brand-copy/scan.test.ts",
-      "apps/worker/src/screening/message.test.ts",
-      "apps/web/src/components/screening/result.test.tsx",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-06": none(6, "The conversion is a route and an audit event; no file.", [
-    "packages/db/src/screening.db.test.ts",
-    "apps/worker/src/screening/screening.db.test.ts",
-    "apps/web/src/lib/screening/routes.db.test.ts",
-    "apps/web/e2e/screening.spec.ts",
+  'SEC-25': none(1, 'Synthetic accounts of two synthetic practices the test inserts; no file.', [
+    'packages/db/src/key-registry.db.test.ts',
   ]),
-  "SCR-07": none(
-    6,
-    "Rows of fewer than 11 claim lines are built in memory by the tests from synthetic totals; no file is committed.",
-    [
-      "apps/worker/src/screening/format.test.ts",
-      "apps/web/src/lib/screening/parse.test.ts",
-      "apps/web/src/components/screening/result.test.tsx",
-      "packages/db/src/screening.db.test.ts",
-      "apps/worker/src/screening/screening.db.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-08": none(
-    6,
-    "The capacity test builds its SYNTHETIC scale release and uploads outside the repository when it runs; no file is committed.",
-    [
-      "tools/screening-capacity/limits.test.ts",
-      "tools/screening-capacity/env.test.ts",
-      "tools/screening-capacity/report.test.ts",
-      "tools/screening-capacity/uploads.test.ts",
-      "tools/screening-capacity/measure.test.ts",
-      "tools/screening-capacity/launch-check.test.ts",
-      "tools/test/workflows.test.ts",
-      "packages/synth/src/release/scale.test.ts",
-      "packages/synth/src/screening/uploads.test.ts",
-      "tools/release/scale.test.ts",
-      "tools/release/load.db.test.ts",
-      "tools/screening-capacity/watched.test.ts",
-      "tools/test/workflows.test.ts",
-      "apps/web/src/lib/screening/screening.large.db.test.ts",
-      "apps/web/src/lib/screening/result-page.large.db.test.ts",
-      "apps/web/src/components/screening/result.test.tsx",
-      "apps/worker/src/screening/consumer.db.test.ts",
-      "apps/worker/src/worker.test.ts",
-    ],
-  ),
-  "SCR-09": none(
-    6,
-    "The release read is tested on a release built in memory from SYNTHETIC release 900001; no file.",
-    [
-      "apps/worker/src/price/keyed-release.test.ts",
-      "apps/worker/src/screening/adapter.test.ts",
-      "apps/worker/src/screening/oracle-imports.test.ts",
-      "apps/worker/src/screening/release-cache.db.test.ts",
-      "packages/db/src/screening-queue.db.test.ts",
-    ],
-  ),
-  "SCR-10": none(
-    6,
-    "A screening outcome is written by the database from the rows the tests submit in memory; no file.",
-    [
-      "packages/db/src/screening.db.test.ts",
-      "apps/worker/src/screening/screening.db.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-11": none(
-    6,
-    "A kept summary is frozen by the database from a screening the tests run in memory; no file.",
-    [
-      "packages/db/src/screening.db.test.ts",
-      "apps/worker/src/screening/screening.db.test.ts",
-      "apps/web/src/lib/screening/labels.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-12": none(
-    6,
-    "Attribution is a landing URL, a cookie and form fields the tests send; no file.",
-    [
-      "apps/web/src/lib/http/attribution.test.ts",
-      "apps/web/src/proxy.test.ts",
-      "packages/db/src/screening.db.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/src/lib/routes/onboarding-routes.db.test.ts",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-13": none(
-    6,
-    "The opened signal is a page script and a route the tests drive; no file.",
-    [
-      "apps/web/src/components/screening/opened-signal.test.tsx",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-14": none(
-    6,
-    "A replacement is two screenings the tests submit in memory; no file.",
-    ["packages/db/src/screening.db.test.ts"],
-  ),
-  "SCR-15": none(
-    6,
-    "The prospect’s ZIP+4 is set by the tests under release 900006 and the scale release’s small shape.",
-    [
-      "packages/db/src/screening.db.test.ts",
-      "apps/worker/src/price/keyed-release.test.ts",
-      "apps/worker/src/screening/adapter.test.ts",
-      "apps/worker/src/screening/screening.db.test.ts",
-      "tools/screening-capacity/oracle.db.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/src/components/screening/result.test.tsx",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-16": none(6, "A row with an earlier quarter; no file.", [
-    "apps/worker/src/screening/format.test.ts",
-    "packages/db/src/screening.db.test.ts",
-    "apps/web/src/lib/screening/routes.db.test.ts",
-    "apps/web/e2e/screening.spec.ts",
+  'SEC-26': none(1, 'Synthetic accounts of two synthetic practices the test inserts; no file.', [
+    'packages/db/src/key-registry.db.test.ts',
   ]),
-  "SCR-17": none(
-    6,
-    "The tiers come from uploads the tests submit in memory under synthetic accounts; no file.",
-    [
-      "packages/db/src/screening-queue.db.test.ts",
-      "apps/worker/src/jobs/enqueue.test.ts",
-      "apps/worker/src/jobs/screening.test.ts",
-      "apps/worker/src/screening/threads.test.ts",
-      "apps/worker/src/worker.test.ts",
-      "apps/worker/src/screening/screening.db.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "tools/screening-capacity/report.test.ts",
-      "tools/screening-capacity/uploads.test.ts",
-    ],
-  ),
-  "SCR-18": none(
-    6,
-    "The wait states are read from runs the tests submit in memory; no file.",
-    [
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/src/lib/http/received.test.ts",
-      "apps/web/src/proxy.test.ts",
-      "apps/worker/src/screening/message.test.ts",
-      "apps/web/e2e/screening.spec.ts",
-    ],
-  ),
-  "SCR-19": none(
-    6,
-    "A consumer is killed mid-run over a screening the tests submit in memory; no file.",
-    [
-      "apps/worker/src/screening/consumer-lease.db.test.ts",
-      "apps/worker/src/screening/consumer.db.test.ts",
-      "apps/worker/src/screening/threads.test.ts",
-      "apps/worker/src/jobs/enqueue.test.ts",
-      "packages/db/src/screening-queue.db.test.ts",
-    ],
-  ),
-  "SCR-20": none(
-    6,
-    "The launch check reads synthetic capacity reports and synthetic attestation verifications (gh’s JSON) built in memory; no file.",
-    [
-      "tools/screening-capacity/launch-check.test.ts",
-      "tools/screening-capacity/report.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "infra/test/deploy-parameters.test.ts",
-      "infra/test/compute.test.ts",
-      "tools/test/workflows.test.ts",
-    ],
-  ),
-  "SCR-21": none(
-    6,
-    "The cut-off is driven by synthetic mail records and simulator-shaped events the tests and the journey make; no file.",
-    [
-      "packages/db/src/mail.db.test.ts",
-      "packages/db/src/screening.db.test.ts",
-      "apps/worker/src/platform/mail-events.db.test.ts",
-      "apps/worker/src/screening/screening.db.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/src/lib/routes/mail-routes.db.test.ts",
-      "infra/test/mail-streams.test.ts",
-      "apps/web/e2e/mail-cutoff.spec.ts",
-    ],
-  ),
-  "SCR-22": none(
-    6,
-    "The checks run on synthetic addresses with a stand-in resolver and validation; no file.",
-    [
-      "apps/web/src/lib/screening/address.test.ts",
-      "apps/web/src/lib/screening/validation.test.ts",
-      "apps/web/src/lib/screening/routes.db.test.ts",
-      "apps/web/src/lib/http/http.test.ts",
-      "packages/db/src/screening.db.test.ts",
-      "packages/db/src/mail.db.test.ts",
-      "infra/test/monitoring.test.ts",
-      "infra/test/application-role.test.ts",
-    ],
-  ),
-  "JOB-01": {
-    completesIn: 3,
-    build: workflow.job01,
-    assertedBy: [
-      "apps/worker/src/worker.db.test.ts",
-      "apps/worker/src/price/price.db.test.ts",
-      "apps/worker/src/monitor/monitor.db.test.ts",
-      "apps/web/e2e/monitoring.spec.ts",
-    ],
-  },
-  "JOB-02": none(
-    7,
-    "Job failures are injected in the worker tests and in the monitoring chain run on synthetic files; the practice dashboard reads job_run.",
-    [
-      "apps/worker/src/worker.test.ts",
-      "apps/worker/src/monitor/monitor.db.test.ts",
-      "apps/web/src/lib/routes/monitoring-routes.db.test.ts",
-      "apps/web/e2e/monitoring.spec.ts",
-      "infra/test/monitoring.test.ts",
-    ],
-  ),
-  "JOB-03": none(
-    7,
-    "A digest is built from counts and totals in the database; no file.",
-    [
-      "apps/worker/src/monitor/monitor.db.test.ts",
-      "apps/worker/src/digest/view.test.ts",
-      "apps/web/e2e/monitoring.spec.ts",
-    ],
-  ),
-  "JOB-04": none(
-    1,
-    "Heartbeats are a contract between the worker and its alarm.",
-    ["apps/worker/src/heartbeat.test.ts", "infra/test/monitoring.test.ts"],
-  ),
-  "JOB-05": none(
-    6,
-    "The events are synthetic EventBridge envelopes and simulator-shaped files the tests write; no file.",
-    [
-      "apps/worker/src/platform/mail-events.db.test.ts",
-      "apps/worker/src/mail/events.test.ts",
-      "packages/db/src/mail.db.test.ts",
-      "infra/test/mail-streams.test.ts",
-    ],
-  ),
-  "JOB-06": none(
-    6,
-    "Synthetic accounts and a provider twin the tests make; no file.",
-    ["packages/db/src/provider-sign-out.db.test.ts"],
-  ),
-  "JOB-07": none(
-    6,
-    "Synthetic accounts and a provider twin the tests make; no file.",
-    ["packages/db/src/provider-sign-out.db.test.ts"],
-  ),
-  "JOB-08": none(
-    6,
-    "Synthetic accounts and a provider twin the tests make; no file.",
-    [
-      "apps/worker/src/platform/provider-sign-outs.db.test.ts",
-      "apps/worker/src/platform/cognito-sign-out.test.ts",
-      "apps/worker/src/jobs/platform.test.ts",
-      "infra/test/monitoring.test.ts",
-    ],
-  ),
-  "JOB-09": none(
-    6,
-    "Synthetic accounts and a provider twin the tests make; no file.",
-    [
-      "packages/db/src/provider-sign-out.db.test.ts",
-      "apps/worker/src/platform/provider-sign-outs.db.test.ts",
-    ],
-  ),
-  "MOD-01": {
+  'SEC-27': none(1, 'Synthetic accounts of two synthetic practices the test inserts; no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+  ]),
+  'SEC-28': none(1, 'Synthetic accounts the tests insert; no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+  ]),
+  'SCR-01': none(6, 'A screening upload is built in memory by the tests from synthetic rows and refused headers; no file is committed.', [
+    'apps/worker/src/screening/format.test.ts',
+    'apps/web/src/lib/screening/parse.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-02': none(6, 'Screening rows are built in memory and priced under SYNTHETIC release 900001; no file.', [
+    'apps/worker/src/screening/adapter.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/components/screening/result.test.tsx',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/src/lib/screening/screening.large.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-03': none(6, 'Expiry is a database and platform-job property; no file.', [
+    'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-04': none(6, 'Rate limits are counted in the database per request; no file.', ['apps/web/src/lib/screening/rate.test.ts', 'apps/web/src/lib/screening/routes.db.test.ts']),
+  'SCR-05': none(6, 'Wording is held by the copy lint and by tests of what the routes, components and emails return; no file.', [
+    'tools/brand-copy/scan.test.ts',
+    'apps/worker/src/screening/message.test.ts',
+    'apps/web/src/components/screening/result.test.tsx',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-06': none(6, 'The conversion is a route and an audit event; no file.', [
+    'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-07': none(6, 'Rows of fewer than 11 claim lines are built in memory by the tests from synthetic totals; no file is committed.', [
+    'apps/worker/src/screening/format.test.ts',
+    'apps/web/src/lib/screening/parse.test.ts',
+    'apps/web/src/components/screening/result.test.tsx',
+    'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-08': none(6, 'The capacity test builds its SYNTHETIC scale release and uploads outside the repository when it runs; no file is committed.', [
+    'tools/screening-capacity/limits.test.ts',
+    'tools/screening-capacity/env.test.ts',
+    'tools/screening-capacity/report.test.ts',
+    'tools/screening-capacity/uploads.test.ts',
+    'tools/screening-capacity/measure.test.ts',
+    'tools/screening-capacity/launch-check.test.ts',
+    'tools/test/workflows.test.ts',
+    'packages/synth/src/release/scale.test.ts',
+    'packages/synth/src/screening/uploads.test.ts',
+    'tools/release/scale.test.ts',
+    'tools/release/load.db.test.ts',
+    'tools/screening-capacity/watched.test.ts',
+    'tools/test/workflows.test.ts',
+    'apps/web/src/lib/screening/screening.large.db.test.ts',
+    'apps/web/src/lib/screening/result-page.large.db.test.ts',
+    'apps/web/src/components/screening/result.test.tsx',
+    'apps/worker/src/screening/consumer.db.test.ts',
+    'apps/worker/src/worker.test.ts',
+  ]),
+  'SCR-09': none(6, 'The release read is tested on a release built in memory from SYNTHETIC release 900001; no file.', [
+    'apps/worker/src/price/keyed-release.test.ts',
+    'apps/worker/src/screening/adapter.test.ts',
+    'apps/worker/src/screening/oracle-imports.test.ts',
+    'apps/worker/src/screening/release-cache.db.test.ts',
+    'packages/db/src/screening-queue.db.test.ts',
+  ]),
+  'SCR-10': none(6, 'A screening outcome is written by the database from the rows the tests submit in memory; no file.', [
+    'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-11': none(6, 'A kept summary is frozen by the database from a screening the tests run in memory; no file.', [
+    'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/lib/screening/labels.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-12': none(6, 'Attribution is a landing URL, a cookie and form fields the tests send; no file.', [
+    'apps/web/src/lib/http/attribution.test.ts',
+    'apps/web/src/proxy.test.ts',
+    'packages/db/src/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/src/lib/routes/onboarding-routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-13': none(6, 'The opened signal is a page script and a route the tests drive; no file.', [
+    'apps/web/src/components/screening/opened-signal.test.tsx',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-14': none(6, 'A replacement is two screenings the tests submit in memory; no file.', ['packages/db/src/screening.db.test.ts']),
+  'SCR-15': none(6, 'The prospect’s ZIP+4 is set by the tests under release 900006 and the scale release’s small shape.', [
+    'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/price/keyed-release.test.ts',
+    'apps/worker/src/screening/adapter.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'tools/screening-capacity/oracle.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/src/components/screening/result.test.tsx',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-16': none(6, 'A row with an earlier quarter; no file.', [
+    'apps/worker/src/screening/format.test.ts',
+    'packages/db/src/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-17': none(6, 'The tiers come from uploads the tests submit in memory under synthetic accounts; no file.', [
+    'packages/db/src/screening-queue.db.test.ts',
+    'apps/worker/src/jobs/enqueue.test.ts',
+    'apps/worker/src/jobs/screening.test.ts',
+    'apps/worker/src/screening/threads.test.ts',
+    'apps/worker/src/worker.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'tools/screening-capacity/report.test.ts',
+    'tools/screening-capacity/uploads.test.ts',
+  ]),
+  'SCR-18': none(6, 'The wait states are read from runs the tests submit in memory; no file.', [
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/src/lib/http/received.test.ts',
+    'apps/web/src/proxy.test.ts',
+    'apps/worker/src/screening/message.test.ts',
+    'apps/web/e2e/screening.spec.ts',
+  ]),
+  'SCR-19': none(6, 'A consumer is killed mid-run over a screening the tests submit in memory; no file.', [
+    'apps/worker/src/screening/consumer-lease.db.test.ts',
+    'apps/worker/src/screening/consumer.db.test.ts',
+    'apps/worker/src/screening/threads.test.ts',
+    'apps/worker/src/jobs/enqueue.test.ts',
+    'packages/db/src/screening-queue.db.test.ts',
+  ]),
+  'SCR-20': none(6, 'The launch check reads synthetic capacity reports and synthetic attestation verifications (gh’s JSON) built in memory; no file.', [
+    'tools/screening-capacity/launch-check.test.ts',
+    'tools/screening-capacity/report.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'infra/test/deploy-parameters.test.ts',
+    'infra/test/compute.test.ts',
+    'tools/test/workflows.test.ts',
+  ]),
+  'SCR-21': none(6, 'The cut-off is driven by synthetic mail records and simulator-shaped events the tests and the journey make; no file.', [
+    'packages/db/src/mail.db.test.ts',
+    'packages/db/src/screening.db.test.ts',
+    'apps/worker/src/platform/mail-events.db.test.ts',
+    'apps/worker/src/screening/screening.db.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/src/lib/routes/mail-routes.db.test.ts',
+    'infra/test/mail-streams.test.ts',
+    'apps/web/e2e/mail-cutoff.spec.ts',
+  ]),
+  'SCR-22': none(6, 'The checks run on synthetic addresses with a stand-in resolver and validation; no file.', [
+    'apps/web/src/lib/screening/address.test.ts',
+    'apps/web/src/lib/screening/validation.test.ts',
+    'apps/web/src/lib/screening/routes.db.test.ts',
+    'apps/web/src/lib/http/http.test.ts',
+    'packages/db/src/screening.db.test.ts',
+    'packages/db/src/mail.db.test.ts',
+    'infra/test/monitoring.test.ts',
+    'infra/test/application-role.test.ts',
+  ]),
+  'JOB-01': { completesIn: 3, build: workflow.job01, assertedBy: ['apps/worker/src/worker.db.test.ts', 'apps/worker/src/price/price.db.test.ts', 'apps/worker/src/monitor/monitor.db.test.ts', 'apps/web/e2e/monitoring.spec.ts'] },
+  'JOB-02': none(7, 'Job failures are injected in the worker tests and in the monitoring chain run on synthetic files; the practice dashboard reads job_run.', [
+    'apps/worker/src/worker.test.ts',
+    'apps/worker/src/monitor/monitor.db.test.ts',
+    'apps/web/src/lib/routes/monitoring-routes.db.test.ts',
+    'apps/web/e2e/monitoring.spec.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  'JOB-03': none(7, 'A digest is built from counts and totals in the database; no file.', ['apps/worker/src/monitor/monitor.db.test.ts', 'apps/worker/src/digest/view.test.ts', 'apps/web/e2e/monitoring.spec.ts']),
+  'JOB-04': none(1, 'Heartbeats are a contract between the worker and its alarm.', ['apps/worker/src/heartbeat.test.ts', 'infra/test/monitoring.test.ts']),
+  'JOB-05': none(6, 'The events are synthetic EventBridge envelopes and simulator-shaped files the tests write; no file.', [
+    'apps/worker/src/platform/mail-events.db.test.ts',
+    'apps/worker/src/mail/events.test.ts',
+    'packages/db/src/mail.db.test.ts',
+    'infra/test/mail-streams.test.ts',
+  ]),
+  'JOB-06': none(6, 'Synthetic accounts and a provider twin the tests make; no file.', [
+    'packages/db/src/provider-sign-out.db.test.ts',
+  ]),
+  'JOB-07': none(6, 'Synthetic accounts and a provider twin the tests make; no file.', [
+    'packages/db/src/provider-sign-out.db.test.ts',
+  ]),
+  'JOB-08': none(6, 'Synthetic accounts and a provider twin the tests make; no file.', [
+    'apps/worker/src/platform/provider-sign-outs.db.test.ts',
+    'apps/worker/src/platform/cognito-sign-out.test.ts',
+    'apps/worker/src/jobs/platform.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  'JOB-09': none(6, 'Synthetic accounts and a provider twin the tests make; no file.', [
+    'packages/db/src/provider-sign-out.db.test.ts',
+    'apps/worker/src/platform/provider-sign-outs.db.test.ts',
+  ]),
+  'MOD-01': {
     completesIn: 10,
     build: (b) => {
       workflow.mod01(b);
       addContractSet(b);
     },
     assertedBy: [
-      "packages/model-gateway/src/fixtures.test.ts",
-      "packages/model-gateway/src/functions/contract-terms.test.ts",
-      "packages/model-gateway/eval/gate.golden.test.ts",
-      "packages/model-gateway/eval/score.test.ts",
-      "apps/web/src/lib/routes/models-routes.db.test.ts",
-      "apps/web/e2e/models.spec.ts",
+      'packages/model-gateway/src/fixtures.test.ts',
+      'packages/model-gateway/src/functions/contract-terms.test.ts',
+      'packages/model-gateway/eval/gate.golden.test.ts',
+      'packages/model-gateway/eval/score.test.ts',
+      'apps/web/src/lib/routes/models-routes.db.test.ts',
+      'apps/web/e2e/models.spec.ts',
     ],
   },
-  "MOD-02": {
-    completesIn: 10,
-    build: workflow.mod02,
-    assertedBy: [
-      "packages/model-gateway/src/fixtures.test.ts",
-      "packages/model-gateway/src/functions/contract-terms.test.ts",
-      "apps/web/src/lib/routes/models-routes.db.test.ts",
-    ],
-  },
-  "MOD-03": {
+  'MOD-02': { completesIn: 10, build: workflow.mod02, assertedBy: ['packages/model-gateway/src/fixtures.test.ts', 'packages/model-gateway/src/functions/contract-terms.test.ts', 'apps/web/src/lib/routes/models-routes.db.test.ts'] },
+  'MOD-03': {
     completesIn: 10,
     build: addNarrativeSet,
-    assertedBy: [
-      "packages/model-gateway/eval/gate.golden.test.ts",
-      "packages/model-gateway/src/functions/narrative.test.ts",
-      "apps/web/src/lib/routes/models-routes.db.test.ts",
-      "apps/web/e2e/models.spec.ts",
-    ],
+    assertedBy: ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/src/functions/narrative.test.ts', 'apps/web/src/lib/routes/models-routes.db.test.ts', 'apps/web/e2e/models.spec.ts'],
   },
-  "MOD-04": {
-    completesIn: 10,
-    build: workflow.mod04,
-    assertedBy: [
-      "packages/model-gateway/src/fixtures.test.ts",
-      "packages/model-gateway/src/untrusted.test.ts",
-      "packages/model-gateway/src/gateway.db.test.ts",
-    ],
-  },
-  "MOD-05": none(10, "A per-practice budget, a gateway setting; no file.", [
-    "packages/model-gateway/src/gateway.test.ts",
-    "packages/model-gateway/src/gateway.db.test.ts",
-    "apps/web/src/lib/routes/models-routes.db.test.ts",
-    "apps/web/src/lib/routes/console-routes.db.test.ts",
-    "infra/test/monitoring.test.ts",
+  'MOD-04': { completesIn: 10, build: workflow.mod04, assertedBy: ['packages/model-gateway/src/fixtures.test.ts', 'packages/model-gateway/src/untrusted.test.ts', 'packages/model-gateway/src/gateway.db.test.ts'] },
+  'MOD-05': none(10, 'A per-practice budget, a gateway setting; no file.', [
+    'packages/model-gateway/src/gateway.test.ts',
+    'packages/model-gateway/src/gateway.db.test.ts',
+    'apps/web/src/lib/routes/models-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'infra/test/monitoring.test.ts',
   ]),
-  "MOD-06": none(
-    10,
-    "The kill switch is a feature flag; the product runs on hand-entered records; no file.",
-    [
-      "packages/model-gateway/src/gateway.test.ts",
-      "packages/model-gateway/src/gateway.db.test.ts",
-      "apps/web/src/lib/routes/models-routes.db.test.ts",
-      "apps/web/src/lib/routes/console-routes.db.test.ts",
-      "apps/web/e2e/models.spec.ts",
-    ],
-  ),
+  'MOD-06': none(10, 'The kill switch is a feature flag; the product runs on hand-entered records; no file.', [
+    'packages/model-gateway/src/gateway.test.ts',
+    'packages/model-gateway/src/gateway.db.test.ts',
+    'apps/web/src/lib/routes/models-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/models.spec.ts',
+  ]),
   // The model evaluation gate and per-feature serving (combined audit #84; docs/adr/0070 Parts 1 and 2).
-  "MOD-07": none(
-    10,
-    "The gate’s counting rule, scored on the MOD-09 set and on permitted examples; no file of its own.",
-    [
-      "packages/model-gateway/eval/score.test.ts",
-      "packages/model-gateway/eval/gate.golden.test.ts",
-      "packages/model-gateway/src/permitted.test.ts",
-      "apps/worker/src/models/permitted.db.test.ts",
-    ],
-  ),
-  "MOD-08": none(
-    10,
-    "Faults injected into the MOD-09 set’s reference answers.",
-    [
-      "packages/model-gateway/eval/gate.golden.test.ts",
-      "packages/model-gateway/src/functions/contract-terms.test.ts",
-    ],
-  ),
-  "MOD-09": {
-    completesIn: 10,
-    build: addContractSetV2,
-    assertedBy: [
-      "packages/model-gateway/eval/gate.golden.test.ts",
-      "packages/synth/src/eval/eval.test.ts",
-    ],
-  },
-  "MOD-10": none(10, "The twins and decoys are cases of the MOD-09 set.", [
-    "packages/model-gateway/eval/gate.golden.test.ts",
-    "packages/model-gateway/eval/score.test.ts",
+  'MOD-07': none(10, 'The gate’s counting rule, scored on the MOD-09 set and on permitted examples; no file of its own.', [
+    'packages/model-gateway/eval/score.test.ts',
+    'packages/model-gateway/eval/gate.golden.test.ts',
+    'packages/model-gateway/src/permitted.test.ts',
+    'apps/worker/src/models/permitted.db.test.ts',
   ]),
-  "MOD-11": none(
-    10,
-    "Serving is read from eval/baseline.json and eval/floors.json; no file.",
-    [
-      "packages/model-gateway/src/config.test.ts",
-      "packages/model-gateway/src/gateway.test.ts",
-      "packages/model-gateway/eval/gate.golden.test.ts",
-      "apps/web/src/lib/routes/models-routes.db.test.ts",
-    ],
-  ),
+  'MOD-08': none(10, 'Faults injected into the MOD-09 set’s reference answers.', ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/src/functions/contract-terms.test.ts']),
+  'MOD-09': { completesIn: 10, build: addContractSetV2, assertedBy: ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/synth/src/eval/eval.test.ts'] },
+  'MOD-10': none(10, 'The twins and decoys are cases of the MOD-09 set.', ['packages/model-gateway/eval/gate.golden.test.ts', 'packages/model-gateway/eval/score.test.ts']),
+  'MOD-11': none(10, 'Serving is read from eval/baseline.json and eval/floors.json; no file.', [
+    'packages/model-gateway/src/config.test.ts',
+    'packages/model-gateway/src/gateway.test.ts',
+    'packages/model-gateway/eval/gate.golden.test.ts',
+    'apps/web/src/lib/routes/models-routes.db.test.ts',
+  ]),
   // The contract PHI check (combined audit item 120; docs/adr/0070 Part 3).
-  "MOD-12": {
+  'MOD-12': {
     completesIn: 10,
     build: workflow.mod12,
     assertedBy: [
-      "packages/model-gateway/src/redact.test.ts",
-      "packages/model-gateway/src/patient-records.test.ts",
-      "packages/model-gateway/src/patient-records.db.test.ts",
-      "packages/model-gateway/src/specs.test.ts",
-      "packages/model-gateway/src/functions/contract-terms.test.ts",
-      "packages/model-gateway/src/gateway.test.ts",
-      "packages/model-gateway/src/gateway.db.test.ts",
-      "packages/model-gateway/eval/gate.golden.test.ts",
-      "apps/web/src/lib/routes/models-routes.db.test.ts",
-      "apps/worker/src/models/permitted.db.test.ts",
+      'packages/model-gateway/src/redact.test.ts',
+      'packages/model-gateway/src/patient-records.test.ts',
+      'packages/model-gateway/src/patient-records.db.test.ts',
+      'packages/model-gateway/src/specs.test.ts',
+      'packages/model-gateway/src/functions/contract-terms.test.ts',
+      'packages/model-gateway/src/gateway.test.ts',
+      'packages/model-gateway/src/gateway.db.test.ts',
+      'packages/model-gateway/eval/gate.golden.test.ts',
+      'apps/web/src/lib/routes/models-routes.db.test.ts',
+      'apps/worker/src/models/permitted.db.test.ts',
     ],
   },
   // The letter reader's one-pass redaction (docs/adr/0054, amendment of 2026-10-27).
-  "MOD-13": none(
-    10,
-    "Letters are generated in memory by the property test, which records where it wrote each identifier; no file.",
-    [
-      "packages/model-gateway/src/redact.property.test.ts",
-      "packages/model-gateway/src/functions/denial-letter.test.ts",
-    ],
-  ),
-  "MOD-14": none(
-    10,
-    "Letters are generated in memory by the property test; no file.",
-    [
-      "packages/model-gateway/src/redact.property.test.ts",
-      "packages/model-gateway/src/functions/denial-letter.test.ts",
-    ],
-  ),
+  'MOD-13': none(10, 'Letters are generated in memory by the property test, which records where it wrote each identifier; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
+  'MOD-14': none(10, 'Letters are generated in memory by the property test; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   // A letter's Social Security and phone numbers redacted by pattern (the founder's ruling of 2026-11-01; docs/adr/0054, amendment of 2026-11-04).
-  "MOD-15": none(
-    10,
-    "Letters are generated in memory by the property test, which records where it wrote each Social Security and phone number; no file.",
-    [
-      "packages/model-gateway/src/redact.property.test.ts",
-      "packages/model-gateway/src/functions/denial-letter.test.ts",
-    ],
-  ),
-  "MOD-16": none(
-    10,
-    "Letters are generated in memory by the property test, which records what it wrote to stay; no file.",
-    [
-      "packages/model-gateway/src/redact.property.test.ts",
-      "packages/model-gateway/src/functions/denial-letter.test.ts",
-    ],
-  ),
+  'MOD-15': none(10, 'Letters are generated in memory by the property test, which records where it wrote each Social Security and phone number; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
+  'MOD-16': none(10, 'Letters are generated in memory by the property test, which records what it wrote to stay; no file.', ['packages/model-gateway/src/redact.property.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   // SDK 1.x on the Anthropic path: the client's tracing, logging and host held, extra headers refused (docs/adr/0048, amendment of 2026-11-01).
-  "MOD-17": none(
-    10,
-    "The client and the configuration are built in memory with a synthetic key, the SDK’s code is read where pnpm installed it, and a fake fetch answers each failure in memory; no file.",
-    [
-      "packages/model-gateway/src/providers/anthropic-client.test.ts",
-      "packages/model-gateway/src/config.test.ts",
-    ],
-  ),
-  "MOD-18": none(
-    10,
-    "A fake fetch answers a synthetic message in memory; no request leaves the process; no file.",
-    ["packages/model-gateway/src/providers/anthropic-client.test.ts"],
-  ),
+  'MOD-17': none(10, 'The client and the configuration are built in memory with a synthetic key, the SDK’s code is read where pnpm installed it, and a fake fetch answers each failure in memory; no file.', ['packages/model-gateway/src/providers/anthropic-client.test.ts', 'packages/model-gateway/src/config.test.ts']),
+  'MOD-18': none(10, 'A fake fetch answers a synthetic message in memory; no request leaves the process; no file.', ['packages/model-gateway/src/providers/anthropic-client.test.ts']),
   // The packet verifier reads a narrative for the case's identifiers through the letter reader's matcher (docs/adr/0047 and 0054, amendments of 2026-11-11).
-  "MOD-19": none(
-    10,
-    "Narratives are generated in memory by the property test, which writes each identifier and so knows where it is; no file.",
-    [
-      "packages/packets/src/verifier-identifiers.test.ts",
-      "apps/worker/src/packets/packets.db.test.ts",
-    ],
-  ),
-  "MOD-20": none(
-    10,
-    "Narratives are generated in memory by the property test from pieces it holds; no file.",
-    [
-      "packages/packets/src/verifier-identifiers.test.ts",
-      "packages/packets/src/check-browser.test.ts",
-      "packages/redact/src/narrative.test.ts",
-    ],
-  ),
+  'MOD-19': none(10, 'Narratives are generated in memory by the property test, which writes each identifier and so knows where it is; no file.', ['packages/packets/src/verifier-identifiers.test.ts', 'apps/worker/src/packets/packets.db.test.ts']),
+  'MOD-20': none(10, 'Narratives are generated in memory by the property test from pieces it holds; no file.', ['packages/packets/src/verifier-identifiers.test.ts', 'packages/packets/src/check-browser.test.ts', 'packages/redact/src/narrative.test.ts']),
   // The Social Security, phone and own-identifier forms the range fix exposed, closed (the orchestrator's rulings A, A' and B of 2026-11-07; docs/adr/0054, amendment of 2026-11-11).
-  "MOD-21": none(
-    10,
-    "Letters are written in memory by the tests, a property among them, and the pinned rows are synthetic text in src/redact.residuals.json; no file.",
-    [
-      "packages/model-gateway/src/redact.leaks.test.ts",
-      "packages/model-gateway/src/redact.residuals.test.ts",
-      "packages/model-gateway/src/functions/denial-letter.test.ts",
-    ],
-  ),
-  "MOD-22": none(
-    10,
-    "Letters are written in memory by the tests, and the pinned rows are synthetic text in src/redact.residuals.json; no file.",
-    [
-      "packages/model-gateway/src/redact.leaks.test.ts",
-      "packages/model-gateway/src/redact.residuals.test.ts",
-      "packages/redact/src/confusables.test.ts",
-    ],
-  ),
+  'MOD-21': none(10, 'Letters are written in memory by the tests, a property among them, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
+  'MOD-22': none(10, 'Letters are written in memory by the tests, and the pinned rows are synthetic text in src/redact.residuals.json; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/redact.residuals.test.ts', 'packages/redact/src/confusables.test.ts']),
   // A name written apart, a number as the records hold it, and a CR LF read as one line ending (docs/adr/0054, amendments of 2026-11-11 and 2026-11-12).
-  "MOD-23": none(
-    10,
-    "Letters are written in memory by the tests, two properties among them; no file.",
-    [
-      "packages/model-gateway/src/redact.leaks.test.ts",
-      "packages/model-gateway/src/functions/denial-letter.test.ts",
-    ],
-  ),
+  'MOD-23': none(10, 'Letters are written in memory by the tests, two properties among them; no file.', ['packages/model-gateway/src/redact.leaks.test.ts', 'packages/model-gateway/src/functions/denial-letter.test.ts']),
   // The letter check's work budget (docs/adr/0054, amendment of 2026-11-12).
-  "MOD-24": none(10, "Letters are written in memory by the tests; no file.", [
-    "packages/model-gateway/src/functions/denial-letter.test.ts",
-  ]),
+  'MOD-24': none(10, 'Letters are written in memory by the tests; no file.', ['packages/model-gateway/src/functions/denial-letter.test.ts']),
   // Milestone 11's billing (PRD 6, 15), as combined audit item 135 orders its payment methods (docs/adr/0073).
-  "BIL-01": none(
-    11,
-    "The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.",
-    ["apps/web/src/components/billing/billing.test.tsx"],
-  ),
-  "BIL-02": none(
-    11,
-    "The Stripe adapter runs against a mocked SDK client that records each request; no file.",
-    [
-      "packages/billing/src/stripe.test.ts",
-      "packages/billing/src/types.test.ts",
-    ],
-  ),
-  "BIL-03": none(
-    11,
-    "The Payment method card is rendered from props the test passes, and the page from a synthetic organization on the local simulator; no file.",
-    [
-      "apps/web/src/components/billing/billing.test.tsx",
-      "apps/web/e2e/billing.spec.ts",
-      "apps/web/e2e/onboarding.spec.ts",
-    ],
-  ),
-  "BIL-04": none(
-    11,
-    "A synthetic organization pays through the routes on the local simulator, by the simulator’s test card and bank account, and the simulator renews its plan; no file.",
-    [
-      "apps/web/src/lib/routes/billing-routes.db.test.ts",
-      "packages/billing/src/local.test.ts",
-    ],
-  ),
-  "BIL-05": none(
-    11,
-    "accountStanding and standingKind are pure functions of values the test passes in memory, and the routes read synthetic organizations; no file.",
-    [
-      "packages/billing/src/standing.test.ts",
-      "apps/web/src/components/billing/account-standing.test.tsx",
-      "apps/web/src/lib/routes/billing-routes.db.test.ts",
-    ],
-  ),
-  "BIL-06": none(
-    11,
-    "A synthetic organization held suspended by the seed; no file.",
-    [
-      "apps/web/e2e/billing.spec.ts",
-      "apps/web/src/lib/routes/billing-routes.db.test.ts",
-      "apps/web/src/lib/routes/onboarding-routes.db.test.ts",
-      "apps/web/scripts/seed.db.test.ts",
-    ],
-  ),
+  'BIL-01': none(11, 'The Payment Element’s options and the confirmation’s notices are built from values the test passes in memory; Stripe’s form never renders; no file.', ['apps/web/src/components/billing/billing.test.tsx']),
+  'BIL-02': none(11, 'The Stripe adapter runs against a mocked SDK client that records each request; no file.', ['packages/billing/src/stripe.test.ts', 'packages/billing/src/types.test.ts']),
+  'BIL-03': none(11, 'The Payment method card is rendered from props the test passes, and the page from a synthetic organization on the local simulator; no file.', [
+    'apps/web/src/components/billing/billing.test.tsx',
+    'apps/web/e2e/billing.spec.ts',
+    'apps/web/e2e/onboarding.spec.ts',
+  ]),
+  'BIL-04': none(11, 'A synthetic organization pays through the routes on the local simulator, by the simulator’s test card and bank account, and the simulator renews its plan; no file.', [
+    'apps/web/src/lib/routes/billing-routes.db.test.ts',
+    'packages/billing/src/local.test.ts',
+  ]),
+  'BIL-05': none(11, 'accountStanding and standingKind are pure functions of values the test passes in memory, and the routes read synthetic organizations; no file.', [
+    'packages/billing/src/standing.test.ts',
+    'apps/web/src/components/billing/account-standing.test.tsx',
+    'apps/web/src/lib/routes/billing-routes.db.test.ts',
+  ]),
+  'BIL-06': none(11, 'A synthetic organization held suspended by the seed; no file.', [
+    'apps/web/e2e/billing.spec.ts',
+    'apps/web/src/lib/routes/billing-routes.db.test.ts',
+    'apps/web/src/lib/routes/onboarding-routes.db.test.ts',
+    'apps/web/scripts/seed.db.test.ts',
+  ]),
   // SS-01: whose hold stops which work, PaidWhole's stored suspension and the dunning mail's truth (docs/adr/0080).
-  "BIL-07": none(
-    11,
-    "Synthetic organizations, people and grants the tests write as the owner on a migrated database, and the route world’s firm; no file.",
-    [
-      "packages/db/src/suspension.db.test.ts",
-      "apps/web/src/lib/routes/suspension-refusal.db.test.ts",
-      "apps/web/src/lib/routes/route-tests/define.ts",
-      "apps/worker/src/packets/export-attempts.db.test.ts",
-      "apps/worker/src/worker.test.ts",
-    ],
-  ),
-  "BIL-08": none(
-    11,
-    "The setter and the routes run on synthetic organizations and platform administrators the tests write; no file.",
-    [
-      "packages/db/src/organization-status.db.test.ts",
-      "packages/db/src/hardening.db.test.ts",
-      "apps/web/src/lib/routes/console-routes.db.test.ts",
-    ],
-  ),
-  "BIL-09": none(
-    11,
-    "The words are pure functions of values the test passes in memory, and the journeys read a firm, a client practice and a console firm the seed holds; no file.",
-    [
-      "apps/web/src/lib/billing/suspension-words.test.ts",
-      "apps/web/src/components/console/suspension-text.test.ts",
-      "apps/web/src/components/billing/account-standing.test.tsx",
-      "apps/web/src/lib/routes/billing-routes.db.test.ts",
-      "apps/web/e2e/billing.spec.ts",
-    ],
-  ),
-  "BIL-10": none(
-    11,
-    "dunningMessage is a pure function of values the test passes in memory, and the sends run on synthetic organizations and invoices; no file.",
-    [
-      "apps/worker/src/billing/dunning-words.test.ts",
-      "apps/worker/src/billing/billing.db.test.ts",
-    ],
-  ),
+  'BIL-07': none(11, 'Synthetic organizations, people and grants the tests write as the owner on a migrated database, and the route world’s firm; no file.', [
+    'packages/db/src/suspension.db.test.ts',
+    'apps/web/src/lib/routes/suspension-refusal.db.test.ts',
+    'apps/web/src/lib/routes/route-tests/define.ts',
+    'apps/worker/src/packets/export-attempts.db.test.ts',
+    'apps/worker/src/worker.test.ts',
+  ]),
+  'BIL-08': none(11, 'The setter and the routes run on synthetic organizations and platform administrators the tests write; no file.', [
+    'packages/db/src/organization-status.db.test.ts',
+    'packages/db/src/hardening.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+  ]),
+  'BIL-09': none(11, 'The words are pure functions of values the test passes in memory, and the journeys read a firm, a client practice and a console firm the seed holds; no file.', [
+    'apps/web/src/lib/billing/suspension-words.test.ts',
+    'apps/web/src/components/console/suspension-text.test.ts',
+    'apps/web/src/components/billing/account-standing.test.tsx',
+    'apps/web/src/lib/routes/billing-routes.db.test.ts',
+    'apps/web/e2e/billing.spec.ts',
+  ]),
+  'BIL-10': none(11, 'dunningMessage is a pure function of values the test passes in memory, and the sends run on synthetic organizations and invoices; no file.', [
+    'apps/worker/src/billing/dunning-words.test.ts',
+    'apps/worker/src/billing/billing.db.test.ts',
+  ]),
   // Milestone 0's "CI with every gate from section 18" (PRD 17), as the CI series rebuilds it (docs/adr/0066).
-  "CI-01": none(
-    0,
-    "The gate reads the results of the jobs it needs, which its test builds in memory; no file.",
-    ["tools/test/ci-gate.test.ts", "tools/test/workflows.test.ts"],
-  ),
-  "CI-02": none(0, "The partition reads the route registry; no file.", [
-    "apps/web/src/lib/routes/route-tests/partition.test.ts",
-  ]),
-  "CI-03": none(
-    0,
-    "Both snapshots read two synthetic worlds the test builds on a scratch database; no file.",
-    ["apps/web/src/lib/routes/route-tests/snapshot.db.test.ts"],
-  ),
-  "CI-04": none(
-    0,
-    "The split is computed by vitest over the repository’s own db files, and the shard list from results built in memory; no file.",
-    ["tools/test/db-shards.test.ts", "tools/test/workflows.test.ts"],
-  ),
-  "CI-05": none(
-    0,
-    "The guard is run with and without a browser in place; no file.",
-    ["tools/test/ci-chromium.test.ts", "tools/test/workflows.test.ts"],
-  ),
-  "CI-06": none(
-    0,
-    "The stamp is written and read in a temporary directory; no file.",
-    ["apps/web/scripts/build-stamp.test.ts", "tools/test/workflows.test.ts"],
-  ),
-  "CI-07": none(
-    0,
-    "The Playwright configuration is read, and a probe that passes only on its retry is written to a temporary directory and run there; no file.",
-    ["apps/web/scripts/build-stamp.test.ts", "tools/test/workflows.test.ts"],
-  ),
-  "CI-08": none(
-    0,
-    "The groups and the scheduler are planned for hosts the test describes; no file.",
-    ["tools/lint/groups.test.ts"],
-  ),
-  "CI-09": none(
-    0,
-    "The workflow and the database suite are read; the drift case migrates a scratch database; no file.",
-    [
-      "tools/test/workflows.test.ts",
-      "packages/db/src/domain-model/domain-model.db.test.ts",
-    ],
-  ),
-  "CI-10": none(0, "Every workflow file is read; no file.", [
-    "tools/test/workflows.test.ts",
-  ]),
+  'CI-01': none(0, 'The gate reads the results of the jobs it needs, which its test builds in memory; no file.', ['tools/test/ci-gate.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-02': none(0, 'The partition reads the route registry; no file.', ['apps/web/src/lib/routes/route-tests/partition.test.ts']),
+  'CI-03': none(0, 'Both snapshots read two synthetic worlds the test builds on a scratch database; no file.', ['apps/web/src/lib/routes/route-tests/snapshot.db.test.ts']),
+  'CI-04': none(0, 'The split is computed by vitest over the repository’s own db files, and the shard list from results built in memory; no file.', ['tools/test/db-shards.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-05': none(0, 'The guard is run with and without a browser in place; no file.', ['tools/test/ci-chromium.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-06': none(0, 'The stamp is written and read in a temporary directory; no file.', ['apps/web/scripts/build-stamp.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-07': none(0, 'The Playwright configuration is read, and a probe that passes only on its retry is written to a temporary directory and run there; no file.', ['apps/web/scripts/build-stamp.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-08': none(0, 'The groups and the scheduler are planned for hosts the test describes; no file.', ['tools/lint/groups.test.ts']),
+  'CI-09': none(0, 'The workflow and the database suite are read; the drift case migrates a scratch database; no file.', ['tools/test/workflows.test.ts', 'packages/db/src/domain-model/domain-model.db.test.ts']),
+  'CI-10': none(0, 'Every workflow file is read; no file.', ['tools/test/workflows.test.ts']),
   // The pins, Dependabot, the images and the toolchain (docs/adr/0066, Part 2).
-  "CI-11": none(
-    0,
-    "Every workflow file is read; the actions' tags and files are synthetic ls-remote lines and action files the tests build in memory; no file.",
-    [
-      "tools/check-action-pins/check.test.ts",
-      "tools/check-action-pins/verify.test.ts",
-      "tools/check-action-pins/workflows.test.ts",
-      "tools/test/workflows.test.ts",
-    ],
-  ),
-  "CI-12": none(
-    0,
-    "The Dependabot configuration is read, here and in a copy with every pin and digest rewritten in a temporary directory; no file.",
-    ["tools/test/dependabot-config.test.ts", "tools/test/workflows.test.ts"],
-  ),
-  "CI-13": none(
-    0,
-    "The Dockerfiles, docker-compose.yml and the workflows are read; the Postgres script runs against a stub docker in a temporary directory; no file.",
-    [
-      "tools/test/workflows.test.ts",
-      "tools/test/no-duplicated-versions.test.ts",
-      "tools/ci/postgres.test.ts",
-      "tools/screening-capacity/measure.test.ts",
-      "tools/screening-capacity/watched.test.ts",
-    ],
-  ),
-  "CI-14": none(
-    0,
-    "The lockfile, the manifests and the exception lists are read; the registry's answers and the base's tree are built in memory; no file.",
-    [
-      "tools/check-toolchain/check.test.ts",
-      "tools/check-toolchain/registry.test.ts",
-      "tools/check-toolchain/tree.test.ts",
-      "tools/check-licenses/check.test.ts",
-      "tools/test/no-duplicated-versions.test.ts",
-    ],
-  ),
+  'CI-11': none(0, "Every workflow file is read; the actions' tags and files are synthetic ls-remote lines and action files the tests build in memory; no file.", ['tools/check-action-pins/check.test.ts', 'tools/check-action-pins/verify.test.ts', 'tools/check-action-pins/workflows.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-12': none(0, 'The Dependabot configuration is read, here and in a copy with every pin and digest rewritten in a temporary directory; no file.', ['tools/test/dependabot-config.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-13': none(0, 'The Dockerfiles, docker-compose.yml and the workflows are read; the Postgres script runs against a stub docker in a temporary directory; no file.', ['tools/test/workflows.test.ts', 'tools/test/no-duplicated-versions.test.ts', 'tools/ci/postgres.test.ts', 'tools/screening-capacity/measure.test.ts', 'tools/screening-capacity/watched.test.ts']),
+  'CI-14': none(0, "The lockfile, the manifests and the exception lists are read; the registry's answers and the base's tree are built in memory; no file.", ['tools/check-toolchain/check.test.ts', 'tools/check-toolchain/registry.test.ts', 'tools/check-toolchain/tree.test.ts', 'tools/check-licenses/check.test.ts', 'tools/test/no-duplicated-versions.test.ts']),
   // The mutation workflow's (docs/adr/0066, Part 4).
-  "CI-15": none(
-    0,
-    "The canary's five cases run under Stryker in every shard; their verdict is judged from reports built in memory; no file.",
-    ["tools/stryker/canary/verdict.test.ts", "tools/test/workflows.test.ts"],
-  ),
-  "CI-16": none(
-    0,
-    "The gate judges shards' reports and equivalents the test builds in memory; no file.",
-    [
-      "tools/stryker/gate.test.ts",
-      "tools/stryker/mutants.test.ts",
-      "tools/test/workflows.test.ts",
-    ],
-  ),
-  "CI-17": none(
-    0,
-    "The closures are read from synthetic repositories the test writes to a temporary directory and from this one; no file.",
-    [
-      "tools/stryker/affected.test.ts",
-      "tools/stryker/shards.test.ts",
-      "tools/screening-capacity/watched.test.ts",
-      "tools/test/workflows.test.ts",
-    ],
-  ),
+  'CI-15': none(0, "The canary's five cases run under Stryker in every shard; their verdict is judged from reports built in memory; no file.", ['tools/stryker/canary/verdict.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-16': none(0, "The gate judges shards' reports and equivalents the test builds in memory; no file.", ['tools/stryker/gate.test.ts', 'tools/stryker/mutants.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-17': none(0, 'The closures are read from synthetic repositories the test writes to a temporary directory and from this one; no file.', ['tools/stryker/affected.test.ts', 'tools/stryker/shards.test.ts', 'tools/screening-capacity/watched.test.ts', 'tools/test/workflows.test.ts']),
   // The browser and the runners (docs/adr/0066, Part 3).
-  "CI-18": none(
-    0,
-    "The manifests, the lockfile, the worker's Dockerfile and the workflows are read; the browser check runs on stand-in builds and a stand-in docker in a temporary directory, and the baseline step's script in a temporary git repository; no file.",
-    [
-      "tools/test/browser-version.test.ts",
-      "tools/ci/browser-build.test.ts",
-      "tools/test/no-duplicated-versions.test.ts",
-      "tools/test/workflows.test.ts",
-    ],
-  ),
-  "CI-19": none(
-    0,
-    "The brand journey reads the header's accessible names and visible text in the browser, and every journey's axe scan reads its pages; no file.",
-    [
-      "apps/web/e2e/brand.spec.ts",
-      "apps/web/e2e/a11y.ts",
-      "apps/web/e2e/a11y-title.spec.ts",
-    ],
-  ),
-  "CI-20": none(
-    0,
-    "Every workflow file is read; the release's archive check runs on stand-in archives with a stand-in docker, the apt check with stand-in apt tools, and the archive reader and the harness's image proof on synthetic archives, each in a temporary directory; no file.",
-    [
-      "tools/test/workflows.test.ts",
-      "tools/ci/apt-archives.test.ts",
-      "tools/screening-capacity/image-id.test.ts",
-      "tools/screening-capacity/measure.test.ts",
-    ],
-  ),
+  'CI-18': none(0, "The manifests, the lockfile, the worker's Dockerfile and the workflows are read; the browser check runs on stand-in builds and a stand-in docker in a temporary directory, and the baseline step's script in a temporary git repository; no file.", ['tools/test/browser-version.test.ts', 'tools/ci/browser-build.test.ts', 'tools/test/no-duplicated-versions.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-19': none(0, "The brand journey reads the header's accessible names and visible text in the browser, and every journey's axe scan reads its pages; no file.", ['apps/web/e2e/brand.spec.ts', 'apps/web/e2e/a11y.ts', 'apps/web/e2e/a11y-title.spec.ts']),
+  'CI-20': none(0, "Every workflow file is read; the release's archive check runs on stand-in archives with a stand-in docker, the apt check with stand-in apt tools, and the archive reader and the harness's image proof on synthetic archives, each in a temporary directory; no file.", ['tools/test/workflows.test.ts', 'tools/ci/apt-archives.test.ts', 'tools/screening-capacity/image-id.test.ts', 'tools/screening-capacity/measure.test.ts']),
   // The release age of pins and images (docs/adr/0066, Part 5).
-  "CI-21": none(
-    0,
-    "The workflows are read; GitHub's answers are synthetic and recorded, and the signed commits and tag are the synthetic ones tools/check-action-pins/testdata/age/make.sh made; no file.",
-    [
-      "tools/check-action-pins/age.test.ts",
-      "tools/check-action-pins/check.test.ts",
-      "tools/check-action-pins/buildkit.test.ts",
-      "tools/check-action-pins/verify.test.ts",
-      "tools/check-action-pins/workflows.test.ts",
-      "tools/test/workflows.test.ts",
-    ],
-  ),
-  "CI-22": none(
-    0,
-    "The Dockerfiles, docker-compose.yml and the workflows are read, at the head and in synthetic base trees; Docker Hub's answers are synthetic and recorded; no file.",
-    [
-      "tools/check-toolchain/images.test.ts",
-      "tools/check-toolchain/tree.test.ts",
-      "tools/check-toolchain/registry.test.ts",
-      "tools/check-toolchain/check.test.ts",
-      "tools/check-toolchain/exclude-window.test.ts",
-    ],
-  ),
-  "CI-23": none(
-    0,
-    "The exception lists are written in synthetic trees; GitHub's and Docker Hub's answers are synthetic and recorded; no file.",
-    [
-      "tools/check-action-pins/age.test.ts",
-      "tools/check-toolchain/images.test.ts",
-      "tools/check-toolchain/exclude-window.test.ts",
-      "tools/check-toolchain/check.test.ts",
-    ],
-  ),
+  'CI-21': none(0, "The workflows are read; GitHub's answers are synthetic and recorded, and the signed commits and tag are the synthetic ones tools/check-action-pins/testdata/age/make.sh made; no file.", ['tools/check-action-pins/age.test.ts', 'tools/check-action-pins/check.test.ts', 'tools/check-action-pins/buildkit.test.ts', 'tools/check-action-pins/verify.test.ts', 'tools/check-action-pins/workflows.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-22': none(0, "The Dockerfiles, docker-compose.yml and the workflows are read, at the head and in synthetic base trees; Docker Hub's answers are synthetic and recorded; no file.", ['tools/check-toolchain/images.test.ts', 'tools/check-toolchain/tree.test.ts', 'tools/check-toolchain/registry.test.ts', 'tools/check-toolchain/check.test.ts', 'tools/check-toolchain/exclude-window.test.ts']),
+  'CI-23': none(0, "The exception lists are written in synthetic trees; GitHub's and Docker Hub's answers are synthetic and recorded; no file.", ['tools/check-action-pins/age.test.ts', 'tools/check-toolchain/images.test.ts', 'tools/check-toolchain/exclude-window.test.ts', 'tools/check-toolchain/check.test.ts']),
   // The mutation trigger, field by field (docs/adr/0066, Part 7).
-  "CI-27": none(
-    0,
-    "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.",
-    [
-      "tools/stryker/manifests.test.ts",
-      "tools/stryker/affected.test.ts",
-      "tools/test/workflows.test.ts",
-    ],
-  ),
-  "CI-28": none(
-    0,
-    "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.",
-    ["tools/stryker/affected.test.ts", "tools/stryker/gate.test.ts"],
-  ),
-  "CI-29": none(
-    0,
-    "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.",
-    [
-      "tools/stryker/runtime.test.ts",
-      "tools/stryker/gate.test.ts",
-      "tools/stryker/canary/verdict.test.ts",
-      "tools/stryker/stryker.test.ts",
-      "tools/stryker/shards.test.ts",
-      "tools/test/workflows.test.ts",
-    ],
-  ),
+  'CI-27': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/manifests.test.ts', 'tools/stryker/affected.test.ts', 'tools/test/workflows.test.ts']),
+  'CI-28': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/affected.test.ts', 'tools/stryker/gate.test.ts']),
+  'CI-29': none(0, "Manifests, workspaces and workflows are synthetic, written to a temporary directory, or this repository's own; no file.", ['tools/stryker/runtime.test.ts', 'tools/stryker/gate.test.ts', 'tools/stryker/canary/verdict.test.ts', 'tools/stryker/stryker.test.ts', 'tools/stryker/shards.test.ts', 'tools/test/workflows.test.ts']),
   // The shell's skip link (WCAG 2.4.1; docs/adr/0077, amended by co-001/ux-forms-after-42).
-  "CI-30": none(
-    0,
-    "The skip-link journey reads the shell's first tab stop and the focus after Enter in the browser; no file.",
-    ["apps/web/e2e/skip-link.spec.ts", "apps/web/e2e/a11y.ts"],
-  ),
+  'CI-30': none(0, "The skip-link journey reads the shell's first tab stop and the focus after Enter in the browser; no file.", ['apps/web/e2e/skip-link.spec.ts', 'apps/web/e2e/a11y.ts']),
   // The generated function files of the combined audit's item 111 (docs/adr/0068).
-  "DBF-01": none(
-    0,
-    "The function files are generated from a scratch database the drift file migrates; no file.",
-    ["packages/db/src/domain-model/function-files.db.test.ts"],
-  ),
-  "DBF-02": none(
-    0,
-    "A probe migration changes a function on a scratch database; no file.",
-    ["packages/db/src/domain-model/domain-model-drift.db.test.ts"],
-  ),
-  "DBF-03": none(
-    0,
-    "The files are rendered from catalog rows the test builds in memory, and from a scratch database; no file.",
-    [
-      "packages/db/src/domain-model/functions.test.ts",
-      "packages/db/src/domain-model/function-files.db.test.ts",
-    ],
-  ),
-  "DBF-04": none(
-    0,
-    "The directory is written and checked in a temporary directory, and the CLI run against a scratch database; no file.",
-    [
-      "packages/db/src/domain-model/function-files.test.ts",
-      "packages/db/src/domain-model/function-files.db.test.ts",
-    ],
-  ),
-  "DBF-05": none(
-    0,
-    "The files and the summary are rendered from catalog rows and directories the test builds; no file.",
-    [
-      "packages/db/src/domain-model/functions.test.ts",
-      "packages/db/src/domain-model/summary.test.ts",
-    ],
-  ),
+  'DBF-01': none(0, 'The function files are generated from a scratch database the drift file migrates; no file.', ['packages/db/src/domain-model/function-files.db.test.ts']),
+  'DBF-02': none(0, 'A probe migration changes a function on a scratch database; no file.', ['packages/db/src/domain-model/domain-model-drift.db.test.ts']),
+  'DBF-03': none(0, 'The files are rendered from catalog rows the test builds in memory, and from a scratch database; no file.', ['packages/db/src/domain-model/functions.test.ts', 'packages/db/src/domain-model/function-files.db.test.ts']),
+  'DBF-04': none(0, 'The directory is written and checked in a temporary directory, and the CLI run against a scratch database; no file.', ['packages/db/src/domain-model/function-files.test.ts', 'packages/db/src/domain-model/function-files.db.test.ts']),
+  'DBF-05': none(0, 'The files and the summary are rendered from catalog rows and directories the test builds; no file.', ['packages/db/src/domain-model/functions.test.ts', 'packages/db/src/domain-model/summary.test.ts']),
   // The release content checks (docs/adr/0071).
-  "RCC-01": none(
-    0,
-    "The files are written to a temporary root by the test; no file.",
-    [
-      "packages/rules/src/import.test.ts",
-      "packages/rules/src/parsers/parsers.test.ts",
-    ],
-  ),
-  "RCC-02": none(
-    0,
-    "The content sets are written to temporary roots, and the fixture releases are read; no file.",
-    [
-      "tools/verify-content/check.test.ts",
-      "packages/rules/src/coverage.test.ts",
-      "tools/release/release.test.ts",
-    ],
-  ),
-  "RCC-03": none(
-    0,
-    "Two numbered releases are written to a temporary root; no file.",
-    [
-      "tools/verify-content/check.test.ts",
-      "tools/release/release.test.ts",
-      "packages/rules/src/coverage.test.ts",
-    ],
-  ),
-  "RCC-04": none(
-    7,
-    "The month is seeded in a scratch database under release 900007; no file.",
-    [
-      "apps/worker/src/price/content.db.test.ts",
-      "apps/worker/src/price/content.test.ts",
-    ],
-  ),
-  "RCC-05": none(7, "The months are seeded in a scratch database; no file.", [
-    "apps/worker/src/monitor/monitor.db.test.ts",
-    "apps/web/src/lib/pricing/content.db.test.ts",
-    "apps/web/src/lib/routes/coverage-content.db.test.ts",
-    "apps/web/src/components/pricing/content.test.tsx",
-    "apps/worker/src/price/content.db.test.ts",
+  'RCC-01': none(0, 'The files are written to a temporary root by the test; no file.', ['packages/rules/src/import.test.ts', 'packages/rules/src/parsers/parsers.test.ts']),
+  'RCC-02': none(0, 'The content sets are written to temporary roots, and the fixture releases are read; no file.', ['tools/verify-content/check.test.ts', 'packages/rules/src/coverage.test.ts', 'tools/release/release.test.ts']),
+  'RCC-03': none(0, 'Two numbered releases are written to a temporary root; no file.', ['tools/verify-content/check.test.ts', 'tools/release/release.test.ts', 'packages/rules/src/coverage.test.ts']),
+  'RCC-04': none(7, 'The month is seeded in a scratch database under release 900007; no file.', ['apps/worker/src/price/content.db.test.ts', 'apps/worker/src/price/content.test.ts']),
+  'RCC-05': none(7, 'The months are seeded in a scratch database; no file.', [
+    'apps/worker/src/monitor/monitor.db.test.ts',
+    'apps/web/src/lib/pricing/content.db.test.ts',
+    'apps/web/src/lib/routes/coverage-content.db.test.ts',
+    'apps/web/src/components/pricing/content.test.tsx',
+    'apps/worker/src/price/content.db.test.ts',
   ]),
-  "RCC-06": none(
-    7,
-    "The priced lines are seeded in a scratch database; no file.",
-    [
-      "packages/triage/src/actionable.test.ts",
-      "apps/worker/src/triage/triage.db.test.ts",
-      "apps/worker/src/report/report.test.ts",
-    ],
-  ),
-  "RCC-07": none(
-    7,
-    "The runs are seeded in a scratch database; the weekly run builds release 900110 outside the repository; no file.",
-    [
-      "apps/worker/src/price/keyed-release.test.ts",
-      "apps/worker/src/price/release-source.db.test.ts",
-      "tools/release-capacity/checks.test.ts",
-      "tools/test/workflows.test.ts",
-    ],
-  ),
-  "RCC-08": none(
-    0,
-    "The calendar is module data and the sources are written to a temporary root; no file.",
-    [
-      "packages/rules/src/calendar.test.ts",
-      "tools/content-calendar/content-calendar.test.ts",
-      "apps/web/src/lib/routes/console-routes.db.test.ts",
-      "apps/web/src/lib/releases/content-through.db.test.ts",
-      "apps/web/src/lib/routes/reruns-routes.db.test.ts",
-      "apps/web/src/components/pricing/content.test.tsx",
-      "tools/test/workflows.test.ts",
-    ],
-  ),
+  'RCC-06': none(7, 'The priced lines are seeded in a scratch database; no file.', ['packages/triage/src/actionable.test.ts', 'apps/worker/src/triage/triage.db.test.ts', 'apps/worker/src/report/report.test.ts']),
+  'RCC-07': none(7, 'The runs are seeded in a scratch database; the weekly run builds release 900110 outside the repository; no file.', [
+    'apps/worker/src/price/keyed-release.test.ts',
+    'apps/worker/src/price/release-source.db.test.ts',
+    'tools/release-capacity/checks.test.ts',
+    'tools/test/workflows.test.ts',
+  ]),
+  'RCC-08': none(0, 'The calendar is module data and the sources are written to a temporary root; no file.', [
+    'packages/rules/src/calendar.test.ts',
+    'tools/content-calendar/content-calendar.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/src/lib/releases/content-through.db.test.ts',
+    'apps/web/src/lib/routes/reruns-routes.db.test.ts',
+    'apps/web/src/components/pricing/content.test.tsx',
+    'tools/test/workflows.test.ts',
+  ]),
   // The forms of the UX baseline review's first pull request (docs/adr/0077).
-  "FRM-01": none(
-    1,
-    "The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.",
-    [
-      "apps/web/src/components/action-form.browser.test.tsx",
-      "apps/web/src/components/screening/split-form.browser.test.tsx",
-      "apps/web/src/lib/http/next.test.ts",
-      "apps/web/e2e/forms-keep-input.spec.ts",
-      "apps/web/e2e/triage.spec.ts",
-      "apps/web/e2e/packets.spec.ts",
-    ],
-  ),
-  "FRM-02": none(
-    1,
-    "Synthetic personas save a support ticket, an ROI statement and a console incident after a refusal; no file.",
-    ["apps/web/e2e/forms-keep-input.spec.ts"],
-  ),
-  "FRM-03": none(
-    1,
-    "The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.",
-    [
-      "apps/web/src/components/action-form.browser.test.tsx",
-      "apps/web/e2e/forms-keep-input.spec.ts",
-    ],
-  ),
-  "FRM-04": none(
-    1,
-    "The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.",
-    [
-      "apps/web/src/components/action-form.browser.test.tsx",
-      "apps/web/src/components/action-form.test.tsx",
-      "apps/web/src/components/form-issues.test.ts",
-      "apps/web/src/components/form-hints.test.ts",
-      "apps/web/src/components/fields.test.tsx",
-      "apps/web/src/lib/routes/messages.test.ts",
-      "apps/web/e2e/forms-keep-input.spec.ts",
-    ],
-  ),
-  "FRM-05": none(
-    1,
-    "The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.",
-    [
-      "apps/web/src/components/action-form.browser.test.tsx",
-      "apps/web/e2e/forms-keep-input.spec.ts",
-    ],
-  ),
-  "FRM-06": none(
-    1,
-    "The public request form is posted from a browser with scripts off; no file.",
-    [
-      "apps/web/src/components/fields.test.tsx",
-      "apps/web/e2e/forms-keep-input.spec.ts",
-    ],
-  ),
-  "FRM-07": none(
-    1,
-    "Synthetic personas sign in through the local identity provider; no file.",
-    [
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/src/lib/http/next.test.ts",
-      "apps/web/src/components/action-form.browser.test.tsx",
-      "apps/web/src/components/fields.test.tsx",
-      "apps/web/e2e/forms-keep-input.spec.ts",
-    ],
-  ),
-  "FRM-08": none(
-    1,
-    "The public request form, synthetic practices’ forms, the uploads drop zone and the console’s status page are measured and scanned in the browser; no file.",
-    [
-      "apps/web/src/components/action-form.browser.test.tsx",
-      "apps/web/src/components/form-hints.test.ts",
-      "apps/web/e2e/forms-keep-input.spec.ts",
-      "apps/web/e2e/packets.spec.ts",
-      "apps/web/e2e/uploads.spec.ts",
-    ],
-  ),
+  'FRM-01': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', [
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/screening/split-form.browser.test.tsx',
+    'apps/web/src/lib/http/next.test.ts',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+    'apps/web/e2e/triage.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
+  ]),
+  'FRM-02': none(1, 'Synthetic personas save a support ticket, an ROI statement and a console incident after a refusal; no file.', ['apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-03': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', ['apps/web/src/components/action-form.browser.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-04': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', [
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/action-form.test.tsx',
+    'apps/web/src/components/form-issues.test.ts',
+    'apps/web/src/components/form-hints.test.ts',
+    'apps/web/src/components/fields.test.tsx',
+    'apps/web/src/lib/routes/messages.test.ts',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+  ]),
+  'FRM-05': none(1, 'The forms are refused in a browser harness with in-memory actions, and on synthetic sign-ins and practices the seed creates; no file.', ['apps/web/src/components/action-form.browser.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-06': none(1, 'The public request form is posted from a browser with scripts off; no file.', ['apps/web/src/components/fields.test.tsx', 'apps/web/e2e/forms-keep-input.spec.ts']),
+  'FRM-07': none(1, 'Synthetic personas sign in through the local identity provider; no file.', [
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/lib/http/next.test.ts',
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/fields.test.tsx',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+  ]),
+  'FRM-08': none(1, 'The public request form, synthetic practices’ forms, the uploads drop zone and the console’s status page are measured and scanned in the browser; no file.', [
+    'apps/web/src/components/action-form.browser.test.tsx',
+    'apps/web/src/components/form-hints.test.ts',
+    'apps/web/e2e/forms-keep-input.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
+    'apps/web/e2e/uploads.spec.ts',
+  ]),
   // The tables of the UX baseline review's third pull request (docs/adr/0078).
-  "TBL-01": none(
-    1,
-    "The scroller is rendered from a synthetic table the test passes in memory, the source guard reads the app’s own files and sources it holds in memory, and the browser measures the scroller on synthetic practices the journeys load; no file.",
-    [
-      "apps/web/src/components/scroll-table.test.tsx",
-      "apps/web/src/app/tables.test.ts",
-      "apps/web/e2e/layout-1280.spec.ts",
-      "apps/web/e2e/tables-phone.spec.ts",
-    ],
-  ),
-  "TBL-02": none(
-    1,
-    "A synthetic practice of its own loads SYNTHETIC CAS-08, CAS-02 and MAP-03, whose files belong to those cases; no file.",
-    ["apps/web/e2e/tables-phone.spec.ts", "apps/web/e2e/layout-1280.spec.ts"],
-  ),
-  "TBL-03": none(
-    1,
-    "The routes read synthetic practices and sign-ins the journeys and the seed create; no file.",
-    [
-      "apps/web/e2e/tables-phone.spec.ts",
-      "apps/web/e2e/reconciliation.spec.ts",
-      "apps/web/e2e/reports.spec.ts",
-      "apps/web/e2e/packets.spec.ts",
-      "apps/web/e2e/onboarding.spec.ts",
-      "apps/web/e2e/models.spec.ts",
-      "apps/web/e2e/unattested.spec.ts",
-      "apps/web/e2e/pricing.spec.ts",
-    ],
-  ),
-  "TBL-04": none(
-    1,
-    "The stacked rows are rendered from synthetic rows the test passes in memory; no file.",
-    ["apps/web/src/components/stacked-rows.test.tsx"],
-  ),
+  'TBL-01': none(1, 'The scroller is rendered from a synthetic table the test passes in memory, the source guard reads the app’s own files and sources it holds in memory, and the browser measures the scroller on synthetic practices the journeys load; no file.', [
+    'apps/web/src/components/scroll-table.test.tsx',
+    'apps/web/src/app/tables.test.ts',
+    'apps/web/e2e/layout-1280.spec.ts',
+    'apps/web/e2e/tables-phone.spec.ts',
+  ]),
+  'TBL-02': none(1, 'A synthetic practice of its own loads SYNTHETIC CAS-08, CAS-02 and MAP-03, whose files belong to those cases; no file.', ['apps/web/e2e/tables-phone.spec.ts', 'apps/web/e2e/layout-1280.spec.ts']),
+  'TBL-03': none(1, 'The routes read synthetic practices and sign-ins the journeys and the seed create; no file.', [
+    'apps/web/e2e/tables-phone.spec.ts',
+    'apps/web/e2e/reconciliation.spec.ts',
+    'apps/web/e2e/reports.spec.ts',
+    'apps/web/e2e/packets.spec.ts',
+    'apps/web/e2e/onboarding.spec.ts',
+    'apps/web/e2e/models.spec.ts',
+    'apps/web/e2e/unattested.spec.ts',
+    'apps/web/e2e/pricing.spec.ts',
+  ]),
+  'TBL-04': none(1, 'The stacked rows are rendered from synthetic rows the test passes in memory; no file.', ['apps/web/src/components/stacked-rows.test.tsx']),
   // The screening result's tables, the UX baseline review's fourth pull request (docs/adr/0078).
-  "TBL-05": none(
-    1,
-    "The result is rendered from synthetic groups, rows and coverage the test writes by hand, and the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.",
-    [
-      "apps/web/src/components/screening/result-tables.test.tsx",
-      "apps/web/e2e/screening-phone.spec.ts",
-    ],
-  ),
-  "TBL-06": none(
-    1,
-    "The result is rendered from synthetic groups, rows and coverage the test writes by hand, and the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.",
-    [
-      "apps/web/src/components/screening/result-tables.test.tsx",
-      "apps/web/e2e/screening-phone.spec.ts",
-    ],
-  ),
-  "TBL-07": none(
-    1,
-    "The browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.",
-    ["apps/web/e2e/screening-phone.spec.ts"],
-  ),
-  "TBL-08": none(
-    1,
-    "The words and tones are rendered from synthetic groups, rows and coverage the test writes by hand, the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts), and the copy lint reads the screening files; no file.",
-    [
-      "apps/web/src/components/screening/result-tables.test.tsx",
-      "apps/web/src/components/screening/result.test.tsx",
-      "apps/web/src/lib/screening/labels.test.ts",
-      "apps/web/e2e/screening-phone.spec.ts",
-      "tools/brand-copy/scan.test.ts",
-    ],
-  ),
+  'TBL-05': none(1, 'The result is rendered from synthetic groups, rows and coverage the test writes by hand, and the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', [
+    'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/e2e/screening-phone.spec.ts',
+  ]),
+  'TBL-06': none(1, 'The result is rendered from synthetic groups, rows and coverage the test writes by hand, and the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', [
+    'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/e2e/screening-phone.spec.ts',
+  ]),
+  'TBL-07': none(1, 'The browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts); no file.', ['apps/web/e2e/screening-phone.spec.ts']),
+  'TBL-08': none(1, 'The words and tones are rendered from synthetic groups, rows and coverage the test writes by hand, the browser opens a result the screening consumer prices from a synthetic upload built in memory (CLEAN_ROWS, e2e/screening.ts), and the copy lint reads the screening files; no file.', [
+    'apps/web/src/components/screening/result-tables.test.tsx',
+    'apps/web/src/components/screening/result.test.tsx',
+    'apps/web/src/lib/screening/labels.test.ts',
+    'apps/web/e2e/screening-phone.spec.ts',
+    'tools/brand-copy/scan.test.ts',
+  ]),
   // Milestone 11's error states with a next step (PRD 6, 7), as the UX baseline review's fifth pull request brings a
   // refused download back to the page it was opened from (docs/adr/0079).
-  "DLR-01": none(
-    11,
-    "The download routes are fake routes the test builds, and Coverage’s letter is refused on a synthetic practice the journey creates; no file.",
-    [
-      "apps/web/src/lib/http/download-refusal.test.ts",
-      "apps/web/src/components/download-refusal.test.tsx",
-      "apps/web/e2e/download-refusals.spec.ts",
-    ],
-  ),
-  "DLR-02": none(
-    11,
-    "The requests are built in memory with each client’s headers, against fake routes, and one is sent by the journey’s request API; no file.",
-    [
-      "apps/web/src/lib/http/download-refusal.test.ts",
-      "apps/web/e2e/download-refusals.spec.ts",
-    ],
-  ),
-  "DLR-03": none(
-    11,
-    "The registry and every route.ts under src/app are read, and the hostile parameters and the codes are generated by the test; no file.",
-    [
-      "apps/web/src/lib/http/download-refusal.test.ts",
-      "apps/web/src/lib/contracts/letter.test.ts",
-    ],
-  ),
-  "DLR-04": none(
-    11,
-    "A practice of its own, its SYNTHETIC CAS-08 remittance uploaded in the browser and its second payer added by the journey; no file.",
-    [
-      "apps/web/e2e/download-refusals.spec.ts",
-      "apps/web/src/components/coverage/letter.test.tsx",
-      "apps/web/src/components/download-link.test.tsx",
-      "apps/web/src/components/download-refusal.test.tsx",
-      "apps/web/src/components/uploads/uploader.test.tsx",
-    ],
-  ),
-  // The sign-in steps of the UX baseline review's sixth pull request (docs/adr/0081).
-  "SGN-01": none(
-    1,
-    "Synthetic personas sign in through the local identity provider on an injected clock and in the browser, and the limit is read from infra’s source text; no file.",
-    [
-      "apps/web/src/lib/auth/step-limits.test.ts",
-      "apps/web/src/lib/auth/dev-provider.test.ts",
-      "apps/web/src/lib/auth/pending.test.ts",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/src/components/step-timer.test.tsx",
-      "apps/web/e2e/sign-in-time.spec.ts",
-    ],
-  ),
-  "SGN-02": none(
-    1,
-    "The step timer runs in the browser harness and on synthetic sign-ins, on a clock the test moves; no file.",
-    [
-      "apps/web/src/lib/auth/step-limits.test.ts",
-      "apps/web/src/components/step-timer.test.tsx",
-      "apps/web/src/components/step-timer.browser.test.tsx",
-      "apps/web/e2e/sign-in-time.spec.ts",
-    ],
-  ),
-  "SGN-03": none(
-    1,
-    "Synthetic personas sign in through the local identity provider; no file.",
-    [
-      "apps/web/src/lib/auth/pending.test.ts",
-      "apps/web/src/app/sign-in/notice.test.tsx",
-      "apps/web/src/components/step-timer.browser.test.tsx",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/e2e/sign-in-time.spec.ts",
-    ],
-  ),
-  "SGN-04": none(
-    1,
-    "Synthetic invited personas, a customer and a staff member, choose a password and enrol through the local identity provider; no file.",
-    [
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/src/app/sign-in/notice.test.tsx",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/e2e/sign-in-time.spec.ts",
-    ],
-  ),
-  // The forgotten password of the UX baseline review's seventh pull request (docs/adr/0081, its amendment).
-  "SGN-05": none(
-    1,
-    "Synthetic personas and unregistered synthetic addresses ask for a reset through the local identity provider on an injected clock; no file.",
-    [
-      "apps/web/src/lib/auth/dev-provider.test.ts",
-      "apps/web/src/lib/auth/cognito-provider.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/src/app/sign-in/notice.test.tsx",
-      "apps/web/e2e/sign-in.spec.ts",
-    ],
-  ),
-  "SGN-06": none(
-    1,
-    "The local identity provider mails its reset codes to a synthetic outbox the tests read, and the step timer runs on a clock the test moves; no file.",
-    [
-      "apps/web/src/lib/auth/step-limits.test.ts",
-      "apps/web/src/lib/auth/dev-provider.test.ts",
-      "apps/web/src/lib/auth/cognito-provider.test.ts",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/src/components/step-timer.test.tsx",
-      "apps/web/src/components/step-timer.browser.test.tsx",
-      "apps/web/e2e/sign-in.spec.ts",
-      "apps/web/e2e/sign-in-time.spec.ts",
-    ],
-  ),
-  "SGN-07": none(
-    1,
-    "A synthetic persona of its own resets its password and signs in again through the local identity provider; no file.",
-    [
-      "apps/web/src/lib/auth/dev-provider.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/src/app/sign-in/notice.test.tsx",
-      "apps/web/e2e/sign-in.spec.ts",
-    ],
-  ),
-  "SGN-08": none(
-    1,
-    "Synthetic personas reach the code and key steps through the local identity provider; the support address is the synthetic one; no file.",
-    [
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/src/app/sign-in/notice.test.tsx",
-      "apps/web/e2e/sign-in.spec.ts",
-      "apps/web/e2e/sign-in-time.spec.ts",
-    ],
-  ),
-  // The code email and every message the user pool sends (co-001/auth-emails; docs/adr/0081, the code-email amendment).
-  "SGN-13": none(
-    1,
-    "The words are rendered in memory with Cognito’s placeholders and synthetic values, and the pool is read from the synthesized template; no file.",
-    [
-      "packages/auth-mail/src/render.test.ts",
-      "infra/test/cognito-messages.test.ts",
-      "infra/test/identity.test.ts",
-      "tools/brand-copy/scan.test.ts",
-    ],
-  ),
-  "SGN-14": none(
-    1,
-    "The handler runs in a fresh vm context on synthetic Cognito events, and the function is read from the synthesized template; no file.",
-    [
-      "packages/auth-mail/src/lambda.test.ts",
-      "infra/test/cognito-messages.test.ts",
-      "apps/web/src/lib/auth/cognito-provider.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-    ],
-  ),
-  "SGN-15": none(
-    1,
-    "The local identity provider writes its invitations and reset codes to a synthetic outbox the tests read; no file.",
-    [
-      "apps/web/src/lib/http/http.test.ts",
-      "apps/web/e2e/onboarding.spec.ts",
-      "apps/web/e2e/sign-in.spec.ts",
-    ],
-  ),
-  // The password-changed email (co-001/password-changed-notice; docs/adr/0091).
-  "SGN-16": none(
-    1,
-    "The notices are queued and sent against a synthetic database, to an in-memory sender or the local outbox; no file.",
-    [
-      "packages/db/src/password-notice.db.test.ts",
-      "packages/db/src/mail.db.test.ts",
-      "packages/db/src/hardening.db.test.ts",
-      "apps/worker/src/platform/password-notices.test.ts",
-      "apps/worker/src/platform/password-notices.db.test.ts",
-      "apps/worker/src/platform/mail-events.db.test.ts",
-      "apps/worker/src/mail/mail.test.ts",
-      "packages/auth-mail/src/render.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/e2e/sign-in.spec.ts",
-      "infra/test/operator-role.test.ts",
-      "infra/test/mail-streams.test.ts",
-      "infra/test/monitoring.test.ts",
-    ],
-  ),
-  // A sign-in step begun before a password reset, and a reset whose answer was lost (co-001/step-before-reset; docs/adr/0093).
-  "SGN-17": none(
-    1,
-    "Synthetic personas reset their passwords and answer stale steps through the local identity provider against a synthetic database; no file.",
-    [
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/e2e/sign-in.spec.ts",
-      "packages/db/src/sign-in-not-before.db.test.ts",
-      "infra/test/monitoring.test.ts",
-    ],
-  ),
-  "SGN-18": none(
-    1,
-    "A synthetic persona confirms a reset through a provider twin that loses its answer, and the Cognito classification runs on a fake client; no file.",
-    [
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/src/lib/auth/cognito-provider.test.ts",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "packages/db/src/sign-in-not-before.db.test.ts",
-      "infra/test/monitoring.test.ts",
-    ],
-  ),
-  "SGN-19": none(
-    1,
-    "Synthetic personas have a membership ended through both routes with a provider twin whose sign-out fails, and steps begun before it are answered after; no file.",
-    [
-      "apps/web/src/lib/routes/console-routes.db.test.ts",
-      "apps/web/src/lib/auth/no-provider-sign-out.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "infra/test/monitoring.test.ts",
-    ],
-  ),
-  // The key registry (docs/adr/0095; Queues item 37).
-  "SGN-20": none(
-    1,
-    "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
-    [
-      "packages/db/src/key-registry.db.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/e2e/key-registry.spec.ts",
-    ],
-  ),
-  "SGN-21": none(
-    1,
-    "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
-    [
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/e2e/key-registry.spec.ts",
-    ],
-  ),
-  "SGN-22": none(
-    1,
-    "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
-    [
-      "packages/db/src/key-registry.db.test.ts",
-      "apps/web/src/lib/routes/session-end.db.test.ts",
-    ],
-  ),
-  "SGN-23": none(
-    1,
-    "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
-    [
-      "packages/db/src/key-registry.db.test.ts",
-      "apps/web/src/lib/routes/console-routes.db.test.ts",
-      "apps/web/e2e/key-registry.spec.ts",
-    ],
-  ),
-  "SGN-24": none(
-    1,
-    "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
-    [
-      "packages/db/src/key-registry.db.test.ts",
-      "apps/web/src/lib/routes/console-routes.db.test.ts",
-      "apps/web/e2e/key-registry.spec.ts",
-    ],
-  ),
-  "SGN-25": none(
-    1,
-    "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
-    [
-      "packages/db/src/key-registry.db.test.ts",
-      "apps/web/src/lib/routes/console-routes.db.test.ts",
-    ],
-  ),
-  "SGN-26": none(
-    1,
-    "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
-    ["apps/web/src/lib/auth/sign-in.db.test.ts"],
-  ),
-  "SGN-27": none(
-    1,
-    "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
-    [
-      "packages/db/src/key-registry.db.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-      "apps/web/src/lib/routes/sign-in-routes.db.test.ts",
-      "apps/web/src/lib/routes/console-routes.db.test.ts",
-      "apps/web/e2e/key-registry.spec.ts",
-    ],
-  ),
-  "SGN-28": none(
-    1,
-    "Synthetic accounts and a provider twin the tests make; no file.",
-    [
-      "packages/db/src/provider-sign-out.db.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-    ],
-  ),
-  "SGN-29": none(1, "Synthetic accounts the test inserts; no file.", [
-    "packages/db/src/key-registry.db.test.ts",
+  'DLR-01': none(11, 'The download routes are fake routes the test builds, and Coverage’s letter is refused on a synthetic practice the journey creates; no file.', [
+    'apps/web/src/lib/http/download-refusal.test.ts',
+    'apps/web/src/components/download-refusal.test.tsx',
+    'apps/web/e2e/download-refusals.spec.ts',
   ]),
-  "SGN-30": none(
-    1,
-    "Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.",
-    [
-      "packages/db/src/key-registry.db.test.ts",
-      "apps/web/src/lib/auth/sign-in.db.test.ts",
-    ],
-  ),
-  "SGN-31": none(1, "Synthetic accounts the tests insert; no file.", [
-    "packages/db/src/key-registry.db.test.ts",
-    "apps/web/src/lib/routes/console-routes.db.test.ts",
-    "apps/web/src/lib/routes/console-keys.test.ts",
+  'DLR-02': none(11, 'The requests are built in memory with each client’s headers, against fake routes, and one is sent by the journey’s request API; no file.', [
+    'apps/web/src/lib/http/download-refusal.test.ts',
+    'apps/web/e2e/download-refusals.spec.ts',
+  ]),
+  'DLR-03': none(11, 'The registry and every route.ts under src/app are read, and the hostile parameters and the codes are generated by the test; no file.', [
+    'apps/web/src/lib/http/download-refusal.test.ts',
+    'apps/web/src/lib/contracts/letter.test.ts',
+  ]),
+  'DLR-04': none(11, 'A practice of its own, its SYNTHETIC CAS-08 remittance uploaded in the browser and its second payer added by the journey; no file.', [
+    'apps/web/e2e/download-refusals.spec.ts',
+    'apps/web/src/components/coverage/letter.test.tsx',
+    'apps/web/src/components/download-link.test.tsx',
+    'apps/web/src/components/download-refusal.test.tsx',
+    'apps/web/src/components/uploads/uploader.test.tsx',
+  ]),
+  // The sign-in steps of the UX baseline review's sixth pull request (docs/adr/0081).
+  'SGN-01': none(1, 'Synthetic personas sign in through the local identity provider on an injected clock and in the browser, and the limit is read from infra’s source text; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/pending.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-02': none(1, 'The step timer runs in the browser harness and on synthetic sign-ins, on a clock the test moves; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-03': none(1, 'Synthetic personas sign in through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/pending.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-04': none(1, 'Synthetic invited personas, a customer and a staff member, choose a password and enrol through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  // The forgotten password of the UX baseline review's seventh pull request (docs/adr/0081, its amendment).
+  'SGN-05': none(1, 'Synthetic personas and unregistered synthetic addresses ask for a reset through the local identity provider on an injected clock; no file.', [
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+  ]),
+  'SGN-06': none(1, 'The local identity provider mails its reset codes to a synthetic outbox the tests read, and the step timer runs on a clock the test moves; no file.', [
+    'apps/web/src/lib/auth/step-limits.test.ts',
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/components/step-timer.test.tsx',
+    'apps/web/src/components/step-timer.browser.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  'SGN-07': none(1, 'A synthetic persona of its own resets its password and signs in again through the local identity provider; no file.', [
+    'apps/web/src/lib/auth/dev-provider.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+  ]),
+  'SGN-08': none(1, 'Synthetic personas reach the code and key steps through the local identity provider; the support address is the synthetic one; no file.', [
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/app/sign-in/notice.test.tsx',
+    'apps/web/e2e/sign-in.spec.ts',
+    'apps/web/e2e/sign-in-time.spec.ts',
+  ]),
+  // The code email and every message the user pool sends (co-001/auth-emails; docs/adr/0081, the code-email amendment).
+  'SGN-13': none(1, 'The words are rendered in memory with Cognito’s placeholders and synthetic values, and the pool is read from the synthesized template; no file.', [
+    'packages/auth-mail/src/render.test.ts',
+    'infra/test/cognito-messages.test.ts',
+    'infra/test/identity.test.ts',
+    'tools/brand-copy/scan.test.ts',
+  ]),
+  'SGN-14': none(1, 'The handler runs in a fresh vm context on synthetic Cognito events, and the function is read from the synthesized template; no file.', [
+    'packages/auth-mail/src/lambda.test.ts',
+    'infra/test/cognito-messages.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
+  'SGN-15': none(1, 'The local identity provider writes its invitations and reset codes to a synthetic outbox the tests read; no file.', [
+    'apps/web/src/lib/http/http.test.ts',
+    'apps/web/e2e/onboarding.spec.ts',
+    'apps/web/e2e/sign-in.spec.ts',
+  ]),
+  // The password-changed email (co-001/password-changed-notice; docs/adr/0091).
+  'SGN-16': none(1, 'The notices are queued and sent against a synthetic database, to an in-memory sender or the local outbox; no file.', [
+    'packages/db/src/password-notice.db.test.ts',
+    'packages/db/src/mail.db.test.ts',
+    'packages/db/src/hardening.db.test.ts',
+    'apps/worker/src/platform/password-notices.test.ts',
+    'apps/worker/src/platform/password-notices.db.test.ts',
+    'apps/worker/src/platform/mail-events.db.test.ts',
+    'apps/worker/src/mail/mail.test.ts',
+    'packages/auth-mail/src/render.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/e2e/sign-in.spec.ts',
+    'infra/test/operator-role.test.ts',
+    'infra/test/mail-streams.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  // A sign-in step begun before a password reset, and a reset whose answer was lost (co-001/step-before-reset; docs/adr/0093).
+  'SGN-17': none(1, 'Synthetic personas reset their passwords and answer stale steps through the local identity provider against a synthetic database; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/e2e/sign-in.spec.ts',
+    'packages/db/src/sign-in-not-before.db.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  'SGN-18': none(1, 'A synthetic persona confirms a reset through a provider twin that loses its answer, and the Cognito classification runs on a fake client; no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/auth/cognito-provider.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'packages/db/src/sign-in-not-before.db.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  'SGN-19': none(1, 'Synthetic personas have a membership ended through both routes with a provider twin whose sign-out fails, and steps begun before it are answered after; no file.', [
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/src/lib/auth/no-provider-sign-out.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'infra/test/monitoring.test.ts',
+  ]),
+  // The key registry (docs/adr/0095; Queues item 37).
+  'SGN-20': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/e2e/key-registry.spec.ts',
+  ]),
+  'SGN-21': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/e2e/key-registry.spec.ts',
+  ]),
+  'SGN-22': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/routes/session-end.db.test.ts',
+  ]),
+  'SGN-23': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/key-registry.spec.ts',
+  ]),
+  'SGN-24': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/key-registry.spec.ts',
+  ]),
+  'SGN-25': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+  ]),
+  'SGN-26': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
+  'SGN-27': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+    'apps/web/src/lib/routes/sign-in-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/e2e/key-registry.spec.ts',
+  ]),
+  'SGN-28': none(1, 'Synthetic accounts and a provider twin the tests make; no file.', [
+    'packages/db/src/provider-sign-out.db.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
+  'SGN-29': none(1, 'Synthetic accounts the test inserts; no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+  ]),
+  'SGN-30': none(1, 'Synthetic personas and keys the tests make in memory (a software authenticator, a provider twin); no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/auth/sign-in.db.test.ts',
+  ]),
+  'SGN-31': none(1, 'Synthetic accounts the tests insert; no file.', [
+    'packages/db/src/key-registry.db.test.ts',
+    'apps/web/src/lib/routes/console-routes.db.test.ts',
+    'apps/web/src/lib/routes/console-keys.test.ts',
   ]),
   // The practice home's figures of the UX baseline review's ninth pull request: one actionable figure through one
   // predicate, the Recovered tile's two periods and the empty home's upload gate (docs/adr/0082).
-  "HOM-01": none(
-    9,
-    "The tests load SYNTHETIC CAS-08 and the LED worlds, whose files belong to those cases, and the property test generates its ledgers in memory; no file.",
-    [
-      "apps/web/src/lib/routes/pricing-current-routes.db.test.ts",
-      "apps/web/src/lib/routes/reconciliation-routes.db.test.ts",
-      "apps/web/src/lib/dashboard/home-figures.db.test.ts",
-      "apps/worker/src/triage/actionable-now.db.test.ts",
-      "apps/worker/src/reconcile/recovered-periods.test.ts",
-    ],
-  ),
-  "HOM-02": none(
-    9,
-    "The tiles and the words are rendered from synthetic figures the tests pass in memory, and the copy lint reads the app’s own files; no file.",
-    [
-      "apps/web/src/components/dashboard/headline.test.tsx",
-      "apps/web/src/components/format.test.ts",
-      "apps/web/src/components/reconciliation/display.test.tsx",
-      "apps/web/src/components/triage/display.test.tsx",
-      "apps/web/src/lib/triage/queries.test.ts",
-      "tools/brand-copy/scan.test.ts",
-    ],
-  ),
-  "HOM-03": none(
-    9,
-    "The agreements are recorded on synthetic practices by the test, and the empty states rendered in memory; no file.",
-    [
-      "apps/web/src/lib/dashboard/home-figures.db.test.ts",
-      "apps/web/src/components/dashboard/headline.test.tsx",
-    ],
-  ),
-  "HOM-04": none(
-    9,
-    "The LED-06 journey uploads SYNTHETIC LED-06’s remittances and exports, whose files belong to that case, in a practice of its own; no file.",
-    ["apps/web/e2e/reconciliation.spec.ts"],
-  ),
+  'HOM-01': none(9, 'The tests load SYNTHETIC CAS-08 and the LED worlds, whose files belong to those cases, and the property test generates its ledgers in memory; no file.', [
+    'apps/web/src/lib/routes/pricing-current-routes.db.test.ts',
+    'apps/web/src/lib/routes/reconciliation-routes.db.test.ts',
+    'apps/web/src/lib/dashboard/home-figures.db.test.ts',
+    'apps/worker/src/triage/actionable-now.db.test.ts',
+    'apps/worker/src/reconcile/recovered-periods.test.ts',
+  ]),
+  'HOM-02': none(9, 'The tiles and the words are rendered from synthetic figures the tests pass in memory, and the copy lint reads the app’s own files; no file.', [
+    'apps/web/src/components/dashboard/headline.test.tsx',
+    'apps/web/src/components/format.test.ts',
+    'apps/web/src/components/reconciliation/display.test.tsx',
+    'apps/web/src/components/triage/display.test.tsx',
+    'apps/web/src/lib/triage/queries.test.ts',
+    'tools/brand-copy/scan.test.ts',
+  ]),
+  'HOM-03': none(9, 'The agreements are recorded on synthetic practices by the test, and the empty states rendered in memory; no file.', [
+    'apps/web/src/lib/dashboard/home-figures.db.test.ts',
+    'apps/web/src/components/dashboard/headline.test.tsx',
+  ]),
+  'HOM-04': none(9, 'The LED-06 journey uploads SYNTHETIC LED-06’s remittances and exports, whose files belong to that case, in a practice of its own; no file.', ['apps/web/e2e/reconciliation.spec.ts']),
 };
 
 export interface CaseDefinition {
@@ -3095,16 +1301,8 @@ export interface CaseDefinition {
   generate(): GeneratedCase;
 }
 
-function definition(
-  id: string,
-  title: string,
-  assertion: string,
-  entry: Entry,
-  dir: string,
-  variant: boolean,
-  build: Build | undefined,
-): CaseDefinition {
-  const module = (variant ? "PAR" : id.slice(0, id.indexOf("-"))) as CaseModule;
+function definition(id: string, title: string, assertion: string, entry: Entry, dir: string, variant: boolean, build: Build | undefined): CaseDefinition {
+  const module = (variant ? 'PAR' : id.slice(0, id.indexOf('-'))) as CaseModule;
   return {
     id,
     module,
@@ -3116,19 +1314,7 @@ function definition(
     dir,
     variant,
     generate() {
-      const b = new CaseBuilder(
-        {
-          id,
-          module,
-          title,
-          assertion,
-          completesIn: entry.completesIn,
-          assertedBy: entry.assertedBy,
-          codeListRelease:
-            module === "PAR" || build !== undefined ? CODE_LIST_RELEASE : null,
-        },
-        dir,
-      );
+      const b = new CaseBuilder({ id, module, title, assertion, completesIn: entry.completesIn, assertedBy: entry.assertedBy, codeListRelease: module === 'PAR' || build !== undefined ? CODE_LIST_RELEASE : null }, dir);
       if (entry.noFile !== undefined) {
         b.noFiles(entry.noFile);
       }
@@ -3147,35 +1333,23 @@ export const CASES: readonly CaseDefinition[] = TEST_MATRIX.map((row) => {
   if (!entry) {
     throw new Error(`the registry has no entry for ${row.id}`);
   }
-  return definition(
-    row.id,
-    row.title,
-    row.assertion,
-    entry,
-    row.id,
-    false,
-    entry.build,
-  );
+  return definition(row.id, row.title, row.assertion, entry, row.id, false, entry.build);
 });
 
 /** The oracle variants, in fixtures/synthetic/variants/<id>-<slug>. */
-export const VARIANT_CASES: readonly CaseDefinition[] = VARIANTS.map(
-  (variant) =>
-    definition(
-      variant.id,
-      variant.title,
-      "Parses; pyx12 reads the same segments, amounts and balances",
-      { completesIn: 2, assertedBy: ["packages/edi835/src/fixtures.test.ts"] },
-      `variants/${variant.id}-${variant.slug}`,
-      true,
-      variant.build,
-    ),
+export const VARIANT_CASES: readonly CaseDefinition[] = VARIANTS.map((variant) =>
+  definition(
+    variant.id,
+    variant.title,
+    'Parses; pyx12 reads the same segments, amounts and balances',
+    { completesIn: 2, assertedBy: ['packages/edi835/src/fixtures.test.ts'] },
+    `variants/${variant.id}-${variant.slug}`,
+    true,
+    variant.build,
+  ),
 );
 
-export const ALL_CASES: readonly CaseDefinition[] = [
-  ...CASES,
-  ...VARIANT_CASES,
-];
+export const ALL_CASES: readonly CaseDefinition[] = [...CASES, ...VARIANT_CASES];
 
 /** Registry entries with no matrix row (a stale ID) would be a bug. */
 export const REGISTRY_IDS: readonly string[] = Object.keys(ENTRIES);
