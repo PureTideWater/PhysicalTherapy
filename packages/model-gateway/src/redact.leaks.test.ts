@@ -1,7 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { CHECK_WORK_BUDGET, type LetterClaim, type PatientIdentifiers, checkWorkOf, holdsIdentifier, holdsNameOrNumber, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
+import { CHECK_WORK_BUDGET, type LetterClaim, type PatientIdentifiers, checkWorkOf, holdsIdentifier, holdsNameOrNumber, matchingForTests, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
 
 import { BASE_REFUSED, refusedPlaces } from './test-support/base-refused';
 import { fuzzLetters, sumOf } from './test-support/fuzz-letters';
@@ -3313,11 +3313,16 @@ describe('MOD-25, Queues item 40, fix round 1 (Lane B’s reviews S-1, S-2 and S
 
   // S-2: the check of what the reading with every number character written as U+2180 wrote is charged on the letter's
   // count. This crafted row (a fraction and one U+0085 before 80,000 characters of prose) was sent while that check went
-  // uncounted (349,830,476 units counted, about 440 million spent); charged, its count passes the budget.
-  it('S-2: the number characters’ reading’s check is charged, so a crafted row the uncounted check let through is refused by the count', LIMIT, () => {
+  // uncounted, and refused by the count once it was charged on the whole re-read. Queues item 39 (stage 5) reads windows
+  // around the two characters instead, each window's readings and checks charged: the row is sent, and its count is the
+  // prose's own count and the windows' more (with no windows, the whole re-read's count passes the budget).
+  it('S-2: the number characters’ reading’s check is charged, in windows: the crafted row is sent, its windows counted', LIMIT, () => {
     const letter = `½ \u0085 ${prose(80_000)}`;
-    expect(refusedByTheEntry(letter, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(true);
-    expect(checkWorkOf(redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS))).toBeGreaterThan(CHECK_WORK_BUDGET);
+    expect(refusedByTheEntry(letter, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(false);
+    const counted = checkWorkOf(redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS));
+    expect(counted).toBeGreaterThan(checkWorkOf(redactLetterForScreen(prose(80_000), BUDGET_PATIENT, BUDGET_CLAIMS)));
+    const whole = matchingForTests.withWindows({ off: true }, () => checkWorkOf(redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS)));
+    expect(whole.result).toBeGreaterThan(CHECK_WORK_BUDGET);
   });
 
   // The same prose with no number character and no unseen character is read once, its count far under the budget, and sent.
@@ -3325,11 +3330,18 @@ describe('MOD-25, Queues item 40, fix round 1 (Lane B’s reviews S-1, S-2 and S
     expect(sentOrRefused(prose(80_000), BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(prose(80_000));
   });
 
-  // S-1, a recorded cost (Queues item 39 holds its cure): each further reading reads the whole letter again, so an
-  // ordinary letter with one fraction and one U+0085 is refused on cost from about 77,600 characters (Lane B's review 2),
-  // under the 100,000 the reader's time budget promises; the same letter without them is sent.
-  it('S-1, a recorded cost: 100,000 characters of prose with one ½ and one U+0085 are refused on cost; without them, sent', LIMIT, () => {
-    expect(refusedByTheEntry(`½ \u0085 ${prose(100_000)}`, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(true);
+  // S-1, cured by Queues item 39 (stage 5): each further reading read the whole letter again, so an ordinary letter with
+  // one fraction and one U+0085 was refused on cost from about 77,600 characters (Lane B's review 2). The re-reads read
+  // windows around the two characters: sent at 100,000 characters and at 250,000, as the base sends it, and what is
+  // sent holds no identifier of the call (none is written in it).
+  it('S-1, cured: 100,000 and 250,000 characters of prose with one ½ and one U+0085 are sent, no identifier in clear', LIMIT, () => {
+    for (const length of [100_000, 250_000]) {
+      const letter = `½ \u0085 ${prose(length)}`;
+      expect(refusedByTheEntry(letter, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(false);
+      const sent = redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS).text;
+      expect(holdsIdentifier(sent, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(false);
+      expect(sent).not.toMatch(/vantree|1234567|555001|1961/iu);
+    }
     expect(refusedByTheEntry(prose(100_000), BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(false);
   });
 
@@ -3344,12 +3356,68 @@ describe('MOD-25, Queues item 40, fix round 1 (Lane B’s reviews S-1, S-2 and S
     }
     return lines.slice(0, length);
   };
-  it('C-1, a recorded cost: a claim letter of 64,000 characters with one footnote mark and CR LF is refused on cost; without the mark, sent', LIMIT, () => {
+  // Cured by Queues item 39 (stage 5): the further reading reads a window around the mark, so the letter is sent at
+  // 64,000 characters and at the reader's 100,000, its name and member ID replaced, none of either in clear.
+  it('C-1, cured: a claim letter of 64,000 and 100,000 characters with one footnote mark and CR LF is sent, its identifiers replaced', LIMIT, () => {
     const { who, numbers } = asMember;
-    expect(refusedByTheEntry(claimLines(64_000), who, numbers)).toBe(true);
+    for (const length of [64_000, 100_000]) {
+      expect(refusedByTheEntry(claimLines(length), who, numbers)).toBe(false);
+      const sent = redactLetterForScreen(claimLines(length), who, numbers).text;
+      expect(holdsIdentifier(sent, who, numbers)).toBe(false);
+      expect(sent).toContain('[MEMBER_ID]');
+      expect(sent).toContain('[PATIENT_NAME]');
+      expect(sent).not.toMatch(/zephyra|76543210|7654321|99887/iu);
+    }
     expect(refusedByTheEntry(claimLines(64_000).replace('\u00B9', ''), who, numbers)).toBe(false);
-    expect(refusedByTheEntry(claimLines(62_000), who, numbers)).toBe(false);
   });
+
+  // Queues item 39, stage 5 (design note, 5.2 and 5.3): the windows refuse what the whole re-read refuses, however far
+  // into a long letter the character and the identifier stand; an identifier far from every such character is replaced.
+  it.each([
+    ['an unseen character inside a member ID', 'Member ID 7654\u00853210 was denied.', asMember, true],
+    ['a number character glued to a member ID', 'Ref ↀ76543210 on file.', asMember, true],
+    ['a number character inside a claim number', 'Claim 7654ↀ3210 was denied.', asClaim, true],
+    ['a fraction inside a member ID', 'Member ID 7654½3210 was denied.', asMember, true],
+    ['U+FFFC inside a member ID, an unseen character far off', 'Member ID 7654\uFFFC3210 was denied.', asMember, false],
+  ] as const)('stage 5: %s, 50,000 characters into a letter of 100,000 with one ½ and one U+0085 at its start', (_name, piece, { who, numbers }, refused) => {
+    const letter = (half: number) => `½ \u0085 ${prose(half)} ${piece} ${prose(half)}`;
+    expect(refusedByTheEntry(letter(50_000), who, numbers)).toBe(refused);
+    if (!refused) {
+      expect(redactLetterForScreen(letter(50_000), who, numbers).text).not.toMatch(/7654|3210/u);
+    }
+    // Against the whole re-read where it reads the letter within the budget (at 100,000 it refuses on cost: S-1).
+    const off = matchingForTests.withWindows({ off: true }, () => redactLetterForScreen(letter(10_000), who, numbers).text);
+    const on = matchingForTests.withWindows({}, () => redactLetterForScreen(letter(10_000), who, numbers).text);
+    expect(on.windows).toBeGreaterThan(1);
+    expect(on.fallbacks).toBe(0);
+    expect(on.result).toBe(off.result);
+  }, 60_000);
+
+  // The window-interior fallback (design note 5.3): where a window's reading as given differs from the first reading
+  // inside it, locality has failed on that letter and it is read whole, charged. A window of 4 characters each side
+  // cuts "Q. V." from its first name, so the window does not replace the initials the first reading replaced.
+  it('stage 5: a window whose reading as given differs from the first reading inside it falls back to the whole re-read', LIMIT, () => {
+    const letter = `Our letter. ${prose(2_000)} Jane Q. V.\u0085 ${prose(2_000)} Member ID 7654\u00853210.`;
+    const off = matchingForTests.withWindows({ off: true }, () => redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS).text);
+    const narrow = matchingForTests.withWindows({ radius: 4, margin: 0 }, () => redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS).text);
+    expect(narrow.fallbacks).toBeGreaterThan(0);
+    expect(narrow.result).toBe(off.result);
+  });
+
+  // The windows against the whole re-read over generated letters: the same text sent or refused, every one.
+  it('stage 5: on generated letters with identifiers, unseen and number characters, windows write what the whole re-read writes', () => {
+    const pieces = ['Member ID 76543210', '7654\u00853210', 'ↀ76543210', '76543210½', '7654ↀ3210', 'Jane Q Zephyra', 'J. Q. Z.', '03/14/1980', 'Claim ZZ99887', '\u0085', '\u0000', '½', '²', 'Ⅻ', '\uFFFC', '\r\n', ' ', '. ', prose(300), prose(700)];
+    fc.assert(
+      fc.property(fc.array(fc.constantFrom(...pieces), { minLength: 1, maxLength: 24 }), fc.boolean(), (parts, member) => {
+        const { who, numbers } = member ? asMember : asClaim;
+        const letter = parts.join(' ');
+        const off = matchingForTests.withWindows({ off: true }, () => redactLetterForScreen(letter, who, numbers).text);
+        const on = matchingForTests.withWindows({}, () => redactLetterForScreen(letter, who, numbers).text);
+        expect(on.result).toBe(off.result);
+      }),
+      { numRuns: 400, seed: 39 },
+    );
+  }, 120_000);
 
   // S-4, the narrow part (ADR 0054's joiner list amended): U+FFFC (what PDF text writes for an object) and a number
   // character that is no decimal digit, inside a stored number, join it as any number joiner does. U+FFFC is replaced

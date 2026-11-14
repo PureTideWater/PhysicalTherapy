@@ -3975,7 +3975,7 @@ export function redactLetterForScreen(text: string, patient: PatientIdentifiers,
   // with the mark the check refuses. The further reading and its check are charged in full on this letter's count
   // whether they refuse or not; past the budget no text of the letter goes back at all, as for any letter there.
   const further = { spent };
-  const refused = refusedWithUnseenCharactersJoined(text, patient, claims, read.text, further);
+  const refused = refusedWithUnseenCharactersInWindows(text, patient, claims, read, further);
   const redacted = further.spent > CHECK_WORK_BUDGET ? { text: unreadPastTheBudget, claims: read.claims, replaced: 0, candidates: [] } : refused ? { ...read, text: refusedByMarkAfter(read.text) } : read;
   workOfRedacted.set(redacted, further.spent);
   return redacted;
@@ -4016,6 +4016,168 @@ function refusedWithUnseenCharactersJoined(text: string, patient: PatientIdentif
   return holds || again.text !== wrote.replace(UNSEEN_CHARACTERS, UNSEEN_JOINED);
 }
 
+// ---------------------------------------------------------------------------------------------------
+// Item 40's re-reads in windows (Queues item 39, MOD-26, stage 5; design note of item 39, 5.2 and 5.3)
+//
+// Each further reading of Queues item 40 (unseen characters joined; number characters read as one) read the whole
+// letter again, so one such character in a long letter doubled its cost (Lane B's review of item 40, S-1 and C-1). It
+// reads windows instead: around each run of the characters that ask for it, WINDOW_RADIUS characters each side, each
+// edge moved out to a white-space character it takes in (so no window cuts a run of letters, digits and joiners),
+// overlapping windows merged. Each window is read as given and as the re-read writes it, and refused by the re-read's
+// own rules, window by window; every reading and check is charged on the letter's one count. Locality (5.3): every
+// decision a reading makes about a span depends on the text within WINDOW_MARGIN characters of it, so a window decides
+// what the whole re-read decides there. Where a window's reading as given is not the first reading's inside the window
+// (more than WINDOW_MARGIN from an edge the letter goes on past), locality has failed on this letter: it is read whole,
+// as item 40 read it, charged on from the windows' count. So every letter is either proven local on its own text or
+// read whole. Nothing here is kept past the call.
+
+/** How far each side of a character that asks for a further reading its window reaches, before its edges move out to white space: 4 times WINDOW_MARGIN. */
+let WINDOW_RADIUS = 256;
+/** The widest fixed context a reading's decision about a span reads (the label, amount, date and range windows: 10 to 64 characters). */
+let WINDOW_MARGIN = 64;
+/** For the tests only (matchingForTests.withWindows): no windows, every further reading of the whole letter, as item 40 read it. */
+let windowsOff = false;
+/** For the tests only: windows read and letters read whole after a window, since the tests last asked. */
+const windowCounts = { windows: 0, fallbacks: 0 };
+
+/** The letter's NFKC writing a screen reading read (unbracketed) and the spans it wrote over it: the first reading's spans, kept for the windows. */
+const spansOfReading = new WeakMap<object, { readonly normal: string; readonly spans: readonly PlacedSpan[] }>();
+
+function withSpans<T extends object>(redacted: T, normal: string, spans: readonly PlacedSpan[]): T {
+  spansOfReading.set(redacted, { normal, spans });
+  return redacted;
+}
+
+/** A window of the letter: its place in the letter as given, and in the letter's NFKC writing (unbracketed). */
+interface LetterWindow {
+  readonly start: number;
+  readonly end: number;
+  readonly normalStart: number;
+  readonly normalEnd: number;
+}
+
+/**
+ * The windows around every match of `find` in the letter, in order, or null where they cannot stand for the letter:
+ * no windows (the tests' `off`), no first reading's spans, or a window whose NFKC writing is not the letter's NFKC
+ * writing there (each edge is at white space, where NFKC joins nothing, so this does not happen; checked all the same).
+ */
+function windowsOf(text: string, find: RegExp, normal: string): LetterWindow[] | null {
+  if (windowsOff) {
+    return null;
+  }
+  const places: { start: number; end: number }[] = [];
+  const search = new RegExp(find.source, find.flags.includes('g') ? find.flags : `${find.flags}g`);
+  for (let match = search.exec(text); match !== null; match = search.exec(text)) {
+    let start = Math.max(0, match.index - WINDOW_RADIUS);
+    let end = Math.min(text.length, match.index + match[0].length + WINDOW_RADIUS);
+    while (start > 0 && !/\s/u.test(text[start] ?? '')) start -= 1;
+    while (end < text.length && !/\s/u.test(text[end - 1] ?? '')) end += 1;
+    const last = places[places.length - 1];
+    if (last !== undefined && start <= last.end) last.end = Math.max(last.end, end);
+    else places.push({ start, end });
+    if (match[0].length === 0) search.lastIndex += 1;
+  }
+  const windows: LetterWindow[] = [];
+  let at = 0;
+  let normalAt = 0;
+  for (const { start, end } of places) {
+    const normalStart = normalAt + unbracketed(text.slice(at, start)).length;
+    const own = unbracketed(text.slice(start, end));
+    if (normal.slice(normalStart, normalStart + own.length) !== own) {
+      return null;
+    }
+    windows.push({ start, end, normalStart, normalEnd: normalStart + own.length });
+    at = end;
+    normalAt = normalStart + own.length;
+  }
+  return windows;
+}
+
+/** Whether the one window is the whole letter: then the letter is read whole, as item 40 read it, with the first reading as its reading as given and nothing read twice. */
+const wholeLetter = (windows: readonly LetterWindow[], text: string): boolean => windows.length === 1 && windows[0]?.start === 0 && windows[0].end === text.length;
+
+/**
+ * Whether the window's reading as given wrote, inside the window, what the first reading wrote there: the spans each
+ * placed that reach into the part of the window more than WINDOW_MARGIN from each edge the letter goes on past, the
+ * window's at the window's place in the letter. A reading with no spans kept (a marked or refused one) is not the same.
+ */
+function sameInside(first: object, given: object, window: LetterWindow, text: string): boolean {
+  const ofFirst = spansOfReading.get(first);
+  const ofGiven = spansOfReading.get(given);
+  if (ofFirst === undefined || ofGiven === undefined) {
+    return false;
+  }
+  const low = window.start === 0 ? window.normalStart : window.normalStart + WINDOW_MARGIN;
+  const high = window.end === text.length ? window.normalEnd : window.normalEnd - WINDOW_MARGIN;
+  const inside = (spans: readonly PlacedSpan[], shift: number) =>
+    spans.filter((span) => span.end + shift > low && span.start + shift < high).map((span) => `${String(span.start + shift)}:${String(span.end + shift)}:${span.placeholder}`);
+  const a = inside(ofFirst.spans, 0);
+  const b = inside(ofGiven.spans, window.normalStart);
+  return a.length === b.length && a.every((span, index) => span === b[index]);
+}
+
+/**
+ * refusedWithUnseenCharactersJoined, read in windows around each run of unseen characters: each window read as given
+ * and with its unseen runs joined (UNSEEN_JOINED), both through redactLetterForScreenBesideNumberCharacters, and refused
+ * where the joined reading's check holds an identifier or the two writings differ. Charged in full on `further`. Read
+ * whole where the windows cannot stand for the letter or a window's reading as given is not the first reading's.
+ */
+function refusedWithUnseenCharactersInWindows(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], first: Redacted, further: { spent: number }): boolean {
+  const kept = spansOfReading.get(first);
+  const windows = kept === undefined ? null : windowsOf(text, UNSEEN_CHARACTERS, kept.normal);
+  if (windows === null || wholeLetter(windows, text)) {
+    return refusedWithUnseenCharactersJoined(text, patient, claims, first.text, further);
+  }
+  for (const window of windows) {
+    windowCounts.windows += 1;
+    const piece = text.slice(window.start, window.end);
+    const given = redactLetterForScreenBesideNumberCharacters(piece, patient, claims, further.spent);
+    further.spent = checkWorkOf(given);
+    if (further.spent > CHECK_WORK_BUDGET) {
+      return true;
+    }
+    if (!sameInside(first, given, window, text)) {
+      windowCounts.fallbacks += 1;
+      return refusedWithUnseenCharactersJoined(text, patient, claims, first.text, further);
+    }
+    if (refusedWithUnseenCharactersJoined(piece, patient, claims, given.text, further)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * refusedWithNumberCharactersAsOne, read in windows around each number character that is no decimal digit: each window
+ * read as given (redactLetterForScreenAsGiven) and then by item 40's rules with its number characters read as one.
+ * Charged in full on `further`. Read whole where the windows cannot stand for the letter or a window's reading as given
+ * is not the first reading's.
+ */
+function refusedWithNumberCharactersInWindows(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], first: Redacted, further: { spent: number }): boolean {
+  const kept = spansOfReading.get(first);
+  const windows = kept === undefined ? null : windowsOf(text, NUMBER_CHARACTERS, kept.normal);
+  if (windows === null || wholeLetter(windows, text)) {
+    return refusedWithNumberCharactersAsOne(text, patient, claims, further.spent, further, first);
+  }
+  for (const window of windows) {
+    windowCounts.windows += 1;
+    const piece = text.slice(window.start, window.end);
+    const given = redactLetterForScreenAsGiven(piece, patient, claims, further.spent);
+    further.spent = checkWorkOf(given);
+    if (further.spent > CHECK_WORK_BUDGET) {
+      return true;
+    }
+    if (!sameInside(first, given, window, text)) {
+      windowCounts.fallbacks += 1;
+      return refusedWithNumberCharactersAsOne(text, patient, claims, further.spent, further, first);
+    }
+    if (refusedWithNumberCharactersAsOne(piece, patient, claims, further.spent, further, given) || further.spent > CHECK_WORK_BUDGET) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /** redactLetterForScreen's reading with Queues item 40's rule for a number character beside an identifier (R1-3), and no more. */
 function redactLetterForScreenBesideNumberCharacters(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], from = 0): Redacted & { readonly candidates: readonly string[] } {
   const read = redactLetterForScreenAsGiven(text, patient, claims, from);
@@ -4028,7 +4190,7 @@ function redactLetterForScreenBesideNumberCharacters(text: string, patient: Pati
   // 40) refuses the letter: what the reading above wrote, with the mark the check refuses. The further reading is
   // charged in full on this letter's count whether it refuses or not, so one budget still holds for the whole check.
   const further = { spent };
-  const refused = refusedWithNumberCharactersAsOne(text, patient, claims, spent, further, read);
+  const refused = refusedWithNumberCharactersInWindows(text, patient, claims, read, further);
   const redacted = refused && !read.text.endsWith(BARRIER) ? { ...read, text: refusedByMarkAfter(read.text) } : read;
   workOfRedacted.set(redacted, further.spent);
   return redacted;
@@ -4188,7 +4350,7 @@ function screenAsBothRead(text: string, patient: PatientIdentifiers, claims: rea
   // check of its own is charged (holdsAsFirstRead): past the budget the entry refuses the letter, with no text of it.
   const asFirstWrote = { text: first.text, claims: first.claims, replaced: first.replaced, candidates: first.candidates };
   if (wider.length > 0 && refusedAsFirstRead(first.text, patient, claims)) {
-    return asFirstWrote;
+    return withSpans(asFirstWrote, normal, first.spans);
   }
   const widened = (spans: readonly PlacedSpan[]) => {
     const sent = written(normal, spans);
@@ -4205,9 +4367,9 @@ function screenAsBothRead(text: string, patient: PatientIdentifiers, claims: rea
   const base = refusedAsTheBaseRead(normal, raw, subject, first, wider.length > 0 ? false : undefined, wider.length === 0 ? first.text : written(normal, both), patient, claims);
   if (base !== null) {
     const wrote = base.spans === first.spans ? asFirstWrote : widened(base.spans);
-    return base.byFirstRead ? wrote : { ...wrote, text: refusedByMarkAfter(wrote.text) };
+    return base.byFirstRead ? withSpans(wrote, normal, base.spans) : { ...wrote, text: refusedByMarkAfter(wrote.text) };
   }
-  return wider.length === 0 ? asFirstWrote : widened(both);
+  return wider.length === 0 ? withSpans(asFirstWrote, normal, first.spans) : withSpans(widened(both), normal, both);
 }
 
 /**
@@ -6251,6 +6413,24 @@ export const matchingForTests = {
   placesOf,
   /** The source a form keeps for the pattern of `text` (flags 'gu'): V8's own. */
   sourceOf,
+  /**
+   * `read` with item 40's re-reads read in windows of `radius` characters each side (WINDOW_RADIUS), the interior
+   * compared `margin` characters in from each edge (WINDOW_MARGIN), or with no windows at all (`off`: the whole re-read);
+   * and how many windows were read and how many letters fell back to the whole re-read.
+   */
+  withWindows<T>(options: { readonly radius?: number; readonly margin?: number; readonly off?: boolean }, read: () => T): { readonly result: T; readonly windows: number; readonly fallbacks: number } {
+    const kept = { WINDOW_RADIUS, WINDOW_MARGIN, windowsOff };
+    WINDOW_RADIUS = options.radius ?? WINDOW_RADIUS;
+    WINDOW_MARGIN = options.margin ?? WINDOW_MARGIN;
+    windowsOff = options.off ?? false;
+    windowCounts.windows = 0;
+    windowCounts.fallbacks = 0;
+    try {
+      return { result: read(), windows: windowCounts.windows, fallbacks: windowCounts.fallbacks };
+    } finally {
+      ({ WINDOW_RADIUS, WINDOW_MARGIN, windowsOff } = kept);
+    }
+  },
   /** A subject's forms on a fold, the first reading's and the wider reading's, built fresh. */
   formsOf(subject: SubjectForTests, fold: 'plain' | 'alike'): readonly Form[] {
     const whole: Subject = { ...subject, datesOfBirth: null, initials: false, patterns: false };
