@@ -3965,7 +3965,25 @@ export function redactLetter(text: string, patient: PatientIdentifiers, claims: 
  * from the package (index.ts), so it is no part of its public type.
  */
 export function redactLetterForScreen(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
-  const read = redactLetterForScreenBesideNumberCharacters(text, patient, claims);
+  // The windows' reach by this call's identifiers is worked out once for the entry, and the first reading's spans
+  // (spansOfReading, which hold the letter as written) are dropped before the entry returns: nothing of the letter but
+  // what the entry returns is reachable from it (review 1 of Queues item 39, P-3).
+  const outer = reachOfEntry;
+  reachOfEntry = reachOf(patient, claims);
+  let read: (Redacted & { readonly candidates: readonly string[] }) | null = null;
+  try {
+    read = redactLetterForScreenBesideNumberCharacters(text, patient, claims);
+    return screenReadingWithUnseenCharacters(text, patient, claims, read);
+  } finally {
+    reachOfEntry = outer;
+    if (read !== null) {
+      spansOfReading.delete(read);
+    }
+  }
+}
+
+/** redactLetterForScreen after its reading beside number characters: Queues item 40's rule for an unseen character inside an identifier (R1-4). */
+function screenReadingWithUnseenCharacters(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], read: Redacted & { readonly candidates: readonly string[] }): Redacted & { readonly candidates: readonly string[] } {
   const spent = checkWorkOf(read);
   // Past the budget, or marked, the letter is refused already, and is read no further.
   if (spent > CHECK_WORK_BUDGET || read.text.endsWith(BARRIER) || UNSEEN_CHARACTER.exec(text) === null) {
@@ -4021,9 +4039,14 @@ function refusedWithUnseenCharactersJoined(text: string, patient: PatientIdentif
 //
 // Each further reading of Queues item 40 (unseen characters joined; number characters read as one) read the whole
 // letter again, so one such character in a long letter doubled its cost (Lane B's review of item 40, S-1 and C-1). It
-// reads windows instead: around each run of the characters that ask for it, WINDOW_RADIUS characters each side, each
-// edge moved out to a white-space character it takes in (so no window cuts a run of letters, digits and joiners),
-// overlapping windows merged. Each window is read as given and as the re-read writes it, and refused by the re-read's
+// reads windows instead: around each run of the characters that ask for it, each side past WINDOW_RADIUS letters and
+// digits and twice the longest identifier of the call (reachOf), each edge then moved out to a white-space character
+// it takes in, overlapping windows merged. The reach is counted in the code points the skeleton keeps (KEPT_RUN), not
+// in characters: an identifier's gaps take white space and marks without limit and never a kept code point (lemma
+// 1), so a writing of an identifier, however far apart it is written, spans no more kept code points than its compact
+// has, and no run of gap characters ends a window between two of its pieces (review 1 of Queues item 39, P-1: an edge
+// 256 characters off, at white space, cut `7654`, U+0085, 256 spaces, `3210` in two and sent it). A span a reading
+// decides by pattern (a date, a Social Security or phone number) holds far fewer kept code points than WINDOW_RADIUS. Each window is read as given and as the re-read writes it, and refused by the re-read's
 // own rules, window by window; every reading and check is charged on the letter's one count. Locality (5.3): every
 // decision a reading makes about a span depends on the text within WINDOW_MARGIN characters of it, so a window decides
 // what the whole re-read decides there. Where a window's reading as given is not the first reading's inside the window
@@ -4031,8 +4054,42 @@ function refusedWithUnseenCharactersJoined(text: string, patient: PatientIdentif
 // as item 40 read it, charged on from the windows' count. So every letter is either proven local on its own text or
 // read whole. Nothing here is kept past the call.
 
-/** How far each side of a character that asks for a further reading its window reaches, before its edges move out to white space: 4 times WINDOW_MARGIN. */
+/** How many kept code points (KEPT_RUN) each side of a character that asks for a further reading its window reaches, beside the identifiers' own (reachOf), before its edges move out to white space: 4 times WINDOW_MARGIN. */
 let WINDOW_RADIUS = 256;
+/** For the tests only (matchingForTests.withWindows with a radius): the windows reach the radius alone, with nothing added for the call's identifiers. */
+let windowRadiusAlone = false;
+/** The reach of the entry that is reading (reachOf, worked out once for redactLetterForScreen), or null outside one. */
+let reachOfEntry: number | null = null;
+
+/**
+ * How many kept code points each side a window reaches: WINDOW_RADIUS and twice the longest identifier of the call. An
+ * identifier's length is counted generously, three times the longer of its NFKC and NFKD writings in UTF-16 units (a
+ * fold writes at most three code points for one) and a date of birth by its longest written form, so no form's compact
+ * is longer; twice, since a decision about a span reads at most one more span beside it. Only a count is kept, and only
+ * while the entry reads.
+ */
+function reachOf(patient: PatientIdentifiers, claims: readonly LetterClaim[]): number {
+  if (reachOfEntry !== null) {
+    return reachOfEntry;
+  }
+  if (windowRadiusAlone) {
+    return WINDOW_RADIUS;
+  }
+  let longest = 0;
+  const count = (value: string) => {
+    longest = Math.max(longest, 3 * Math.max(value.normalize('NFKC').length, value.normalize('NFKD').length));
+  };
+  patient.names.forEach(count);
+  patient.memberIds.forEach(count);
+  for (const date of patient.datesOfBirth) {
+    count(date);
+    dateForms(date).forEach(count);
+  }
+  for (const claim of claims) {
+    claim.claimNumbers.forEach(count);
+  }
+  return WINDOW_RADIUS + 2 * longest;
+}
 /** The widest fixed context a reading's decision about a span reads (the label, amount, date and range windows: 10 to 64 characters). */
 let WINDOW_MARGIN = 64;
 /** For the tests only (matchingForTests.withWindows): no windows, every further reading of the whole letter, as item 40 read it. */
@@ -4061,10 +4118,31 @@ interface LetterWindow {
  * no windows (the tests' `off`), no first reading's spans, or a window whose NFKC writing is not the letter's NFKC
  * writing there (each edge is at white space, where NFKC joins nothing, so this does not happen; checked all the same).
  */
-function windowsOf(text: string, find: RegExp, normal: string): LetterWindow[] | null {
+function windowsOf(text: string, find: RegExp, normal: string, reach: number): LetterWindow[] | null {
   if (windowsOff) {
     return null;
   }
+  // Where each kept code point of the letter starts, listed at the first match (one pass, a letter with no match none).
+  let keptAt: number[] | null = null;
+  const kept = (): number[] => {
+    if (keptAt === null) {
+      keptAt = [];
+      for (let i = 0; i < text.length; i += 1) {
+        const unit = text.charCodeAt(i);
+        if (unit < 128) {
+          if (asciiKept(unit)) keptAt.push(i);
+          continue;
+        }
+        const codePoint = String.fromCodePoint(text.codePointAt(i) ?? unit);
+        if (ALL_KEPT.test(codePoint)) keptAt.push(i);
+        i += codePoint.length - 1;
+      }
+    }
+    return keptAt;
+  };
+  // How many kept code points start before the match, and before its end: the matches come in order, so each counter only moves on.
+  let before = 0;
+  let through = 0;
   const places: { start: number; end: number }[] = [];
   const search = new RegExp(find.source, find.flags.includes('g') ? find.flags : `${find.flags}g`);
   // Each character is scanned for white space at most once (a letter with none would otherwise be scanned whole for
@@ -4072,8 +4150,13 @@ function windowsOf(text: string, find: RegExp, normal: string): LetterWindow[] |
   const space = (index: number) => /\s/u.test(text[index] ?? '');
   for (let match = search.exec(text); match !== null; match = search.exec(text)) {
     if (match[0].length === 0) search.lastIndex += 1;
-    let start = Math.max(0, match.index - WINDOW_RADIUS);
-    let end = Math.min(text.length, match.index + match[0].length + WINDOW_RADIUS);
+    const at = kept();
+    while (before < at.length && (at[before] ?? 0) < match.index) before += 1;
+    through = Math.max(through, before);
+    while (through < at.length && (at[through] ?? 0) < match.index + match[0].length) through += 1;
+    // `reach` kept code points each side, the last one whole (two units at most); where the letter has fewer, to its end.
+    let start = before >= reach ? (at[before - reach] ?? 0) : 0;
+    let end = through + reach <= at.length ? Math.min(text.length, (at[through + reach - 1] ?? 0) + 2) : text.length;
     const last = places[places.length - 1];
     const floor = last?.end ?? 0;
     if (last === undefined || start > floor) {
@@ -4134,7 +4217,7 @@ function sameInside(first: object, given: object, window: LetterWindow, text: st
  */
 function refusedWithUnseenCharactersInWindows(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], first: Redacted, further: { spent: number }): boolean {
   const kept = spansOfReading.get(first);
-  const windows = kept === undefined ? null : windowsOf(text, UNSEEN_CHARACTERS, kept.normal);
+  const windows = kept === undefined ? null : windowsOf(text, UNSEEN_CHARACTERS, kept.normal, reachOf(patient, claims));
   if (windows === null || wholeLetter(windows, text)) {
     return refusedWithUnseenCharactersJoined(text, patient, claims, first.text, further);
   }
@@ -4165,7 +4248,7 @@ function refusedWithUnseenCharactersInWindows(text: string, patient: PatientIden
  */
 function refusedWithNumberCharactersInWindows(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], first: Redacted, further: { spent: number }): boolean {
   const kept = spansOfReading.get(first);
-  const windows = kept === undefined ? null : windowsOf(text, NUMBER_CHARACTERS, kept.normal);
+  const windows = kept === undefined ? null : windowsOf(text, NUMBER_CHARACTERS, kept.normal, reachOf(patient, claims));
   if (windows === null || wholeLetter(windows, text)) {
     return refusedWithNumberCharactersAsOne(text, patient, claims, further.spent, further, first);
   }
@@ -6417,6 +6500,8 @@ export const matchingForTests = {
     }
     return [...sources];
   },
+  /** Whether the entry's first reading's spans, which hold the letter as written, are still kept for what an entry returned (P-3: never). */
+  keepsSpansOf: (redacted: object): boolean => spansOfReading.has(redacted),
   /** Whether a code point is one the skeleton keeps (KEPT_RUN): a letter or a decimal digit, an APOSTROPHE_LETTER not. */
   kept: (codePoint: string): boolean => codePoint !== '' && allKept(codePoint),
   /** For each word that stands contiguously in the text's letters and digits, every index of the text where it starts, in order. */
@@ -6424,13 +6509,15 @@ export const matchingForTests = {
   /** The source a form keeps for the pattern of `text` (flags 'gu'): V8's own. */
   sourceOf,
   /**
-   * `read` with item 40's re-reads read in windows of `radius` characters each side (WINDOW_RADIUS), the interior
+   * `read` with item 40's re-reads read in windows of `radius` kept code points each side (WINDOW_RADIUS; a radius
+   * given here is the whole reach, with nothing added for the call's identifiers), the interior
    * compared `margin` characters in from each edge (WINDOW_MARGIN), or with no windows at all (`off`: the whole re-read);
    * and how many windows were read and how many letters fell back to the whole re-read.
    */
   withWindows<T>(options: { readonly radius?: number; readonly margin?: number; readonly off?: boolean }, read: () => T): { readonly result: T; readonly windows: number; readonly fallbacks: number } {
-    const kept = { WINDOW_RADIUS, WINDOW_MARGIN, windowsOff };
+    const kept = { WINDOW_RADIUS, WINDOW_MARGIN, windowsOff, windowRadiusAlone };
     WINDOW_RADIUS = options.radius ?? WINDOW_RADIUS;
+    windowRadiusAlone = options.radius !== undefined;
     WINDOW_MARGIN = options.margin ?? WINDOW_MARGIN;
     windowsOff = options.off ?? false;
     windowCounts.windows = 0;
@@ -6438,7 +6525,7 @@ export const matchingForTests = {
     try {
       return { result: read(), windows: windowCounts.windows, fallbacks: windowCounts.fallbacks };
     } finally {
-      ({ WINDOW_RADIUS, WINDOW_MARGIN, windowsOff } = kept);
+      ({ WINDOW_RADIUS, WINDOW_MARGIN, windowsOff, windowRadiusAlone } = kept);
     }
   },
   /** A subject's forms on a fold, the first reading's and the wider reading's, built fresh. */

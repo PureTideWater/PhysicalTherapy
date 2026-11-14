@@ -3394,12 +3394,12 @@ describe('MOD-25, Queues item 40, fix round 1 (Lane B’s reviews S-1, S-2 and S
   }, 60_000);
 
   // The window-interior fallback (design note 5.3): where a window's reading as given differs from the first reading
-  // inside it, locality has failed on that letter and it is read whole, charged. A window of 4 characters each side
+  // inside it, locality has failed on that letter and it is read whole, charged. A window of 2 letters each side
   // cuts "Q. V." from its first name, so the window does not replace the initials the first reading replaced.
   it('stage 5: a window whose reading as given differs from the first reading inside it falls back to the whole re-read', LIMIT, () => {
     const letter = `Our letter. ${prose(2_000)} Jane Q. V.\u0085 ${prose(2_000)} Member ID 7654\u00853210.`;
     const off = matchingForTests.withWindows({ off: true }, () => redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS).text);
-    const narrow = matchingForTests.withWindows({ radius: 4, margin: 0 }, () => redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS).text);
+    const narrow = matchingForTests.withWindows({ radius: 2, margin: 0 }, () => redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS).text);
     expect(narrow.fallbacks).toBeGreaterThan(0);
     expect(narrow.result).toBe(off.result);
   });
@@ -3418,6 +3418,62 @@ describe('MOD-25, Queues item 40, fix round 1 (Lane B’s reviews S-1, S-2 and S
       { numRuns: 400, seed: 39 },
     );
   }, 120_000);
+
+  // Review 1 of Queues item 39, P-1 (reproduced by its skeptic on c1caa730): a stored number's gap takes white space
+  // and marks without limit, so a window whose edge stood 256 characters from the unseen character, at white space, cut
+  // the identifier in two and the letter was sent with both halves in clear. A window reaches by the letters and
+  // digits it passes, not by characters: no run of gap characters, however long, ends one.
+  const SPACES = ' '.repeat(256);
+  it.each([
+    ['a member ID, 256 spaces after the unseen character', `Member ID 7654\u0085${SPACES}3210`, asMember],
+    ['a member ID, 256 spaces before it', `Member ID 7654${SPACES}\u00853210`, asMember],
+    ['a member ID, 5,000 spaces', `Member ID 7654\u0085${' '.repeat(5_000)}3210`, asMember],
+    ['a member ID, 255 hyphens and a space', `Member ID 7654\u0085${'-'.repeat(255)} 3210`, asMember],
+    ['a member ID, a line break and an indent', `Member ID 7654\u0085\n${SPACES}3210`, asMember],
+    ['a member ID, 256 hyphens and U+FEFF', `Member ID 7654\u0085${'-'.repeat(256)}\uFEFF3210`, asMember],
+    ['a claim number', `Claim 7654\u0085${SPACES}3210`, asClaim],
+    ['a member ID cut twice about a fraction', `Ref 76\u0085${SPACES}54½32\u0085${SPACES}10 on file.`, asMember],
+    ['a date of birth', `Born 1980-03\u0085${SPACES}-14.`, asMember],
+  ] as const)('P-1: %s, is refused as the whole re-read refuses it', (_name, piece, { who, numbers }) => {
+    for (const letter of [piece, `${prose(3_000)} ${piece} ${prose(3_000)}`]) {
+      const off = matchingForTests.withWindows({ off: true }, () => refusedByTheEntry(letter, who, numbers));
+      expect(off.result).toBe(true);
+      expect(refusedByTheEntry(letter, who, numbers)).toBe(true);
+    }
+  });
+
+  // P-1 over generated letters: halves of a number, unseen and number characters, and long runs of gap characters.
+  it('P-1: on generated letters with long runs of gap characters, the windows refuse every letter the whole re-read refuses', () => {
+    const pieces = ['Member ID ', '7654', '3210', '7654', '3210', '76', '54', '32', '10', '\u0085', '\u0085', '½', '\uFFFC', SPACES, SPACES, ' '.repeat(700), '-'.repeat(300), `\n${SPACES}`, ' ', '1980-03', '-14', ` ${prose(300)} `, ` ${prose(900)} `];
+    fc.assert(
+      fc.property(fc.array(fc.constantFrom(...pieces), { minLength: 2, maxLength: 10 }), fc.boolean(), (parts, member) => {
+        const { who, numbers } = member ? asMember : asClaim;
+        const letter = parts.join('');
+        const off = matchingForTests.withWindows({ off: true }, () => refusedByTheEntry(letter, who, numbers));
+        if (off.result) {
+          expect(refusedByTheEntry(letter, who, numbers)).toBe(true);
+        }
+      }),
+      { numRuns: 600, seed: 3901 },
+    );
+  }, 120_000);
+
+  // Review 1 of Queues item 39, P-3: the first reading's spans, kept for the windows with the letter as written, were
+  // keyed by what the entry returned, so a caller that held the result held the whole unredacted letter. P-2, recorded:
+  // an identifier the first reading leaves that stands outside every window is refused by the check that follows the
+  // entry and not by the entry's mark, as the whole re-read marked it; the letter is refused either way.
+  it('P-3: nothing of the letter as written is kept for what the entry returns', () => {
+    for (const letter of ['Member ID 76543210 was denied.', `Paid ½ of it.\u0085 ${prose(2_000)} Jane Zephyra`, 'Member ID 7654\u00853210']) {
+      expect(matchingForTests.keepsSpansOf(redactLetterForScreen(letter, asMember.who, asMember.numbers))).toBe(false);
+    }
+  });
+  it('P-2: an identifier left in clear outside every window is refused by the check, with or without the entry’s mark', () => {
+    const letter = `Ref 76543210x on file. ${prose(4_000)} Paid ½ of the charge. ${prose(300)}`;
+    const off = matchingForTests.withWindows({ off: true }, () => redactLetterForScreen(letter, asMember.who, asMember.numbers).text);
+    const on = redactLetterForScreen(letter, asMember.who, asMember.numbers).text;
+    expect(off.result).toBe(`${on}\u0001`);
+    expect(refusedByTheEntry(letter, asMember.who, asMember.numbers)).toBe(true);
+  });
 
   // S-4, the narrow part (ADR 0054's joiner list amended): U+FFFC (what PDF text writes for an object) and a number
   // character that is no decimal digit, inside a stored number, join it as any number joiner does. U+FFFC is replaced
