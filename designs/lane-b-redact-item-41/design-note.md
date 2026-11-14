@@ -1,8 +1,7 @@
 <!-- RESUME-BLOCK
 Queues item 41, Lane B designer. A measured design note only (no product build, no PR). State: done, with the rulings
-below open. Two runs were not finished after container restarts, and none bears on a recommendation: the gate of
-variant j against head (j is not recommended), and the gate of the phone pass (it already fails the bar on the
-sweeps). The gate of variant k against base: see "Gate" under (b).
+below open. One run was not finished after container restarts: the gate of variant j against head (j is not
+recommended; its gate against base: 0 differ).
 Scripts: scripts/ (lay41.sh lays every tree, protos41.py the three prototypes, measure41.sh runs gen40, gate,
 unseen, residuals and sweeps; widened.mts, phone-sides.mts and nel-or-ellipsis.mts the widening). Counts: measure/.
 Synthetic rows stay in the scratch root, never in the repo.
@@ -103,8 +102,8 @@ In the product this belongs inside the reader's entry, not in a wrapper.
 - Item 40's 52 real-shaped refusals: all 52 given back, all sent with the member ID replaced. They are code range 16,
   no identifier 16 and 16, and number then date line 4.
 - Unseen sweep: sent in clear 0, hidden 13,464 (head 5,334), refused 20,295 (head 28,425).
-- Gate against head: none of the 975,489 letters differ (`measure/gate-head-head-k.report.md`). The gate against base
-  is PENDING_KBASE.
+- Gate against head: none of the 975,489 letters differ (`measure/gate-head-head-k.report.md`). The gate against base: none
+  differ either (`measure/gate-base-head-k.report.md`).
 - Time: the slowest generated-set letter took 28 ms (n: 25 ms). A letter with a C1 is read three times. The gate's
   timing cases hold no C1: their maximum is 956 ms against a 3,000 ms budget.
 
@@ -196,7 +195,7 @@ Side decides less than the caveat says.
   the bare phone is the unstored residual again.
 - On item 40's every-identifier sweep it sends the 255 that head refuses.
 - Generated set: 1,752 letters newly sent, all with the number hidden (`⅓5913242` → ` [MEMBER_ID]`). That makes 72
-  expectation failures and no PHI class.
+  expectation failures and no PHI class. Gate: 0 of 975,489 differ.
 - **It fails the bar.**
 
 ### Ruling (f)'s cheap partial fix
