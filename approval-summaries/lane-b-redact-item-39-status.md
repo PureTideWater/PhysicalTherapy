@@ -1,7 +1,7 @@
 # Lane B, Queues item 39: status
 
 <!-- RESUME-BLOCK -->
-- **Stage:** stage 5 built and pushed; its oracle (item 40's generated set, full gate against 6299c550) running.
+- **Stage:** stage 5 **done and proven**; the session stopped there, per the brief.
   #163 merged as 6299c550. Branch `co-001/redact-item-39`; WIP ref `co-001/wip-redact-item-39` at **c1caa730**
   (ls-remote checked).
 - **Commits since 5af1c9a0:** 7f5af9bd merge of `claude/build-platform` 6299c550. Its conflict was in
@@ -18,10 +18,16 @@
   row is unchanged.
 - **Not windowed:** `redactionSpans` (redactLetter's path) still calls the whole re-reads with no count, as item 40
   has it. Name this for the reviews.
-- **Next, exactly:** the oracle, A = 6299c550 `packages/redact/src`, B = c1caa730's:
-  `generated-set-40.mts <out>/corpus40 40`; `generated-run-40.mts A B corpus40 gen40` (from the gate directory, with
-  ts-resolve); `gate/run.sh A B <out> --workers 4 --no-cache`. Need: 0 differ and PHI none, except that S-1/C-1-shaped
-  rows may become sent. Then record the result here and report the stage's end. Not mine: the reviews, ADR 0054, the PR.
+- **Oracle, A = 6299c550 (item 40's merged head), B = c1caa730:** item 40's generated set (seed 40, 51,833 letters):
+  differ 0, refused 8,570 on both, PHI classes none, failures 0, notes 2 (the two pinned `r13.left.floor`), newly
+  refused none, slowest B 60 ms. Full gate, `--no-cache`, 4 workers: 975,489 letters, differ 0, refused 463,002 on both,
+  errors 0, span mismatches 0; PHI, KEEP and UNPLACED none; max letter 1,187 ms A, 1,279 ms B, of 3,000. The S-1 and
+  C-1 rows became sent and no other row changed (unit tests). `git diff 6299c550 c1caa730 -- packages/redact` changes
+  no CHECK_WORK_BUDGET, WORK constant or 3 s row. Reports in `designs/lane-b-redact-item-39/stage-5-c1caa730/`.
+- **Next (the next session):** stage 6, the two reviews (PHI against lemmas 1 to 4 and 5.3, including the skeleton
+  change in the merge and the un-windowed `redactionSpans` path; time against the battery and the gate's timing rows),
+  then stage 7 (ADR 0054: the cold and G-1 rows closed, cost 6 (S-1, C-1) closed), then the PR into
+  `claude/build-platform` from the template.
 <!-- /RESUME-BLOCK -->
 
 ## Rulings applied (lanes/lane-b.md 21:10 UTC)
