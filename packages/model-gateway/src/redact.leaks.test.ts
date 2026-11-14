@@ -1610,7 +1610,8 @@ describe('the reviews of the build and of its fix round (docs/adr/0054): each fi
     // the review J, are the recorded cost since.
     refused('\u2502 Claim Number \u2502\n\u251C\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502 20260112345.01 \u2502'),
     refused('Acct.\n-----\n802-45-678901.50'),
-    unchanged('Claim:\u008520260112345.01'),
+    // Queues item 41: the C1 character is read as a line break, and nothing else of the letter changes.
+    sentAs('Claim:\u008520260112345.01', 'Claim:\n20260112345.01'),
     // I2-6: an amount that begins as a year does is no year after a month's word.
     unchanged('Row 366-535-16935Nov 2000.00'),
     unchanged('Seq 12345678901Jan 2000.00'),
@@ -2794,6 +2795,20 @@ const ITEM_40 = (() => {
   const sentInClear = (sent: string | null, number: string) => sent !== REFUSED && sent.replace(/[^0-9]/gu, '').includes(number);
   return { numberCharacters, unseen, held, frame, sentInClear };
 })();
+/**
+ * Queues item 41 (MOD-27): a C1 character (U+0080 to U+009F) is read as a line break, unless it split a stored
+ * identifier. So a letter that holds one is refused, or sent exactly as the same letter with a line break there is sent
+ * (its twin): where the reader takes a number, a date or a name across a line break, the whole of it is replaced.
+ */
+const C1_CHARACTERS = /[\u0080-\u009f]/gu;
+const holdsC1 = (letter: string) => letter.search(C1_CHARACTERS) >= 0;
+const lineBreakTwin = (letter: string) => letter.replace(C1_CHARACTERS, '\n');
+const expectRefusedOrAsItsTwin = (letter: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]) => {
+  const sent = sentOrRefused(letter, patient, claims);
+  expect([REFUSED, sentOrRefused(lineBreakTwin(letter), patient, claims)]).toContain(sent);
+  return sent;
+};
+
 const UNSEEN_ROWS = [
   ['U+0000', '\u0000'],
   ['U+001B', '\u001B'],
@@ -2838,7 +2853,7 @@ describe('MOD-25, Queues item 40: beside its three forms, what the base does and
 
   // Under R1-4's ruling (i), one more reading: an unseen character before or after the number joins nothing, and the
   // number is replaced as the first reading replaces it. (Under the fallback (ii) these rows are rewritten to refused.)
-  it.each(UNSEEN_ROWS.flatMap(([name, character]) => [sentAs(`Member ID ${character}76543210 paid`, `Member ID ${character}[MEMBER_ID] paid`), sentAs(`Member ID 76543210${character} paid`, `Member ID [MEMBER_ID]${character} paid`)].map((row) => [name, ...row] as const)))(
+  it.each(UNSEEN_ROWS.flatMap(([name, character]) => [sentAs(`Member ID ${character}76543210 paid`, `Member ID ${lineBreakTwin(character)}[MEMBER_ID] paid`), sentAs(`Member ID 76543210${character} paid`, `Member ID [MEMBER_ID]${lineBreakTwin(character)} paid`)].map((row) => [name, ...row] as const)))(
     '%s before or after the number: %j %s',
     (_name, letter, _outcome, sent) => {
       expect(sentOrRefused(letter, who, numbers)).toBe(sent);
@@ -3032,8 +3047,13 @@ describe('MOD-25, Queues item 40, stage 3 (R1-4): an unseen character inside an 
     ['inside a number that holds letters', (c: string) => `Member ID ZZ76${c}54321 paid`],
   ] as const;
 
-  it.each(UNSEEN_ROWS.flatMap(([name, character]) => FORMS.map(([form, write]) => [name, form, write(character)] as const)))('%s inside the number, %s: refused', (_name, _form, letter) => {
-    expect(sentOrRefused(letter, asMember.who, asMember.numbers)).toBe(REFUSED);
+  it.each(UNSEEN_ROWS.flatMap(([name, character]) => FORMS.map(([form, write]) => [name, form, write(character)] as const)))('%s inside the number, %s: refused (a C1: or sent as its line-break twin, the whole number replaced)', (_name, _form, letter) => {
+    if (holdsC1(letter)) {
+      const sent = expectRefusedOrAsItsTwin(letter, asMember.who, asMember.numbers);
+      expect(sent === REFUSED ? '' : sent).not.toMatch(/7654|3210|ZZ76|54321/u);
+    } else {
+      expect(sentOrRefused(letter, asMember.who, asMember.numbers)).toBe(REFUSED);
+    }
   });
 
   it('any unseen character at any place inside any digits-only number: never sent with the number in clear', () => {
@@ -3055,10 +3075,20 @@ describe('MOD-25, Queues item 40, stage 3 (R1-4): an unseen character inside an 
 
   // By the count, and with no text: past the budget the entry returns the mark alone, as it does for a letter its
   // first reading did not finish, and the count it hands the check is past the budget.
-  it('the row nearest the budget with one U+0085 added goes back as the mark alone, its count past the budget', { timeout: 20_000 }, () => {
-    const screened = redactLetterForScreen(`${NEAR_THE_BUDGET}\u0085`, BUDGET_PATIENT, BUDGET_CLAIMS);
+  it('the row nearest the budget with one U+0000 added goes back as the mark alone, its count past the budget', { timeout: 20_000 }, () => {
+    const screened = redactLetterForScreen(`${NEAR_THE_BUDGET}\u0000`, BUDGET_PATIENT, BUDGET_CLAIMS);
     expect(screened.text).toBe('\u0001');
     expect(checkWorkOf(screened)).toBeGreaterThan(CHECK_WORK_BUDGET);
+  });
+
+  // Queues item 41: a C1 character is read twice (a line break, and taken out), both on the letter's one count. The
+  // row's two readings end inside the budget, and the check that follows, counting on from them, passes it.
+  it('the row nearest the budget with one U+0085 added is read twice inside the budget, and the check after it passes the budget', { timeout: 20_000 }, () => {
+    const screened = redactLetterForScreen(`${NEAR_THE_BUDGET}\u0085`, BUDGET_PATIENT, BUDGET_CLAIMS);
+    const once = checkWorkOf(redactLetterForScreen(NEAR_THE_BUDGET, BUDGET_PATIENT, BUDGET_CLAIMS));
+    expect(checkWorkOf(screened)).toBeGreaterThan(once);
+    expect(checkWorkOf(screened)).toBeLessThanOrEqual(CHECK_WORK_BUDGET);
+    expect(holdsIdentifier(screened.text, BUDGET_PATIENT, BUDGET_CLAIMS, checkWorkOf(screened))).toBe(true);
   });
 
   // Every kind of identifier, not a stored number alone (W71 measured these clear on the base: a date of birth 294
@@ -3086,6 +3116,9 @@ describe('MOD-25, Queues item 40, stage 3 (R1-4): an unseen character inside an 
     const sent = sentOrRefused(letter, call.who, call.numbers);
     if (firstReadingJoins(name, kind)) {
       expect(sent).toMatch(/^(?:SSN|Call) \[(?:SSN|PHONE|MEMBER_ID)\] (?:on file|now)$/u);
+    } else if (holdsC1(letter)) {
+      // Queues item 41: refused, or sent as the letter with a line break there is sent, the whole of it replaced.
+      expectRefusedOrAsItsTwin(letter, call.who, call.numbers);
     } else {
       expect(sent).toBe(REFUSED);
     }
@@ -3095,7 +3128,13 @@ describe('MOD-25, Queues item 40, stage 3 (R1-4): an unseen character inside an 
   it.each(UNSEEN_ROWS)('%s inside a part of a name: the name is replaced whole as before, or the letter is refused', (_name, character) => {
     expect(sentOrRefused(`Ms. Zeph${character}yra was seen.`, asMember.who, asMember.numbers)).toBe('Ms. [PATIENT_NAME] was seen.');
     // Between two words of a name the records hold with a mark, the first reading wrote two placeholders with the character between them.
-    expect(sentOrRefused(`Dear Jane${character}zephyra,`, patientOf(['JANE+ZEPHYRA']), asMember.numbers)).toBe(REFUSED);
+    const between = `Dear Jane${character}zephyra,`;
+    if (holdsC1(between)) {
+      // Queues item 41: a line break between the two words, and both are replaced.
+      expect(sentOrRefused(between, patientOf(['JANE+ZEPHYRA']), asMember.numbers)).toBe('Dear [PATIENT_NAME],');
+    } else {
+      expect(sentOrRefused(between, patientOf(['JANE+ZEPHYRA']), asMember.numbers)).toBe(REFUSED);
+    }
   });
 
   // The wider reading replaces one piece of a stored number ((c)); the unseen character stands inside the piece
@@ -3114,12 +3153,28 @@ describe('MOD-25, Queues item 40, stage 3 (R1-4): an unseen character inside an 
     ),
   )('%s inside the piece beside one the wider reading replaces, of a number held %s: %j is refused', (_name, held, letter) => {
     const who = patientOf(['JANE Q ZEPHYRA'], ['1980-03-14'], [held]);
+    if (holdsC1(letter)) {
+      // Queues item 41: the piece is read across a line break, and the whole number is replaced, by each entry.
+      expect(sentOrRefused(letter, who, asMember.numbers)).toBe('ID [MEMBER_ID] paid');
+      expect(redactLetter(letter, who, asMember.numbers).text).toBe('ID [MEMBER_ID] paid');
+      return;
+    }
     expect(sentOrRefused(letter, who, asMember.numbers)).toBe(REFUSED);
     expect(holdsIdentifier(redactLetter(letter, who, asMember.numbers).text, who, asMember.numbers)).toBe(true);
     expect(holdsIdentifier(redactionSpans(letter, who, asMember.numbers).text, who, asMember.numbers)).toBe(true);
   });
 
-  it.each(UNSEEN_ROWS.flatMap(([name, character]) => FORMS.map(([form, write]) => [name, form, write(character)] as const)))('%s inside the number, %s: refused through redactLetter and through redactionSpans', (_name, _form, letter) => {
+  it.each(UNSEEN_ROWS.flatMap(([name, character]) => FORMS.map(([form, write]) => [name, form, write(character)] as const)))('%s inside the number, %s: refused through redactLetter and through redactionSpans (a C1: as the screen’s entry answers)', (_name, _form, letter) => {
+    if (holdsC1(letter)) {
+      // Queues item 41: each entry answers as the screen's does, refused or the whole number replaced.
+      const sent = sentOrRefused(letter, asMember.who, asMember.numbers);
+      const written = redactLetter(letter, asMember.who, asMember.numbers).text;
+      expect(holdsIdentifier(written, asMember.who, asMember.numbers)).toBe(sent === REFUSED);
+      if (sent !== REFUSED) {
+        expect(written).toBe(sent);
+      }
+      return;
+    }
     expect(holdsIdentifier(redactLetter(letter, asMember.who, asMember.numbers).text, asMember.who, asMember.numbers)).toBe(true);
     const read = redactionSpans(letter, asMember.who, asMember.numbers);
     expect(holdsIdentifier(read.text, asMember.who, asMember.numbers)).toBe(true);
@@ -3162,10 +3217,11 @@ describe('MOD-25, Queues item 40, stage 3 (R1-4): an unseen character inside an 
   it('a letter that holds such a character is charged its further reading and that reading’s check in full', () => {
     const { who, numbers } = asMember;
     const plain = 'Ref 76543210 on file.\nNote 2.';
-    const held = 'Ref 76543210 on file.\u0085Note 2.';
+    // U+0000: a C1 character is read another way since Queues item 41, and its count is pinned in redact.c1.test.ts.
+    const held = 'Ref 76543210 on file.\u0000Note 2.';
     const joined = 'Ref 76543210 on file.\u200BNote 2.';
     const work = (letter: string) => checkWorkOf(redactLetterForScreen(letter, who, numbers));
-    expect(sentOrRefused(held, who, numbers)).toBe('Ref [MEMBER_ID] on file.\u0085Note 2.');
+    expect(sentOrRefused(held, who, numbers)).toBe('Ref [MEMBER_ID] on file.\u0000Note 2.');
     // The reading of the letter as given, the further reading, and the further reading's check: more than two readings.
     expect(work(held)).toBeGreaterThan(work(plain) + work(joined));
     // One that holds none, and one whose only such character is the one the further reading writes, are read once.
@@ -3312,10 +3368,10 @@ describe('MOD-25, Queues item 40, fix round 1 (Lane B’s reviews S-1, S-2 and S
   const LIMIT = { timeout: 20_000 };
 
   // S-2: the check of what the reading with every number character written as U+2180 wrote is charged on the letter's
-  // count. This crafted row (a fraction and one U+0085 before 80,000 characters of prose) was sent while that check went
+  // count. This crafted row (a fraction and one unseen character before 80,000 characters of prose; U+0085 when it was found, U+0000 since Queues item 41 reads a C1 as a line break) was sent while that check went
   // uncounted (349,830,476 units counted, about 440 million spent); charged, its count passes the budget.
   it('S-2: the number characters’ reading’s check is charged, so a crafted row the uncounted check let through is refused by the count', LIMIT, () => {
-    const letter = `½ \u0085 ${prose(80_000)}`;
+    const letter = `½ \u0000 ${prose(80_000)}`;
     expect(refusedByTheEntry(letter, BUDGET_PATIENT, BUDGET_CLAIMS)).toBe(true);
     expect(checkWorkOf(redactLetterForScreen(letter, BUDGET_PATIENT, BUDGET_CLAIMS))).toBeGreaterThan(CHECK_WORK_BUDGET);
   });
@@ -3414,18 +3470,25 @@ describe('MOD-25: a letter the base refuses stays refused, whatever the wider re
       '1 Fax XAAAA\r7,7,7,7,7:a1 1-1/1/1/1/17,7,7,7,7.,7\u00041+',
       '1 Fax XAAAA\r[MEMBER_ID]:a1 1-1/1/1/1/17,7,7,7,7.,7\u00041+',
     ],
-    [
-      'a member ID held "12121/2121" written over U+0085, and five letters of the name after a CR LF (review 3, R3-4)',
-      held(['AAAAAAAA'], ['12121/2121'], ['12312312', '000&11']),
-      '000&11.12121\u00852121\u0085aaAaaaAa A\u0085A\u0085AaA\u0085Aa\u0085a\r\naaAaA&',
-      '[CLAIM_1].12121\u00852121\u0085[PATIENT_NAME] [PATIENT_NAME]\r\naaAaA&',
-    ],
   ] as const)('%s: refused, as the base wrote it', (_what, [patient, claims], letter, written) => {
     const read = entry(letter, patient, claims);
     expect(read.refused).toBe(true);
     // A letter that holds an unseen character (Queues item 40, stage 3) is read once more with it joined, and where that
     // reading refuses, the text the base wrote goes back with the checks' mark after it: not one character of it changed.
-    expect(read.text).toBe(letter.includes('\u0004') || letter.includes('\u0085') ? `${written}\u0001` : written);
+    expect(read.text).toBe(letter.includes('\u0004') ? `${written}\u0001` : written);
+  });
+
+  // A NAMED COST of Queues item 41 (variant k), put to the orchestrator for a ruling: review 3's row R3-4, a member ID
+  // held "12121/2121" written over U+0085 and five letters of the name after a CR LF. The base refused it, writing
+  // "[CLAIM_1].12121<U+0085>2121<U+0085>[PATIENT_NAME] [PATIENT_NAME]<CR><LF>aaAaA&". Each U+0085 is now read as a
+  // line break, across which the reader takes the number and every piece of the name: the letter is sent as its
+  // line-break twin is sent, with nothing of the patient's left in it.
+  it('R3-4, which the base refused over U+0085, is sent as its line-break twin is sent, every stored value replaced (Queues item 41’s named cost)', () => {
+    const [patient, claims] = held(['AAAAAAAA'], ['12121/2121'], ['12312312', '000&11']);
+    const letter = '000&11.12121\u00852121\u0085aaAaaaAa A\u0085A\u0085AaA\u0085Aa\u0085a\r\naaAaA&';
+    const read = entry(letter, patient, claims);
+    expect(read).toEqual({ text: '[CLAIM_1].[MEMBER_ID]\n[PATIENT_NAME] [PATIENT_NAME]&', refused: false });
+    expect(read).toEqual(entry(lineBreakTwin(letter), patient, claims));
   });
 
   it('a letter this reader’s own check refuses anyway goes back as the base wrote it, without the mark (MOD-15’s glued name)', () => {
@@ -3447,6 +3510,9 @@ describe('MOD-25: a letter the base refuses stays refused, whatever the wider re
     expect(entry('Fax 7777.7 paid', patient, claims)).toEqual({ text: 'Fax [MEMBER_ID] paid', refused: false });
   });
 
+  /** The recorded letters the base refused that Queues item 41 sends, by seed: each holds U+0085 and is sent as its line-break twin. */
+  const SENT_AS_THE_LINE_BREAK_TWIN: Readonly<Record<number, readonly number[]>> = { 301: [4437, 7667, 14701], 302: [15982, 17696] };
+
   it.each(BASE_REFUSED)('seed $seed: every one of the $refused letters of $letters that the base refused is refused (the base’s recorded verdicts)', ({ seed, letters, sum, refused, bits }) => {
     const all = fuzzLetters(seed, letters);
     // The letters are the ones the verdicts were recorded for.
@@ -3461,8 +3527,19 @@ describe('MOD-25: a letter the base refuses stays refused, whatever the wider re
       const [patient, claims] = held([...letter.names], [...letter.memberIds], [...letter.claimNumbers]);
       return !entry(letter.text, patient, claims).refused;
     });
-    // The places alone: a letter's text is no part of a failure's message.
-    expect(sent).toEqual([]);
+    // The places alone: a letter's text is no part of a failure's message. A NAMED COST of Queues item 41 (variant k),
+    // put to the orchestrator for a ruling: five of the recorded letters hold U+0085, which is now read as a line
+    // break, and each is sent exactly as its line-break twin is sent. Every other letter the base refused is refused.
+    expect(sent).toEqual(SENT_AS_THE_LINE_BREAK_TWIN[seed] ?? []);
+    for (const place of sent) {
+      const letter = all[place];
+      if (letter === undefined) {
+        continue;
+      }
+      const [patient, claims] = held([...letter.names], [...letter.memberIds], [...letter.claimNumbers]);
+      expect(holdsC1(letter.text)).toBe(true);
+      expect(entry(letter.text, patient, claims).text === entry(lineBreakTwin(letter.text), patient, claims).text, String(place)).toBe(true);
+    }
   }, 120_000);
 });
 

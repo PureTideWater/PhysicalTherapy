@@ -1468,16 +1468,18 @@ function sendsNoSsnOrPhoneIn({ patient, claims, segments, refused }: PatternCase
   const unseen = text.includes('\u0085');
   const unmarked = (written: string) => (unseen && written.endsWith('\u0001') ? written.slice(0, -1) : written);
   const normal = unmarked(read);
-  expect(normal).toBe(text);
+  // Queues item 41 (MOD-27): U+0085 is a C1 character, read as a line break unless it split a stored identifier; one
+  // code unit for one, so every span stands where the generator wrote it.
+  expect([text, text.replace(/\u0085/gu, '\n')]).toContain(normal);
   const entry = redactLetterForScreen(text, patient, claims);
   const screened = { ...entry, text: unmarked(entry.text) };
   let rebuilt = '';
   let kept = 0;
   for (const span of spans) {
-    rebuilt += text.slice(kept, span.start) + span.placeholder;
+    rebuilt += normal.slice(kept, span.start) + span.placeholder;
     kept = span.end;
   }
-  const applied = rebuilt + text.slice(kept);
+  const applied = rebuilt + normal.slice(kept);
   expect(unmarked(redactLetter(text, patient, claims).text)).toBe(applied);
   const held = holdsIdentifier(entry.text, patient, claims);
   if (held) {

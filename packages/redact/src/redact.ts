@@ -3653,6 +3653,82 @@ function appliedMatches(normal: string, subject: Subject, claims: number): Found
  * as written (gluedBeforeRedaction; MOD-25, rule (a)): the check refuses it whatever a placeholder took of the number.
  */
 export function redactionSpans(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
+  const read = readWithC1(text, patient, claims);
+  if (read === null) {
+    return redactionSpansUnmended(text, patient, claims);
+  }
+  if (read.spent > CHECK_WORK_BUDGET) {
+    // Past the budget the two readings did not run to their end: the letter as written, with the mark the check refuses.
+    const unmended = redactionSpansUnmended(text, patient, claims);
+    return unmended.text.endsWith(BARRIER) ? unmended : { text: refusedByMarkAfter(unmended.text), spans: unmended.spans };
+  }
+  return redactionSpansUnmended(read.text, patient, claims);
+}
+
+/** A C1 character (U+0080 to U+009F): what a Windows-1252 byte 0x80 to 0x9F is once read as Latin-1 (Queues item 41). */
+const C1_CHARACTER = /[\u0080-\u009f]/;
+const C1_CHARACTERS = /[\u0080-\u009f]/g;
+/** The placeholders of the patient's stored identifiers: every one but the two found by pattern, [PHONE] and [SSN]. */
+const STORED_PLACEHOLDERS = /\[(?:PATIENT_NAME|DATE_OF_BIRTH|MEMBER_ID|CLAIM_[1-9]\d*)\]/g;
+
+/** How many times each stored identifier's placeholder stands in a redacted text. */
+function storedPlaceholdersIn(redacted: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const [placeholder] of redacted.matchAll(STORED_PLACEHOLDERS)) {
+    counts.set(placeholder, (counts.get(placeholder) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Whether the reading with every C1 taken out replaced more of some stored identifier than the reading with every C1 a
+ * line break did: then a C1 split one ("03/1<U+0096>4/1980"). A phone or Social Security number the joined reading
+ * finds by pattern does not count ("97110<U+0096>97112" joined is ten digits, and no number of the patient's).
+ */
+function storedFoundOnlyJoined(asBreaks: string, joined: string): boolean {
+  const found = storedPlaceholdersIn(asBreaks);
+  for (const [placeholder, count] of storedPlaceholdersIn(joined)) {
+    if (count > (found.get(placeholder) ?? 0)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * What the reader reads of a letter that holds a C1 character (Queues item 41, variant k; test matrix MOD-27), or null
+ * for a letter that holds none, which is read as before. A C1 is a Windows-1252 dash, quote or bullet, or a mainframe
+ * line ending (U+0085), decoded as Latin-1: between two numbers it joined nothing the payer wrote as one, and item 40
+ * refused the letter all the same. The letter is read two ways, each the whole entry as item 40 has it:
+ *
+ *  1. with every C1 a line break (one code unit for one, so every span stands where it stands in the letter);
+ *  2. with every C1 taken out.
+ *
+ * Where reading 2 replaces more of a stored identifier than reading 1 (storedFoundOnlyJoined), a C1 split one of them:
+ * the text to read is the letter as written, which item 40's reading refuses. Otherwise it is reading 1's text, and
+ * `asBreaks` is that reading. Both readings are charged on the letter's one count, the second on from the first
+ * (`spent`); past the budget the text is the letter as written and the count says so. Nothing here is stored or sent.
+ */
+function readWithC1(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spent: number; readonly asBreaks?: Redacted & { readonly candidates: readonly string[] } } | null {
+  if (!C1_CHARACTER.test(text)) {
+    return null;
+  }
+  const broken = text.replace(C1_CHARACTERS, '\n');
+  const asBreaks = redactLetterForScreenUnmended(broken, patient, claims);
+  const first = checkWorkOf(asBreaks);
+  if (first > CHECK_WORK_BUDGET) {
+    return { text, spent: CHECK_WORK_BUDGET + 1 };
+  }
+  const joined = redactLetterForScreenUnmended(text.replace(C1_CHARACTERS, ''), patient, claims, first);
+  const spent = checkWorkOf(joined);
+  if (spent > CHECK_WORK_BUDGET) {
+    return { text, spent: CHECK_WORK_BUDGET + 1 };
+  }
+  return storedFoundOnlyJoined(asBreaks.text, joined.text) ? { text, spent } : { text: broken, spent, asBreaks };
+}
+
+/** redactionSpans' reading as Queues item 40 has it: of the text it is given, a C1 character read as any unseen character. */
+function redactionSpansUnmended(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): { readonly text: string; readonly spans: readonly { readonly start: number; readonly end: number; readonly placeholder: string }[] } {
   const read = redactionSpansBesideNumberCharacters(text, patient, claims);
   // An unseen character inside an identifier (Queues item 40, R1-4): the spans as they were read, and the mark the
   // check refuses. Asked of what these spans write, on a count from nothing, as the reading above is.
@@ -3754,7 +3830,31 @@ export function redactLetter(text: string, patient: PatientIdentifiers, claims: 
  * from the package (index.ts), so it is no part of its public type.
  */
 export function redactLetterForScreen(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[]): Redacted & { readonly candidates: readonly string[] } {
-  const read = redactLetterForScreenBesideNumberCharacters(text, patient, claims);
+  // A letter with a C1 character is read with each a line break, or as written where one split a stored identifier
+  // (readWithC1; Queues item 41). Every reading is charged on the letter's one count, which the check counts on from.
+  const read = readWithC1(text, patient, claims);
+  if (read === null) {
+    return redactLetterForScreenUnmended(text, patient, claims);
+  }
+  if (read.spent > CHECK_WORK_BUDGET) {
+    const unread = { text: unreadPastTheBudget, claims: claimPlaceholders(claims), replaced: 0, candidates: [] };
+    workOfRedacted.set(unread, CHECK_WORK_BUDGET + 1);
+    return unread;
+  }
+  if (read.asBreaks === undefined) {
+    return redactLetterForScreenUnmended(text, patient, claims, read.spent);
+  }
+  const redacted = { ...read.asBreaks };
+  workOfRedacted.set(redacted, read.spent);
+  return redacted;
+}
+
+/**
+ * redactLetterForScreen's reading as Queues item 40 has it: of the text it is given, a C1 character read as any unseen
+ * character. A further reading of one letter (Queues item 41) counts on `from`, the letter's count so far.
+ */
+function redactLetterForScreenUnmended(text: string, patient: PatientIdentifiers, claims: readonly LetterClaim[], from = 0): Redacted & { readonly candidates: readonly string[] } {
+  const read = redactLetterForScreenBesideNumberCharacters(text, patient, claims, from);
   const spent = checkWorkOf(read);
   // Past the budget, or marked, the letter is refused already, and is read no further.
   if (spent > CHECK_WORK_BUDGET || read.text.endsWith(BARRIER) || UNSEEN_CHARACTER.exec(text) === null) {
