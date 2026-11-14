@@ -1755,10 +1755,27 @@ function confusedGluedIn(tokens: readonly WrittenToken[], subject: Subject): Ran
 
 const confusedGlued = (normal: string, subject: Subject): boolean => onFold('alike', () => confusedGluedIn(writtenTokens(normal), subject).length > 0);
 
-/** What may lie between an initial and the name it belongs to: white space, apostrophes, dashes, "_" and VANISHED (after the name, a comma too). */
-const INITIAL_GAP = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD]*$/u;
-const INITIAL_GAP_AFTER = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD]*(?:,[\s\u00AD]*)?$/u;
-const GAP_CHARACTER = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD,]$/u;
+/**
+ * What may lie between an initial and the name it belongs to: white space, apostrophes, dashes, "_" and VANISHED (after
+ * the name, a comma too); and "/", ":", "·" and "。", which join an initial to a name as those do ("Zephyra J/Q/",
+ * "J:Q:Zephyra": Queues item 41, S-5).
+ */
+const INITIAL_GAP = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD/:·。]*$/u;
+const INITIAL_GAP_AFTER = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD/:·。]*(?:,[\s\u00AD]*)?$/u;
+const GAP_CHARACTER = /^[\s'‘’ʼʹˊ`´\p{Pd}−⁃_\u00AD,/:·。]$/u;
+/** A character nobody who reads the letter sees: a control or a format character. */
+const UNSEEN_BEFORE_PERIOD = /[\p{Cc}\p{Cf}]/u;
+/**
+ * Where the period of an initial that ends at `at` stands, or -1: right after it, or after a run of characters nobody
+ * sees ("J<U+200B>.", "Q<U+0085>."), which sent the initial for want of its period (Queues item 41, S-5).
+ */
+function periodAt(text: string, at: number): number {
+  let place = at;
+  while (place < text.length && UNSEEN_BEFORE_PERIOD.test(text[place] ?? '')) {
+    place += 1;
+  }
+  return text[place] === '.' ? place : -1;
+}
 
 /**
  * The initials of the patient's name written next to a name (view ranges), to a fixed point, so
@@ -1815,8 +1832,9 @@ function initialsNextToNames(view: View, normal: string, names: readonly Range[]
       continue;
     }
     const cased = (next: Range) => capital(written(candidate)) || lowerCase(next);
-    const dotted = view.text[candidate.end] === '.';
-    const resume = candidate.end + (dotted ? 1 : 0);
+    const dotAt = periodAt(view.text, candidate.end);
+    const dotted = dotAt >= 0;
+    const resume = dotted ? dotAt + 1 : candidate.end;
     const after = taken.has(index + 1) ? candidates[index + 1] : undefined;
     const before = taken.has(index - 1) ? candidates[index - 1] : undefined;
     const name = nameFrom(resume);
@@ -1828,9 +1846,20 @@ function initialsNextToNames(view: View, normal: string, names: readonly Range[]
     // the period after a name whose match ends in a letter standing alone ("ZZ/ZZZZ Z.Z.Z" for ZZZZZZ, "Zephyr A.J.Q."
     // for JANE Q ZEPHYRA): under that reading's gaps the name's last letter is written as a dotted initial is, and the
     // letters after it were sent. A name that ends in a word ends a sentence with its period ("Zephyra. I am").
-    const itsPeriod = preceding !== undefined && view.text[preceding.end] === '.' && (preceding === before || (wider && endsInLetterAlone(view.text, preceding)));
-    const gapFrom = preceding === undefined ? 0 : preceding.end + (itsPeriod ? 1 : 0);
-    const follows = preceding !== undefined && (runStart[candidate.start] ?? 0) <= gapFrom && INITIAL_GAP_AFTER.test(view.text.slice(gapFrom, candidate.start)) && cased(preceding) && (dotted || !beforeLowerCaseWord(view, normal, candidate.end, known));
+    // Queues item 41, ruling (f)'s partial fix: the period after a name is also this initial's to pass where the
+    // initial has a period of its own ("Zephyra.J.", "Okafor.A.I."): a sentence does not start with a dotted letter.
+    const precedingDot = preceding === undefined ? -1 : periodAt(view.text, preceding.end);
+    const itsPeriod = preceding !== undefined && precedingDot >= 0 && (preceding === before || (wider && endsInLetterAlone(view.text, preceding)) || (dotted && preceding === earlier));
+    const gapFrom = preceding === undefined ? 0 : itsPeriod ? precedingDot + 1 : preceding.end;
+    // And an undotted capital right after an initial already taken is taken before a lower-case word too ("Zephyra J.Q
+    // was seen"), except A, I and O: the article, the pronoun and the interjection start the next sentence ("Okafor A. I am").
+    const afterTakenInitial = preceding === before && preceding !== undefined && !['A', 'I', 'O'].includes(written(candidate).toUpperCase());
+    const follows =
+      preceding !== undefined &&
+      (runStart[candidate.start] ?? 0) <= gapFrom &&
+      INITIAL_GAP_AFTER.test(view.text.slice(gapFrom, candidate.start)) &&
+      cased(preceding) &&
+      (dotted || !beforeLowerCaseWord(view, normal, candidate.end, known) || afterTakenInitial);
     if (precedes || follows) {
       taken.add(index);
       for (const neighbour of [index - 1, index + 1]) {

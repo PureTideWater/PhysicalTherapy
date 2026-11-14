@@ -3330,13 +3330,23 @@ describe('MOD-25, Queues item 40, stage 4, ruling (A): the initial after a name 
   it.each([
     ['JANE Q ZEPHYRA', 'Zephyra. I am', '[PATIENT_NAME]. I am'],
     ['JANE Q ZEPHYRA', 'Dear Zephyra. I am writing', 'Dear [PATIENT_NAME]. I am writing'],
-    ['JANE Q ZEPHYRA', 'Seen with Zephyra. J. Smith, PT, reviewed the plan.', 'Seen with [PATIENT_NAME]. J. Smith, PT, reviewed the plan.'],
-    ['JANE Q ZEPHYRA', 'The claim is for Jane Zephyra. Q. Ostrander, DPT, signed.', 'The claim is for [PATIENT_NAME] [PATIENT_NAME]. Q. Ostrander, DPT, signed.'],
-    ['MARIA LOPEZ', 'Treated Maria Lopez. M. Okafor, PT, signed the note.', 'Treated [PATIENT_NAME]. M. Okafor, PT, signed the note.'],
     ['MARIA LOPEZ', 'Mari A. A new claim follows.', '[PATIENT_NAME]. A new claim follows.'],
     ['MARIA LOPEZ', 'Mari A. My claim is unpaid.', '[PATIENT_NAME]. My claim is unpaid.'],
     ['MARIA LOPEZ', 'Mari A. R. Smith signed.', '[PATIENT_NAME]. R. Smith signed.'],
   ])('a name held %s: %s is sent as %s', (name, letter, sent) => {
+    expect(sentOrRefused(letter, who(name), numbers)).toBe(sent);
+  });
+
+  // A NAMED COST of Queues item 41, ruling (f)'s partial fix: "Name. X. Surname", another person's dotted initial after
+  // a name that ends a sentence, where X is one of the patient's own letters. "Name.X." is the patient's initials once
+  // X has a period of its own, and whose letter it is cannot be known: it is replaced, and the letter is sent with
+  // nothing of the patient's in it. Item 40 sent these three with the initial standing; a letter that is none of the
+  // patient's stays ("Mari A. R. Smith signed.", above).
+  it.each([
+    ['JANE Q ZEPHYRA', 'Seen with Zephyra. J. Smith, PT, reviewed the plan.', 'Seen with [PATIENT_NAME]. [PATIENT_NAME]. Smith, PT, reviewed the plan.'],
+    ['JANE Q ZEPHYRA', 'The claim is for Jane Zephyra. Q. Ostrander, DPT, signed.', 'The claim is for [PATIENT_NAME] [PATIENT_NAME]. [PATIENT_NAME]. Ostrander, DPT, signed.'],
+    ['MARIA LOPEZ', 'Treated Maria Lopez. M. Okafor, PT, signed the note.', 'Treated [PATIENT_NAME]. [PATIENT_NAME]. Okafor, PT, signed the note.'],
+  ])('named cost of Queues item 41, ruling (f): a name held %s, %s is sent as %s', (name, letter, sent) => {
     expect(sentOrRefused(letter, who(name), numbers)).toBe(sent);
   });
 
