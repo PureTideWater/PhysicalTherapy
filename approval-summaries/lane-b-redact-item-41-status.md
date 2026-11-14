@@ -12,10 +12,26 @@ Green on b009d863: the six redact test files of packages/model-gateway (4,088 te
 Running when paused: nothing. No subagent, no check-in scheduled.
 NOT DONE: the bar's measurements for either stage (gen40, gate, unseen sweep). Only the note's widening script was run
   on the product's reader (results under Stage 2 below).
-The orchestrator's 01:05 UTC ruling and its five points NEVER REACHED this session: ask for them again before anything
-  else. They are not applied. The ruling this session asked for at about 00:59 (six base-refused letters sent as their
-  line-break twins, pinned as named costs in redact.leaks.test.ts) is presumably what it answers.
-NEXT STEP, exactly, after "go": (1) get and apply the 01:05 ruling's five points; (2) rebuild the measurement root:
+The orchestrator's ruling (queued 01:01 UTC, read at 01:33 after the pause). NONE of its five points is applied yet:
+  1. No fallback on "the joined reading is refused" (variant j's rule). Nothing to change: k has none.
+  2. Do not hand-pin six exceptions (b009d863 does: SENT_AS_THE_LINE_BREAK_TWIN and the R3-4 test in
+     redact.leaks.test.ts; remove them). Restate the property over the whole recorded corpus: for every letter L that
+     holds a C1, the head refuses L, OR the head's outcome for L equals its outcome for L's line-break twin AND the base
+     does not refuse that twin; with no C1, item 34's property is unchanged. The base's verdict on each twin has to be
+     recorded from the base tree (4d40557f, as lay41.sh lays it), as BASE_REFUSED was. List the five fuzz letters and
+     R3-4 here, each with why the base refused it (expected: the U+0085 itself). If the base refuses any twin, k must
+     refuse that letter: stop and report.
+  3. The fallback must be by span, not by a count of placeholders (storedFoundOnlyJoined in b009d863 counts, so this
+     is a code change): fall back to the unmended reading whenever a STORED identifier's match in the joined text has a
+     removed C1 strictly inside its span. Tests first, with: stored claim 7654 and stored member ID 76543210, text
+     7654<U+0085>3210 (expected refused, or the whole run replaced, never 3210 in clear); the same shape for a date of
+     birth, and for a name part that is also a whole stored name.
+  4. Item 40's moved pins are accepted; each moved row must assert that no fragment of the value is in clear (some
+     rows in b009d863 assert only "refused or as its twin": add the fragment assertion), and the count of moved rows
+     goes in this file. The unseen sweep's bar stays at 0 sent in clear.
+  5. For item 41's reviews (a later session): an unstored SSN or phone split by a C1. The note says reading 1 already
+     refuses it; the reviewers must try to break that.
+NEXT STEP, exactly, after "go": (1) apply the ruling's points 2, 3 and 4 above, tests first; (2) rebuild the measurement root:
   bash designs/lane-b-redact-item-41/scripts/lay41.sh <root> from a copy of that scripts directory, then copy
   packages/redact/src/redact.ts and confusables.ts into <root>/prod/packages/model-gateway/src (stage 1: git show
   f521e358:...) and <root>/prod2/... (the head); (3) run the copy's measure41.sh <root> with
