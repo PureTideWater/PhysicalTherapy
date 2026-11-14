@@ -4067,15 +4067,25 @@ function windowsOf(text: string, find: RegExp, normal: string): LetterWindow[] |
   }
   const places: { start: number; end: number }[] = [];
   const search = new RegExp(find.source, find.flags.includes('g') ? find.flags : `${find.flags}g`);
+  // Each character is scanned for white space at most once (a letter with none would otherwise be scanned whole for
+  // every window): a window that reaches the last one merges with it, and an edge scans no further than the last end.
+  const space = (index: number) => /\s/u.test(text[index] ?? '');
   for (let match = search.exec(text); match !== null; match = search.exec(text)) {
+    if (match[0].length === 0) search.lastIndex += 1;
     let start = Math.max(0, match.index - WINDOW_RADIUS);
     let end = Math.min(text.length, match.index + match[0].length + WINDOW_RADIUS);
-    while (start > 0 && !/\s/u.test(text[start] ?? '')) start -= 1;
-    while (end < text.length && !/\s/u.test(text[end - 1] ?? '')) end += 1;
     const last = places[places.length - 1];
-    if (last !== undefined && start <= last.end) last.end = Math.max(last.end, end);
+    const floor = last?.end ?? 0;
+    if (last === undefined || start > floor) {
+      while (start > floor && !space(start)) start -= 1;
+    }
+    if (last !== undefined && start <= last.end) {
+      if (end <= last.end) continue;
+      end = Math.max(end, last.end);
+    }
+    while (end < text.length && !space(end - 1)) end += 1;
+    if (last !== undefined && start <= last.end) last.end = end;
     else places.push({ start, end });
-    if (match[0].length === 0) search.lastIndex += 1;
   }
   const windows: LetterWindow[] = [];
   let at = 0;
