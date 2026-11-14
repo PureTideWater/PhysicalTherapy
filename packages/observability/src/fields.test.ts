@@ -29,7 +29,7 @@ describe('ALLOWED_LOG_FIELDS', () => {
 
 describe('NUMERIC_LOG_FIELDS', () => {
   it('names a measure, milliseconds, a count or mebibytes, and nothing that could hold text', () => {
-    expect([...NUMERIC_LOG_FIELDS]).toEqual(['elapsed_ms', 'record_count', 'heap_live_peak_mib', 'heap_limit_mib']);
+    expect([...NUMERIC_LOG_FIELDS]).toEqual(['elapsed_ms', 'record_count', 'heap_live_peak_mib', 'heap_limit_mib', 'occurrence_count']);
     for (const field of NUMERIC_LOG_FIELDS) {
       expect(field).toMatch(/^[a-z]+(_[a-z]+)*_(ms|count|mib)$/);
       expect(isNumericLogField(field)).toBe(true);

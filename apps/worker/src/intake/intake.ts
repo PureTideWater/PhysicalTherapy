@@ -212,7 +212,7 @@ class Intake {
   /** Stores a clean document of another kind: a contract kind with its page text read first. */
   private async store(document: { readonly id: string; readonly kind: DocumentKind; readonly key: string; readonly contentType: string; readonly sizeBytes: number }): Promise<void> {
     const pages = PAGE_TEXT_KINDS.has(document.kind)
-      ? await readAndStorePages(this.services.documents, this.cipher, { practiceId: this.practiceId, documentId: document.id, key: document.key, contentType: document.contentType, sizeBytes: document.sizeBytes }, this.services.pages)
+      ? await readAndStorePages(this.services.documents, this.cipher, { practiceId: this.practiceId, documentId: document.id, key: document.key, contentType: document.contentType, sizeBytes: document.sizeBytes }, this.services.pages, this.context.logger)
       : null;
     await this.transaction(async (scope) => {
       if (pages !== null) {

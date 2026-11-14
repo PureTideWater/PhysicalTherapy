@@ -1,3 +1,8 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+
+import { pageTextHash } from '@tp/contracts';
+import { readDocumentPages } from '@tp/contracts/pages';
 import { describe, expect, it } from 'vitest';
 
 import { CHECK_WORK_BUDGET, type LetterClaim, type PatientIdentifiers, checkWorkOf, holdsIdentifier, redactLetter, redactLetterForScreen, redactionSpans } from '@tp/redact';
@@ -153,5 +158,60 @@ describe('MOD-27, Queues item 41: a letter with no C1 character is read as befor
   it('is sent with its stored values replaced, on one reading’s count', () => {
     const letter = 'Member ID ZZ7654321. Codes 97110-97112 were billed for Jane Zephyra.';
     expect(sentOrRefused(letter, JANE, CLAIMS)).toBe('Member ID [MEMBER_ID]. Codes 97110-97112 were billed for [PATIENT_NAME] [PATIENT_NAME].');
+  });
+});
+
+describe('MOD-27, Queues item 41: the synthetic PDF whose font maps Windows-1252 bytes to C1 code points (fixtures/synthetic/MOD-27)', () => {
+  const FIXTURE = path.resolve(import.meta.dirname, '../../../fixtures/synthetic/MOD-27');
+  const expected = JSON.parse(readFileSync(path.join(FIXTURE, 'expected.json'), 'utf8')) as {
+    outcome: { patient: { names: string[]; datesOfBirth: string[]; memberIds: string[]; claimNumbers: string[] }; pages: { page: number; c1: Record<string, number> }[] };
+  };
+  const { patient } = expected.outcome;
+  const who: PatientIdentifiers = { pseudonym: 'synthetic-patient-41', names: patient.names, datesOfBirth: patient.datesOfBirth, memberIds: patient.memberIds };
+  const numbers: LetterClaim[] = [{ claimId: 'synthetic-claim-41-1', patientPseudonym: 'synthetic-patient-41', claimNumbers: patient.claimNumbers }];
+  const extracted = async () => {
+    const pages = await readDocumentPages({ bytes: readFileSync(path.join(FIXTURE, 'letter-misdecoded.pdf')), contentType: 'application/pdf' });
+    if (!pages.ok) {
+      throw new Error(`the fixture was not read: ${pages.problem}`);
+    }
+    return pages.pages;
+  };
+  const counts = (text: string) => {
+    const found: Record<string, number> = {};
+    for (const [character] of text.matchAll(C1)) {
+      const code = `U+00${character.charCodeAt(0).toString(16).toUpperCase()}`;
+      found[code] = (found[code] ?? 0) + 1;
+    }
+    return found;
+  };
+
+  it('is extracted by the product’s reader with a C1 character where each Windows-1252 byte stands, as expected.json counts them', async () => {
+    const pages = await extracted();
+    expect(pages.map((text, index) => ({ page: index + 1, c1: counts(text) }))).toEqual(expected.outcome.pages.map(({ page, c1 }) => ({ page, c1 })));
+    expect(pages[0]).toContain('Codes 97110\u009697112 were reviewed under the plan\u0092s policy.');
+    expect(pages[0]).toContain('Paid 150.00\u008501/05/2026 for claim SYNCLAIM0001.');
+    expect(pages[1]).toContain('Date of birth 03/1\u00964/1980 is on file.');
+  });
+
+  it('page 1 is sent with each C1 a line break and every stored value replaced; page 2, whose date of birth a C1 splits, is refused', async () => {
+    const pages = await extracted();
+    const sent = sentOrRefused(pages[0] ?? '', who, numbers);
+    expect(sent).not.toBe(REFUSED);
+    expect(sent).toContain('Codes 97110\n97112 were reviewed under the plan\ns policy.');
+    expect(sent).toContain('Paid 150.00\n01/05/2026 for claim [CLAIM_1].');
+    expect(sent).toContain('member ID [MEMBER_ID]');
+    expect(sent).not.toMatch(/Zephyra|ZZ7654321|SYNCLAIM0001/u);
+    expect(sent).not.toMatch(C1);
+    expect(sentOrRefused(pages[1] ?? '', who, numbers)).toBe(REFUSED);
+  });
+
+  it('reading the letter changes nothing of the page text or its hash', async () => {
+    const pages = await extracted();
+    const before = pages.map((text) => pageTextHash(text));
+    for (const text of pages) {
+      redactLetterForScreen(text, who, numbers);
+    }
+    expect(pages.map((text) => pageTextHash(text))).toEqual(before);
+    expect(pages[0]).toMatch(C1);
   });
 });

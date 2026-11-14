@@ -66,16 +66,21 @@ export const ALLOWED_LOG_FIELDS = [
   // error's code only when it has that exact shape. A code from a closed standard list; never the error's message,
   // detail, a constraint's values or a statement.
   'sqlstate_code',
+  // A C1 control character intake found in a document's extracted page text (Queues item 41; test matrix MOD-27): its
+  // code point as "U+0080" to "U+009F", a closed list of 32 written from the character's number. Never the character,
+  // the text it stands in or anything beside it.
+  'control_character_code',
   'error_code',
 ] as const;
 
 /**
  * Fields that hold a number and nothing else: a phase's elapsed milliseconds and the count of records it read or
  * wrote (docs/adr/0062, the screening's phase timings), and a job's largest live heap and the heap limit in mebibytes
- * (docs/adr/0083, the worker's `job heap` line). The runtime logger drops one whose value is not a finite,
+ * (docs/adr/0083, the worker's `job heap` line), and how often a C1 control character stands in a document's page
+ * text (Queues item 41, with control_character_code). The runtime logger drops one whose value is not a finite,
  * non-negative number, so none can carry text.
  */
-export const NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count', 'heap_live_peak_mib', 'heap_limit_mib'] as const;
+export const NUMERIC_LOG_FIELDS = ['elapsed_ms', 'record_count', 'heap_live_peak_mib', 'heap_limit_mib', 'occurrence_count'] as const;
 
 export type IdentifierLogField = (typeof ALLOWED_LOG_FIELDS)[number];
 export type NumericLogField = (typeof NUMERIC_LOG_FIELDS)[number];

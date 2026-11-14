@@ -4,7 +4,7 @@ import { calendarDate } from '../core/dates';
 import { dollars } from '../x12/factory';
 import { EFT_EXPORT_HEADER, POSTING_EXPORT_HEADER, eftExport, postingExport } from './csv';
 import { EXHIBIT_BANNER, exhibitPageLines, exhibitPdf, exhibitText } from './exhibit';
-import { writePdf } from './pdf';
+import { escapeLatin1Text, writeMisdecodedPdf, writePdf } from './pdf';
 import { readZip, writeZip } from './zip';
 
 describe('zip', () => {
@@ -80,5 +80,26 @@ describe('exports', () => {
   it('writes the bank export with ISO dates, and SYNTHSENDER as every row’s originator ID (D14)', () => {
     expect(EFT_EXPORT_HEADER.at(-1)).toBe('Originator ID');
     expect(eftExport([{ depositedOn: calendarDate(2026, 6, 9), description: 'D', trace: 'T', amount: dollars('30.00'), batchReference: 'X' }]).split('\r\n')).toEqual([EFT_EXPORT_HEADER.join(','), '2026-06-09,D,T,30.00,X,SYNTHSENDER', '']);
+  });
+});
+
+describe('writeMisdecodedPdf (test matrix MOD-27): Windows-1252 bytes under a font that maps each byte to the code point of the same number', () => {
+  it('writes a C1 character as the byte of the same number in octal, and escapes what a PDF string escapes', () => {
+    expect(escapeLatin1Text('97110\u009697112 (the plan\u0092s) \\')).toBe('97110\\22697112 \\(the plan\\222s\\) \\\\');
+    expect(() => escapeLatin1Text('97110–97112')).toThrow(/printable ASCII and C1/);
+  });
+
+  it('gives the font a ToUnicode map from every byte to its own number, names the synthetic writer, and is the same bytes every time', () => {
+    const pages = [['SYNTHETIC line 97110\u009697112'], ['SYNTHETIC page two']];
+    const pdf = Buffer.from(writeMisdecodedPdf(pages, 'SYNTHETIC title')).toString('latin1');
+    expect(pdf).toContain('/ToUnicode 4 0 R');
+    expect(pdf).toContain('<00> <FF> <0000>');
+    expect(pdf).toContain('(SYNTHETIC line 97110\\22697112) Tj');
+    expect(pdf).toContain('/Producer (packages/synth SYNTHETIC exhibit writer)');
+    expect(pdf).toContain('/Count 2');
+    const xref = Number.parseInt(/startxref\n(\d+)\n%%EOF\n$/.exec(pdf)?.[1] ?? '0', 10);
+    expect(pdf.slice(xref, xref + 4)).toBe('xref');
+    expect(Buffer.from(writeMisdecodedPdf(pages, 'SYNTHETIC title')).toString('latin1')).toBe(pdf);
+    expect(() => writeMisdecodedPdf([], 'SYNTHETIC title')).toThrow(/at least one page/);
   });
 });

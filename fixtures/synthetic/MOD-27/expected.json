@@ -1,0 +1,47 @@
+{
+  "case": "MOD-27",
+  "module": "MOD",
+  "title": "A payer letter whose text holds a C1 control character (U+0080 to U+009F), which is what a Windows-1252 dash, quote, apostrophe or bullet, or a mainframe line ending, becomes when a CSV's bytes are read as Latin-1 or a PDF's font maps its bytes to the code points of the same number: between two numbers that are not one (`97110<U+0096>97112`, an amount or a stored number and then a date on the next line), inside a stored date of birth, member ID, claim number or name, and before 250,000 characters of prose; the same character in a contract page a person reads; and a PDF whose font has that fault",
+  "assertion": "The page text is stored exactly as extracted, and its hash and every citation are unchanged; intake logs the practice, the document, the code point and the count for each C1 code point when it stores the pages, and no text. The letter reader reads each C1 as a line break (one code unit for one), unless the letter with every C1 taken out holds more of the patient's stored identifiers (date of birth, member ID, name, claim; not a phone or Social Security number found by pattern): then the letter is read as written, which refuses it. A letter with a C1 between two numbers is sent as the same letter with a line break there is sent, every stored value replaced; a date of birth a C1 splits is refused; every reading is charged on the letter's one work budget, which is unchanged, and a letter whose readings pass it is refused with no text. The document view shows the stored text with each C1 as its Windows-1252 character (U+0085 as a line break), at render time only. The synthetic PDF's pages are extracted with the C1 characters its lines hold. Named costs: six letters the base refused over U+0085 are sent as their line-break twins",
+  "synthetic": true,
+  "completesIn": 10,
+  "assertedBy": [
+    "packages/model-gateway/src/redact.c1.test.ts",
+    "packages/model-gateway/src/redact.leaks.test.ts",
+    "apps/worker/src/intake/pages.test.ts",
+    "apps/web/src/components/contracts/cited-page.test.tsx",
+    "packages/synth/src/formats/formats.test.ts"
+  ],
+  "codeListRelease": 900001,
+  "noFileReason": null,
+  "files": [
+    {
+      "path": "letter-misdecoded.pdf",
+      "sha256": "8ce956989c60b0444a9e6eb2c325f5e7bccc04671ed9cf5190afa7930b09fcd2",
+      "bytes": 2025,
+      "kind": "pdf",
+      "description": "A SYNTHETIC payer letter whose font maps each Windows-1252 byte to the code point of the same number: a text reader extracts C1 control characters where a person sees a dash, an apostrophe, quotes and an ellipsis."
+    }
+  ],
+  "generated": [],
+  "uploads": [],
+  "scenario": null,
+  "outcome": {
+    "patient": {
+      "names": ["JANE Q ZEPHYRA"],
+      "datesOfBirth": ["1980-03-14"],
+      "memberIds": ["ZZ7654321"],
+      "claimNumbers": ["SYNCLAIM0001"]
+    },
+    "pages": [
+      {
+        "page": 1,
+        "c1": {"U+0085":1,"U+0092":2,"U+0093":1,"U+0094":1,"U+0096":2},
+        "reader": "sent with each C1 a line break and every stored value replaced"
+      },
+      {"page":2,"c1":{"U+0096":1},"reader":"refused: a C1 splits the date of birth"}
+    ],
+    "stored": "the page text exactly as extracted, every C1 character in place"
+  },
+  "notes": []
+}

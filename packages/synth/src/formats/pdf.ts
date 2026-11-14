@@ -54,6 +54,80 @@ export function writePdf(pages: readonly (readonly string[])[], title: string): 
   return new Uint8Array(Buffer.from(body, 'latin1'));
 }
 
+/**
+ * A line's text as a PDF string's contents where the line may hold C1 characters (U+0080 to U+009F): printable ASCII as
+ * escapeText writes it, and each C1 character as the byte of the same number, in octal ("\\226" for U+0096).
+ */
+export function escapeLatin1Text(line: string): string {
+  if (!/^[\x20-\x7e\u0080-\u009f]*$/.test(line)) {
+    throw new Error('misdecoded PDF text is printable ASCII and C1 characters');
+  }
+  return line.replace(/[\\()]|[\u0080-\u009f]/g, (character) => (character.charCodeAt(0) < 0x80 ? `\\${character}` : `\\${character.charCodeAt(0).toString(8)}`));
+}
+
+/**
+ * The ToUnicode CMap of a font whose producer read its Windows-1252 bytes as Latin-1: every byte is mapped to the code
+ * point of the same number, so 0x96 (an en dash in Windows-1252) is U+0096, a C1 control character, to any text reader.
+ */
+const LATIN1_TO_UNICODE = [
+  '/CIDInit /ProcSet findresource begin',
+  '12 dict begin',
+  'begincmap',
+  '/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def',
+  '/CMapName /SyntheticLatin1 def',
+  '/CMapType 2 def',
+  '1 begincodespacerange',
+  '<00> <FF>',
+  'endcodespacerange',
+  '1 beginbfrange',
+  '<00> <FF> <0000>',
+  'endbfrange',
+  'endcmap',
+  'CMapName currentdict /CMap defineresource pop',
+  'end',
+  'end',
+].join('\n');
+
+/**
+ * writePdf's page model with the fault a real producer has (Queues item 41; test matrix MOD-27): the text is written in
+ * Windows-1252 bytes (a dash 0x96, an apostrophe 0x92, quotes 0x93 and 0x94) and the font's ToUnicode CMap maps each
+ * byte to the code point of the same number. A person sees the dash; a text reader gets U+0096. A line holds the C1
+ * character where the byte goes, so a page's lines are exactly what the reader is to extract. Deterministic, as writePdf.
+ */
+export function writeMisdecodedPdf(pages: readonly (readonly string[])[], title: string): Uint8Array {
+  if (pages.length === 0) {
+    throw new Error('a PDF has at least one page');
+  }
+  const objects: string[] = [];
+  const pageIds = pages.map((_, index) => 5 + index * 2);
+  objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';
+  objects[2] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${String(id)} 0 R`).join(' ')}] /Count ${String(pages.length)} >>`;
+  objects[3] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode 4 0 R >>';
+  objects[4] = `<< /Length ${String(Buffer.byteLength(LATIN1_TO_UNICODE, 'latin1'))} >>\nstream\n${LATIN1_TO_UNICODE}\nendstream`;
+  pages.forEach((lines, index) => {
+    const pageId = pageIds[index] ?? 0;
+    const content = ['BT', '/F1 10 Tf', '14 TL', '54 738 Td', ...lines.map((line) => `(${escapeLatin1Text(line)}) Tj T*`), 'ET'].join('\n');
+    objects[pageId] = `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents ${String(pageId + 1)} 0 R >>`;
+    objects[pageId + 1] = `<< /Length ${String(Buffer.byteLength(content, 'latin1'))} >>\nstream\n${content}\nendstream`;
+  });
+  const infoId = objects.length;
+  objects[infoId] = `<< /Title (${escapeText(title)}) /Producer (${EXHIBIT_PRODUCER}) >>`;
+  let body = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  for (let id = 1; id < objects.length; id += 1) {
+    offsets[id] = Buffer.byteLength(body, 'latin1');
+    body += `${String(id)} 0 obj\n${objects[id] ?? ''}\nendobj\n`;
+  }
+  const xref = Buffer.byteLength(body, 'latin1');
+  body += `xref\n0 ${String(objects.length)}\n0000000000 65535 f \n`;
+  for (let id = 1; id < objects.length; id += 1) {
+    body += `${String(offsets[id] ?? 0).padStart(10, '0')} 00000 n \n`;
+  }
+  const docId = '53594e5448455449432045584849424954';
+  body += `trailer\n<< /Size ${String(objects.length)} /Root 1 0 R /Info ${String(infoId)} 0 R /ID [<${docId}> <${docId}>] >>\nstartxref\n${String(xref)}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(body, 'latin1'));
+}
+
 /** A character range of a line, [start, end), as it is drawn. */
 export interface LineSpan {
   readonly start: number;

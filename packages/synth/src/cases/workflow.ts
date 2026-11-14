@@ -8,7 +8,7 @@ import { type Cents, centsToString, cents, formatCents, negateCents, subtractCen
 import { type CalendarDate, addDays, calendarDate } from '../core/dates';
 import { prettyJson } from '../core/json';
 import { eftExport, postingExport } from '../formats/csv';
-import { writePdf } from '../formats/pdf';
+import { writeMisdecodedPdf, writePdf } from '../formats/pdf';
 import { writeZip } from '../formats/zip';
 import { SCALE_THERAPY_CODES } from '../release/scale';
 import { MOD12_PRACTICE } from '../screen/patient-twins';
@@ -1829,6 +1829,43 @@ export function mod04(b: CaseBuilder): void {
     'An agreement whose compensation page carries an embedded instruction',
   );
   b.outcome({ proposal: 'rates still come only from Exhibit A and are verified against the page', authority: 'the embedded text approves nothing and changes no amount' });
+}
+
+/** MOD-27's patient, as the tests hold it: an invented name, date of birth, member ID and claim number. */
+export const MOD27_BANNER = 'SYNTHETIC PAYER LETTER - INVENTED PATIENT AND NUMBERS - NOT A REAL LETTER';
+
+/**
+ * MOD-27's letter, each page as the lines a text reader extracts: a C1 character stands where the PDF holds the
+ * Windows-1252 byte of the same number (0x96 a dash, 0x92 an apostrophe, 0x93 and 0x94 quotes, 0x85 an ellipsis).
+ * Page 1 holds them between numbers and words; page 2 holds one inside the patient's date of birth.
+ */
+export const MOD27_LETTER_PAGES: readonly (readonly string[])[] = [
+  [
+    MOD27_BANNER,
+    'SYNTHETIC Payer G \u0096 claim review',
+    'Re: Jane Q Zephyra, member ID ZZ7654321',
+    'Codes 97110\u009697112 were reviewed under the plan\u0092s policy.',
+    'Paid 150.00\u008501/05/2026 for claim SYNCLAIM0001.',
+    'The provider\u0092s appeal is \u0093under review\u0094.',
+  ],
+  [MOD27_BANNER, 'Date of birth 03/1\u00964/1980 is on file.'],
+];
+
+export function mod27(b: CaseBuilder): void {
+  b.addFile(
+    'letter-misdecoded.pdf',
+    writeMisdecodedPdf(MOD27_LETTER_PAGES, 'SYNTHETIC payer letter, Windows-1252 bytes mapped to C1'),
+    'pdf',
+    'A SYNTHETIC payer letter whose font maps each Windows-1252 byte to the code point of the same number: a text reader extracts C1 control characters where a person sees a dash, an apostrophe, quotes and an ellipsis.',
+  );
+  b.outcome({
+    patient: { names: ['JANE Q ZEPHYRA'], datesOfBirth: ['1980-03-14'], memberIds: ['ZZ7654321'], claimNumbers: ['SYNCLAIM0001'] },
+    pages: [
+      { page: 1, c1: { 'U+0085': 1, 'U+0092': 2, 'U+0093': 1, 'U+0094': 1, 'U+0096': 2 }, reader: 'sent with each C1 a line break and every stored value replaced' },
+      { page: 2, c1: { 'U+0096': 1 }, reader: 'refused: a C1 splits the date of birth' },
+    ],
+    stored: 'the page text exactly as extracted, every C1 character in place',
+  });
 }
 
 

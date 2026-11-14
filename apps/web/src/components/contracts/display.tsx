@@ -4,6 +4,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { MAPPING_KIND_NAMES, TOPIC_NAMES, VERSION_STATUS_NAMES, windowText } from '../../lib/contracts/display';
+import { mendExtracted } from '../../lib/contracts/mend';
 import type { QuestionView } from '../../lib/contracts/contract-queries';
 import type { CitedPage, RecordReview } from '../../lib/contracts/review';
 import type { MappingView, Totals } from '../../lib/contracts/mapping-queries';
@@ -97,14 +98,15 @@ export function CitedPageView({ cited, pageHref }: { readonly cited: CitedPage; 
       ) : (
         <>
           {cited.recordId !== null && !cited.quoteFound ? <p className="text-sm text-destructive">The quote is not on this page.</p> : null}
+          {/* The stored text through the Windows-1252 view, for this screen only (mendExtracted; Queues item 41). */}
           <ScrollBox label={`Page ${String(cited.page)} of the contract`} height="lg" tone="faint" as="div" data-page-text="">
             {cited.segments.map((segment, index) =>
               segment.quoted ? (
                 <mark key={index} className="rounded-sm bg-bg-inset px-0.5 text-foreground underline decoration-fg-muted decoration-1 underline-offset-2">
-                  {segment.text}
+                  {mendExtracted(segment.text)}
                 </mark>
               ) : (
-                <span key={index}>{segment.text}</span>
+                <span key={index}>{mendExtracted(segment.text)}</span>
               ),
             )}
           </ScrollBox>

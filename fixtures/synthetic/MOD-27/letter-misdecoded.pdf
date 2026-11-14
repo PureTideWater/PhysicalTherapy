@@ -1,0 +1,85 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding /ToUnicode 4 0 R >>
+endobj
+4 0 obj
+<< /Length 335 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
+/CMapName /SyntheticLatin1 def
+/CMapType 2 def
+1 begincodespacerange
+<00> <FF>
+endcodespacerange
+1 beginbfrange
+<00> <FF> <0000>
+endbfrange
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 6 0 R >>
+endobj
+6 0 obj
+<< /Length 392 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+54 738 Td
+(SYNTHETIC PAYER LETTER - INVENTED PATIENT AND NUMBERS - NOT A REAL LETTER) Tj T*
+(SYNTHETIC Payer G \226 claim review) Tj T*
+(Re: Jane Q Zephyra, member ID ZZ7654321) Tj T*
+(Codes 97110\22697112 were reviewed under the plan\222s policy.) Tj T*
+(Paid 150.00\20501/05/2026 for claim SYNCLAIM0001.) Tj T*
+(The provider\222s appeal is \223under review\224.) Tj T*
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 8 0 R >>
+endobj
+8 0 obj
+<< /Length 162 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+54 738 Td
+(SYNTHETIC PAYER LETTER - INVENTED PATIENT AND NUMBERS - NOT A REAL LETTER) Tj T*
+(Date of birth 03/1\2264/1980 is on file.) Tj T*
+ET
+endstream
+endobj
+9 0 obj
+<< /Title (SYNTHETIC payer letter, Windows-1252 bytes mapped to C1) /Producer (packages/synth SYNTHETIC exhibit writer) >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000235 00000 n 
+0000000621 00000 n 
+0000000747 00000 n 
+0000001190 00000 n 
+0000001316 00000 n 
+0000001529 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R /Info 9 0 R /ID [<53594e5448455449432045584849424954> <53594e5448455449432045584849424954>] >>
+startxref
+1667
+%%EOF
