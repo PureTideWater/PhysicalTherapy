@@ -1,0 +1,16 @@
+base-base-m differ 769 refA 2366 refB 2447 newlySent 0 newlyRefused 81 failures 7600 phi ['PHI.name'] giveback 0
+base-head-m differ 9261 refA 2366 refB 8198 newlySent 0 newlyRefused 5832 failures 166 phi ['PHI.name'] giveback 0
+head-head-m differ 728 refA 8570 refB 8198 newlySent 412 newlyRefused 40 failures 317 phi ['PHI.claim', 'PHI.dob', 'PHI.phone', 'PHI.ssn', 'PHI.member', 'PHI.name'] giveback 52
+base-head-n differ 9261 refA 2366 refB 8074 newlySent 0 newlyRefused 5708 failures 0 phi [] giveback 0
+head-head-n differ 812 refA 8570 refB 8074 newlySent 496 newlyRefused 0 failures 64 phi ['PHI.dob'] giveback 52
+base-head-s differ 9265 refA 2366 refB 8202 newlySent 0 newlyRefused 5836 failures 0 phi [] giveback 0
+head-head-s differ 692 refA 8570 refB 8202 newlySent 372 newlyRefused 4 failures 64 phi ['PHI.dob'] giveback 52
+base-head-d differ 9261 refA 2366 refB 8474 newlySent 0 newlyRefused 6108 failures 0 phi [] giveback 0
+head-head-d differ 412 refA 8570 refB 8474 newlySent 96 newlyRefused 0 failures 0 phi [] giveback 0
+base-head-j differ 9261 refA 2366 refB 8186 newlySent 0 newlyRefused 5820 failures 0 phi [] giveback 0
+head-head-j differ 700 refA 8570 refB 8186 newlySent 384 newlyRefused 0 failures 0 phi [] giveback 4
+base-head-k differ 9261 refA 2366 refB 8138 newlySent 0 newlyRefused 5772 failures 0 phi [] giveback 0
+head-head-k differ 748 refA 8570 refB 8138 newlySent 432 newlyRefused 0 failures 0 phi [] giveback 52
+head-head-s5 differ 0 refA 8570 refB 8570 newlySent 0 newlyRefused 0 failures 0 phi [] giveback 0
+head-head-f differ 0 refA 8570 refB 8570 newlySent 0 newlyRefused 0 failures 0 phi [] giveback 0
+head-head-ph differ 1752 refA 8570 refB 6818 newlySent 1752 newlyRefused 0 failures 72 phi [] giveback 0
