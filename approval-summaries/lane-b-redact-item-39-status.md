@@ -1,21 +1,27 @@
 # Lane B, Queues item 39: status
 
 <!-- RESUME-BLOCK -->
-- **Stage:** stages 1 to 4 done and gated; stage 5 waits for item 40 (PR #163) to merge into `claude/build-platform`
-  (2026-11-13: #163 open draft, `claude/build-platform` at 4d40557f). Branch `co-001/redact-item-39` from
-  `claude/build-platform` 4d40557f. WIP ref `co-001/wip-redact-item-39` at 5af1c9a0 (ls-remote checked).
-- **Commits, all on the WIP ref:** stage 1 b86067c6 (tests, `matchingForTests`), stage 2 ae53f2d5 (views Map),
-  stage 3 ea77da7c (skeleton, automaton, sticky driver, dense rule), stage 4 c90098c6 (lazy patterns, source rule and
-  fallback), and 5af1c9a0 (ASCII scan by code, non-ASCII run by one sticky run; `allKept`; sourceOf by includes).
-- **Final gate, 5af1c9a0 against 4d40557f, `--no-cache`, 4 workers (fresh container, 13 m 49 s):** 975,489 letters,
-  same 975,489, differ 0, refused 463,002 on both, errors 0 / 0, span mismatches 0; PHI, KEEP, unplaced none; max
-  letter 946 ms base, 997 ms head, of 3,000, none over. `git diff 4d40557f 5af1c9a0 -- packages/redact` touches no
-  CHECK_WORK_BUDGET, WORK constant or 3 s row. Report: `designs/lane-b-redact-item-39/final-gate-5af1c9a0/`.
-  Earlier: all 3,616 redact unit tests pass at 5af1c9a0, typecheck and lint clean.
-- **Final gate at 5af1c9a0 (done, 23:15 UTC):** 975,489 letters, differ 0, refused 463,002 on both, errors 0, span
-  mismatches 0; max letter A 1,273 ms, B 1,255 ms, none over 3 s. Stages 1 to 4 are complete and proven.
-- **Next, exactly:** nothing in this brief. Stage 5 waits for item 40's merge (not mine); the reviews and the PR are
-  not mine. Stage 4's end reported to the orchestrator.
+- **Stage:** stage 5 built and pushed; its oracle (item 40's generated set, full gate against 6299c550) running.
+  #163 merged as 6299c550. Branch `co-001/redact-item-39`; WIP ref `co-001/wip-redact-item-39` at **c1caa730**
+  (ls-remote checked).
+- **Commits since 5af1c9a0:** 7f5af9bd merge of `claude/build-platform` 6299c550. Its conflict was in
+  `digitsGluedToLetter`; the merge keeps item 39's `standing` guard with item 40's `[\p{L}\p{Nl}\p{No}]`. It also had
+  to drop `\p{Nl}\p{No}` from the skeleton (KEPT_RUN, ALL_KEPT): item 40 made them stored-number joiners, which broke
+  lemma 1(a) and sent `Member ID 7654ↀ3210` (S-4 tests). Merge gate vs 6299c550: 0 of 975,489 differ, refused 463,002
+  both, PHI none, max 1,015 ms. Then 9f9323e9 (stage 5: windows R = 256, margin 64, the first reading's spans kept in
+  `spansOfReading`, interior fallback to the whole re-read, a whole-letter window is the whole re-read, all charged;
+  seam `matchingForTests.withWindows`). And c1caa730 (the window edge scan made linear: a letter with no white space
+  was quadratic, 286 s on denial-letter's two budget rows).
+- **Tests:** 5,074 model-gateway redact tests and 54 in packages/redact pass at c1caa730; typecheck and lint clean.
+  S-1 (100,000 and 250,000) and C-1 (64,000 and 100,000) are sent with no identifier in clear. S-2's crafted row is
+  restated: it is sent, its windows are charged, and the whole re-read's count is over budget. Item 40's stage-2 charge
+  row is unchanged.
+- **Not windowed:** `redactionSpans` (redactLetter's path) still calls the whole re-reads with no count, as item 40
+  has it. Name this for the reviews.
+- **Next, exactly:** the oracle, A = 6299c550 `packages/redact/src`, B = c1caa730's:
+  `generated-set-40.mts <out>/corpus40 40`; `generated-run-40.mts A B corpus40 gen40` (from the gate directory, with
+  ts-resolve); `gate/run.sh A B <out> --workers 4 --no-cache`. Need: 0 differ and PHI none, except that S-1/C-1-shaped
+  rows may become sent. Then record the result here and report the stage's end. Not mine: the reviews, ADR 0054, the PR.
 <!-- /RESUME-BLOCK -->
 
 ## Rulings applied (lanes/lane-b.md 21:10 UTC)
