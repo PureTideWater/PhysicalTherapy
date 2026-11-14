@@ -1,0 +1,39 @@
+{
+ "built": "designs/lane-b-redact-item-42/scripts/generated-set-42.mts",
+ "seed": 42,
+ "letters": 64508,
+ "patients": 15745,
+ "shards": 4,
+ "sha256": "2b4f520224816b02c03a1ba812ee344dc2df81cf6f615d4c812c986e983a48ef",
+ "swept": {
+  "letter": 4401,
+  "punctuation": 701,
+  "symbol": 6135,
+  "currency": 56,
+  "mark": 2263,
+  "emoji": 1400
+ },
+ "skipped": 0,
+ "families": {
+  "G42/m1.member-digits": 912,
+  "G42/m1.member-mixed": 936,
+  "G42/m1.claim-digits": 912,
+  "G42/m1.claim-mixed": 936,
+  "G42/m1.name-surname": 936,
+  "G42/m1.name-given": 936,
+  "G42/m1.dob-numeric": 912,
+  "G42/m1.dob-words": 936,
+  "G42/m1.ssn": 912,
+  "G42/m1.phone": 912,
+  "G42/m1s.member-digits": 14956,
+  "G42/m1s.name-surname": 14956,
+  "G42/m1s.ssn": 2139,
+  "G42/m1s.phone": 2139,
+  "G42/m2.before": 1905,
+  "G42/m2.both": 480,
+  "G42/m2.after": 1530,
+  "G42/m2.given-surname-glued": 15,
+  "G42/m2s.before": 14956,
+  "G42/real": 2192
+ }
+}
