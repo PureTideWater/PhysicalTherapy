@@ -1,0 +1,42 @@
+## idle: G-1 quantities HEAD
+{"tree":"head","first":"sent","warmup":594,"calibration":148,"reference":144,"rows":[{"g1":996,"halfMs":473,"wholeMs":827,"ratio":1.747},{"g1":850,"halfMs":421,"wholeMs":834,"ratio":1.98},{"g1":848,"halfMs":417,"wholeMs":847,"ratio":2.032},{"g1":854,"halfMs":404,"wholeMs":845,"ratio":2.091},{"g1":843,"halfMs":427,"wholeMs":843,"ratio":1.975},{"g1":841,"halfMs":406,"wholeMs":843,"ratio":2.075}]}
+## idle: G-1 quantities BASE
+{"tree":"base","first":"sent","warmup":27189,"calibration":339,"reference":144,"rows":[{"g1":35047,"halfMs":3504,"wholeMs":35047,"ratio":0}]}
+## idle: cold script (tsx), 1000 x6, 6300 x2
+{"count":1000,"outcome":"sent","ms":282.488,"calibrationMs":147.87}
+{"count":1000,"outcome":"sent","ms":284.506,"calibrationMs":151.93900000000008}
+{"count":1000,"outcome":"sent","ms":291.60299999999995,"calibrationMs":155.274}
+{"count":1000,"outcome":"sent","ms":296.084,"calibrationMs":152}
+{"count":1000,"outcome":"sent","ms":293.214,"calibrationMs":162.15999999999997}
+{"count":1000,"outcome":"sent","ms":302.871,"calibrationMs":158.4380000000001}
+{"count":6300,"outcome":"sent","ms":1292.127,"calibrationMs":155.94000000000005}
+{"count":6300,"outcome":"sent","ms":1314.2949999999998,"calibrationMs":151.4090000000001}
+## idle: vitest rows (a) and (b)
+.                                        |  WARN  Unsupported engine: wanted: {"node":">=24"} (current: {"node":"v22.23.4","pnpm":"10.34.8"})
+
+ RUN  v5.1.0 /home/user/item39/packages/model-gateway
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 6 skipped (8)
+   Start at  01:08:15
+   Duration  9.62s (tests 86%, transform 10%, import 4%)
+
+## loaded (4 busy loops on 4 cores)
+{"tree":"head","first":"sent","warmup":614,"calibration":148,"reference":144,"rows":[{"g1":1208,"halfMs":475,"wholeMs":962,"ratio":2.024},{"g1":968,"halfMs":444,"wholeMs":933,"ratio":2.1},{"g1":940,"halfMs":447,"wholeMs":864,"ratio":1.932},{"g1":876,"halfMs":429,"wholeMs":862,"ratio":2.01},{"g1":868,"halfMs":410,"wholeMs":851,"ratio":2.078}]}
+{"count":1000,"outcome":"sent","ms":358.793,"calibrationMs":147.971}
+{"count":1000,"outcome":"sent","ms":300.729,"calibrationMs":147.65200000000004}
+{"count":1000,"outcome":"sent","ms":283.6,"calibrationMs":159.87599999999998}
+{"count":1000,"outcome":"sent","ms":276.577,"calibrationMs":151.64700000000005}
+{"count":1000,"outcome":"sent","ms":284.891,"calibrationMs":151.474}
+.                                        |  WARN  Unsupported engine: wanted: {"node":">=24"} (current: {"node":"v22.23.4","pnpm":"10.34.8"})
+
+ RUN  v5.1.0 /home/user/item39/packages/model-gateway
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed | 6 skipped (8)
+   Start at  01:10:04
+   Duration  14.36s (tests 97%, import 3%)
+
+## done

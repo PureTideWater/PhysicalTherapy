@@ -1,33 +1,42 @@
 # Lane B, Queues item 39: status
 
 <!-- RESUME-BLOCK -->
-- **Stage:** stage 5 **done and proven**; the session stopped there, per the brief.
-  #163 merged as 6299c550. Branch `co-001/redact-item-39`; WIP ref `co-001/wip-redact-item-39` at **c1caa730**
-  (ls-remote checked).
-- **Commits since 5af1c9a0:** 7f5af9bd merge of `claude/build-platform` 6299c550. Its conflict was in
-  `digitsGluedToLetter`; the merge keeps item 39's `standing` guard with item 40's `[\p{L}\p{Nl}\p{No}]`. It also had
-  to drop `\p{Nl}\p{No}` from the skeleton (KEPT_RUN, ALL_KEPT): item 40 made them stored-number joiners, which broke
-  lemma 1(a) and sent `Member ID 7654ↀ3210` (S-4 tests). Merge gate vs 6299c550: 0 of 975,489 differ, refused 463,002
-  both, PHI none, max 1,015 ms. Then 9f9323e9 (stage 5: windows R = 256, margin 64, the first reading's spans kept in
-  `spansOfReading`, interior fallback to the whole re-read, a whole-letter window is the whole re-read, all charged;
-  seam `matchingForTests.withWindows`). And c1caa730 (the window edge scan made linear: a letter with no white space
-  was quadratic, 286 s on denial-letter's two budget rows).
-- **Tests:** 5,074 model-gateway redact tests and 54 in packages/redact pass at c1caa730; typecheck and lint clean.
-  S-1 (100,000 and 250,000) and C-1 (64,000 and 100,000) are sent with no identifier in clear. S-2's crafted row is
-  restated: it is sent, its windows are charged, and the whole re-read's count is over budget. Item 40's stage-2 charge
-  row is unchanged.
-- **Not windowed:** `redactionSpans` (redactLetter's path) still calls the whole re-reads with no count, as item 40
-  has it. Name this for the reviews.
-- **Oracle, A = 6299c550 (item 40's merged head), B = c1caa730:** item 40's generated set (seed 40, 51,833 letters):
-  differ 0, refused 8,570 on both, PHI classes none, failures 0, notes 2 (the two pinned `r13.left.floor`), newly
-  refused none, slowest B 60 ms. Full gate, `--no-cache`, 4 workers: 975,489 letters, differ 0, refused 463,002 on both,
-  errors 0, span mismatches 0; PHI, KEEP and UNPLACED none; max letter 1,187 ms A, 1,279 ms B, of 3,000. The S-1 and
-  C-1 rows became sent and no other row changed (unit tests). `git diff 6299c550 c1caa730 -- packages/redact` changes
-  no CHECK_WORK_BUDGET, WORK constant or 3 s row. Reports in `designs/lane-b-redact-item-39/stage-5-c1caa730/`.
-- **Next (the next session):** stage 6, the two reviews (PHI against lemmas 1 to 4 and 5.3, including the skeleton
-  change in the merge and the un-windowed `redactionSpans` path; time against the battery and the gate's timing rows),
-  then stage 7 (ADR 0054: the cold and G-1 rows closed, cost 6 (S-1, C-1) closed), then the PR into
-  `claude/build-platform` from the template.
+- **Stage:** stage 6, **PAUSED** by the orchestrator (the co-founder's word, 2026-11-14 about 01:10 UTC) part-way.
+  Wait for the orchestrator's "go". No PR is open, nothing is merged, no CI was run.
+- **WIP ref:** `co-001/wip-redact-item-39` at **7d93b055** (ls-remote checked): c1caa730 plus fix round 1. Nothing
+  is uncommitted in the worktree. Base still 6299c550.
+- **Review 1 (PHI): done.** `designs/lane-b-redact-item-39/reviews/review-1-phi.md`, its scripts in
+  `reviews/review-1-scripts/`. Skeptics: `skeptic-P-1.md` (REPRODUCED), `skeptic-P-2-P-3.md` (both REPRODUCED).
+  - P-1 blocker: a window edge 256 characters off, at white space, cut an identifier whose gap holds white space
+    (`Member ID 7654`, U+0085, 256 spaces, `3210`): base HELD, c1caa730 sent, both halves in clear. Also claim number,
+    date of birth, about a fraction, 255 hyphens and a space.
+  - P-2 should: the entry's U+0001 mark is absent where the held identifier stands outside every window; the check
+    after the entry holds it all the same. Recorded by a test, not changed; to be stated in ADR 0054.
+  - P-3 should: `spansOfReading` kept the whole letter as written, keyed by the returned result.
+  - P-4 nit (`matchingForTests.withWindows` is exported and switches module state): for the queue.
+  - Found sound: lemmas 1, 2, 4, the dense rule, the automaton, `redactLetter`'s path (0 differences, counts in the report).
+- **Fix round 1: built, green, pushed (7d93b055).** Tests first, each seen failing on an assertion. P-1: a window
+  reaches `WINDOW_RADIUS` kept code points plus twice the longest identifier (`reachOf`) each side, counted in the
+  skeleton's kept code points, then out to white space (`windowsOf`). P-3: the spans are dropped before the entry
+  returns (`redactLetterForScreen`'s `finally`). The seam's `radius` is now in kept code points and is the whole reach
+  (the fallback test uses radius 2). Green at 7d93b055: model-gateway `src/redact*` 4,008 tests, packages/redact 54,
+  eslint and tsc on both packages. **Not yet run on 7d93b055:** the whole unit suite, item 40's generated set, the
+  full gate, the two fuzzers, the budget rows, S-1/C-1 thresholds with the wider windows.
+- **Review 2 (time and cost): STOPPED at the pause with no report.** Its scripts and partial outputs are in
+  `reviews/review-2-partial/` (unread, no finding taken from them). It must be run again, on 7d93b055, with the
+  brief's four checks, and must also measure fix round 1's `keptAt` pass and `reachOf` (both uncharged, linear).
+- **Next, in order, after "go":** (1) run review 2 afresh on 7d93b055 against 6299c550, with a skeptic per blocker
+  or should; (2) a delta review of fix round 1 (`git diff c1caa730 7d93b055`), PHI: attack `reachOf`'s bound (a
+  form's compact longer than three times its NFKC/NFKD length, a date form, a fold that grows), the kept-count edges,
+  and windows with radius counted in kept code points against the margin of 64 characters; (3) fix round 2 if
+  needed, the last; (4) re-measure: item 40's generated set and the full `--no-cache` gate against 6299c550 (0
+  differing, PHI none, bar S-1 and C-1), both 60,000-letter fuzzers (base-refused head-sent 0), budget rows
+  unchanged; (5) ADR 0054 (cold and G-1 closed with figures, the views store named as the square's cause, cost 6
+  rewritten as cured, P-1's rule and P-2 stated), the test-matrix MOD-26 rows, e2e; (6) the PR from the template
+  into `claude/build-platform`, subscribe, merge on green with a merge commit and expectedHeadSha after checking
+  open schema PRs; set this block to MERGED.
+- **Container:** rebuilt this session with `tools/setup-container.sh co-001/wip-redact-item-39:/home/user/item39`;
+  worktrees `/home/user/item39` (head), `/home/user/PhysicalTherapy` (6299c550), `/home/user/ops`.
 <!-- /RESUME-BLOCK -->
 
 ## Rulings applied (lanes/lane-b.md 21:10 UTC)
