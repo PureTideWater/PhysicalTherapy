@@ -4,6 +4,12 @@
 
 ## RESUME-BLOCK
 
+- **PAUSED AGAIN 2026-11-18** by the orchestrator's message (the co-founder's word), read by W79 (started 2026-11-18
+  to finish this note) before any work. W79 re-measured NOTHING and changed nothing in this note below this bullet,
+  in `scripts/` or in `measure/`: every figure here is as written on 2026-11-14. W79 had only read `CLAUDE.md`, this
+  note's lines 1 to 40 and the pause entries of items 39 and 41. No reader laid, no pnpm install, no run, no
+  subagent, no check-in set; the platform checkout is on `claude/build-platform` at 6299c550, clean. The next step is
+  unchanged: "Next step, exactly" below, by a FRESH session after the co-founder's go. Do nothing until then.
 - **Base:** `claude/build-platform` 6299c550 (item 40 merged). Reader laid byte for byte outside `packages/`
   (`scripts/lay42.sh`; hashes in `measure/trees.sha256`). No product file touched, no PR. Synthetic data only.
 - **Measured and in `measure/`:**
