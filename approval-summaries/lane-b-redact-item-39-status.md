@@ -1,6 +1,22 @@
 # Lane B, Queues item 39: status
 
 <!-- RESUME-BLOCK -->
+- **2026-11-18, Lane A's W77 (the two reviews of stage 6): PAUSED by the orchestrator (the co-founder's word) before
+  either review began.** Wait for a fresh "go". Nothing under packages/ or apps/ was touched; no PR; no subagent ran.
+  - **Done:** the machine only. Node v24.22.0 is at /opt/node24 (the shell's default `node` is v22: put
+    `/opt/node24/bin:/opt/pnpm-bin` first on PATH); `pnpm install --frozen-lockfile --offline` passed in
+    /home/user/PhysicalTherapy (6299c550); `tools/setup-container.sh co-001/wip-redact-item-39:/home/user/item39`
+    (the script is in ops, not the repo) laid the head, branch checked, at 7d93b055, installed.
+  - **Partial:** nothing. Review 2 (time and cost) and the delta review of fix round 1 (PHI) are NOT started: no
+    report, no script, no finding. `reviews-lane-a/` does not exist yet. The design note, review 1 and the diff
+    were not yet read. `reviews/review-2-partial/` stays unread and untrusted.
+  - **Next, after "go":** rebuild the container the same way if it is new; read the brief's list (design note's
+    lemmas, windows and cost sections; review 1's titles and P-1; STATE.md 23 to 35 and 65 to 73; the diff of
+    `packages/redact/src/redact.ts` and `git diff c1caa730 7d93b055`); run the two reviews as two subagents with a
+    skeptic per blocker or should-fix; reports to `designs/lane-b-redact-item-39/reviews-lane-a/`; then a new top
+    note here with the findings and the next step (fix round 2 if one stands, else the re-measurements, ADR 0054,
+    the PR).
+  - The block below is Lane B's of 2026-11-14 and still holds for everything else.
 - **Stage:** stage 6, **PAUSED** by the orchestrator (the co-founder's word, 2026-11-14 about 01:10 UTC) part-way.
   Wait for the orchestrator's "go". No PR is open, nothing is merged, no CI was run.
 - **WIP ref:** `co-001/wip-redact-item-39` at **7d93b055** (ls-remote checked): c1caa730 plus fix round 1. Nothing
