@@ -1,7 +1,15 @@
 # Lane B, Queues item 41 (MOD-27): status
 
 <!-- RESUME-BLOCK
-PAUSED by the orchestrator's message (the co-founder's word, 2026-11-14 about 01:10 UTC). Do nothing until it says "go".
+PAUSED AGAIN by the orchestrator's message (the co-founder's word, 2026-11-18), read by builder W78 before any edit. Do
+  nothing until a fresh go. W78 (started 2026-11-18 on a go for points 2, 3 and 4) had only read: this file, the note's
+  variant k section, the headers of lay41.sh and measure41.sh, and the diff stat 6299c550..b009d863. Points 2, 3 and 4:
+  NONE applied, none pushed. Nothing measured. No edit, no commit, no stash; the WIP ref is still b009d863; the checkout
+  is on claude/build-platform at 6299c550, clean; pnpm install was not run. No measurement running, no check-in set.
+  Machine notes for the next builder: node 24 is /opt/node24/bin (the default PATH gives node 22: export PATH first);
+  PostgreSQL 16 answers on 5432 and 18 on 5433 (pg_isready -h /tmp or -h localhost; the default socket directory
+  does not answer). The next step is unchanged: NEXT STEP below, from its (1).
+Earlier: PAUSED by the orchestrator's message (the co-founder's word, 2026-11-14 about 01:10 UTC).
 Branch co-001/redact-item-41 (from claude/build-platform 6299c550), local only; WIP ref co-001/wip-redact-item-41 at
   b009d863 (verified with git ls-remote). Three commits: a7afc887 variant k; f521e358 the render view, the intake log
   event and the synthetic PDF; b009d863 stage 2 (S-5 and ruling (f)). No uncommitted edits. No PR, no merge.
