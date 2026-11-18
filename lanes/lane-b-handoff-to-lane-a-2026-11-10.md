@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-11-18.** This rolling file was last refreshed 2026-11-07 18:40 UTC and was never finalized (Lane B's account stopped at its limit that evening). Lane A ran the work from 2026-11-10. The handoff in force is `lanes/lane-b-handoff-to-lane-a-2026-11-18.md`; the current state is `lanes/STATE.md`.
+
 # Lane B's handoff to Lane A (for 2026-11-10)
 
 **Rolling: current as of 2026-11-07 18:40 UTC; finalized at stand-down.**
