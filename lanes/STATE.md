@@ -1,6 +1,6 @@
 # PaidWhole build: current state (read this first; one page)
 
-Updated 2026-11-18 01:45 UTC by Lane A's orchestrator (session_019i9ifAeNMbWqzkjiXTp7wF): Lane B's items are Lane A's by the co-founder's go of 2026-11-18 (their own message, the prompt of `lanes/lane-b-handoff-to-lane-a-2026-11-18.md` section 11). **Keep it current:** the orchestrator rewrites it after every merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their own status file and `CLAUDE.md`, not the long history files.
+Updated 2026-11-18 01:55 UTC by Lane A's orchestrator (session_019i9ifAeNMbWqzkjiXTp7wF). **THE BUILD IS PAUSED by the co-founder (their own message, 2026-11-18 about 01:50 UTC: they are working on another application). Nothing starts, merges or is checked until they say go, in Lane A as in Lane B.** At the go: read this page, then `lanes/lane-b-handoff-to-lane-a-2026-11-18.md`, then the status file of each item below, and start a FRESH session per stage; never resume a paused one. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`.
 merge or ruling. History lives in `lanes/lane-b.md`; claims and counters in `LANES.md`. Sessions read this file, their
 own status file and `CLAUDE.md`, not the long history files.
 
